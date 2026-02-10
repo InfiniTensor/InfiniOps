@@ -6,7 +6,19 @@ namespace infini::ops {
 class Device {
  public:
   // TODO: Complete the list.
-  enum class Type { kCpu, kNvidia, kCount };
+  enum class Type {
+    kCpu = 0,
+    kNvidia = 1,
+    kCambricon = 2,
+    kAscend = 3,
+    kMetax = 4,
+    kMoore = 5,
+    kIluvatar = 6,
+    kKunlun = 7,
+    kHygon = 8,
+    kQy = 9,
+    kCount
+  };
 
   Device() = default;
 
