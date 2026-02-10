@@ -32,13 +32,16 @@ int main() {
   std::iota(a_vec.begin(), a_vec.end(), 0);
   std::iota(b_vec.begin(), b_vec.end(), 0);
 
-  Tensor a_host{a_vec.data(), a_shape};
-  Tensor b_host{b_vec.data(), b_shape};
-  Tensor c_host{c_vec.data(), c_shape};
+  Tensor a_host{a_vec.data(), a_shape, Device{Device::Type::kNvidia}};
+  Tensor b_host{b_vec.data(), b_shape, Device{Device::Type::kNvidia}};
+  Tensor c_host{c_vec.data(), c_shape, Device{Device::Type::kNvidia}};
 
-  Tensor a_device{nullptr, a_host.shape(), a_host.dtype(), a_host.strides()};
-  Tensor b_device{nullptr, b_host.shape(), b_host.dtype(), b_host.strides()};
-  Tensor c_device{nullptr, c_host.shape(), c_host.dtype(), c_host.strides()};
+  Tensor a_device{nullptr, a_host.shape(), a_host.dtype(), a_host.device(),
+                  a_host.strides()};
+  Tensor b_device{nullptr, b_host.shape(), b_host.dtype(), a_host.device(),
+                  b_host.strides()};
+  Tensor c_device{nullptr, c_host.shape(), c_host.dtype(), a_host.device(),
+                  c_host.strides()};
 
   const auto a_size{a_num_elements * a_device.dtype().element_size()};
   const auto b_size{b_num_elements * b_device.dtype().element_size()};
@@ -52,8 +55,7 @@ int main() {
   cudaMemcpy(b_device.data(), b_vec.data(), b_size, cudaMemcpyHostToDevice);
   cudaMemset(c_device.data(), 0, c_size);
 
-  const Handle handle{Device::kNvidia};
-  auto gemm_ptr{Operator<Gemm>::make(handle, a_device, b_device, std::nullopt,
+  auto gemm_ptr{Operator<Gemm>::make(a_device, b_device, std::nullopt,
                                      std::nullopt, std::nullopt, std::nullopt,
                                      c_device)};
   const auto& gemm{*gemm_ptr};

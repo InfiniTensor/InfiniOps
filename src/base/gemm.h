@@ -4,7 +4,6 @@
 #include <optional>
 
 #include "operator.h"
-#include "tensor.h"
 
 namespace infini::ops {
 

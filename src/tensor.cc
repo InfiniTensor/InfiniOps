@@ -5,15 +5,16 @@
 namespace infini::ops {
 
 Tensor::Tensor(void* data, std::initializer_list<Size> shape,
-               const DataType& dtype, std::initializer_list<Stride> strides)
-    : Tensor{data, decltype(shape_){shape}, dtype,
+               const DataType& dtype, const Device& device,
+               std::initializer_list<Stride> strides)
+    : Tensor{data, decltype(shape_){shape}, dtype, device,
              decltype(strides_){strides}} {}
 
 Tensor Tensor::operator[](const Index& index) const {
   return {reinterpret_cast<decltype(data_)>(
               reinterpret_cast<decltype(index)>(data_) +
               index * strides_[0] * element_size()),
-          Shape{shape_.cbegin() + 1, shape_.cend()}, dtype_,
+          Shape{shape_.cbegin() + 1, shape_.cend()}, dtype_, device_,
           Strides{strides_.cbegin() + 1, strides_.cend()}};
 }
 
@@ -24,6 +25,8 @@ const void* const& Tensor::data() const { return data_; }
 const Tensor::Shape& Tensor::shape() const { return shape_; }
 
 const DataType& Tensor::dtype() const { return dtype_; }
+
+const Device& Tensor::device() const { return device_; }
 
 const Tensor::Strides& Tensor::strides() const { return strides_; }
 
@@ -38,7 +41,11 @@ Tensor::Size Tensor::ndim() const { return shape_.size(); }
 Tensor::Size Tensor::element_size() const { return dtype_.element_size(); }
 
 Tensor Tensor::T() const {
-  return {data_, {shape_[1], shape_[0]}, dtype_, {strides_[1], strides_[0]}};
+  return {data_,
+          {shape_[1], shape_[0]},
+          dtype_,
+          device_,
+          {strides_[1], strides_[0]}};
 }
 
 std::string Tensor::ToString() const {
@@ -46,6 +53,8 @@ std::string Tensor::ToString() const {
 }
 
 const DataType& Tensor::DefaultDataType() { return kFloat32; }
+
+Device Tensor::DefaultDevice() { return Device{Device::Type::kCpu}; }
 
 Tensor::Strides Tensor::DefaultStrides(const Shape& shape) {
   if (shape.empty()) {

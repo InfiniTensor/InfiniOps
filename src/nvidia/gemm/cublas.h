@@ -12,7 +12,7 @@
 namespace infini::ops {
 
 template <>
-class Operator<Gemm, Device::kNvidia> : public Gemm {
+class Operator<Gemm, Device::Type::kNvidia> : public Gemm {
  public:
   Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
            std::optional<float> beta, std::optional<int> trans_a,
