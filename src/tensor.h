@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "data_type.h"
+#include "device.h"
 
 namespace infini::ops {
 
@@ -26,22 +27,45 @@ class Tensor {
       : data_{data},
         shape_{shape},
         dtype_{DefaultDataType()},
+        device_{DefaultDevice()},
         strides_{DefaultStrides(shape)} {}
 
-  template <typename Shape, typename Strides>
+  template <typename Shape>
   Tensor(void* data, const Shape& shape, const DataType& dtype)
       : data_{data},
         shape_{shape},
         dtype_{dtype},
+        device_{DefaultDevice()},
+        strides_{DefaultStrides(shape)} {}
+
+  template <typename Shape>
+  Tensor(void* data, const Shape& shape, const Device& device)
+      : data_{data},
+        shape_{shape},
+        dtype_{DefaultDataType()},
+        device_{device},
+        strides_{DefaultStrides(shape)} {}
+
+  template <typename Shape>
+  Tensor(void* data, const Shape& shape, const DataType& dtype,
+         const Device& device)
+      : data_{data},
+        shape_{shape},
+        dtype_{dtype},
+        device_{device},
         strides_{DefaultStrides(shape)} {}
 
   template <typename Shape, typename Strides>
   Tensor(void* data, const Shape& shape, const DataType& dtype,
-         const Strides& strides)
-      : data_{data}, shape_{shape}, dtype_{dtype}, strides_{strides} {}
+         const Device& device, const Strides& strides)
+      : data_{data},
+        shape_{shape},
+        dtype_{dtype},
+        device_{device},
+        strides_{strides} {}
 
   Tensor(void* data, std::initializer_list<Size> shape, const DataType& dtype,
-         std::initializer_list<Stride> strides);
+         const Device& device, std::initializer_list<Stride> strides);
 
   Tensor operator[](const Index& index) const;
 
@@ -50,6 +74,8 @@ class Tensor {
   const void* const& data() const;
 
   const DataType& dtype() const;
+
+  const Device& device() const;
 
   const Shape& shape() const;
 
@@ -70,6 +96,8 @@ class Tensor {
  private:
   static const DataType& DefaultDataType();
 
+  static Device DefaultDevice();
+
   static Strides DefaultStrides(const Shape& shape);
 
   std::string ToStringHelper() const;
@@ -79,6 +107,8 @@ class Tensor {
   Shape shape_;
 
   const DataType& dtype_;
+
+  Device device_;
 
   Strides strides_;
 };
