@@ -54,11 +54,11 @@ class Gemm : public Operator<Gemm> {
 
   Tensor::Size k_{0};
 
-  const DataType& a_type_;
+  const DataType a_type_;
 
-  const DataType& b_type_;
+  const DataType b_type_;
 
-  const DataType& c_type_;
+  const DataType c_type_;
 
   Tensor::Strides a_strides_;
 

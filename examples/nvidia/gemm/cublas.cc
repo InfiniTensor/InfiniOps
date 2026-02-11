@@ -5,6 +5,10 @@
 #include <iostream>
 #include <numeric>
 
+#ifdef USE_CPU
+#include "cpu/gemm/gemm.h"
+#endif
+
 #include "tensor.h"
 
 int main() {
@@ -43,9 +47,9 @@ int main() {
   Tensor c_device{nullptr, c_host.shape(), c_host.dtype(), a_host.device(),
                   c_host.strides()};
 
-  const auto a_size{a_num_elements * a_device.dtype().element_size()};
-  const auto b_size{b_num_elements * b_device.dtype().element_size()};
-  const auto c_size{c_num_elements * c_device.dtype().element_size()};
+  const auto a_size{a_num_elements * kDataTypeToSize.at(a_device.dtype())};
+  const auto b_size{b_num_elements * kDataTypeToSize.at(b_device.dtype())};
+  const auto c_size{c_num_elements * kDataTypeToSize.at(c_device.dtype())};
 
   cudaMalloc(&a_device.data(), a_size);
   cudaMalloc(&b_device.data(), b_size);

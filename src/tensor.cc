@@ -2,6 +2,8 @@
 
 #include <cassert>
 
+#include "dispatcher.h"
+
 namespace infini::ops {
 
 Tensor::Tensor(void* data, std::initializer_list<Size> shape,
@@ -24,7 +26,7 @@ const void* const& Tensor::data() const { return data_; }
 
 const Tensor::Shape& Tensor::shape() const { return shape_; }
 
-const DataType& Tensor::dtype() const { return dtype_; }
+const DataType Tensor::dtype() const { return dtype_; }
 
 const Device& Tensor::device() const { return device_; }
 
@@ -38,7 +40,7 @@ Tensor::Stride Tensor::stride(const Index& index) const {
 
 Tensor::Size Tensor::ndim() const { return shape_.size(); }
 
-Tensor::Size Tensor::element_size() const { return dtype_.element_size(); }
+Tensor::Size Tensor::element_size() const { return kDataTypeToSize.at(dtype_); }
 
 Tensor Tensor::T() const {
   return {data_,
@@ -49,10 +51,11 @@ Tensor Tensor::T() const {
 }
 
 std::string Tensor::ToString() const {
-  return "tensor(" + ToStringHelper() + ", dtype=" + dtype_.name() + ")";
+  return "tensor(" + ToStringHelper() +
+         ", dtype=" + std::string(kDataTypeToDesc.at(dtype_)) + ")";
 }
 
-const DataType& Tensor::DefaultDataType() { return kFloat32; }
+const DataType Tensor::DefaultDataType() { return DataType::kFloat32; }
 
 Device Tensor::DefaultDevice() { return Device{Device::Type::kCpu}; }
 
@@ -74,13 +77,10 @@ Tensor::Strides Tensor::DefaultStrides(const Shape& shape) {
 
 std::string Tensor::ToStringHelper() const {
   if (ndim() == 0) {
-    if (dtype_ == kFloat32) {
-      return std::to_string(*static_cast<float*>(data_));
-    }
-
-    // TODO: Handle more data types here.
-
-    assert(false && "string conversion not implemented for this data type");
+    return DispatchFunc<FloatingTypes>(
+        dtype_,
+        [&]<typename T>() { return std::to_string(*static_cast<T*>(data_)); },
+        "ToStringHelper");
   }
 
   std::string result{"["};

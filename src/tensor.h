@@ -31,7 +31,7 @@ class Tensor {
         strides_{DefaultStrides(shape)} {}
 
   template <typename Shape>
-  Tensor(void* data, const Shape& shape, const DataType& dtype)
+  Tensor(void* data, const Shape& shape, const DataType dtype)
       : data_{data},
         shape_{shape},
         dtype_{dtype},
@@ -73,7 +73,7 @@ class Tensor {
 
   const void* const& data() const;
 
-  const DataType& dtype() const;
+  const DataType dtype() const;
 
   const Device& device() const;
 
@@ -94,7 +94,7 @@ class Tensor {
   std::string ToString() const;
 
  private:
-  static const DataType& DefaultDataType();
+  static const DataType DefaultDataType();
 
   static Device DefaultDevice();
 
@@ -106,7 +106,7 @@ class Tensor {
 
   Shape shape_;
 
-  const DataType& dtype_;
+  const DataType dtype_;
 
   Device device_;
 
