@@ -1,72 +1,112 @@
 #ifndef INFINI_OPS_DATA_TYPE_H_
 #define INFINI_OPS_DATA_TYPE_H_
 
-#include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <string>
-#include <unordered_map>
+
+#include "common/constexpr_map.h"
+#include "common/traits.h"
 
 namespace infini::ops {
 
-class DataType {
- public:
-  constexpr DataType(int index, std::size_t element_size, const char* name)
-      : index_{index}, element_size_{element_size}, name_{name} {}
-
-  static const DataType& FromString(const std::string& name);
-
-  constexpr bool operator==(const DataType& other) const {
-    return index_ == other.index_;
-  }
-
-  constexpr std::size_t element_size() const { return element_size_; }
-
-  constexpr const char* name() const { return name_; }
-
- private:
-  int index_{0};
-
-  std::size_t element_size_{0};
-
-  const char* name_{nullptr};
+enum class DataType : int8_t {
+  kInt8,
+  kInt16,
+  kInt32,
+  kInt64,
+  kUInt8,
+  kUInt16,
+  kUInt32,
+  kUInt64,
+  kFloat16,
+  kBFloat16,
+  kFloat32,
+  kFloat64
 };
 
-constexpr DataType kInt8{0, sizeof(int8_t), "int8"};
+constexpr ConstexprMap<DataType, std::size_t, 12> kDataTypeToSize{{{
+    {DataType::kInt8, 1},
+    {DataType::kInt16, 2},
+    {DataType::kInt32, 4},
+    {DataType::kInt64, 8},
+    {DataType::kUInt8, 1},
+    {DataType::kUInt16, 2},
+    {DataType::kUInt32, 4},
+    {DataType::kUInt64, 8},
+    {DataType::kFloat16, 2},
+    {DataType::kBFloat16, 2},
+    {DataType::kFloat32, 4},
+    {DataType::kFloat64, 8},
+}}};
 
-constexpr DataType kInt16{1, sizeof(int16_t), "int16"};
+constexpr ConstexprMap<DataType, std::string_view, 12> kDataTypeToDesc{{{
+    {DataType::kInt8, "int8"},
+    {DataType::kInt16, "int16"},
+    {DataType::kInt32, "int32"},
+    {DataType::kInt64, "int64"},
+    {DataType::kUInt8, "uint8"},
+    {DataType::kUInt16, "uint16"},
+    {DataType::kUInt32, "uint32"},
+    {DataType::kUInt64, "uint64"},
+    {DataType::kFloat16, "float16"},
+    {DataType::kBFloat16, "bfloat16"},
+    {DataType::kFloat32, "float32"},
+    {DataType::kFloat64, "float64"},
+}}};
 
-constexpr DataType kInt32{2, sizeof(int32_t), "int32"};
+template <DataType DType>
+struct TypeMap;
 
-constexpr DataType kInt64{3, sizeof(int64_t), "int64"};
+template <DataType DType>
+using TypeMap_t = typename TypeMap<DType>::type;
 
-constexpr DataType kUInt8{4, sizeof(uint8_t), "uint8"};
+template <typename T>
+struct DataTypeMap;
 
-constexpr DataType kUInt16{5, sizeof(uint16_t), "uint16"};
+template <typename T>
+inline constexpr DataType DataTypeMap_v = DataTypeMap<T>::value;
 
-constexpr DataType kUInt32{6, sizeof(uint32_t), "uint32"};
+#define DEFINE_DATA_TYPE_MAPPING(ENUM_VALUE, CPP_TYPE)      \
+  template <>                                               \
+  struct TypeMap<DataType::ENUM_VALUE> {                    \
+    using type = CPP_TYPE;                                  \
+  };                                                        \
+  template <>                                               \
+  struct DataTypeMap<CPP_TYPE> {                            \
+    static constexpr DataType value = DataType::ENUM_VALUE; \
+  };
 
-constexpr DataType kUInt64{7, sizeof(uint64_t), "uint64"};
+DEFINE_DATA_TYPE_MAPPING(kUInt8, uint8_t)
+DEFINE_DATA_TYPE_MAPPING(kInt8, int8_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt16, uint16_t)
+DEFINE_DATA_TYPE_MAPPING(kInt16, int16_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt32, uint32_t)
+DEFINE_DATA_TYPE_MAPPING(kInt32, int32_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt64, uint64_t)
+DEFINE_DATA_TYPE_MAPPING(kInt64, int64_t)
+DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
+DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
+// TODO(lzm): support fp16 and bf16
 
-constexpr DataType kFloat16{8, 2, "float16"};
+// Defines the common categories of data types using List
+using FloatingTypes = List<DataType::kFloat32, DataType::kFloat64>;
+using ReducedFloatingTypes = List<DataType::kFloat16, DataType::kBFloat16>;
+using SignedIntegralTypes =
+    List<DataType::kInt8, DataType::kInt16, DataType::kInt32, DataType::kInt64>;
+using UnsignedIntegralTypes = List<DataType::kUInt8, DataType::kUInt16,
+                                   DataType::kUInt32, DataType::kUInt64>;
 
-constexpr DataType kBFloat16{9, 2, "bfloat16"};
+using BitTypes8 = List<DataType::kInt8, DataType::kUInt8>;
+using BitTypes16 = List<DataType::kInt16, DataType::kUInt16, DataType::kFloat16,
+                        DataType::kBFloat16>;
+using BitTypes32 =
+    List<DataType::kInt32, DataType::kUInt32, DataType::kFloat32>;
+using BitTypes64 =
+    List<DataType::kInt64, DataType::kUInt64, DataType::kFloat64>;
 
-constexpr DataType kFloat32{10, sizeof(float), "float32"};
-
-constexpr DataType kFloat64{11, sizeof(double), "float64"};
-
-inline const DataType& DataType::FromString(const std::string& name) {
-  static std::unordered_map<std::string, const DataType&> name_to_dtype{
-      {kInt8.name(), kInt8},       {kInt16.name(), kInt16},
-      {kInt32.name(), kInt32},     {kInt64.name(), kInt64},
-      {kUInt8.name(), kUInt8},     {kUInt16.name(), kUInt16},
-      {kUInt32.name(), kUInt32},   {kUInt64.name(), kUInt64},
-      {kFloat16.name(), kFloat16}, {kBFloat16.name(), kBFloat16},
-      {kFloat32.name(), kFloat32}, {kFloat64.name(), kFloat64}};
-
-  return name_to_dtype.at(name);
-}
+using AllFloatingTypes = Concat_t<FloatingTypes, ReducedFloatingTypes>;
+using AllIntegralTypes = Concat_t<SignedIntegralTypes, UnsignedIntegralTypes>;
+using AllTypes = Concat_t<AllFloatingTypes, AllIntegralTypes>;
 
 }  // namespace infini::ops
 

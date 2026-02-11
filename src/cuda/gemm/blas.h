@@ -41,10 +41,11 @@ class Blas : public Gemm {
 
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
-    const auto& trans_a_value{alpha.value_or(trans_a_)};
-    const auto& trans_b_value{beta.value_or(trans_b_)};
+    const auto& trans_a_value{trans_a.value_or(trans_a_)};
+    const auto& trans_b_value{trans_b.value_or(trans_b_)};
 
-    assert(a_type_ == kFloat32 && b_type_ == kFloat32 && c_type_ == kFloat32 &&
+    assert(a_type_ == DataType::kFloat32 && b_type_ == DataType::kFloat32 &&
+           c_type_ == DataType::kFloat32 &&
            "`operator()` not implemented for this data type");
 
     Backend::blasGemmEx(handle, trans_a_value, trans_b_value, m_, n_, k_,

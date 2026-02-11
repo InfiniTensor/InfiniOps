@@ -4,6 +4,7 @@
 #include <cassert>
 #include <memory>
 
+#include "dispatcher.h"
 #include "tensor.h"
 
 namespace infini::ops {
@@ -17,24 +18,13 @@ class Operator {
   static auto make(const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
 
-    switch (tensor.device().type()) {
-      // TODO(lzm): use dispatcher to conditionally compile and dispatch
-      // the devices. This is only a temporary solution
-#ifdef USE_CUDA
-      case Device::Type::kNvidia:
-        op_ptr = std::make_unique<Operator<Key, Device::Type::kNvidia>>(
-            tensor, std::forward<Args>(args)...);
-        break;
-#elif USE_MACA
-      case Device::Type::kMetax:
-        op_ptr = std::make_unique<Operator<Key, Device::Type::kMetax>>(
-            tensor, std::forward<Args>(args)...);
-        break;
-#endif
-      default:
-        assert(false &&
-               "constructor dispatching not implemented for this device");
-    }
+    DispatchFunc<ActiveDevices>(
+        tensor.device().type(),
+        [&]<Device::Type dev>() {
+          op_ptr = std::make_unique<Operator<Key, dev>>(
+              tensor, std::forward<Args>(args)...);
+        },
+        "Operator make");
 
     return op_ptr;
   }
