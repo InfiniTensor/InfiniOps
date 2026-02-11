@@ -31,6 +31,13 @@ class Operator {
   }
 
   template <typename... Args>
+  static auto call(void* stream, Args&&... args) {
+    // TODO: Cache the created `Operator`.
+    return (*make(std::forward<Args>(args)...))(stream,
+                                                std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
   auto operator()(Args&&... args) const {
     return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
   }

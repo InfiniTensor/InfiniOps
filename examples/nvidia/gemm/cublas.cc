@@ -55,12 +55,7 @@ int main() {
   cudaMemcpy(b_device.data(), b_vec.data(), b_size, cudaMemcpyHostToDevice);
   cudaMemset(c_device.data(), 0, c_size);
 
-  auto gemm_ptr{Operator<Gemm>::make(a_device, b_device, std::nullopt,
-                                     std::nullopt, std::nullopt, std::nullopt,
-                                     c_device)};
-  const auto& gemm{*gemm_ptr};
-
-  gemm(nullptr, a_device.data(), b_device.data(), c_device.data());
+  Gemm::call(nullptr, a_device, b_device, c_device);
 
   cudaMemcpy(a_host.data(), a_device.data(), a_size, cudaMemcpyDeviceToHost);
   cudaMemcpy(b_host.data(), b_device.data(), b_size, cudaMemcpyDeviceToHost);

@@ -13,46 +13,40 @@ _INDENTATION = "  "
 
 
 class _OperatorExtractor:
-    def __init__(self, path):
+    def __call__(self, op_name):
         index = clang.cindex.Index.create()
         args = ("-std=c++17", "-x", "c++", "-I", "src")
-        self._translation_unit = index.parse(path, args=args)
+        translation_unit = index.parse(f"src/base/{op_name.lower()}.h", args=args)
 
-    def __call__(self, op_name):
-        nodes = tuple(type(self)._find(self._translation_unit.cursor, op_name))
+        nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
-        constructor = None
-        call = None
+        constructors = []
+        calls = []
 
         for node in nodes:
             if node.kind == CursorKind.CONSTRUCTOR:
-                constructor = node
+                constructors.append(node)
             elif node.kind == CursorKind.CXX_METHOD and node.spelling == "operator()":
-                call = node
+                calls.append(node)
 
-        return _Operator(op_name, constructor, call)
+        return _Operator(op_name, constructors, calls)
 
     @staticmethod
     def _find(node, op_name):
-        if node.semantic_parent and node.semantic_parent.spelling == "Operator":
-            for child in node.semantic_parent.get_children():
-                if (
-                    child.kind == CursorKind.CXX_BASE_SPECIFIER
-                    and child.spelling == op_name
-                ):
-                    yield node
+        if node.semantic_parent and node.semantic_parent.spelling == op_name:
+            yield node
 
         for child in node.get_children():
             yield from _OperatorExtractor._find(child, op_name)
 
 
 class _Operator:
-    def __init__(self, name, constructor, call):
+    def __init__(self, name, constructors, calls):
         self.name = name
 
-        self.constructor = constructor
+        self.constructors = constructors
 
-        self.call = call
+        self.calls = calls
 
 
 def _generate_pybind11(operator):
@@ -71,7 +65,11 @@ def _generate_pybind11(operator):
 
     def _generate_call_arguments(node):
         return ", ".join(
-            _generate_data_getter(arg.spelling)
+            (
+                _generate_tensor_caster(arg.spelling)
+                if "Tensor" in arg.type.spelling
+                else arg.spelling
+            )
             if arg.spelling != "stream"
             else "reinterpret_cast<void*>(stream)"
             for arg in node.get_arguments()
@@ -80,24 +78,38 @@ def _generate_pybind11(operator):
     def _generate_tensor_caster(name):
         return f'Tensor{{reinterpret_cast<void*>({name}.attr("data_ptr")().cast<std::uintptr_t>()), {name}.attr("shape").cast<Tensor::Shape>(), DataType::FromString(py::str({name}.attr("dtype")).attr("split")(".").attr("__getitem__")(-1).cast<std::string>()), Device{{Device::TypeFromString({name}.attr("device").attr("type").cast<std::string>()), {name}.attr("device").attr("index").is_none() ? 0 : {name}.attr("device").attr("index").cast<int>()}}, {name}.attr("stride")().cast<Tensor::Strides>()}}'
 
-    def _generate_data_getter(name):
-        return (
-            f'reinterpret_cast<void*>({name}.attr("data_ptr")().cast<std::uintptr_t>())'
-        )
-
     op_name = operator.name
 
-    constructor_params = _generate_params(operator.constructor)
-    constructor_params = constructor_params.replace(
-        "const Tensor", "py::object"
-    ).replace("Tensor", "py::object")
+    def _generate_init(constructor):
+        constructor_params = _generate_params(constructor)
+        constructor_params = constructor_params.replace(
+            "const Tensor", "py::object"
+        ).replace("Tensor", "py::object")
 
-    call_params = _generate_params(operator.call)
-    call_params = (
-        call_params.replace("void * stream", "std::uintptr_t stream")
-        .replace("const void *", "py::object")
-        .replace("void *", "py::object")
+        return f"""      .def(py::init([]({constructor_params}) {{
+        return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_constructor_arguments(constructor)}).release())}};
+      }}))"""
+
+    def _generate_call(call, method=True):
+        call_params = _generate_params(call)
+        call_params = (
+            call_params.replace("void * stream", "std::uintptr_t stream")
+            .replace("const Tensor", "py::object")
+            .replace("Tensor", "py::object")
+        )
+
+        if not method:
+            return f"""  m.def("gemm", []({call_params}) {{ return Self::call({_generate_call_arguments(call)}); }});"""
+
+        return f"""      .def("__call__", [](const Self& self, {call_params}) {{
+        return self({_generate_call_arguments(call)});
+      }})"""
+
+    inits = "\n".join(
+        _generate_init(constructor) for constructor in operator.constructors
     )
+    calls = "\n".join(_generate_call(call) for call in operator.calls)
+    callers = "\n".join(_generate_call(call, method=False) for call in operator.calls)
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -115,12 +127,10 @@ void Bind{op_name}(py::module& m) {{
   using Self = {op_name};
 
   py::class_<Self>(m, "{op_name}")
-      .def(py::init([]({constructor_params}) {{
-        return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_constructor_arguments(operator.constructor)}).release())}};
-      }}))
-      .def("__call__", [](const Self& self, {call_params}) {{
-        return self.operator()({_generate_call_arguments(operator.call)});
-      }});
+{inits}
+{calls};
+
+{callers}
 }}
 
 }}  // namespace infini::ops
@@ -138,8 +148,8 @@ if __name__ == "__main__":
     header_paths = []
     bind_func_names = []
 
-    for op_name, op_path in ops.items():
-        extractor = _OperatorExtractor(op_path)
+    for op_name in ops:
+        extractor = _OperatorExtractor()
         operator = extractor(op_name)
 
         header_name = f"{op_name.lower()}.h"
