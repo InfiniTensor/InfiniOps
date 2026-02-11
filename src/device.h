@@ -12,6 +12,14 @@ class Device {
 
   Device(const Type& type, const int& index = 0) : type_{type}, index_{index} {}
 
+  static const Type& TypeFromString(const std::string& name) {
+    // TODO: Handle `"cuda"` dispatching.
+    static std::unordered_map<std::string, Type> name_to_type{
+        {"cpu", Type::kCpu}, {"cuda", Type::kNvidia}};
+
+    return name_to_type.at(name);
+  }
+
   const Type& type() const { return type_; }
 
   const int& index() const { return index_; }
