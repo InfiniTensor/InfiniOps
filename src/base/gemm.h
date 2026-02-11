@@ -28,6 +28,9 @@ class Gemm : public Operator<Gemm> {
     // TODO: Check constraints.
   }
 
+  virtual void operator()(void* stream, const void* a, const void* b,
+                          void* c) const = 0;
+
  protected:
   float alpha_{1.0};
 
