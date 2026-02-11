@@ -30,20 +30,33 @@ class Operator<Gemm, Device::Type::kNvidia> : public Gemm {
     // TODO: Check constraints.
   }
 
-  void operator()(void* stream, const void* a, const void* b, void* c) const {
+  Operator(const Tensor a, const Tensor b, Tensor c)
+      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                 c} {}
+
+  void operator()(void* stream, const Tensor a, const Tensor b,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override {
     cublasHandle_t handle;
     cublasCreate(&handle);
 
     cublasSetStream(handle, static_cast<cudaStream_t>(stream));
 
+    const auto& alpha_value{alpha.value_or(alpha_)};
+    const auto& beta_value{beta.value_or(beta_)};
+    const auto& trans_a_value{alpha.value_or(trans_a_)};
+    const auto& trans_b_value{beta.value_or(trans_b_)};
+
     // TODO: Add support for more data types.
     assert(a_type_ == kFloat32 && b_type_ == kFloat32 && c_type_ == kFloat32 &&
            "`operator()` not implemented for this data type");
 
-    cublasGemmEx(handle, trans_a_ ? CUBLAS_OP_T : CUBLAS_OP_N,
-                 trans_b_ ? CUBLAS_OP_T : CUBLAS_OP_N, m_, n_, k_, &alpha_, b,
-                 CUDA_R_32F, lda_, a, CUDA_R_32F, ldb_, &beta_, c, CUDA_R_32F,
-                 ldc_, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
+    cublasGemmEx(handle, trans_a_value ? CUBLAS_OP_T : CUBLAS_OP_N,
+                 trans_b_value ? CUBLAS_OP_T : CUBLAS_OP_N, m_, n_, k_,
+                 &alpha_value, b.data(), CUDA_R_32F, lda_, a.data(), CUDA_R_32F,
+                 ldb_, &beta_value, c.data(), CUDA_R_32F, ldc_,
+                 CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
 
     cublasDestroy(handle);
   }
