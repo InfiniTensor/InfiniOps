@@ -8,11 +8,19 @@
 
 namespace infini::ops {
 
-template <typename Key, Device::Type device = Device::Type::kCount>
-class Operator {
+class OperatorBase {
  public:
-  virtual ~Operator() = default;
+  virtual ~OperatorBase() = default;
 
+  static void set_stream(void* stream) { stream_ = stream; }
+
+ protected:
+  inline static thread_local void* stream_{nullptr};
+};
+
+template <typename Key, Device::Type device = Device::Type::kCount>
+class Operator : public OperatorBase {
+ public:
   template <typename... Args>
   static auto make(const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
@@ -38,8 +46,19 @@ class Operator {
   }
 
   template <typename... Args>
-  auto operator()(Args&&... args) const {
-    return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
+  static auto call(const Tensor tensor, Args&&... args) {
+    return call(stream_, tensor, std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  auto operator()(void* stream, Args&&... args) const {
+    return (*static_cast<const Key*>(this))(stream,
+                                            std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  auto operator()(const Tensor tensor, Args&&... args) const {
+    return operator()(stream_, tensor, std::forward<Args>(args)...);
   }
 };
 
