@@ -11,6 +11,8 @@ namespace infini::ops {
 template <typename Key, Device::Type device = Device::Type::kCount>
 class Operator {
  public:
+  virtual ~Operator() = default;
+
   template <typename... Args>
   static auto make(const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
