@@ -51,28 +51,23 @@ class _Operator:
 
 def _generate_pybind11(operator):
     def _generate_params(node):
-        return ", ".join(
-            f"{arg.type.spelling} {arg.spelling}" for arg in node.get_arguments()
+        return (
+            ", ".join(
+                f"{arg.type.spelling} {arg.spelling}"
+                for arg in node.get_arguments()
+                if arg.spelling != "stream"
+            )
+            .replace("const Tensor", "py::object")
+            .replace("Tensor", "py::object")
         )
 
-    def _generate_constructor_arguments(node):
+    def _generate_arguments(node):
         return ", ".join(
             _generate_tensor_caster(arg.spelling)
             if "Tensor" in arg.type.spelling
             else arg.spelling
             for arg in node.get_arguments()
-        )
-
-    def _generate_call_arguments(node):
-        return ", ".join(
-            (
-                _generate_tensor_caster(arg.spelling)
-                if "Tensor" in arg.type.spelling
-                else arg.spelling
-            )
             if arg.spelling != "stream"
-            else "reinterpret_cast<void*>(stream)"
-            for arg in node.get_arguments()
         )
 
     def _generate_tensor_caster(name):
@@ -82,27 +77,19 @@ def _generate_pybind11(operator):
 
     def _generate_init(constructor):
         constructor_params = _generate_params(constructor)
-        constructor_params = constructor_params.replace(
-            "const Tensor", "py::object"
-        ).replace("Tensor", "py::object")
 
         return f"""      .def(py::init([]({constructor_params}) {{
-        return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_constructor_arguments(constructor)}).release())}};
+        return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_arguments(constructor)}).release())}};
       }}))"""
 
     def _generate_call(call, method=True):
         call_params = _generate_params(call)
-        call_params = (
-            call_params.replace("void * stream", "std::uintptr_t stream")
-            .replace("const Tensor", "py::object")
-            .replace("Tensor", "py::object")
-        )
 
         if not method:
-            return f"""  m.def("gemm", []({call_params}) {{ return Self::call({_generate_call_arguments(call)}); }});"""
+            return f"""  m.def("gemm", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return self({_generate_call_arguments(call)});
+        return static_cast<const Operator<Self>&>(self)({_generate_arguments(call)});
       }})"""
 
     inits = "\n".join(
@@ -179,6 +166,7 @@ if __name__ == "__main__":
 namespace infini::ops {{
 
 PYBIND11_MODULE(ops, m) {{
+{_INDENTATION}m.def("set_stream", [](std::uintptr_t stream) {{ OperatorBase::set_stream(reinterpret_cast<void*>(stream)); }});
 {textwrap.indent(bind_func_calls, _INDENTATION)}
 }}
 
