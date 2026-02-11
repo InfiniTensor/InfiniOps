@@ -27,24 +27,13 @@ class Operator {
                "constructor dispatching not implemented for this device");
     }
 
-    op_ptr->device_ = tensor.device();
-
     return op_ptr;
   }
 
   template <typename... Args>
   auto operator()(Args&&... args) const {
-    switch (device_.type()) {
-      case Device::Type::kNvidia:
-        return (*static_cast<const Operator<Key, Device::Type::kNvidia>*>(
-            this))(std::forward<Args>(args)...);
-    }
-
-    assert(false && "`operator()` dispatching not implemented for this device");
+    return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
   }
-
- private:
-  Device device_;
 };
 
 }  // namespace infini::ops
