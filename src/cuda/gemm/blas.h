@@ -27,6 +27,10 @@ class Blas : public Gemm {
     // TODO: Check constraints.
   }
 
+  Blas(const Tensor a, const Tensor b, std::optional<float> alpha,
+       std::optional<float> beta, Tensor c)
+      : Blas{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+
   Blas(const Tensor a, const Tensor b, Tensor c)
       : Blas{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
 

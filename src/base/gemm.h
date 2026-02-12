@@ -31,6 +31,9 @@ class Gemm : public Operator<Gemm> {
     // TODO: Check constraints.
   }
 
+  Gemm(const Tensor a, const Tensor b, Tensor c)
+      : Gemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
+
   virtual void operator()(void* stream, const Tensor a, const Tensor b,
                           std::optional<float> alpha, std::optional<float> beta,
                           std::optional<int> trans_a,
@@ -40,6 +43,12 @@ class Gemm : public Operator<Gemm> {
                           Tensor c) const {
     return operator()(stream, a, b, std::nullopt, std::nullopt, std::nullopt,
                       std::nullopt, c);
+  }
+
+  virtual void operator()(void* stream, const Tensor a, const Tensor b,
+                          std::optional<float> alpha, std::optional<float> beta,
+                          Tensor c) const {
+    return operator()(stream, a, b, alpha, beta, std::nullopt, std::nullopt, c);
   }
 
  protected:
