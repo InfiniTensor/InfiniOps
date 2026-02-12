@@ -41,32 +41,34 @@ class Device {
  private:
   Type type_{Type::kCpu};
 
-  static constexpr ConstexprMap<Device::Type, std::string_view, 10>
+  static constexpr ConstexprMap<Device::Type, std::string_view,
+                                static_cast<std::size_t>(Device::Type::kCount)>
       kDeviceToDesc{{{
-          {Device::Type::kCpu, "CPU"},
-          {Device::Type::kNvidia, "NVIDIA"},
-          {Device::Type::kCambricon, "Cambricon"},
-          {Device::Type::kAscend, "Ascend"},
-          {Device::Type::kMetax, "Metax"},
-          {Device::Type::kMoore, "Moore"},
-          {Device::Type::kIluvatar, "Iluvatar"},
-          {Device::Type::kKunlun, "Kunlun"},
-          {Device::Type::kHygon, "Hygon"},
-          {Device::Type::kQy, "QY"},
+          {Type::kCpu, "CPU"},
+          {Type::kNvidia, "NVIDIA"},
+          {Type::kCambricon, "Cambricon"},
+          {Type::kAscend, "Ascend"},
+          {Type::kMetax, "Metax"},
+          {Type::kMoore, "Moore"},
+          {Type::kIluvatar, "Iluvatar"},
+          {Type::kKunlun, "Kunlun"},
+          {Type::kHygon, "Hygon"},
+          {Type::kQy, "QY"},
       }}};
 
-  static constexpr ConstexprMap<std::string_view, Device::Type, 10>
+  static constexpr ConstexprMap<std::string_view, Device::Type,
+                                static_cast<std::size_t>(Device::Type::kCount)>
       kDescToDevice{{{
-          {"CPU", Device::Type::kCpu},
-          {"NVIDIA", Device::Type::kNvidia},
-          {"Cambricon", Device::Type::kCambricon},
-          {"Ascend", Device::Type::kAscend},
-          {"Metax", Device::Type::kMetax},
-          {"Moore", Device::Type::kMoore},
-          {"Iluvatar", Device::Type::kIluvatar},
-          {"Kunlun", Device::Type::kKunlun},
-          {"Hygon", Device::Type::kHygon},
-          {"QY", Device::Type::kQy},
+          {"CPU", Type::kCpu},
+          {"NVIDIA", Type::kNvidia},
+          {"Cambricon", Type::kCambricon},
+          {"Ascend", Type::kAscend},
+          {"Metax", Type::kMetax},
+          {"Moore", Type::kMoore},
+          {"Iluvatar", Type::kIluvatar},
+          {"Kunlun", Type::kKunlun},
+          {"Hygon", Type::kHygon},
+          {"QY", Type::kQy},
       }}};
 
   int index_{0};
@@ -78,60 +80,62 @@ struct EnabledDeviceFilter {
   // and FilterList will exclude it from ActiveDevices.
 
 #ifdef USE_CPU
-  template <Device::Type D, std::enable_if_t<D == Device::Type::kCpu, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kCpu, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_NVIDIA
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kNvidia, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kNvidia, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_CAMBRICON
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kCambricon, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kCambricon, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_ASCEND
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kAscend, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kAscend, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_METAX
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kMetax, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kMetax, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_MOORE
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kMoore, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kMoore, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_ILUVATAR
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kIluvatar, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kIluvatar, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_KUNLUN
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kKunlun, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kKunlun, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_HYGON
-  template <Device::Type D,
-            std::enable_if_t<D == Device::Type::kHygon, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kHygon, int> = 0>
   void operator()() const {}
 #endif
 
 #ifdef USE_QY
-  template <Device::Type D, std::enable_if_t<D == Device::Type::kQy, int> = 0>
+  template <Device::Type dev,
+            std::enable_if_t<dev == Device::Type::kQy, int> = 0>
   void operator()() const {}
 #endif
 };

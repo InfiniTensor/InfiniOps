@@ -11,33 +11,32 @@
 
 namespace infini::ops {
 
-struct CudaBackend {
+struct NvidiaBackend {
   using blasHandle_t = cublasHandle_t;
   using stream_t = cudaStream_t;
 
-  static void blasCreate(blasHandle_t* handle) { cublasCreate(handle); }
+  static constexpr auto BLAS_OP_N = CUBLAS_OP_N;
+  static constexpr auto BLAS_OP_T = CUBLAS_OP_T;
+  static constexpr auto R_32F = CUDA_R_32F;
+  static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 =
+      CUBLAS_COMPUTE_32F_FAST_TF32;
+  static constexpr auto BLAS_GEMM_DEFAULT = CUBLAS_GEMM_DEFAULT;
 
-  static void blasSetStream(blasHandle_t handle, stream_t stream) {
-    cublasSetStream(handle, stream);
-  }
+  static constexpr auto blasCreate = cublasCreate;
+  static constexpr auto blasSetStream = cublasSetStream;
+  static constexpr auto blasDestroy = cublasDestroy;
 
-  static void blasGemmEx(blasHandle_t handle, bool transA, bool transB, int m,
-                         int n, int k, const float* alpha, const void* B,
-                         int ldb, const void* A, int lda, const float* beta,
-                         void* C, int ldc) {
-    cublasGemmEx(handle, transA ? CUBLAS_OP_T : CUBLAS_OP_N,
-                 transB ? CUBLAS_OP_T : CUBLAS_OP_N, m, n, k, alpha, B,
-                 CUDA_R_32F, ldb, A, CUDA_R_32F, lda, beta, C, CUDA_R_32F, ldc,
-                 CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
-  }
-
-  static void blasDestroy(blasHandle_t handle) { cublasDestroy(handle); }
+  static constexpr cublasStatus_t (*blasGemmEx)(
+      cublasHandle_t, cublasOperation_t, cublasOperation_t, int, int, int,
+      const void*, const void*, cudaDataType_t, int, const void*,
+      cudaDataType_t, int, const void*, void*, cudaDataType_t, int,
+      cublasComputeType_t, cublasGemmAlgo_t) = cublasGemmEx;
 };
 
 template <>
-class Operator<Gemm, Device::Type::kNvidia> : public Blas<CudaBackend> {
+class Operator<Gemm, Device::Type::kNvidia> : public Blas<NvidiaBackend> {
  public:
-  using Blas<CudaBackend>::Blas;
+  using Blas<NvidiaBackend>::Blas;
 };
 
 }  // namespace infini::ops

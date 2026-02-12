@@ -2,25 +2,29 @@
 #define INFINI_OPS_COMMON_CONSTEXPR_MAP_H_
 
 #include <array>
+#include <cassert>
 #include <cstdlib>
-#include <iostream>
 #include <utility>
 
 namespace infini::ops {
 
 template <typename Key, typename Value, std::size_t N>
 struct ConstexprMap {
-  std::array<std::pair<Key, Value>, N> data;
+  constexpr ConstexprMap(std::array<std::pair<Key, Value>, N> data)
+      : data_(data) {}
 
   constexpr Value at(Key key) const {
-    for (const auto &pr : data) {
+    for (const auto &pr : data_) {
       if (pr.first == key) return pr.second;
     }
     // TODO(lzm): change to logging
-    std::cerr << "ConstexprMap's key not found at " << __FILE__ << ":"
-              << __LINE__ << std::endl;
+    assert("ConstexprMap's key is not found!");
+    // Unreachable, provided to satisfy the compiler's requirement
     std::abort();
   }
+
+ private:
+  std::array<std::pair<Key, Value>, N> data_;
 };
 
 }  // namespace infini::ops
