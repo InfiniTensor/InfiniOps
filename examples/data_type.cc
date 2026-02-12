@@ -10,15 +10,18 @@ int main() {
   using namespace infini::ops;
 
   static const std::vector<DataType> kDataTypes{
-      kInt8,   kInt16,  kInt32,   kInt64,    kUInt8,   kUInt16,
-      kUInt32, kUInt64, kFloat16, kBFloat16, kFloat32, kFloat64};
+      DataType::kInt8,     DataType::kInt16,   DataType::kInt32,
+      DataType::kInt64,    DataType::kUInt8,   DataType::kUInt16,
+      DataType::kUInt32,   DataType::kUInt64,  DataType::kFloat16,
+      DataType::kBFloat16, DataType::kFloat32, DataType::kFloat64};
 
   std::cout << std::left << std::setw(10) << "Name" << std::left
             << std::setw(10) << "Element Size\n";
 
   for (const auto& dtype : kDataTypes) {
-    std::cout << std::left << std::setw(10) << dtype.name() << std::left
-              << std::setw(10) << dtype.element_size() << '\n';
+    std::cout << std::left << std::setw(10) << kDataTypeToDesc.at(dtype)
+              << std::left << std::setw(10) << kDataTypeToSize.at(dtype)
+              << '\n';
   }
 
   return 0;
