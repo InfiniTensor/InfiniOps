@@ -48,31 +48,31 @@ class Device {
   static constexpr ConstexprMap<Device::Type, std::string_view,
                                 static_cast<std::size_t>(Device::Type::kCount)>
       kDeviceToDesc{{{
-          {Type::kCpu, "CPU"},
-          {Type::kNvidia, "NVIDIA"},
-          {Type::kCambricon, "Cambricon"},
-          {Type::kAscend, "Ascend"},
-          {Type::kMetax, "Metax"},
-          {Type::kMoore, "Moore"},
-          {Type::kIluvatar, "Iluvatar"},
-          {Type::kKunlun, "Kunlun"},
-          {Type::kHygon, "Hygon"},
-          {Type::kQy, "QY"},
+          {Type::kCpu, "cpu"},
+          {Type::kNvidia, "nvidia"},
+          {Type::kCambricon, "cambricon"},
+          {Type::kAscend, "ascend"},
+          {Type::kMetax, "metax"},
+          {Type::kMoore, "moore"},
+          {Type::kIluvatar, "iluvatar"},
+          {Type::kKunlun, "kunlun"},
+          {Type::kHygon, "hygon"},
+          {Type::kQy, "qy"},
       }}};
 
   static constexpr ConstexprMap<std::string_view, Device::Type,
                                 static_cast<std::size_t>(Device::Type::kCount)>
       kDescToDevice{{{
-          {"CPU", Type::kCpu},
-          {"NVIDIA", Type::kNvidia},
-          {"Cambricon", Type::kCambricon},
-          {"Ascend", Type::kAscend},
-          {"Metax", Type::kMetax},
-          {"Moore", Type::kMoore},
-          {"Iluvatar", Type::kIluvatar},
-          {"Kunlun", Type::kKunlun},
-          {"Hygon", Type::kHygon},
-          {"QY", Type::kQy},
+          {"cpu", Type::kCpu},
+          {"nvidia", Type::kNvidia},
+          {"cambricon", Type::kCambricon},
+          {"ascend", Type::kAscend},
+          {"metax", Type::kMetax},
+          {"moore", Type::kMoore},
+          {"iluvatar", Type::kIluvatar},
+          {"kunlun", Type::kKunlun},
+          {"hygon", Type::kHygon},
+          {"qy", Type::kQy},
       }}};
 
   int index_{0};
