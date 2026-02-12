@@ -21,6 +21,10 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
       : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
                  c} {}
 
+  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
+           std::optional<float> beta, Tensor c)
+      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+
   void operator()(void* stream, const Tensor a, const Tensor b,
                   std::optional<float> alpha, std::optional<float> beta,
                   std::optional<int> trans_a, std::optional<int> trans_b,
