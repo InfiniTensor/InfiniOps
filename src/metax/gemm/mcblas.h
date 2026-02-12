@@ -26,11 +26,9 @@ struct MetaxBackend {
   static constexpr auto blasSetStream = mcblasSetStream;
   static constexpr auto blasDestroy = mcblasDestroy;
 
-  static constexpr mcblasStatus_t (*blasGemmEx)(
-      mcblasHandle_t, mcblasOperation_t, mcblasOperation_t, int, int, int,
-      const void*, const void*, macaDataType_t, int, const void*,
-      macaDataType_t, int, const void*, void*, macaDataType_t, int,
-      mcblasComputeType_t, mcblasGemmAlgo_t) = mcblasGemmEx;
+  static constexpr auto blasGemmEx = [](auto&&... args) {
+    return mcblasGemmEx(std::forward<decltype(args)>(args)...);
+  };
 };
 
 template <>

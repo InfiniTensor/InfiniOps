@@ -10,7 +10,7 @@
 #include "metax/gemm/mcblas.h"
 #endif
 
-#include "../runtime_api.h"
+#include "runtime_api.h"
 #include "tensor.h"
 
 int main() {

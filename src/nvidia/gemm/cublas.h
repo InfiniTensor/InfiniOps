@@ -26,11 +26,9 @@ struct NvidiaBackend {
   static constexpr auto blasSetStream = cublasSetStream;
   static constexpr auto blasDestroy = cublasDestroy;
 
-  static constexpr cublasStatus_t (*blasGemmEx)(
-      cublasHandle_t, cublasOperation_t, cublasOperation_t, int, int, int,
-      const void*, const void*, cudaDataType_t, int, const void*,
-      cudaDataType_t, int, const void*, void*, cudaDataType_t, int,
-      cublasComputeType_t, cublasGemmAlgo_t) = cublasGemmEx;
+  static constexpr auto blasGemmEx = [](auto&&... args) {
+    return cublasGemmEx(std::forward<decltype(args)>(args)...);
+  };
 };
 
 template <>
