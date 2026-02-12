@@ -23,6 +23,7 @@ class Blas : public Gemm {
         lda_{a_strides_[1]},
         ldb_{b_strides_[1]},
         ldc_{c_strides_[1]} {
+    Backend::blasCreate(&handle);
     // TODO: Check constraints.
   }
 
@@ -33,9 +34,6 @@ class Blas : public Gemm {
                   std::optional<float> alpha, std::optional<float> beta,
                   std::optional<int> trans_a, std::optional<int> trans_b,
                   Tensor c) const override {
-    typename Backend::blasHandle_t handle;
-    Backend::blasCreate(&handle);
-
     Backend::blasSetStream(handle,
                            static_cast<typename Backend::stream_t>(stream));
 
@@ -48,9 +46,16 @@ class Blas : public Gemm {
            c_type_ == DataType::kFloat32 &&
            "`operator()` not implemented for this data type");
 
-    Backend::blasGemmEx(handle, trans_a_value, trans_b_value, m_, n_, k_,
-                        &alpha_value, b.data(), lda_, a.data(), ldb_,
-                        &beta_value, c.data(), ldc_);
+    auto op_a = static_cast<decltype(Backend::BLAS_OP_T)>(
+        trans_a_value ? Backend::BLAS_OP_T : Backend::BLAS_OP_N);
+    auto op_b = static_cast<decltype(Backend::BLAS_OP_T)>(
+        trans_b_value ? Backend::BLAS_OP_T : Backend::BLAS_OP_N);
+
+    Backend::blasGemmEx(handle, op_a, op_b, m_, n_, k_, &alpha_value, b.data(),
+                        Backend::R_32F, lda_, a.data(), Backend::R_32F, ldb_,
+                        &beta_value, c.data(), Backend::R_32F, ldc_,
+                        Backend::BLAS_COMPUTE_32F_FAST_TF32,
+                        Backend::BLAS_GEMM_DEFAULT);
 
     Backend::blasDestroy(handle);
   }
@@ -59,6 +64,8 @@ class Blas : public Gemm {
   Tensor::Stride lda_{0};
   Tensor::Stride ldb_{0};
   Tensor::Stride ldc_{0};
+
+  typename Backend::blasHandle_t handle;
 };
 
 }  // namespace infini::ops

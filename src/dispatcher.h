@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_DISPATCHER_H_
 #define INFINI_OPS_DISPATCHER_H_
 
+#include <iostream>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -23,39 +24,60 @@ auto DispatchFunc(ValueType value, Functor&& func,
   using FilteredPack =
       typename Filter<Functor, std::tuple<Args...>, List<>, AllValues...>::type;
 
-  return [&]<auto... Pruned>(List<Pruned...>) {
+  return [&]<auto Head, auto... Tail>(List<Head, Tail...>) {
     using ReturnType =
         decltype(std::forward<Functor>(func)
-                     .template operator()<static_cast<ValueType>(0)>(
+                     .template operator()<static_cast<ValueType>(Head)>(
                          std::forward<Args>(args)...));
 
-    bool handled = false;
-
+    // Path for Void Functions
     if constexpr (std::is_void_v<ReturnType>) {
-      handled =
-          ((value == static_cast<ValueType>(Pruned)
-                ? (std::forward<Functor>(func).template operator()<Pruned>(
+      bool handled =
+          ((value == static_cast<ValueType>(Tail)
+                ? (std::forward<Functor>(func).template operator()<Tail>(
                        std::forward<Args>(args)...),
                    true)
                 : false) ||
-           ...);
-    } else {
+           ... ||
+           (value == static_cast<ValueType>(Head)
+                ? (std::forward<Functor>(func).template operator()<Head>(
+                       std::forward<Args>(args)...),
+                   true)
+                : false));
+
+      if (!handled) {
+        std::cerr << "Dispatch error (void): Value " << static_cast<int>(value)
+                  << " not supported in context: " << context_str << "\n";
+        std::abort();
+      }
+    }
+    // Path for Non-Void Functions
+    else {
       std::optional<ReturnType> result;
-      handled =
-          ((value == static_cast<ValueType>(Pruned)
+      bool handled =
+          ((value == static_cast<ValueType>(Tail)
                 ? (result.emplace(
-                       std::forward<Functor>(func).template operator()<Pruned>(
+                       std::forward<Functor>(func).template operator()<Tail>(
                            std::forward<Args>(args)...)),
                    true)
                 : false) ||
-           ...);
-      return *result;
-    }
-    if (!handled) {
+           ... ||
+           (value == static_cast<ValueType>(Head)
+                ? (result.emplace(
+                       std::forward<Functor>(func).template operator()<Head>(
+                           std::forward<Args>(args)...)),
+                   true)
+                : false));
+
+      if (handled) {
+        return *result;
+      }
       // TODO(lzm): change to logging
-      std::cerr << "Dispatch error: Value " << static_cast<int>(value)
-                << " not supported in the context: " << context_str << "\n";
+      std::cerr << "Dispatch error (non-void): Value "
+                << static_cast<int>(value)
+                << " not supported in context: " << context_str << "\n";
       std::abort();
+      return ReturnType{};
     }
   }(FilteredPack{});
 }
@@ -79,7 +101,7 @@ auto DispatchFunc(const std::vector<int64_t>& values, size_t index,
                   Args&&... args) {
   return [&]<auto... Allowed>(List<Allowed...>) {
     static_assert(sizeof...(Allowed) > 0,
-                  "DispatchFunc dimension list is empty!");
+                  "`DispatchFunc` dimension list is empty");
     using EnumType = std::common_type_t<decltype(Allowed)...>;
 
     return DispatchFunc<EnumType, Allowed...>(
@@ -105,7 +127,7 @@ auto DispatchFunc(DataType dtype, Functor&& func,
   return DispatchFunc<DataType, AllowedDTypes...>(
       dtype,
       [&]<DataType DT>(Args&&... inner_args) {
-        using T = TypeMap_t<DT>;
+        using T = TypeMapType<DT>;
         return std::forward<Functor>(func).template operator()<T>(
             std::forward<Args>(inner_args)...);
       },
@@ -123,7 +145,7 @@ auto DispatchFunc(std::initializer_list<DataType> dtypes, Functor&& func,
       v, 0,
       [&func]<DataType... DTs>(Args&&... inner_args) {
         return std::forward<Functor>(func).template
-        operator()<TypeMap_t<DTs>...>(std::forward<Args>(inner_args)...);
+        operator()<TypeMapType<DTs>...>(std::forward<Args>(inner_args)...);
       },
       context_str, List<>{}, std::forward<Args>(args)...);
 }

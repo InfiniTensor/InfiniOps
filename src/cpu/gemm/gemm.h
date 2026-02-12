@@ -13,10 +13,7 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
   Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
            std::optional<float> beta, std::optional<int> trans_a,
            std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
-        lda_{a_strides_[1]},
-        ldb_{b_strides_[1]},
-        ldc_{c_strides_[1]} {
+      : Gemm{a, b, alpha, beta, trans_a, trans_b, c} {
     // TODO: Check constraints.
   }
 
@@ -28,9 +25,9 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
                   std::optional<float> alpha, std::optional<float> beta,
                   std::optional<int> trans_a, std::optional<int> trans_b,
                   Tensor c) const override {
-    const float* A = static_cast<const float*>(a.data());
-    const float* B = static_cast<const float*>(b.data());
-    float* C = static_cast<float*>(c.data());
+    const auto* A = static_cast<const float*>(a.data());
+    const auto* B = static_cast<const float*>(b.data());
+    auto* C = static_cast<float*>(c.data());
 
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
@@ -52,11 +49,6 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
       }
     }
   }
-
- private:
-  Tensor::Stride lda_{0};
-  Tensor::Stride ldb_{0};
-  Tensor::Stride ldc_{0};
 };
 
 }  // namespace infini::ops

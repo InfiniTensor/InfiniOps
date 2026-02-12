@@ -24,7 +24,10 @@ class Gemm : public Operator<Gemm> {
         c_type_{c.dtype()},
         a_strides_{a.strides()},
         b_strides_{b.strides()},
-        c_strides_{c.strides()} {
+        c_strides_{c.strides()},
+        lda_{a_strides_[1]},
+        ldb_{b_strides_[1]},
+        ldc_{c_strides_[1]} {
     // TODO: Check constraints.
   }
 
@@ -65,6 +68,12 @@ class Gemm : public Operator<Gemm> {
   Tensor::Strides b_strides_;
 
   Tensor::Strides c_strides_;
+
+  Tensor::Stride lda_{0};
+
+  Tensor::Stride ldb_{0};
+
+  Tensor::Stride ldc_{0};
 };
 
 }  // namespace infini::ops

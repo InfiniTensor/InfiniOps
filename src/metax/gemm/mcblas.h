@@ -15,23 +15,22 @@ struct MetaxBackend {
   using blasHandle_t = mcblasHandle_t;
   using stream_t = mcStream_t;
 
-  static void blasCreate(blasHandle_t* handle) { mcblasCreate(handle); }
+  static constexpr auto BLAS_OP_N = MCBLAS_OP_N;
+  static constexpr auto BLAS_OP_T = MCBLAS_OP_T;
+  static constexpr auto R_32F = MACA_R_32F;
+  static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 =
+      MCBLAS_COMPUTE_32F_FAST_TF32;
+  static constexpr auto BLAS_GEMM_DEFAULT = MCBLAS_GEMM_DEFAULT;
 
-  static void blasSetStream(blasHandle_t handle, stream_t stream) {
-    mcblasSetStream(handle, stream);
-  }
+  static constexpr auto blasCreate = mcblasCreate;
+  static constexpr auto blasSetStream = mcblasSetStream;
+  static constexpr auto blasDestroy = mcblasDestroy;
 
-  static void blasGemmEx(blasHandle_t handle, bool transA, bool transB, int m,
-                         int n, int k, const float* alpha, const void* B,
-                         int ldb, const void* A, int lda, const float* beta,
-                         void* C, int ldc) {
-    mcblasGemmEx(handle, transA ? MCBLAS_OP_T : MCBLAS_OP_N,
-                 transB ? MCBLAS_OP_T : MCBLAS_OP_N, m, n, k, alpha, B,
-                 MACA_R_32F, ldb, A, MACA_R_32F, lda, beta, C, MACA_R_32F, ldc,
-                 MCBLAS_COMPUTE_32F_FAST_TF32, MCBLAS_GEMM_DEFAULT);
-  }
-
-  static void blasDestroy(blasHandle_t handle) { mcblasDestroy(handle); }
+  static constexpr mcblasStatus_t (*blasGemmEx)(
+      mcblasHandle_t, mcblasOperation_t, mcblasOperation_t, int, int, int,
+      const void*, const void*, macaDataType_t, int, const void*,
+      macaDataType_t, int, const void*, void*, macaDataType_t, int,
+      mcblasComputeType_t, mcblasGemmAlgo_t) = mcblasGemmEx;
 };
 
 template <>

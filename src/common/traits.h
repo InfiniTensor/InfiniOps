@@ -15,7 +15,7 @@ struct List {};
 // -----------------------------------------------------------------------------
 
 // Check at compile-time if a Value exists within a construct (e.g., List<>).
-// Example: static_assert(Contains_v<SupportedTiles, 32>);
+// Example: static_assert(ContainsValue<SupportedTiles, 32>);
 template <typename T, auto Value>
 struct Contains;
 
@@ -24,7 +24,7 @@ struct Contains<List<Items...>, Value>
     : std::disjunction<std::bool_constant<Value == Items>...> {};
 
 template <typename T, auto Value>
-inline constexpr bool Contains_v = Contains<T, Value>::value;
+inline constexpr bool ContainsValue = Contains<T, Value>::value;
 
 // Check at compile-time if a type T is present in a variadic list of types Ts.
 // Example: static_assert(IsTypeInList<T, float, int>);
@@ -36,7 +36,7 @@ inline constexpr bool IsTypeInList = (std::is_same_v<T, Ts> || ...);
 // -----------------------------------------------------------------------------
 
 // Concatenates two List types into a single List.
-// Example: Concat_t<List<1, 2>, List<3, 4>> is List<1, 2, 3, 4>.
+// Example: ConcatType<List<1, 2>, List<3, 4>> is List<1, 2, 3, 4>.
 template <typename L1, typename L2>
 struct Concat;
 
@@ -46,7 +46,7 @@ struct Concat<List<I1...>, List<I2...>> {
 };
 
 template <typename L1, typename L2>
-using Concat_t = typename Concat<L1, L2>::type;
+using ConcatType = typename Concat<L1, L2>::type;
 
 // -----------------------------------------------------------------------------
 // Invocability Detection (SFINAE)
@@ -64,7 +64,7 @@ struct IsInvocable<
     Args...> : std::true_type {};
 
 template <typename Functor, auto Value, typename... Args>
-inline constexpr bool IsInvocable_v =
+inline constexpr bool IsInvocableValue =
     IsInvocable<Functor, Value, void, Args...>::value;
 
 // -----------------------------------------------------------------------------
@@ -87,8 +87,8 @@ template <typename Functor, typename... Args, auto... Filtered, auto Head,
           auto... Tail>
 struct Filter<Functor, std::tuple<Args...>, List<Filtered...>, Head, Tail...> {
   using type = typename std::conditional_t<
-      IsInvocable_v<Functor, Head, Args...> &&
-          !Contains_v<List<Filtered...>, Head>,
+      IsInvocableValue<Functor, Head, Args...> &&
+          !ContainsValue<List<Filtered...>, Head>,
       Filter<Functor, std::tuple<Args...>, List<Filtered..., Head>, Tail...>,
       Filter<Functor, std::tuple<Args...>, List<Filtered...>, Tail...>>::type;
 };
