@@ -38,6 +38,10 @@ class Device {
 
   const int& index() const { return index_; }
 
+  std::string ToString() const {
+    return std::string{StringFromType(type_)} + ":" + std::to_string(index_);
+  }
+
  private:
   Type type_{Type::kCpu};
 
