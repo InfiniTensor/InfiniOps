@@ -71,7 +71,7 @@ def _generate_pybind11(operator):
         )
 
     def _generate_tensor_caster(name):
-        return f'Tensor{{reinterpret_cast<void*>({name}.attr("data_ptr")().cast<std::uintptr_t>()), {name}.attr("shape").cast<Tensor::Shape>(), DataType::FromString(py::str({name}.attr("dtype")).attr("split")(".").attr("__getitem__")(-1).cast<std::string>()), Device{{Device::TypeFromString({name}.attr("device").attr("type").cast<std::string>()), {name}.attr("device").attr("index").is_none() ? 0 : {name}.attr("device").attr("index").cast<int>()}}, {name}.attr("stride")().cast<Tensor::Strides>()}}'
+        return f'Tensor{{reinterpret_cast<void*>({name}.attr("data_ptr")().cast<std::uintptr_t>()), {name}.attr("shape").cast<Tensor::Shape>(), DataTypeFromString(py::str({name}.attr("dtype")).attr("split")(".").attr("__getitem__")(-1).cast<std::string>()), Device{{DeviceTypeFromString({name}.attr("device").attr("type").cast<std::string>()), {name}.attr("device").attr("index").is_none() ? 0 : {name}.attr("device").attr("index").cast<int>()}}, {name}.attr("stride")().cast<Tensor::Strides>()}}'
 
     op_name = operator.name
 
@@ -104,11 +104,50 @@ def _generate_pybind11(operator):
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <unordered_map>
+
 #include "base/{op_name.lower()}.h"
 
 namespace py = pybind11;
 
 namespace infini::ops {{
+
+inline DataType DataTypeFromString(const std::string& name) {{
+  return kStringToDataType.at(name);
+}}
+
+inline Device::Type DeviceTypeFromString(const std::string& name) {{
+  static const std::unordered_map<std::string, Device::Type> kTorchNameToTypes{{
+      {{"cpu", Device::Type::kCpu}},
+#ifdef USE_NVIDIA
+      {{"cuda", Device::Type::kNvidia}},
+#endif
+#ifdef USE_METAX
+      {{"cuda", Device::Type::kMetax}},
+#endif
+#ifdef USE_ILUVATAR
+      {{"cuda", Device::Type::kIluvatar}},
+#endif
+#ifdef USE_KUNLUN
+      {{"cuda", Device::Type::kKunlun}},
+#endif
+#ifdef USE_HYGON
+      {{"cuda", Device::Type::kHygon}},
+#endif
+#ifdef USE_QY
+      {{"cuda", Device::Type::kQy}},
+#endif
+      {{"mlu", Device::Type::kCambricon}}, {{"npu", Device::Type::kAscend}},
+      {{"musa", Device::Type::kMoore}}}};
+      
+  auto it{{kTorchNameToTypes.find(name)}};
+
+  if (it != kTorchNameToTypes.cend()) {{
+    return it->second;
+  }}
+
+  return Device::TypeFromString(name);
+}}
 
 void Bind{op_name}(py::module& m) {{
   using Self = {op_name};
