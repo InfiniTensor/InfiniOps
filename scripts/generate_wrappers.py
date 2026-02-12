@@ -1,3 +1,4 @@
+import argparse
 import json
 import pathlib
 import textwrap
@@ -5,11 +6,15 @@ import textwrap
 import clang.cindex
 from clang.cindex import CursorKind
 
+_SRC_DIR = pathlib.Path("src")
+
+_BASE_DIR = _SRC_DIR / "base"
+
 _GENERATION_DIR = pathlib.Path("generated")
 
 _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 
-_SRC_DIR = _GENERATION_DIR / "src"
+_GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 
 _INCLUDE_DIR = _GENERATION_DIR / "include"
 
@@ -174,7 +179,7 @@ void Bind{op_name}(py::module& m) {{
 def _generate_legacy_c(operator, paths):
     def _generate_source(operator):
         impl_includes = "\n".join(
-            f'#include "{path.removeprefix("src/")}"' for path in paths
+            f'#include "{str(path).removeprefix("src/")}"' for path in paths
         )
 
         return f"""#include "../../handle.h"
@@ -345,13 +350,50 @@ __C __export {_generate_destroy_func_decl(operator)};
     return _generate_source(operator), _generate_header(operator)
 
 
+def _get_all_ops(devices):
+    ops = {}
+
+    for file_path in _BASE_DIR.iterdir():
+        if not file_path.is_file():
+            continue
+
+        op_name = "".join(word.capitalize() for word in file_path.stem.split("_"))
+
+        ops[op_name] = []
+
+        for file_path in _SRC_DIR.rglob("*"):
+            if not file_path.is_file() or file_path.parent.parent.name not in devices:
+                continue
+
+            if f"class Operator<{op_name}" in file_path.read_text():
+                ops[op_name].append(file_path)
+
+    return ops
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="An automatic wrapper generator.")
+
+    parser.add_argument(
+        "--devices",
+        nargs="+",
+        default="cpu",
+        type=str,
+        help="Devices to use. Please pick from cpu, nvidia, cambricon, ascend, metax, moore, iluvatar, kunlun, hygon, and qy. (default: cpu)",
+    )
+
+    args = parser.parse_args()
+
     _BINDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _SRC_DIR.mkdir(parents=True, exist_ok=True)
+    _GENERATED_SRC_DIR.mkdir(parents=True, exist_ok=True)
     _INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
 
-    with open("ops.json") as f:
-        ops = json.load(f)
+    ops_json = pathlib.Path("ops.json")
+
+    if ops_json.exists():
+        ops = json.loads(ops_json.read_text())
+    else:
+        ops = _get_all_ops(args.devices)
 
     header_paths = []
     bind_func_names = []
@@ -360,7 +402,7 @@ if __name__ == "__main__":
         extractor = _OperatorExtractor()
         operator = extractor(op_name)
 
-        source_path = _SRC_DIR / op_name.lower()
+        source_path = _GENERATED_SRC_DIR / op_name.lower()
         header_name = f"{op_name.lower()}.h"
         bind_func_name = f"Bind{op_name}"
 
@@ -368,7 +410,9 @@ if __name__ == "__main__":
 
         legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
         source_path.mkdir(exist_ok=True)
-        (_SRC_DIR / op_name.lower() / "operator.cc").write_text(legacy_c_source)
+        (_GENERATED_SRC_DIR / op_name.lower() / "operator.cc").write_text(
+            legacy_c_source
+        )
         (_INCLUDE_DIR / header_name).write_text(legacy_c_header)
 
         header_paths.append(header_name)
