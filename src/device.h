@@ -140,7 +140,7 @@ struct EnabledDeviceFilter {
 #endif
 };
 
-// Defines the common categories of devices using List
+// Defines the common categories of devices using List.
 using AllDeviceTypes =
     List<Device::Type::kCpu, Device::Type::kNvidia, Device::Type::kCambricon,
          Device::Type::kAscend, Device::Type::kMetax, Device::Type::kMoore,

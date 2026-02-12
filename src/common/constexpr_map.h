@@ -17,9 +17,9 @@ struct ConstexprMap {
     for (const auto &pr : data_) {
       if (pr.first == key) return pr.second;
     }
-    // TODO(lzm): change to logging
+    // TODO(lzm): change to logging.
     assert("ConstexprMap's key is not found!");
-    // Unreachable, provided to satisfy the compiler's requirement
+    // Unreachable, provided to satisfy the compiler's requirement.
     std::abort();
   }
 
