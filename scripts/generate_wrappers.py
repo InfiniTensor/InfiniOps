@@ -143,7 +143,7 @@ inline Device::Type DeviceTypeFromString(const std::string& name) {{
 #endif
       {{"mlu", Device::Type::kCambricon}}, {{"npu", Device::Type::kAscend}},
       {{"musa", Device::Type::kMoore}}}};
-      
+
   auto it{{kTorchNameToTypes.find(name)}};
 
   if (it != kTorchNameToTypes.cend()) {{
