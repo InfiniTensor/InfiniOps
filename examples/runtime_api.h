@@ -6,7 +6,7 @@
 #define DEVICE_MALLOC cudaMalloc
 #define DEVICE_FREE cudaFree
 #define DEVICE_MEMCPY cudaMemcpy
-#define DEVICE_MEMSET cudaSet
+#define DEVICE_MEMSET cudaMemset
 #define DEVICE_MEMCPY_HOST_TO_DEVICE cudaMemcpyHostToDevice
 #define DEVICE_MEMCPY_DEVICE_TO_HOST cudaMemcpyDeviceToHost
 #define DEFAULT_DEVICE_TYPE Device::Type::kNvidia
