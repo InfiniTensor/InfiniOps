@@ -52,7 +52,8 @@ Tensor Tensor::T() const {
 
 std::string Tensor::ToString() const {
   return "tensor(" + ToStringHelper() +
-         ", dtype=" + std::string(kDataTypeToDesc.at(dtype_)) + ")";
+         ", dtype=" + std::string(kDataTypeToDesc.at(dtype_)) + ", device='" +
+         device_.ToString() + "')";
 }
 
 const DataType Tensor::DefaultDataType() { return DataType::kFloat32; }
