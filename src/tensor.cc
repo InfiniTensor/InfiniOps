@@ -26,7 +26,7 @@ const void* const& Tensor::data() const { return data_; }
 
 const Tensor::Shape& Tensor::shape() const { return shape_; }
 
-const DataType Tensor::dtype() const { return dtype_; }
+const DataType& Tensor::dtype() const { return dtype_; }
 
 const Device& Tensor::device() const { return device_; }
 
@@ -77,7 +77,7 @@ Tensor::Strides Tensor::DefaultStrides(const Shape& shape) {
 
 std::string Tensor::ToStringHelper() const {
   if (ndim() == 0) {
-    return DispatchFunc<FloatingTypes>(
+    return DispatchFunc<FloatTypes>(
         dtype_,
         [&]<typename T>() { return std::to_string(*static_cast<T*>(data_)); },
         "ToStringHelper");

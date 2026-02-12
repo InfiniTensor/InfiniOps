@@ -24,7 +24,7 @@ class Operator {
           op_ptr = std::make_unique<Operator<Key, dev>>(
               tensor, std::forward<Args>(args)...);
         },
-        "Operator make");
+        "Operator::make");
 
     return op_ptr;
   }
