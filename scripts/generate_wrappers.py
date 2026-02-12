@@ -86,11 +86,11 @@ def _generate_pybind11(operator):
         return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_arguments(constructor)}).release())}};
       }}))"""
 
-    def _generate_call(call, method=True):
+    def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
 
         if not method:
-            return f"""  m.def("gemm", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
+            return f"""  m.def("{op_name.lower()}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
         return static_cast<const Operator<Self>&>(self)({_generate_arguments(call)});
@@ -99,8 +99,10 @@ def _generate_pybind11(operator):
     inits = "\n".join(
         _generate_init(constructor) for constructor in operator.constructors
     )
-    calls = "\n".join(_generate_call(call) for call in operator.calls)
-    callers = "\n".join(_generate_call(call, method=False) for call in operator.calls)
+    calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
+    callers = "\n".join(
+        _generate_call(operator.name, call, method=False) for call in operator.calls
+    )
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
