@@ -102,9 +102,9 @@ DEFINE_DATA_TYPE_MAPPING(kUInt64, uint64_t)
 DEFINE_DATA_TYPE_MAPPING(kInt64, int64_t)
 DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
 DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
-// TODO(lzm): support fp16 and bf16
+// TODO(lzm): Support fp16 and bf16.
 
-// Defines the common categories of data types using List
+// Defines the common categories of data types using List.
 using FloatTypes = List<DataType::kFloat32, DataType::kFloat64>;
 using ReducedFloatTypes = List<DataType::kFloat16, DataType::kBFloat16>;
 using IntTypes =
@@ -120,9 +120,9 @@ using BitTypes32 =
 using BitTypes64 =
     List<DataType::kInt64, DataType::kUInt64, DataType::kFloat64>;
 
-using AllFloatingTypes = ConcatType<FloatTypes, ReducedFloatTypes>;
-using AllIntegralTypes = ConcatType<IntTypes, UIntTypes>;
-using AllTypes = ConcatType<AllFloatingTypes, AllIntegralTypes>;
+using AllFloatTypes = ConcatType<FloatTypes, ReducedFloatTypes>;
+using AllIntTypes = ConcatType<IntTypes, UIntTypes>;
+using AllTypes = ConcatType<AllFloatTypes, AllIntTypes>;
 
 }  // namespace infini::ops
 

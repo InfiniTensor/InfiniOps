@@ -72,7 +72,7 @@ auto DispatchFunc(ValueType value, Functor&& func,
       if (handled) {
         return *result;
       }
-      // TODO(lzm): change to logging
+      // TODO(lzm): change to logging.
       std::cerr << "Dispatch error (non-void): Value "
                 << static_cast<int>(value)
                 << " not supported in context: " << context_str << "\n";
@@ -84,7 +84,7 @@ auto DispatchFunc(ValueType value, Functor&& func,
 
 // (Multi-Dispatch) Dispatches a vector of runtime values to a compile-time
 // functor.
-// Base Case: All dimensions resolved
+// Base Case: All dimensions resolved.
 template <typename Functor, typename... Args, auto... Is>
 auto DispatchFunc(const std::vector<int64_t>& values, size_t index,
                   Functor&& func, std::string_view context_str, List<Is...>,
@@ -121,10 +121,10 @@ auto DispatchFunc(const std::vector<int64_t>& values, size_t index,
 // These provide cleaner and more convenient APIs for common InfiniOps types.
 
 // DataType Dispatch
-template <DataType... AllowedDTypes, typename Functor, typename... Args>
+template <DataType... allowed_dtypes, typename Functor, typename... Args>
 auto DispatchFunc(DataType dtype, Functor&& func,
                   std::string_view context_str = "", Args&&... args) {
-  return DispatchFunc<DataType, AllowedDTypes...>(
+  return DispatchFunc<DataType, allowed_dtypes...>(
       dtype,
       [&]<DataType DT>(Args&&... inner_args) {
         using T = TypeMapType<DT>;
@@ -179,7 +179,7 @@ auto DispatchFunc(std::initializer_list<Device::Type> devices, Functor&& func,
       context_str, List<>{}, std::forward<Args>(args)...);
 }
 
-// Interface for generic List Aliases, which unpacks a list
+// Interface for generic List Aliases, which unpacks a list.
 template <typename ListType, typename ValueType, typename Functor,
           typename... Args>
 auto DispatchFunc(ValueType value, Functor&& func,
