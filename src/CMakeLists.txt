@@ -37,7 +37,7 @@ if(USE_NVIDIA)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
     
     find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PRIVATE CUDA::cublas)
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
 endif()
 
 if(USE_METAX)
