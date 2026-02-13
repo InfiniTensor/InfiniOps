@@ -36,7 +36,7 @@ For the `<OPTIONS>`:
 
 | Option                      | Functionality                     | 默认值
 |-----------------------------|-----------------------------------|:-:
-| `-DUSE_CPU=[ON\|OFF]`       | Compile the CPU implementation    | n*
+| `-DUSE_CPU=[ON\|OFF]`       | Compile the CPU implementation    | n
 | `-DUSE_NVIDIA=[ON\|OFF]`    | Compile the NVIDIA implementation | n
 | `-DUSE_METAX=[ON\|OFF]`     | Compile the MetaX implementation  | n
 
