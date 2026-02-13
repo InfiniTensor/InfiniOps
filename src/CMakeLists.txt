@@ -13,8 +13,8 @@ if(USE_CPU)
     list(APPEND CORE_SOURCES ${CPU_SOURCES})
 
     target_compile_definitions(infiniops PRIVATE USE_CPU=1)
-    
-    # Reserve for OpenMP
+
+    # Reserve for OpenMP.
     # find_package(OpenMP REQUIRED)
     # target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
 endif()
@@ -32,10 +32,10 @@ if(USE_NVIDIA)
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
 
     enable_language(CUDA)
-    
+
     target_compile_definitions(infiniops PRIVATE USE_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
-    
+
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
 endif()

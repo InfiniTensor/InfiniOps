@@ -1,21 +1,6 @@
 # InfiniOps
 
-InfiniOps is a high-performance, hardware-agnostic operator library. It provides a unified C-style interface for executing various operators.
-
-Currently supported backends/accelerators include:
-
-- CPU；
-- CUDA
-  - NVIDIA GPU；
-  - MooreThreads GPU；
-  - Iluvatar CoreX GPU；
-  - MetaX GPU；
-  - HYGON DCU；
-- Ascend NPU；
-- Cambricon MLU；
-- Kunlun XPU；
-
-API definitions and usage examples can be found in [`InfiniCore-Documentation`](https://github.com/InfiniTensor/InfiniCore-Documentation)。
+InfiniOps is a high-performance, hardware-agnostic operator library.
 
 ## 🛠️ Prerequisites
 
@@ -29,14 +14,14 @@ Ensure your environment meets the following requirements based on your target ba
 
 ## ⚙️ Installation & Building
 
-InfiniOps uses CMake to manage backends. Only one hardware accelerator backend can be enabled/compiled at a time.
+InfiniOps uses CMake to manage backends.
 
 ### 1. Setup Environment
 
 Ensure you have the corresponding SDK installed and environment variables set up for the platform/accelerator you are working on. 
 
-
 ### 2. Configure and Build
+
 Using these commands at the root directory of this project: 
 
 ```bash
@@ -46,6 +31,7 @@ cmake .. <OPTIONS>
 
 make -j$(nproc)
 ```
+
 For the `<OPTIONS>`:
 
 | Option                      | Functionality                     | 默认值
@@ -54,8 +40,7 @@ For the `<OPTIONS>`:
 | `-DUSE_NVIDIA=[ON\|OFF]`    | Compile the NVIDIA implementation | n
 | `-DUSE_METAX=[ON\|OFF]`     | Compile the MetaX implementation  | n
 
-*Note: If no accelerator options are provided, `USE_CPU` is enabled by default.
-
+*Note: If no accelerator options are provided, `USE_CPU` is enabled by default.*
 
 ## 🚀 Running Examples
 After a successful build, the executables are located in the `build/examples` directory.
