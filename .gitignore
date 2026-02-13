@@ -1,9 +1,9 @@
 # Generated files
+build/
 generated/
 
 # Prerequisites
 *.d
-build/
 
 # Compiled Object files
 *.slo
