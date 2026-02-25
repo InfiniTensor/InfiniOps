@@ -52,11 +52,6 @@ int main() {
 
   void *a_ptr, *b_ptr, *c_ptr;
 
-#ifdef WITH_CPU
-  a_ptr = a_vec.data();
-  b_ptr = b_vec.data();
-  c_ptr = c_vec.data();
-#else
   DEVICE_MALLOC(&a_ptr, a_size);
   DEVICE_MALLOC(&b_ptr, b_size);
   DEVICE_MALLOC(&c_ptr, c_size);
@@ -64,7 +59,6 @@ int main() {
   DEVICE_MEMCPY(a_ptr, a_vec.data(), a_size, DEVICE_MEMCPY_HOST_TO_DEVICE);
   DEVICE_MEMCPY(b_ptr, b_vec.data(), b_size, DEVICE_MEMCPY_HOST_TO_DEVICE);
   DEVICE_MEMSET(c_ptr, 0, c_size);
-#endif
 
   Tensor a_device{a_ptr, a_host.shape(), a_host.dtype(), a_host.device(),
                   a_host.strides()};
@@ -75,12 +69,10 @@ int main() {
 
   Gemm::call(nullptr, a_device, b_device, c_device);
 
-#ifndef WITH_CPU
   DEVICE_MEMCPY(c_vec.data(), c_ptr, c_size, DEVICE_MEMCPY_DEVICE_TO_HOST);
   DEVICE_FREE(a_ptr);
   DEVICE_FREE(b_ptr);
   DEVICE_FREE(c_ptr);
-#endif
 
   std::cout << "A: " << a_host.ToString() << "\n";
   std::cout << "B: " << b_host.ToString() << "\n";

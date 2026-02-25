@@ -20,6 +20,14 @@
 #define DEVICE_MEMCPY_DEVICE_TO_HOST mcMemcpyDeviceToHost
 #define DEFAULT_DEVICE_TYPE Device::Type::kMetax
 #elif WITH_CPU
+#include <cstdlib>
+#include <cstring>
+#define DEVICE_MALLOC(ptr, size) (*(ptr) = std::malloc(size))
+#define DEVICE_FREE std::free
+#define DEVICE_MEMCPY(dst, src, size, kind) std::memcpy(dst, src, size)
+#define DEVICE_MEMSET std::memset
+#define DEVICE_MEMCPY_HOST_TO_DEVICE 0
+#define DEVICE_MEMCPY_DEVICE_TO_HOST 1
 #define DEFAULT_DEVICE_TYPE Device::Type::kCpu
 #endif
 
