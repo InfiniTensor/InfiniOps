@@ -34,11 +34,12 @@ make -j$(nproc)
 
 For the `<OPTIONS>`:
 
-| Option                      | Functionality                     | 默认值
-|-----------------------------|-----------------------------------|:-:
-| `-DWITH_CPU=[ON\|OFF]`       | Compile the CPU implementation    | n
-| `-DWITH_NVIDIA=[ON\|OFF]`    | Compile the NVIDIA implementation | n
-| `-DWITH_METAX=[ON\|OFF]`     | Compile the MetaX implementation  | n
+| Option                                 | Functionality                      | Default
+|----------------------------------------|------------------------------------|:-:
+| `-DWITH_CPU=[ON\|OFF]`                 | Compile the CPU implementation     | n
+| `-DWITH_NVIDIA=[ON\|OFF]`              | Compile the NVIDIA implementation  | n
+| `-DWITH_METAX=[ON\|OFF]`               | Compile the MetaX implementation   | n
+| `-DGENERATE_PYTHON_BINDINGS=[ON\|OFF]` | Generate Python bindings           | n
 
 *Note: If no accelerator options are provided, `WITH_CPU` is enabled by default.*
 
