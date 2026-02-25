@@ -36,11 +36,11 @@ For the `<OPTIONS>`:
 
 | Option                      | Functionality                     | 默认值
 |-----------------------------|-----------------------------------|:-:
-| `-DUSE_CPU=[ON\|OFF]`       | Compile the CPU implementation    | n
-| `-DUSE_NVIDIA=[ON\|OFF]`    | Compile the NVIDIA implementation | n
-| `-DUSE_METAX=[ON\|OFF]`     | Compile the MetaX implementation  | n
+| `-DWITH_CPU=[ON\|OFF]`       | Compile the CPU implementation    | n
+| `-DWITH_NVIDIA=[ON\|OFF]`    | Compile the NVIDIA implementation | n
+| `-DWITH_METAX=[ON\|OFF]`     | Compile the MetaX implementation  | n
 
-*Note: If no accelerator options are provided, `USE_CPU` is enabled by default.*
+*Note: If no accelerator options are provided, `WITH_CPU` is enabled by default.*
 
 ## 🚀 Running Examples
 After a successful build, the executables are located in the `build/examples` directory.

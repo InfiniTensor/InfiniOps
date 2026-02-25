@@ -2,11 +2,11 @@
 #include <numeric>
 #include <variant>
 
-#ifdef USE_CPU
+#ifdef WITH_CPU
 #include "cpu/gemm/gemm.h"
-#elif USE_NVIDIA
+#elif WITH_NVIDIA
 #include "nvidia/gemm/cublas.h"
-#elif USE_METAX
+#elif WITH_METAX
 #include "metax/gemm/mcblas.h"
 #endif
 
@@ -50,7 +50,7 @@ int main() {
 
   void *a_ptr, *b_ptr, *c_ptr;
 
-#ifdef USE_CPU
+#ifdef WITH_CPU
   a_ptr = a_vec.data();
   b_ptr = b_vec.data();
   c_ptr = c_vec.data();
@@ -73,7 +73,7 @@ int main() {
 
   Gemm::call(nullptr, a_device, b_device, c_device);
 
-#ifndef USE_CPU
+#ifndef WITH_CPU
   DEVICE_MEMCPY(c_vec.data(), c_ptr, c_size, DEVICE_MEMCPY_DEVICE_TO_HOST);
   DEVICE_FREE(a_ptr);
   DEVICE_FREE(b_ptr);

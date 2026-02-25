@@ -83,61 +83,61 @@ struct EnabledDeviceFilter {
   // Device. If the macro is NOT defined, the specialization is not compiled,
   // and FilterList will exclude it from ActiveDevices.
 
-#ifdef USE_CPU
+#ifdef WITH_CPU
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kCpu, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_NVIDIA
+#ifdef WITH_NVIDIA
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kNvidia, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_CAMBRICON
+#ifdef WITH_CAMBRICON
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kCambricon, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_ASCEND
+#ifdef WITH_ASCEND
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kAscend, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_METAX
+#ifdef WITH_METAX
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kMetax, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_MOORE
+#ifdef WITH_MOORE
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kMoore, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_ILUVATAR
+#ifdef WITH_ILUVATAR
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kIluvatar, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_KUNLUN
+#ifdef WITH_KUNLUN
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kKunlun, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_HYGON
+#ifdef WITH_HYGON
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kHygon, int> = 0>
   void operator()() const {}
 #endif
 
-#ifdef USE_QY
+#ifdef WITH_QY
   template <Device::Type dev,
             std::enable_if_t<dev == Device::Type::kQy, int> = 0>
   void operator()() const {}

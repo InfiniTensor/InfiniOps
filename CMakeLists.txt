@@ -5,18 +5,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Options for backends.
-option(USE_CPU "Enable CPU backend" OFF)
-option(USE_NVIDIA "Enable CUDA backend" OFF)
-option(USE_METAX "Enable MetaX backend" OFF)
+option(WITH_CPU "Enable CPU backend" OFF)
+option(WITH_NVIDIA "Enable CUDA backend" OFF)
+option(WITH_METAX "Enable MetaX backend" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-if(USE_NVIDIA)
-    add_compile_definitions(USE_NVIDIA=1)
+if(WITH_NVIDIA)
+    add_compile_definitions(WITH_NVIDIA=1)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
-elseif(USE_METAX)
-    add_compile_definitions(USE_METAX=1)
+elseif(WITH_METAX)
+    add_compile_definitions(WITH_METAX=1)
 
     # Normally can be found at: `/opt/maca/`.
     set(MACA_PATH $ENV{MACA_PATH})
@@ -32,7 +32,7 @@ elseif(USE_METAX)
     find_library(MACA_BLAS_LIB    NAMES mcblas    HINTS "${MACA_PATH}/lib" REQUIRED)
 # If all other platforms are not enabled, CPU is enabled by default.
 else()
-    add_compile_definitions(USE_CPU=1)
+    add_compile_definitions(WITH_CPU=1)
 endif()
 
 add_subdirectory(src)

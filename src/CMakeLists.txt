@@ -3,7 +3,7 @@ add_library(infiniops SHARED)
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
-if(USE_CPU)
+if(WITH_CPU)
     set(CPU_PATTERNS
         "cpu/*.cc"
         "cpu/*.cpp"
@@ -12,14 +12,14 @@ if(USE_CPU)
     file(GLOB_RECURSE CPU_SOURCES CONFIGURE_DEPENDS ${CPU_PATTERNS})
     list(APPEND CORE_SOURCES ${CPU_SOURCES})
 
-    target_compile_definitions(infiniops PRIVATE USE_CPU=1)
+    target_compile_definitions(infiniops PRIVATE WITH_CPU=1)
 
     # Reserve for OpenMP.
     # find_package(OpenMP REQUIRED)
     # target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-if(USE_NVIDIA)
+if(WITH_NVIDIA)
     set(NVIDIA_PATTERNS
         "cuda/*.cc"
         "cuda/*.cpp"
@@ -33,14 +33,14 @@ if(USE_NVIDIA)
 
     enable_language(CUDA)
 
-    target_compile_definitions(infiniops PRIVATE USE_NVIDIA=1)
+    target_compile_definitions(infiniops PRIVATE WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
 endif()
 
-if(USE_METAX)
+if(WITH_METAX)
     set(METAX_PATTERNS
         "cuda/*.cc"
         "cuda/*.cpp"
@@ -52,7 +52,7 @@ if(USE_METAX)
 
     set_source_files_properties(${METAX_SOURCES} PROPERTIES LANGUAGE CXX)
 
-    target_compile_definitions(infiniops PRIVATE USE_METAX=1)
+    target_compile_definitions(infiniops PRIVATE WITH_METAX=1)
     target_sources(infiniops PRIVATE ${METAX_SOURCES})
 
     target_include_directories(infiniops PUBLIC "${MACA_PATH}/include")

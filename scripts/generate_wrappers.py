@@ -130,22 +130,22 @@ inline DataType DataTypeFromString(const std::string& name) {{
 inline Device::Type DeviceTypeFromString(const std::string& name) {{
   static const std::unordered_map<std::string, Device::Type> kTorchNameToTypes{{
       {{"cpu", Device::Type::kCpu}},
-#ifdef USE_NVIDIA
+#ifdef WITH_NVIDIA
       {{"cuda", Device::Type::kNvidia}},
 #endif
-#ifdef USE_METAX
+#ifdef WITH_METAX
       {{"cuda", Device::Type::kMetax}},
 #endif
-#ifdef USE_ILUVATAR
+#ifdef WITH_ILUVATAR
       {{"cuda", Device::Type::kIluvatar}},
 #endif
-#ifdef USE_KUNLUN
+#ifdef WITH_KUNLUN
       {{"cuda", Device::Type::kKunlun}},
 #endif
-#ifdef USE_HYGON
+#ifdef WITH_HYGON
       {{"cuda", Device::Type::kHygon}},
 #endif
-#ifdef USE_QY
+#ifdef WITH_QY
       {{"cuda", Device::Type::kQy}},
 #endif
       {{"mlu", Device::Type::kCambricon}}, {{"npu", Device::Type::kAscend}},
