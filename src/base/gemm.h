@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_BASE_GEMM_H_
 #define INFINI_OPS_BASE_GEMM_H_
 
+#include <algorithm>
 #include <optional>
 
 #include "operator.h"
@@ -25,9 +26,9 @@ class Gemm : public Operator<Gemm> {
         a_strides_{a.strides()},
         b_strides_{b.strides()},
         c_strides_{c.strides()},
-        lda_{a_strides_[1]},
-        ldb_{b_strides_[1]},
-        ldc_{c_strides_[1]} {
+        lda_{std::max(a_strides_[0], a_strides_[1])},
+        ldb_{std::max(b_strides_[0], b_strides_[1])},
+        ldc_{std::max(c_strides_[0], c_strides_[1])} {
     // TODO: Check constraints.
   }
 
