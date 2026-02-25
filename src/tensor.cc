@@ -35,7 +35,7 @@ const Tensor::Strides& Tensor::strides() const { return strides_; }
 Tensor::Size Tensor::size(const Index& index) const { return shape_[index]; }
 
 Tensor::Stride Tensor::stride(const Index& index) const {
-  return shape_[index];
+  return strides_[index];
 }
 
 Tensor::Size Tensor::ndim() const { return shape_.size(); }
