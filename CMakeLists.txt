@@ -9,6 +9,8 @@ option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 
+option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 if(WITH_NVIDIA)
