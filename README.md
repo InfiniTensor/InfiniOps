@@ -63,3 +63,9 @@ Run the tensor example:
 ```bash
 ./examples/tensor
 ```
+
+Run the pybind11 example:
+
+```bash
+PYTHONPATH=src python ../examples/gemm.py
+```
