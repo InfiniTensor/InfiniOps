@@ -3,6 +3,8 @@ add_library(infiniops SHARED)
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
+set(DEVICE_LIST "")
+
 if(WITH_CPU)
     set(CPU_PATTERNS
         "cpu/*.cc"
@@ -12,11 +14,13 @@ if(WITH_CPU)
     file(GLOB_RECURSE CPU_SOURCES CONFIGURE_DEPENDS ${CPU_PATTERNS})
     list(APPEND CORE_SOURCES ${CPU_SOURCES})
 
-    target_compile_definitions(infiniops PRIVATE WITH_CPU=1)
+    target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
     # Reserve for OpenMP.
     # find_package(OpenMP REQUIRED)
     # target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
+
+    list(APPEND DEVICE_LIST "cpu")
 endif()
 
 if(WITH_NVIDIA)
@@ -33,11 +37,13 @@ if(WITH_NVIDIA)
 
     enable_language(CUDA)
 
-    target_compile_definitions(infiniops PRIVATE WITH_NVIDIA=1)
+    target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+
+    list(APPEND DEVICE_LIST "nvidia")
 endif()
 
 if(WITH_METAX)
@@ -61,6 +67,30 @@ if(WITH_METAX)
         ${MACA_DNN_LIB} 
         ${MACA_BLAS_LIB}
     )
+
+    list(APPEND DEVICE_LIST "metax")
 endif()
 
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+if(GENERATE_PYTHON_BINDINGS)
+    execute_process(
+        COMMAND python ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        RESULT_VARIABLE script_result
+    )
+
+    if(NOT script_result EQUAL 0)
+        message(FATAL_ERROR "Generating wrappers - failed")
+    else()
+        message(STATUS "Generating wrappers - done")
+    endif()
+
+    find_package(Python COMPONENTS Interpreter Development)
+    find_package(pybind11 CONFIG)
+
+    pybind11_add_module(ops "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
+
+    target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
+    target_link_libraries(ops PRIVATE infiniops)
+endif()

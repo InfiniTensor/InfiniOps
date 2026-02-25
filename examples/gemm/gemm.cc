@@ -4,9 +4,11 @@
 
 #ifdef WITH_CPU
 #include "cpu/gemm/gemm.h"
-#elif WITH_NVIDIA
+#endif
+#if WITH_NVIDIA
 #include "nvidia/gemm/cublas.h"
-#elif WITH_METAX
+#endif
+#if WITH_METAX
 #include "metax/gemm/mcblas.h"
 #endif
 
