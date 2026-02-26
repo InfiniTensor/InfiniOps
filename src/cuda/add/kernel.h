@@ -87,7 +87,7 @@ class CudaAdd : public Add {
 
   void operator()(void* stream, const Tensor a, const Tensor b,
                   Tensor c) const override {
-    DispatchFunc<FloatTypes>(
+    DispatchFunc<AllTypes>(
         c_type_,
         [&]<typename T>() {
           // TODO(lzm): currently hard-code block_size to be 256.

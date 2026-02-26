@@ -4,6 +4,14 @@
 #include <cstdint>
 #include <string>
 
+#ifdef WITH_NVIDIA
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
+#elif WITH_METAX
+#include <common/maca_bfloat16.h>
+#include <common/maca_fp16.h>
+#endif
+
 #include "common/constexpr_map.h"
 #include "common/traits.h"
 
@@ -102,7 +110,27 @@ DEFINE_DATA_TYPE_MAPPING(kUInt64, uint64_t)
 DEFINE_DATA_TYPE_MAPPING(kInt64, int64_t)
 DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
 DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
-// TODO(lzm): Support fp16 and bf16.
+
+#ifdef WITH_NVIDIA
+DEFINE_DATA_TYPE_MAPPING(kFloat16, half)
+DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
+#elif WITH_METAX
+DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
+DEFINE_DATA_TYPE_MAPPING(kBFloat16, __maca_bfloat16)
+#else
+// TODO(lzm): currently there's an ambiguity of uint16_t mapping to both kUInt16
+// and kFloat16/kBFloat16 for CPU. When CPU custom bfloat16/float16 types are
+// defined, this should be replaced.
+template <>
+struct TypeMap<DataType::kFloat16> {
+  using type = uint16_t;
+};
+template <>
+struct TypeMap<DataType::kBFloat16> {
+  using type = uint16_t;
+};
+#endif
+#undef DEFINE_DATA_TYPE_MAPPING
 
 // Defines the common categories of data types using List.
 using FloatTypes = List<DataType::kFloat32, DataType::kFloat64>;
