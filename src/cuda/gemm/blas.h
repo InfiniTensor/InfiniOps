@@ -14,9 +14,7 @@ class Blas : public Gemm {
        std::optional<float> beta, std::optional<int> trans_a,
        std::optional<int> trans_b, Tensor c)
       : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
-        swapped_a_and_b_{c_strides_[1] == 1},
-        op_a_{InitOpA()},
-        op_b_{InitOpB()} {
+        swapped_a_and_b_{c_strides_[1] == 1} {
     Backend::blasCreate(&handle_);
     // TODO: Check constraints.
   }
@@ -40,8 +38,13 @@ class Blas : public Gemm {
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
 
+    const auto& trans_a_value{trans_a.value_or(trans_a_)};
+    const auto& trans_b_value{trans_b.value_or(trans_b_)};
+    auto op_a{GetOpA(trans_a_value, trans_b_value)};
+    auto op_b{GetOpB(trans_a_value, trans_b_value)};
+
     Backend::blasGemmEx(
-        handle_, op_a_, op_b_, swapped_a_and_b_ ? n_ : m_,
+        handle_, op_a, op_b, swapped_a_and_b_ ? n_ : m_,
         swapped_a_and_b_ ? m_ : n_, k_, &alpha_value,
         swapped_a_and_b_ ? b.data() : a.data(), Backend::R_32F,
         swapped_a_and_b_ ? ldb_ : lda_, swapped_a_and_b_ ? a.data() : b.data(),
@@ -51,32 +54,25 @@ class Blas : public Gemm {
   }
 
  private:
-  auto InitOpA() const {
+  auto GetOpA(int trans_a, int trans_b) const {
     if (swapped_a_and_b_) {
-      return ((b_strides_[1] == 1) == trans_b_) ? Backend::BLAS_OP_T
-                                                : Backend::BLAS_OP_N;
+      return ((b_strides_[1] == 1) == trans_b) ? Backend::BLAS_OP_T
+                                               : Backend::BLAS_OP_N;
     }
-
-    return ((a_strides_[1] == 1) != trans_a_) ? Backend::BLAS_OP_T
-                                              : Backend::BLAS_OP_N;
+    return ((a_strides_[1] == 1) != trans_a) ? Backend::BLAS_OP_T
+                                             : Backend::BLAS_OP_N;
   }
 
-  auto InitOpB() const {
+  auto GetOpB(int trans_a, int trans_b) const {
     if (swapped_a_and_b_) {
-      return ((a_strides_[1] == 1) == trans_a_) ? Backend::BLAS_OP_T
-                                                : Backend::BLAS_OP_N;
+      return ((a_strides_[1] == 1) == trans_a) ? Backend::BLAS_OP_T
+                                               : Backend::BLAS_OP_N;
     }
-
-    return ((b_strides_[1] == 1) != trans_b_) ? Backend::BLAS_OP_T
-                                              : Backend::BLAS_OP_N;
+    return ((b_strides_[1] == 1) != trans_b) ? Backend::BLAS_OP_T
+                                             : Backend::BLAS_OP_N;
   }
 
   bool swapped_a_and_b_{false};
-
-  decltype(Backend::BLAS_OP_T) op_a_;
-
-  decltype(Backend::BLAS_OP_T) op_b_;
-
   typename Backend::blasHandle_t handle_;
 };
 
