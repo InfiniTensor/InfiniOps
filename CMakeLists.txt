@@ -9,7 +9,28 @@ option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 
+option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
+
+if(AUTO_DETECT_DEVICES)
+    message(STATUS "Auto-detecting available devices...")
+
+    set(WITH_CPU ON)
+
+    include(CheckLanguage)
+    check_language(CUDA)
+
+    if(CMAKE_CUDA_COMPILER)
+        set(WITH_NVIDIA ON)
+        message(STATUS "Auto-detected NVIDIA environment.")
+    endif()
+
+    # TODO: Please test and uncomment/update the auto-detection for MetaX.
+    # if(DEFINED ENV{MACA_PATH})
+    #     set(WITH_METAX ON)
+    #     message(STATUS "Auto-detected MetaX environment.")
+    # endif()
+endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 

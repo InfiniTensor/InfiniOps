@@ -13,4 +13,5 @@ dev = ["pytest", "pytest-cov", "ruff", "torch"]
 install-dir = "infini"
 
 [tool.scikit-build.cmake.define]
+AUTO_DETECT_DEVICES = "ON"
 GENERATE_PYTHON_BINDINGS = "ON"
