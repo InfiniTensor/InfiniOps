@@ -93,4 +93,12 @@ if(GENERATE_PYTHON_BINDINGS)
 
     target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
     target_link_libraries(ops PRIVATE infiniops)
+
+    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "$ORIGIN")
+    set_target_properties(ops PROPERTIES INSTALL_RPATH "$ORIGIN")
+
+    install(TARGETS infiniops ops DESTINATION .)
+
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)
 endif()

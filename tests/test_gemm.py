@@ -1,4 +1,4 @@
-import ops
+import infini.ops
 import pytest
 import torch
 
@@ -54,7 +54,7 @@ def test_gemm(
     b.normal_()
 
     # TODO: Add keyword argument support.
-    ops.gemm(a, b, alpha, beta, trans_a, trans_b, output)
+    infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, output)
     _torch_gemm(
         a, b, alpha=alpha, beta=beta, trans_a=trans_a, trans_b=trans_b, c=expected
     )
