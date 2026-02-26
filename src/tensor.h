@@ -12,9 +12,9 @@ namespace infini::ops {
 
 class Tensor {
  public:
-  using Size = std::uint64_t;
+  using Size = std::size_t;
 
-  using Stride = std::int64_t;
+  using Stride = std::ptrdiff_t;
 
   using Index = Stride;
 
@@ -89,9 +89,15 @@ class Tensor {
 
   Size element_size() const;
 
+  Size numel() const;
+
   Tensor T() const;
 
   std::string ToString() const;
+
+  bool HasBroadcastDim() const;
+
+  bool IsContiguous() const;
 
  private:
   static const DataType DefaultDataType();
@@ -101,6 +107,8 @@ class Tensor {
   static Strides DefaultStrides(const Shape& shape);
 
   std::string ToStringHelper() const;
+
+  bool IsMergeable(Size dim_start, Size dim_end) const;
 
   void* data_{nullptr};
 

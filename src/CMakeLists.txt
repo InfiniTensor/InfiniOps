@@ -16,9 +16,8 @@ if(WITH_CPU)
 
     target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
-    # Reserve for OpenMP.
-    # find_package(OpenMP REQUIRED)
-    # target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
+    find_package(OpenMP REQUIRED)
+    target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
 
     list(APPEND DEVICE_LIST "cpu")
 endif()
@@ -59,6 +58,7 @@ if(WITH_METAX)
     set_source_files_properties(${METAX_SOURCES} PROPERTIES LANGUAGE CXX)
 
     target_compile_definitions(infiniops PRIVATE WITH_METAX=1)
+    target_compile_options(infiniops PUBLIC "-x" "maca")
     target_sources(infiniops PRIVATE ${METAX_SOURCES})
 
     target_include_directories(infiniops PUBLIC "${MACA_PATH}/include")
