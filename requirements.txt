@@ -1,1 +1,5 @@
 libclang
+pytest
+pytest-cov
+ruff
+torch
