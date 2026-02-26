@@ -6,6 +6,10 @@
 
 namespace infini::ops {
 
+static Tensor::Index GetEffectiveIndex(Tensor::Index index, Tensor::Size size) {
+  return index < 0 ? index + size : index;
+}
+
 Tensor::Tensor(void* data, std::initializer_list<Size> shape,
                const DataType& dtype, const Device& device,
                std::initializer_list<Stride> strides)
@@ -13,11 +17,12 @@ Tensor::Tensor(void* data, std::initializer_list<Size> shape,
              decltype(strides_){strides}} {}
 
 Tensor Tensor::operator[](const Index& index) const {
-  return {reinterpret_cast<decltype(data_)>(
-              reinterpret_cast<decltype(index)>(data_) +
-              index * strides_[0] * element_size()),
-          Shape{shape_.cbegin() + 1, shape_.cend()}, dtype_, device_,
-          Strides{strides_.cbegin() + 1, strides_.cend()}};
+  return {
+      reinterpret_cast<decltype(data_)>(
+          reinterpret_cast<decltype(index)>(data_) +
+          GetEffectiveIndex(index, shape_[0]) * strides_[0] * element_size()),
+      Shape{shape_.cbegin() + 1, shape_.cend()}, dtype_, device_,
+      Strides{strides_.cbegin() + 1, strides_.cend()}};
 }
 
 void*& Tensor::data() { return data_; }
@@ -32,10 +37,12 @@ const Device& Tensor::device() const { return device_; }
 
 const Tensor::Strides& Tensor::strides() const { return strides_; }
 
-Tensor::Size Tensor::size(const Index& index) const { return shape_[index]; }
+Tensor::Size Tensor::size(const Index& index) const {
+  return shape_[GetEffectiveIndex(index, shape_.size())];
+}
 
 Tensor::Stride Tensor::stride(const Index& index) const {
-  return strides_[index];
+  return strides_[GetEffectiveIndex(index, strides_.size())];
 }
 
 Tensor::Size Tensor::ndim() const { return shape_.size(); }
