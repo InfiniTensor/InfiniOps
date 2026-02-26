@@ -26,8 +26,8 @@ struct MetaxBackend {
   static constexpr auto blasSetStream = mcblasSetStream;
   static constexpr auto blasDestroy = mcblasDestroy;
 
-  static constexpr auto blasGemmEx = [](auto&&... args) {
-    return mcblasGemmEx(std::forward<decltype(args)>(args)...);
+  static constexpr auto blasGemmStridedBatchedEx = [](auto&&... args) {
+    return mcblasGemmStridedBatchedEx(std::forward<decltype(args)>(args)...);
   };
 };
 

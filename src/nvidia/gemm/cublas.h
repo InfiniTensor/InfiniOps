@@ -26,8 +26,8 @@ struct NvidiaBackend {
   static constexpr auto blasSetStream = cublasSetStream;
   static constexpr auto blasDestroy = cublasDestroy;
 
-  static constexpr auto blasGemmEx = [](auto&&... args) {
-    return cublasGemmEx(std::forward<decltype(args)>(args)...);
+  static constexpr auto blasGemmStridedBatchedEx = [](auto&&... args) {
+    return cublasGemmStridedBatchedEx(std::forward<decltype(args)>(args)...);
   };
 };
 

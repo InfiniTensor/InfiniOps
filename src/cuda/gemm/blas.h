@@ -14,7 +14,9 @@ class Blas : public Gemm {
        std::optional<float> beta, std::optional<int> trans_a,
        std::optional<int> trans_b, Tensor c)
       : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
-        swapped_a_and_b_{c_strides_[1] == 1} {
+        a_is_col_major_{a.stride(-1) == 1},
+        b_is_col_major_{b.stride(-1) == 1},
+        swapped_a_and_b_{c.stride(-1) == 1} {
     Backend::blasCreate(&handle_);
     // TODO: Check constraints.
   }
@@ -43,36 +45,44 @@ class Blas : public Gemm {
     auto op_a{GetOpA(trans_a_value, trans_b_value)};
     auto op_b{GetOpB(trans_a_value, trans_b_value)};
 
-    Backend::blasGemmEx(
+    Backend::blasGemmStridedBatchedEx(
         handle_, op_a, op_b, swapped_a_and_b_ ? n_ : m_,
         swapped_a_and_b_ ? m_ : n_, k_, &alpha_value,
         swapped_a_and_b_ ? b.data() : a.data(), Backend::R_32F,
-        swapped_a_and_b_ ? ldb_ : lda_, swapped_a_and_b_ ? a.data() : b.data(),
-        Backend::R_32F, swapped_a_and_b_ ? lda_ : ldb_, &beta_value, c.data(),
-        Backend::R_32F, ldc_, Backend::BLAS_COMPUTE_32F_FAST_TF32,
-        Backend::BLAS_GEMM_DEFAULT);
+        swapped_a_and_b_ ? ldb_ : lda_,
+        swapped_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
+        swapped_a_and_b_ ? a.data() : b.data(), Backend::R_32F,
+        swapped_a_and_b_ ? lda_ : ldb_,
+        swapped_a_and_b_ ? batch_stride_a_ : batch_stride_b_, &beta_value,
+        c.data(), Backend::R_32F, ldc_, batch_stride_c_, batch_count_,
+        Backend::BLAS_COMPUTE_32F_FAST_TF32, Backend::BLAS_GEMM_DEFAULT);
   }
 
  private:
   auto GetOpA(int trans_a, int trans_b) const {
     if (swapped_a_and_b_) {
-      return ((b_strides_[1] == 1) == trans_b) ? Backend::BLAS_OP_T
-                                               : Backend::BLAS_OP_N;
+      return (b_is_col_major_ == trans_b) ? Backend::BLAS_OP_T
+                                          : Backend::BLAS_OP_N;
     }
-    return ((a_strides_[1] == 1) != trans_a) ? Backend::BLAS_OP_T
-                                             : Backend::BLAS_OP_N;
+    return (a_is_col_major_ != trans_a) ? Backend::BLAS_OP_T
+                                        : Backend::BLAS_OP_N;
   }
 
   auto GetOpB(int trans_a, int trans_b) const {
     if (swapped_a_and_b_) {
-      return ((a_strides_[1] == 1) == trans_a) ? Backend::BLAS_OP_T
-                                               : Backend::BLAS_OP_N;
+      return (a_is_col_major_ == trans_a) ? Backend::BLAS_OP_T
+                                          : Backend::BLAS_OP_N;
     }
-    return ((b_strides_[1] == 1) != trans_b) ? Backend::BLAS_OP_T
-                                             : Backend::BLAS_OP_N;
+    return (b_is_col_major_ != trans_b) ? Backend::BLAS_OP_T
+                                        : Backend::BLAS_OP_N;
   }
 
+  bool a_is_col_major_{false};
+
+  bool b_is_col_major_{false};
+
   bool swapped_a_and_b_{false};
+
   typename Backend::blasHandle_t handle_;
 };
 
