@@ -119,10 +119,15 @@ class CudaAdd : public Add {
 
  private:
   Tensor::Size* d_input_shape_{nullptr};
+
   Tensor::Size* d_other_shape_{nullptr};
+
   Tensor::Size* d_out_shape_{nullptr};
+
   Tensor::Stride* d_input_strides_{nullptr};
+
   Tensor::Stride* d_other_strides_{nullptr};
+
   Tensor::Stride* d_out_strides_{nullptr};
 };
 
