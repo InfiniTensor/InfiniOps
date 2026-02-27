@@ -16,9 +16,8 @@ if(WITH_CPU)
 
     target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
-    # Reserve for OpenMP.
-    # find_package(OpenMP REQUIRED)
-    # target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
+    find_package(OpenMP REQUIRED)
+    target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
 
     list(APPEND DEVICE_LIST "cpu")
 endif()
@@ -59,6 +58,7 @@ if(WITH_METAX)
     set_source_files_properties(${METAX_SOURCES} PROPERTIES LANGUAGE CXX)
 
     target_compile_definitions(infiniops PRIVATE WITH_METAX=1)
+    target_compile_options(infiniops PUBLIC "-x" "maca")
     target_sources(infiniops PRIVATE ${METAX_SOURCES})
 
     target_include_directories(infiniops PUBLIC "${MACA_PATH}/include")
@@ -86,10 +86,17 @@ if(GENERATE_PYTHON_BINDINGS)
         message(STATUS "Generating wrappers - done")
     endif()
 
+    set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
+
+    # TODO: There might be a better solution.
+    if(WITH_NVIDIA)
+        set_source_files_properties(${PYBIND11_SOURCES} PROPERTIES LANGUAGE CUDA)
+    endif()
+
     find_package(Python COMPONENTS Interpreter Development)
     find_package(pybind11 CONFIG)
 
-    pybind11_add_module(ops "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
+    pybind11_add_module(ops ${PYBIND11_SOURCES})
 
     target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
     target_link_libraries(ops PRIVATE infiniops)

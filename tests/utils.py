@@ -24,3 +24,13 @@ def empty_strided(shape, strides, *, dtype=None, device=None):
         return torch.empty(shape, dtype=dtype, device=device)
 
     return torch.empty_strided(shape, strides, dtype=dtype, device=device)
+
+
+def randn_strided(shape, strides, *, dtype=None, device=None):
+    output = empty_strided(shape, strides, dtype=dtype, device=device)
+
+    output.as_strided(
+        (output.untyped_storage().size() // output.element_size(),), (1,)
+    ).normal_()
+
+    return output

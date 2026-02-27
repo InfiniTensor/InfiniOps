@@ -1,6 +1,8 @@
 #include "tensor.h"
 
+#include <algorithm>
 #include <cassert>
+#include <numeric>
 
 #include "dispatcher.h"
 
@@ -49,6 +51,12 @@ Tensor::Size Tensor::ndim() const { return shape_.size(); }
 
 Tensor::Size Tensor::element_size() const { return kDataTypeToSize.at(dtype_); }
 
+Tensor::Size Tensor::numel() const {
+  return std::accumulate(shape_.begin(), shape_.end(),
+                         static_cast<Tensor::Size>(1),
+                         [](Tensor::Size a, Tensor::Size b) { return a * b; });
+}
+
 Tensor Tensor::T() const {
   return {data_,
           {shape_[1], shape_[0]},
@@ -61,6 +69,25 @@ std::string Tensor::ToString() const {
   return "tensor(" + ToStringHelper() +
          ", dtype=" + std::string(kDataTypeToDesc.at(dtype_)) + ", device='" +
          device_.ToString() + "')";
+}
+
+bool Tensor::HasBroadcastDim() const {
+  return std::any_of(shape_.begin(), shape_.end(),
+                     [&, i = 0](const auto&) mutable {
+                       return shape_[i] != 1 && strides_[i++] == 0;
+                     });
+}
+
+bool Tensor::IsContiguous() const {
+  if (ndim() == 0) {
+    return true;
+  }
+
+  if (!IsMergeable(0, ndim() - 1)) {
+    return false;
+  }
+
+  return stride(ndim() - 1) == 1;
 }
 
 const DataType Tensor::DefaultDataType() { return DataType::kFloat32; }
@@ -85,10 +112,10 @@ Tensor::Strides Tensor::DefaultStrides(const Shape& shape) {
 
 std::string Tensor::ToStringHelper() const {
   if (ndim() == 0) {
-    return DispatchFunc<FloatTypes>(
+    return DispatchFunc<ConcatType<FloatTypes, AllIntTypes>>(
         dtype_,
         [&]<typename T>() { return std::to_string(*static_cast<T*>(data_)); },
-        "ToStringHelper");
+        "Tensor::ToStringHelper()");
   }
 
   std::string result{"["};
@@ -101,6 +128,23 @@ std::string Tensor::ToStringHelper() const {
   result.back() = ']';
 
   return result;
+}
+
+bool Tensor::IsMergeable(Tensor::Size dim_start, Tensor::Size dim_end) const {
+  if (dim_start == dim_end) {
+    return true;
+  }
+
+  for (Tensor::Size i = dim_start; i < dim_end; ++i) {
+    if (size(i) == 1 && stride(i) == 0) {
+      return false;
+    }
+    if (stride(i) != size(i + 1) * stride(i + 1)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 }  // namespace infini::ops

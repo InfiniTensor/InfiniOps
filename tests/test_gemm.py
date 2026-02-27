@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import empty_strided, get_available_devices
+from tests.utils import empty_strided, get_available_devices, randn_strided
 
 
 @pytest.mark.parametrize("device", get_available_devices())
@@ -38,8 +38,8 @@ def test_gemm(
     rtol,
     atol,
 ):
-    a = empty_strided(a_shape, a_strides, dtype=dtype, device=device)
-    b = empty_strided(b_shape, b_strides, dtype=dtype, device=device)
+    a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
+    b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
     if trans_a:
         a = a.transpose(-2, -1)
@@ -49,9 +49,6 @@ def test_gemm(
 
     output = empty_strided(c_shape, c_strides, dtype=dtype, device=device)
     expected = output.clone()
-
-    a.normal_()
-    b.normal_()
 
     # TODO: Add keyword argument support.
     infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, output)
