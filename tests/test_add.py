@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import empty_strided, get_available_devices
+from tests.utils import empty_strided, get_available_devices, randn_strided
 
 
 @pytest.mark.parametrize("device", get_available_devices())
@@ -32,14 +32,11 @@ from tests.utils import empty_strided, get_available_devices
     ),
 )
 def test_add(shape, a_strides, b_strides, c_strides, dtype, device, rtol, atol):
-    a = empty_strided(shape, a_strides, dtype=dtype, device=device)
-    b = empty_strided(shape, b_strides, dtype=dtype, device=device)
+    a = randn_strided(shape, a_strides, dtype=dtype, device=device)
+    b = randn_strided(shape, b_strides, dtype=dtype, device=device)
 
     output = empty_strided(shape, c_strides, dtype=dtype, device=device)
     expected = output.clone()
-
-    a.as_strided((a.untyped_storage().size() // a.element_size(),), (1,)).normal_()
-    b.as_strided((b.untyped_storage().size() // b.element_size(),), (1,)).normal_()
 
     # TODO: Add keyword argument support.
     infini.ops.add(a, b, output)
