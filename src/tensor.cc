@@ -29,7 +29,7 @@ Tensor Tensor::operator[](const Index& index) const {
 
 void*& Tensor::data() { return data_; }
 
-const void* const& Tensor::data() const { return data_; }
+const void* Tensor::data() const { return data_; }
 
 const Tensor::Shape& Tensor::shape() const { return shape_; }
 

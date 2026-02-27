@@ -45,6 +45,29 @@ if(WITH_NVIDIA)
     list(APPEND DEVICE_LIST "nvidia")
 endif()
 
+if(WITH_ILUVATAR)
+    set(ILUVATAR_PATTERNS
+        "cuda/*.cc"
+        "cuda/*.cpp"
+        "cuda/*.cu"
+        "iluvatar/*.cc"
+        "iluvatar/*.cpp"
+        "iluvatar/*.cu"
+    )
+
+    file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
+
+    enable_language(CUDA)
+
+    target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
+    target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
+
+    find_package(CUDAToolkit REQUIRED)
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+
+    list(APPEND DEVICE_LIST "iluvatar")
+endif()
+
 if(WITH_METAX)
     set(METAX_PATTERNS
         "cuda/*.cc"

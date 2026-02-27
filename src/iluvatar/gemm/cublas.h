@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_NVIDIA_GEMM_CUBLAS_H_
-#define INFINI_OPS_NVIDIA_GEMM_CUBLAS_H_
+#ifndef INFINI_OPS_ILUVATAR_GEMM_CUBLAS_H_
+#define INFINI_OPS_ILUVATAR_GEMM_CUBLAS_H_
 
 #include <utility>
 
@@ -11,34 +11,22 @@
 
 namespace infini::ops {
 
-namespace gemm {
-
-struct NvidiaBackend {
+// Iluvatar GPU uses CUDA/cuBLAS compatibility API. Per InfiniCore gemm_nvidia.cu,
+// Iluvatar uses cudaDataType (CUDA_R_32F) for compute_type instead of
+// cublasComputeType_t (CUBLAS_COMPUTE_32F_FAST_TF32), and CUBLAS_GEMM_DEFAULT_TENSOR_OP.
+struct IluvatarBackend {
   using blasHandle_t = cublasHandle_t;
-
   using stream_t = cudaStream_t;
 
   static constexpr auto BLAS_OP_N = CUBLAS_OP_N;
-
   static constexpr auto BLAS_OP_T = CUBLAS_OP_T;
-
   static constexpr auto R_32F = CUDA_R_32F;
-
-  // Iluvatar/Corex cuBLAS expects cudaDataType for compute; NVIDIA cuBLAS uses cublasComputeType_t.
-#ifdef WITH_ILUVATAR
+  // Iluvatar uses cudaDataType for compute; CUDA_R_32F instead of CUBLAS_COMPUTE_32F_FAST_TF32
   static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 = CUDA_R_32F;
-#else
-
-  static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 =
-      CUBLAS_COMPUTE_32F_FAST_TF32;
-#endif
-
-  static constexpr auto BLAS_GEMM_DEFAULT = CUBLAS_GEMM_DEFAULT;
+  static constexpr auto BLAS_GEMM_DEFAULT = CUBLAS_GEMM_DEFAULT_TENSOR_OP;
 
   static constexpr auto blasCreate = cublasCreate;
-
   static constexpr auto blasSetStream = cublasSetStream;
-
   static constexpr auto blasDestroy = cublasDestroy;
 
   static constexpr auto blasGemmStridedBatchedEx = [](auto&&... args) {
@@ -46,12 +34,10 @@ struct NvidiaBackend {
   };
 };
 
-}  // namespace gemm
-
 template <>
-class Operator<Gemm, Device::Type::kNvidia> : public Blas<gemm::NvidiaBackend> {
+class Operator<Gemm, Device::Type::kIluvatar> : public Blas<IluvatarBackend> {
  public:
-  using Blas<gemm::NvidiaBackend>::Blas;
+  using Blas<IluvatarBackend>::Blas;
 };
 
 }  // namespace infini::ops

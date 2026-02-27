@@ -71,7 +71,7 @@ class Tensor {
 
   void*& data();
 
-  const void* const& data() const;
+  const void* data() const;
 
   const DataType& dtype() const;
 
