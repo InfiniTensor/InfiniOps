@@ -9,61 +9,61 @@ namespace infini::ops {
 
 class Add : public Operator<Add> {
  public:
-  Add(const Tensor a, const Tensor b, Tensor c)
-      : ndim_{c.ndim()},
-        output_size_{c.numel()},
-        a_type_{a.dtype()},
-        b_type_{b.dtype()},
-        c_type_{c.dtype()},
-        a_shape_{a.shape()},
-        b_shape_{b.shape()},
-        c_shape_{c.shape()},
-        a_strides_{a.strides()},
-        b_strides_{b.strides()},
-        c_strides_{c.strides()},
-        is_a_contiguous_{a.IsContiguous()},
-        is_b_contiguous_{b.IsContiguous()},
-        is_c_contiguous_{c.IsContiguous()} {
-    assert(!c.HasBroadcastDim() &&
+  Add(const Tensor input, const Tensor other, Tensor out)
+      : ndim_{out.ndim()},
+        output_size_{out.numel()},
+        input_type_{input.dtype()},
+        other_type_{other.dtype()},
+        out_type_{out.dtype()},
+        input_shape_{input.shape()},
+        other_shape_{other.shape()},
+        out_shape_{out.shape()},
+        input_strides_{input.strides()},
+        other_strides_{other.strides()},
+        out_strides_{out.strides()},
+        is_input_contiguous_{input.IsContiguous()},
+        is_other_contiguous_{other.IsContiguous()},
+        is_out_contiguous_{out.IsContiguous()} {
+    assert(!out.HasBroadcastDim() &&
            "The output of `Add` should NOT have broadcasted dim!");
     // TODO(lzm): support mix-precision later using the generic elementwise
     // framework.
-    assert(a_type_ == b_type_ && b_type_ == c_type_ &&
+    assert(input_type_ == other_type_ && other_type_ == out_type_ &&
            "Operator `Add` requires all input and output Tensors to have the "
            "same dtype");
   }
 
-  virtual void operator()(void* stream, const Tensor a, const Tensor b,
-                          Tensor c) const = 0;
+  virtual void operator()(void* stream, const Tensor input, const Tensor other,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Size ndim_{0};
 
   Tensor::Size output_size_{0};
 
-  const DataType a_type_;
+  const DataType input_type_;
 
-  const DataType b_type_;
+  const DataType other_type_;
 
-  const DataType c_type_;
+  const DataType out_type_;
 
-  Tensor::Shape a_shape_;
+  Tensor::Shape input_shape_;
 
-  Tensor::Shape b_shape_;
+  Tensor::Shape other_shape_;
 
-  Tensor::Shape c_shape_;
+  Tensor::Shape out_shape_;
 
-  Tensor::Strides a_strides_;
+  Tensor::Strides input_strides_;
 
-  Tensor::Strides b_strides_;
+  Tensor::Strides other_strides_;
 
-  Tensor::Strides c_strides_;
+  Tensor::Strides out_strides_;
 
-  bool is_a_contiguous_{false};
+  bool is_input_contiguous_{false};
 
-  bool is_b_contiguous_{false};
+  bool is_other_contiguous_{false};
 
-  bool is_c_contiguous_{false};
+  bool is_out_contiguous_{false};
 };
 
 }  // namespace infini::ops
