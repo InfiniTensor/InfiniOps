@@ -43,10 +43,6 @@ int main() {
   std::iota(a_vec.begin(), a_vec.end(), 0);
   std::iota(b_vec.begin(), b_vec.end(), 0);
 
-#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
-  cudaSetDevice(0);
-#endif
-
   Device dev{DEFAULT_DEVICE_TYPE};
 
   Tensor a_host{a_vec.data(), a_shape, dev};
