@@ -11,6 +11,8 @@
 
 namespace infini::ops {
 
+namespace gemm {
+
 struct MetaxBackend {
   using blasHandle_t = mcblasHandle_t;
   using stream_t = mcStream_t;
@@ -31,10 +33,12 @@ struct MetaxBackend {
   };
 };
 
+}  // namespace gemm
+
 template <>
-class Operator<Gemm, Device::Type::kMetax> : public Blas<MetaxBackend> {
+class Operator<Gemm, Device::Type::kMetax> : public Blas<gemm::MetaxBackend> {
  public:
-  using Blas<MetaxBackend>::Blas;
+  using Blas<gemm::MetaxBackend>::Blas;
 };
 
 }  // namespace infini::ops
