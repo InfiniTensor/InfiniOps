@@ -21,6 +21,56 @@ _INCLUDE_DIR = _GENERATION_DIR / "include"
 
 _INDENTATION = "  "
 
+_UTILS_H_CONTENT = """#ifndef INFINI_OPS_BINDINGS_UTILS_H_
+#define INFINI_OPS_BINDINGS_UTILS_H_
+
+#include <string>
+#include <unordered_map>
+
+namespace infini::ops {
+
+inline DataType DataTypeFromString(const std::string& name) {
+  return kStringToDataType.at(name);
+}
+
+inline Device::Type DeviceTypeFromString(const std::string& name) {
+  static const std::unordered_map<std::string, Device::Type> kTorchNameToTypes{
+      {"cpu", Device::Type::kCpu},
+#ifdef WITH_NVIDIA
+      {"cuda", Device::Type::kNvidia},
+#endif
+#ifdef WITH_METAX
+      {"cuda", Device::Type::kMetax},
+#endif
+#ifdef WITH_ILUVATAR
+      {"cuda", Device::Type::kIluvatar},
+#endif
+#ifdef WITH_KUNLUN
+      {"cuda", Device::Type::kKunlun},
+#endif
+#ifdef WITH_HYGON
+      {"cuda", Device::Type::kHygon},
+#endif
+#ifdef WITH_QY
+      {"cuda", Device::Type::kQy},
+#endif
+      {"mlu", Device::Type::kCambricon}, {"npu", Device::Type::kAscend},
+      {"musa", Device::Type::kMoore}};
+
+  auto it{kTorchNameToTypes.find(name)};
+
+  if (it != kTorchNameToTypes.cend()) {
+    return it->second;
+  }
+
+  return Device::TypeFromString(name);
+}
+
+}  // namespace infini::ops
+
+#endif
+"""
+
 
 class _OperatorExtractor:
     def __call__(self, op_name):
@@ -132,50 +182,12 @@ def _generate_pybind11(operator):
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <unordered_map>
-
 #include "base/{op_name.lower()}.h"
+#include "utils.h"
 
 namespace py = pybind11;
 
 namespace infini::ops {{
-
-inline DataType DataTypeFromString(const std::string& name) {{
-  return kStringToDataType.at(name);
-}}
-
-inline Device::Type DeviceTypeFromString(const std::string& name) {{
-  static const std::unordered_map<std::string, Device::Type> kTorchNameToTypes{{
-      {{"cpu", Device::Type::kCpu}},
-#ifdef WITH_NVIDIA
-      {{"cuda", Device::Type::kNvidia}},
-#endif
-#ifdef WITH_METAX
-      {{"cuda", Device::Type::kMetax}},
-#endif
-#ifdef WITH_ILUVATAR
-      {{"cuda", Device::Type::kIluvatar}},
-#endif
-#ifdef WITH_KUNLUN
-      {{"cuda", Device::Type::kKunlun}},
-#endif
-#ifdef WITH_HYGON
-      {{"cuda", Device::Type::kHygon}},
-#endif
-#ifdef WITH_QY
-      {{"cuda", Device::Type::kQy}},
-#endif
-      {{"mlu", Device::Type::kCambricon}}, {{"npu", Device::Type::kAscend}},
-      {{"musa", Device::Type::kMoore}}}};
-
-  auto it{{kTorchNameToTypes.find(name)}};
-
-  if (it != kTorchNameToTypes.cend()) {{
-    return it->second;
-  }}
-
-  return Device::TypeFromString(name);
-}}
 
 void Bind{op_name}(py::module& m) {{
   using Self = {op_name};
@@ -414,6 +426,8 @@ if __name__ == "__main__":
 
     header_paths = []
     bind_func_names = []
+
+    (_BINDINGS_DIR / "utils.h").write_text(_UTILS_H_CONTENT)
 
     for op_name, impl_paths in ops.items():
         extractor = _OperatorExtractor()
