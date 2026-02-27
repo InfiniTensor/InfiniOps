@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Options for backends.
 option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
-option(WITH_ILUVATAR "Enable Iluvatar GPU backend (CUDA compat)" OFF)
+option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)

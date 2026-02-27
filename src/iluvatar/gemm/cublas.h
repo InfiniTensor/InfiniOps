@@ -11,9 +11,6 @@
 
 namespace infini::ops {
 
-// Iluvatar GPU uses CUDA/cuBLAS compatibility API. Per InfiniCore gemm_nvidia.cu,
-// Iluvatar uses cudaDataType (CUDA_R_32F) for compute_type instead of
-// cublasComputeType_t (CUBLAS_COMPUTE_32F_FAST_TF32), and CUBLAS_GEMM_DEFAULT_TENSOR_OP.
 struct IluvatarBackend {
   using blasHandle_t = cublasHandle_t;
   using stream_t = cudaStream_t;
