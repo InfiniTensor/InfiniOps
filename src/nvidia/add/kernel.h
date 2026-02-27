@@ -19,9 +19,12 @@ struct NvidiaBackend {
   static constexpr auto malloc = [](auto&&... args) {
     return cudaMalloc(std::forward<decltype(args)>(args)...);
   };
+
   static constexpr auto memcpy = cudaMemcpy;
+
   static constexpr auto free = cudaFree;
-  static constexpr auto MemcpyH2D = cudaMemcpyHostToDevice;
+
+  static constexpr auto memcpyH2D = cudaMemcpyHostToDevice;
 };
 
 }  // namespace add

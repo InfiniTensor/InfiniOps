@@ -17,9 +17,12 @@ struct MetaxBackend {
   using stream_t = mcStream_t;
 
   static constexpr auto malloc = mcMalloc;
+
   static constexpr auto memcpy = mcMemcpy;
+
   static constexpr auto free = mcFree;
-  static constexpr auto MemcpyH2D = mcMemcpyHostToDevice;
+
+  static constexpr auto memcpyH2D = mcMemcpyHostToDevice;
 };
 
 }  // namespace add

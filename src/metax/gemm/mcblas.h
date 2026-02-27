@@ -15,17 +15,24 @@ namespace gemm {
 
 struct MetaxBackend {
   using blasHandle_t = mcblasHandle_t;
+
   using stream_t = mcStream_t;
 
   static constexpr auto BLAS_OP_N = MCBLAS_OP_N;
+
   static constexpr auto BLAS_OP_T = MCBLAS_OP_T;
+
   static constexpr auto R_32F = MACA_R_32F;
+
   static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 =
       MCBLAS_COMPUTE_32F_FAST_TF32;
+
   static constexpr auto BLAS_GEMM_DEFAULT = MCBLAS_GEMM_DEFAULT;
 
   static constexpr auto blasCreate = mcblasCreate;
+
   static constexpr auto blasSetStream = mcblasSetStream;
+
   static constexpr auto blasDestroy = mcblasDestroy;
 
   static constexpr auto blasGemmStridedBatchedEx = [](auto&&... args) {

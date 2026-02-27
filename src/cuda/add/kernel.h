@@ -68,17 +68,17 @@ class CudaAdd : public Add {
     Backend::malloc((void**)&d_out_strides_, strides_size);
 
     Backend::memcpy(d_input_shape_, input_shape_.data(), shape_size,
-                    Backend::MemcpyH2D);
+                    Backend::memcpyH2D);
     Backend::memcpy(d_other_shape_, other_shape_.data(), shape_size,
-                    Backend::MemcpyH2D);
+                    Backend::memcpyH2D);
     Backend::memcpy(d_out_shape_, out_shape_.data(), shape_size,
-                    Backend::MemcpyH2D);
+                    Backend::memcpyH2D);
     Backend::memcpy(d_input_strides_, input_strides_.data(), strides_size,
-                    Backend::MemcpyH2D);
+                    Backend::memcpyH2D);
     Backend::memcpy(d_other_strides_, other_strides_.data(), strides_size,
-                    Backend::MemcpyH2D);
+                    Backend::memcpyH2D);
     Backend::memcpy(d_out_strides_, out_strides_.data(), strides_size,
-                    Backend::MemcpyH2D);
+                    Backend::memcpyH2D);
   }
 
   ~CudaAdd() {
