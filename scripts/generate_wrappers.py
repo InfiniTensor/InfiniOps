@@ -1,6 +1,7 @@
 import argparse
 import json
 import pathlib
+import subprocess
 import textwrap
 
 import clang.cindex
@@ -23,8 +24,24 @@ _INDENTATION = "  "
 
 class _OperatorExtractor:
     def __call__(self, op_name):
+        def _get_system_include_flags():
+            system_include_flags = []
+
+            for line in subprocess.getoutput(
+                "clang++ -E -x c++ -v /dev/null"
+            ).splitlines():
+                if not line.startswith(" "):
+                    continue
+
+                system_include_flags.append("-isystem")
+                system_include_flags.append(line.strip())
+
+            return system_include_flags
+
+        system_include_flags = _get_system_include_flags()
+
         index = clang.cindex.Index.create()
-        args = ("-std=c++17", "-x", "c++", "-I", "src")
+        args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
         translation_unit = index.parse(f"src/base/{op_name.lower()}.h", args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
