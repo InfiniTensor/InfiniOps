@@ -11,6 +11,8 @@
 
 namespace infini::ops {
 
+namespace add {
+
 struct MetaxBackend {
   using stream_t = mcStream_t;
 
@@ -20,10 +22,12 @@ struct MetaxBackend {
   static constexpr auto MemcpyH2D = mcMemcpyHostToDevice;
 };
 
+}  // namespace add
+
 template <>
-class Operator<Add, Device::Type::kMetax> : public CudaAdd<MetaxBackend> {
+class Operator<Add, Device::Type::kMetax> : public CudaAdd<add::MetaxBackend> {
  public:
-  using CudaAdd<MetaxBackend>::CudaAdd;
+  using CudaAdd<add::MetaxBackend>::CudaAdd;
 };
 
 }  // namespace infini::ops

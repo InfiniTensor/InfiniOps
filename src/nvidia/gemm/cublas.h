@@ -11,6 +11,7 @@
 
 namespace infini::ops {
 
+namespace gemm {
 struct NvidiaBackend {
   using blasHandle_t = cublasHandle_t;
   using stream_t = cudaStream_t;
@@ -31,10 +32,12 @@ struct NvidiaBackend {
   };
 };
 
+}  // namespace gemm
+
 template <>
-class Operator<Gemm, Device::Type::kNvidia> : public Blas<NvidiaBackend> {
+class Operator<Gemm, Device::Type::kNvidia> : public Blas<gemm::NvidiaBackend> {
  public:
-  using Blas<NvidiaBackend>::Blas;
+  using Blas<gemm::NvidiaBackend>::Blas;
 };
 
 }  // namespace infini::ops

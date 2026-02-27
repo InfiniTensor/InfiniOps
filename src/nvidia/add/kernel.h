@@ -11,6 +11,8 @@
 
 namespace infini::ops {
 
+namespace add {
+
 struct NvidiaBackend {
   using stream_t = cudaStream_t;
 
@@ -20,10 +22,13 @@ struct NvidiaBackend {
   static constexpr auto MemcpyH2D = cudaMemcpyHostToDevice;
 };
 
+}  // namespace add
+
 template <>
-class Operator<Add, Device::Type::kNvidia> : public CudaAdd<NvidiaBackend> {
+class Operator<Add, Device::Type::kNvidia>
+    : public CudaAdd<add::NvidiaBackend> {
  public:
-  using CudaAdd<NvidiaBackend>::CudaAdd;
+  using CudaAdd<add::NvidiaBackend>::CudaAdd;
 };
 
 }  // namespace infini::ops
