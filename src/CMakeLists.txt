@@ -86,10 +86,17 @@ if(GENERATE_PYTHON_BINDINGS)
         message(STATUS "Generating wrappers - done")
     endif()
 
+    set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
+
+    # TODO: There might be a better solution.
+    if(WITH_NVIDIA)
+        set_source_files_properties(${PYBIND11_SOURCES} PROPERTIES LANGUAGE CUDA)
+    endif()
+
     find_package(Python COMPONENTS Interpreter Development)
     find_package(pybind11 CONFIG)
 
-    pybind11_add_module(ops "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
+    pybind11_add_module(ops ${PYBIND11_SOURCES})
 
     target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
     target_link_libraries(ops PRIVATE infiniops)
