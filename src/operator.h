@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <memory>
+#include <type_traits>
 
 #include "dispatcher.h"
 #include "tensor.h"
@@ -29,8 +30,13 @@ class Operator : public OperatorBase {
     DispatchFunc<ActiveDevices>(
         tensor.device().type(),
         [&]<Device::Type dev>() {
-          op_ptr = std::make_unique<Operator<Key, dev>>(
-              tensor, std::forward<Args>(args)...);
+          if constexpr (std::is_constructible_v<Operator<Key, dev>,
+                                                const Tensor&, Args...>) {
+            op_ptr = std::make_unique<Operator<Key, dev>>(
+                tensor, std::forward<Args>(args)...);
+          } else {
+            assert("operator is not implemented for this device");
+          }
         },
         "Operator::make");
 
