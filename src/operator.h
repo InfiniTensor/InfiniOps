@@ -30,7 +30,8 @@ class Operator : public OperatorBase {
 
     DispatchFunc<ActiveDevices>(
         tensor.device().type(),
-        [&]<Device::Type dev>() {
+        [&](auto tag) {
+          constexpr Device::Type dev = decltype(tag)::value;
           if constexpr (std::is_constructible_v<Operator<Key, dev>,
                                                 const Tensor&, Args...>) {
             op_ptr = std::make_unique<Operator<Key, dev>>(

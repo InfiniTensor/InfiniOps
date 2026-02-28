@@ -94,7 +94,8 @@ class CudaAdd : public Add {
                   Tensor out) const override {
     DispatchFunc<AllTypes>(
         out_type_,
-        [&]<typename T>() {
+        [&](auto tag) {
+          using T = typename decltype(tag)::type;
           // TODO(lzm): currently hard-code block_size to be 256.
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(256), output_size_));

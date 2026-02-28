@@ -4,6 +4,9 @@ project(InfiniOps LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Internal variable to control pybind11's automatic optimization flags (like -flto)
+set(PYBIND_ENABLE_EXTRAS ON)
+
 # Options for backends.
 option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
@@ -90,6 +93,10 @@ endif()
 # If no GPU platform is enabled, CPU is enabled by default.
 if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX)
     add_compile_definitions(WITH_CPU=1)
+endif()
+
+if(WITH_METAX)
+    set(PYBIND_ENABLE_EXTRAS OFF)
 endif()
 
 add_subdirectory(src)
