@@ -6,7 +6,7 @@
 
 namespace infini::ops {
 
-// --------------------- Type/Device Lists ---------------------
+// --------------------- List and TypePack ---------------------
 // A generic container for a sequence of compile-time values.
 template <auto... Items>
 struct List {};
@@ -34,15 +34,15 @@ struct TypePack {};
 // Tags are passed as regular function arguments to user functors instead of
 // template parameters. This lets users write plain C++17 `[](auto tag)` lambdas
 // rather than C++20 template lambdas (`[]<typename T>()`).
-//
-// TypeTag<T>:   carries a C++ type. Recover with `typename
-// decltype(tag)::type`. ValueTag<V>:  carries a compile-time value. Recover
-// with `decltype(tag)::value`.
+
+// TypeTag<T>: carries a C++ type. Recover with `typename decltype(tag)::type`.
 template <typename T>
 struct TypeTag {
   using type = T;
 };
 
+// ValueTag<V>: carries a compile-time value. Recover with
+// `decltype(tag)::value`.
 template <auto V>
 struct ValueTag {
   using value_type = decltype(V);
