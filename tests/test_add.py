@@ -2,9 +2,10 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import empty_strided, get_available_devices, randn_strided
+from tests.utils import Payload, empty_strided, get_available_devices, randn_strided
 
 
+@pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize("device", get_available_devices())
 @pytest.mark.parametrize(
     "dtype, rtol, atol",
@@ -34,12 +35,16 @@ from tests.utils import empty_strided, get_available_devices, randn_strided
 def test_add(shape, a_strides, b_strides, c_strides, dtype, device, rtol, atol):
     a = randn_strided(shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(shape, b_strides, dtype=dtype, device=device)
+    c = empty_strided(shape, c_strides, dtype=dtype, device=device)
 
-    output = empty_strided(shape, c_strides, dtype=dtype, device=device)
-    expected = output.clone()
+    return Payload(_add, _torch_add, (a, b, c), {}, rtol=rtol, atol=atol)
 
-    # TODO: Add keyword argument support.
-    infini.ops.add(a, b, output)
-    torch.add(a, b, out=expected)
 
-    assert torch.allclose(output, expected, rtol=rtol, atol=atol)
+def _add(a, b, c):
+    infini.ops.add(a, b, c)
+
+    return c
+
+
+def _torch_add(a, b, c):
+    return torch.add(a, b, out=c)

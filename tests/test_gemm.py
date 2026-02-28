@@ -2,9 +2,10 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import empty_strided, get_available_devices, randn_strided
+from tests.utils import Payload, empty_strided, get_available_devices, randn_strided
 
 
+@pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize("device", get_available_devices())
 # TODO: Add support for more data types.
 @pytest.mark.parametrize("dtype, rtol, atol", ((torch.float32, 1e-3, 1e-3),))
@@ -47,19 +48,25 @@ def test_gemm(
     if trans_b:
         b = b.transpose(-2, -1)
 
-    output = empty_strided(c_shape, c_strides, dtype=dtype, device=device)
-    expected = output.clone()
+    c = empty_strided(c_shape, c_strides, dtype=dtype, device=device)
 
-    # TODO: Add keyword argument support.
-    infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, output)
-    _torch_gemm(
-        a, b, alpha=alpha, beta=beta, trans_a=trans_a, trans_b=trans_b, c=expected
+    return Payload(
+        _gemm,
+        _torch_gemm,
+        (a, b, alpha, beta, trans_a, trans_b, c),
+        {},
+        rtol=rtol,
+        atol=atol,
     )
 
-    assert torch.allclose(output, expected, rtol=rtol, atol=atol)
+
+def _gemm(a, b, alpha, beta, trans_a, trans_b, c):
+    infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c)
+
+    return c
 
 
-def _torch_gemm(a, b, *, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None):
+def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None):
     if trans_a:
         a = a.transpose(-2, -1)
 
