@@ -1,6 +1,23 @@
 import contextlib
+import dataclasses
+from collections.abc import Callable
 
 import torch
+
+
+@dataclasses.dataclass
+class Payload:
+    func: Callable
+
+    ref: Callable
+
+    args: tuple
+
+    kwargs: dict
+
+    rtol: float = 1e-5
+
+    atol: float = 1e-8
 
 
 def get_available_devices():
