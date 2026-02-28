@@ -11,6 +11,8 @@
 
 namespace infini::ops {
 
+namespace gemm {
+
 struct IluvatarBackend {
   using blasHandle_t = cublasHandle_t;
 
@@ -41,10 +43,13 @@ struct IluvatarBackend {
   };
 };
 
+}  // namespace gemm
+
 template <>
-class Operator<Gemm, Device::Type::kIluvatar> : public Blas<IluvatarBackend> {
+class Operator<Gemm, Device::Type::kIluvatar>
+    : public Blas<gemm::IluvatarBackend> {
  public:
-  using Blas<IluvatarBackend>::Blas;
+  using Blas<gemm::IluvatarBackend>::Blas;
 };
 
 }  // namespace infini::ops
