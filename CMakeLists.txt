@@ -18,10 +18,9 @@ if(AUTO_DETECT_DEVICES)
 
     set(WITH_CPU ON)
 
-    include(CheckLanguage)
-    check_language(CUDA)
+    file(GLOB NVIDIA_DEV_FILES "/dev/nvidia*")
 
-    if(CMAKE_CUDA_COMPILER)
+    if(NVIDIA_DEV_FILES)
         set(WITH_NVIDIA ON)
         message(STATUS "Auto-detected NVIDIA environment.")
     endif()
