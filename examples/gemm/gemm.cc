@@ -8,6 +8,9 @@
 #if WITH_NVIDIA
 #include "nvidia/gemm/cublas.h"
 #endif
+#if WITH_ILUVATAR
+#include "iluvatar/gemm/cublas.h"
+#endif
 #if WITH_METAX
 #include "metax/gemm/mcblas.h"
 #endif
