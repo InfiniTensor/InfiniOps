@@ -25,6 +25,13 @@ if(AUTO_DETECT_DEVICES)
         message(STATUS "Auto-detected NVIDIA environment.")
     endif()
 
+    file(GLOB ILUVATAR_DEV_FILES "/dev/iluvatar*")
+
+    if(ILUVATAR_DEV_FILES)
+        set(WITH_ILUVATAR ON)
+        message(STATUS "Auto-detected Iluvatar environment.")
+    endif()
+
     # TODO: Please test and uncomment/update the auto-detection for MetaX.
     # if(DEFINED ENV{MACA_PATH})
     #     set(WITH_METAX ON)
