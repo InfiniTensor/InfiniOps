@@ -23,15 +23,7 @@ struct NvidiaBackend {
   static constexpr auto BLAS_OP_T = CUBLAS_OP_T;
 
   static constexpr auto R_32F = CUDA_R_32F;
-
-  // Iluvatar/Corex cuBLAS expects cudaDataType for compute; NVIDIA cuBLAS uses cublasComputeType_t.
-#ifdef WITH_ILUVATAR
-  static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 = CUDA_R_32F;
-#else
-
-  static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 =
-      CUBLAS_COMPUTE_32F_FAST_TF32;
-#endif
+  static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 = CUBLAS_COMPUTE_32F_FAST_TF32;
 
   static constexpr auto BLAS_GEMM_DEFAULT = CUBLAS_GEMM_DEFAULT;
 

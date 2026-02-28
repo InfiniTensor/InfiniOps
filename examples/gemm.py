@@ -1,4 +1,4 @@
-import ops
+from infini import ops
 import torch
 
 m, n, k = 2, 3, 4
