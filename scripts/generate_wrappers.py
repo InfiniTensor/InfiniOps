@@ -104,6 +104,8 @@ def _generate_pybind11(operator):
             )
             .replace("const Tensor", "py::object")
             .replace("Tensor", "py::object")
+            .replace("std::optional<float>", "float")
+            .replace("std::optional<int>", "bool")
         )
 
     def _generate_arguments(node):
