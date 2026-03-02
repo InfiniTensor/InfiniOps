@@ -3,6 +3,7 @@
 
 #include "common/constexpr_map.h"
 #include "common/traits.h"
+#include "hash.h"
 
 namespace infini::ops {
 
@@ -156,5 +157,18 @@ using ActiveDevices =
                                      AllDeviceTypes>::type;
 
 }  // namespace infini::ops
+
+template <>
+struct std::hash<infini::ops::Device> {
+  std::size_t operator()(const infini::ops::Device& device) const {
+    std::size_t seed{0};
+
+    hash_combine(seed, device.type());
+
+    hash_combine(seed, device.index());
+
+    return seed;
+  }
+};
 
 #endif

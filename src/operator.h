@@ -4,6 +4,7 @@
 #include <cassert>
 #include <memory>
 #include <type_traits>
+#include <unordered_map>
 
 #include "dispatcher.h"
 #include "tensor.h"
@@ -45,9 +46,19 @@ class Operator : public OperatorBase {
 
   template <typename... Args>
   static auto call(void* stream, Args&&... args) {
-    // TODO: Cache the created `Operator`.
-    return (*make(std::forward<Args>(args)...))(stream,
-                                                std::forward<Args>(args)...);
+    static std::unordered_map<std::size_t, std::unique_ptr<Operator>> cache;
+
+    std::size_t hash{0};
+
+    (hash_combine(hash, args), ...);
+
+    auto it{cache.find(hash)};
+
+    if (it == cache.end()) {
+      it = cache.emplace(hash, make(std::forward<Args>(args)...)).first;
+    }
+
+    return (*it->second)(stream, std::forward<Args>(args)...);
   }
 
   template <typename... Args>

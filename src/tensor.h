@@ -7,6 +7,7 @@
 
 #include "data_type.h"
 #include "device.h"
+#include "hash.h"
 
 namespace infini::ops {
 
@@ -122,5 +123,26 @@ class Tensor {
 };
 
 }  // namespace infini::ops
+
+template <>
+struct std::hash<infini::ops::Tensor> {
+  std::size_t operator()(const infini::ops::Tensor& tensor) const {
+    std::size_t seed{0};
+
+    for (const auto& size : tensor.shape()) {
+      hash_combine(seed, size);
+    }
+
+    hash_combine(seed, tensor.dtype());
+
+    hash_combine(seed, tensor.device());
+
+    for (const auto& stride : tensor.strides()) {
+      hash_combine(seed, stride);
+    }
+
+    return seed;
+  }
+};
 
 #endif
