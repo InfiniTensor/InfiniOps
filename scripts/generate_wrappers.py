@@ -89,15 +89,12 @@ def _generate_pybind11(operator):
 
     def _generate_arguments(node):
         return ", ".join(
-            _generate_tensor_caster(arg.spelling)
+            f"TensorFromPybind11Handle({arg.spelling})"
             if "Tensor" in arg.type.spelling
             else arg.spelling
             for arg in node.get_arguments()
             if arg.spelling != "stream"
         )
-
-    def _generate_tensor_caster(name):
-        return f'Tensor{{reinterpret_cast<void*>({name}.attr("data_ptr")().cast<std::uintptr_t>()), {name}.attr("shape").cast<Tensor::Shape>(), DataTypeFromString(py::str({name}.attr("dtype")).attr("split")(".").attr("__getitem__")(-1).cast<std::string>()), Device{{DeviceTypeFromString({name}.attr("device").attr("type").cast<std::string>()), {name}.attr("device").attr("index").is_none() ? 0 : {name}.attr("device").attr("index").cast<int>()}}, {name}.attr("stride")().cast<Tensor::Strides>()}}'
 
     op_name = operator.name
 

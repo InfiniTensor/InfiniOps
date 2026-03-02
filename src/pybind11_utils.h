@@ -1,11 +1,13 @@
 #ifndef INFINI_OPS_PYBIND11_UTILS_H_
 #define INFINI_OPS_PYBIND11_UTILS_H_
 
-#include <string>
-#include <unordered_map>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include "data_type.h"
 #include "device.h"
+
+namespace py = pybind11;
 
 namespace infini::ops {
 
@@ -44,6 +46,29 @@ inline Device::Type DeviceTypeFromString(const std::string& name) {
   }
 
   return Device::TypeFromString(name);
+}
+
+inline Tensor TensorFromPybind11Handle(py::handle obj) {
+  auto data{
+      reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
+
+  auto shape{obj.attr("shape").cast<typename Tensor::Shape>()};
+
+  auto dtype_str{py::str(obj.attr("dtype")).cast<std::string>()};
+  auto pos{dtype_str.find_last_of('.')};
+  auto dtype{DataTypeFromString(
+      pos == std::string::npos ? dtype_str : dtype_str.substr(pos + 1))};
+
+  auto device_obj{obj.attr("device")};
+  auto device_type_str{device_obj.attr("type").cast<std::string>()};
+  auto device_index_obj{device_obj.attr("index")};
+  auto device_index{device_index_obj.is_none() ? 0
+                                               : device_index_obj.cast<int>()};
+  Device device{DeviceTypeFromString(device_type_str), device_index};
+
+  auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
+
+  return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }
 
 }  // namespace infini::ops
