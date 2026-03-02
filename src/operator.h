@@ -102,6 +102,9 @@ class Operator : public OperatorBase {
   auto operator()(Args&&... args) const {
     return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
   }
+
+ protected:
+  size_t workspace_size_{0};
 };
 
 }  // namespace infini::ops

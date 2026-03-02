@@ -14,6 +14,9 @@
 #if WITH_METAX
 #include "metax/gemm/mcblas.h"
 #endif
+#if WITH_CAMBRICON
+#include "cambricon/gemm/cnblas.h"
+#endif
 
 #include "runtime_api.h"
 #include "tensor.h"
