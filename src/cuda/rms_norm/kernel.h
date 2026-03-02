@@ -34,9 +34,7 @@ class CudaRmsNorm : public RmsNorm {
     auto cuda_stream =
         static_cast<typename Backend::stream_t>(stream ? stream : 0);
 
-    if constexpr (Backend::needs_device_set) {
-      cudaSetDevice(y.device().index());
-    }
+    Backend::setDevice(y.device().index());
 
     auto stride_x_batch = x_strides_.size() > 1 ? x_strides_[0] : 0;
     auto stride_x_nhead = x_strides_.size() > 1 ? x_strides_[1] : x_strides_[0];
@@ -61,9 +59,7 @@ class CudaRmsNorm : public RmsNorm {
         },
         "CudaRmsNorm::operator()");
 
-    if constexpr (Backend::needs_stream_sync) {
-      cudaStreamSynchronize(cuda_stream);
-    }
+    Backend::streamSynchronize(cuda_stream);
   }
 };
 
