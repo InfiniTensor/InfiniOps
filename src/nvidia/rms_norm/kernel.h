@@ -16,8 +16,9 @@ namespace rms_norm {
 struct NvidiaBackend {
   using stream_t = cudaStream_t;
 
-  static constexpr bool needs_device_set = false;
-  static constexpr bool needs_stream_sync = false;
+  static constexpr auto setDevice = [](int) {};
+
+  static constexpr auto streamSynchronize = [](stream_t) {};
 };
 
 }  // namespace rms_norm

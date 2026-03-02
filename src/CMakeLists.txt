@@ -57,29 +57,6 @@ if(WITH_ILUVATAR)
         "iluvatar/*.cpp"
         "iluvatar/*.cu"
     )
-    file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
-
-    target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
-    target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
-
-    find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
-
-    set_target_properties(infiniops PROPERTIES CUDA_STANDARD 17
-                                             CUDA_STANDARD_REQUIRED ON)
-
-    list(APPEND DEVICE_LIST "iluvatar")
-endif()
-
-if(WITH_ILUVATAR)
-    set(ILUVATAR_PATTERNS
-        "cuda/*.cc"
-        "cuda/*.cpp"
-        "cuda/*.cu"
-        "iluvatar/*.cc"
-        "iluvatar/*.cpp"
-        "iluvatar/*.cu"
-    )
 
     file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
 
@@ -90,6 +67,9 @@ if(WITH_ILUVATAR)
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+
+    set_target_properties(infiniops PROPERTIES CUDA_STANDARD 17
+                                             CUDA_STANDARD_REQUIRED ON)
 
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
@@ -138,7 +118,7 @@ if(GENERATE_PYTHON_BINDINGS)
     set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
 
     # TODO: There might be a better solution.
-    if(WITH_NVIDIA)
+    if(WITH_NVIDIA OR WITH_ILUVATAR)
         set_source_files_properties(${PYBIND11_SOURCES} PROPERTIES LANGUAGE CUDA)
     endif()
 
