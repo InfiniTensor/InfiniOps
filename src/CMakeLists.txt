@@ -128,7 +128,7 @@ if(GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter Development)
     find_package(pybind11 CONFIG)
 
-    if(PYBIND_ENABLE_EXTRAS)
+    if(PYBIND11_ENABLE_EXTRAS)
         pybind11_add_module(ops ${PYBIND11_SOURCES})
     else()
         pybind11_add_module(ops NO_EXTRAS ${PYBIND11_SOURCES})

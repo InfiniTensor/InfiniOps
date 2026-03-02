@@ -18,47 +18,48 @@ namespace infini::ops {
 
 namespace {
 
-// Implements the dispatch body over a resolved List<Head, Tail...>.
-template <typename ValueType, typename Functor, typename... Args, auto Head,
-          auto... Tail>
+// Implements the dispatch body over a resolved List<head, tail...>.
+template <typename ValueType, typename Functor, typename... Args, auto head,
+          auto... tail>
 auto DispatchFuncImpl(ValueType value, Functor &&func,
-                      std::string_view context_str, List<Head, Tail...>,
+                      std::string_view context_str, List<head, tail...>,
                       Args &&...args) {
   using ReturnType = decltype(std::forward<Functor>(func)(
-      ValueTag<static_cast<ValueType>(Head)>{}, std::forward<Args>(args)...));
+      ValueTag<static_cast<ValueType>(head)>{}, std::forward<Args>(args)...));
 
   // Path for Void Functions
   if constexpr (std::is_void_v<ReturnType>) {
-    bool handled = ((value == static_cast<ValueType>(Tail)
+    bool handled = ((value == static_cast<ValueType>(tail)
                          ? (std::forward<Functor>(func)(
-                                ValueTag<Tail>{}, std::forward<Args>(args)...),
+                                ValueTag<tail>{}, std::forward<Args>(args)...),
                             true)
                          : false) ||
                     ... ||
-                    (value == static_cast<ValueType>(Head)
+                    (value == static_cast<ValueType>(head)
                          ? (std::forward<Functor>(func)(
-                                ValueTag<Head>{}, std::forward<Args>(args)...),
+                                ValueTag<head>{}, std::forward<Args>(args)...),
                             true)
                          : false));
 
     if (!handled) {
-      std::cerr << "Dispatch error (void): Value " << static_cast<int>(value)
-                << " not supported in context: " << context_str << "\n";
+      // TODO(lzm): change to logging.
+      std::cerr << "dispatch error (void): value " << static_cast<int>(value)
+                << " not supported in the context: " << context_str << "\n";
       std::abort();
     }
   }
   // Path for Non-Void Functions
   else {
     std::optional<ReturnType> result;
-    bool handled = ((value == static_cast<ValueType>(Tail)
+    bool handled = ((value == static_cast<ValueType>(tail)
                          ? (result.emplace(std::forward<Functor>(func)(
-                                ValueTag<Tail>{}, std::forward<Args>(args)...)),
+                                ValueTag<tail>{}, std::forward<Args>(args)...)),
                             true)
                          : false) ||
                     ... ||
-                    (value == static_cast<ValueType>(Head)
+                    (value == static_cast<ValueType>(head)
                          ? (result.emplace(std::forward<Functor>(func)(
-                                ValueTag<Head>{}, std::forward<Args>(args)...)),
+                                ValueTag<head>{}, std::forward<Args>(args)...)),
                             true)
                          : false));
 
@@ -66,27 +67,27 @@ auto DispatchFuncImpl(ValueType value, Functor &&func,
       return *result;
     }
     // TODO(lzm): change to logging.
-    std::cerr << "Dispatch error (non-void): Value " << static_cast<int>(value)
-              << " not supported in context: " << context_str << "\n";
+    std::cerr << "dispatch error (non-void): value " << static_cast<int>(value)
+              << " not supported in the context: " << context_str << "\n";
     std::abort();
     return ReturnType{};
   }
 }
 
-// Deduces Head/Tail from a List type via partial specialization,
+// Deduces head/tail from a List type via partial specialization,
 // then forwards to DispatchFuncImpl.
 template <typename ValueType, typename Functor, typename FilteredList,
           typename ArgsTuple>
 struct DispatchFuncUnwrap;
 
-template <typename ValueType, typename Functor, auto Head, auto... Tail,
+template <typename ValueType, typename Functor, auto head, auto... tail,
           typename... Args>
-struct DispatchFuncUnwrap<ValueType, Functor, List<Head, Tail...>,
+struct DispatchFuncUnwrap<ValueType, Functor, List<head, tail...>,
                           std::tuple<Args...>> {
   static auto call(ValueType value, Functor &&func,
                    std::string_view context_str, Args &&...args) {
     return DispatchFuncImpl(value, std::forward<Functor>(func), context_str,
-                            List<Head, Tail...>{}, std::forward<Args>(args)...);
+                            List<head, tail...>{}, std::forward<Args>(args)...);
   }
 };
 
@@ -96,9 +97,9 @@ struct DispatchFuncUnwrap<ValueType, Functor, List<>, std::tuple<Args...>> {
   static auto call(ValueType value, Functor &&, std::string_view context_str,
                    Args &&...) {
     // TODO(lzm): change to logging.
-    std::cerr << "Dispatch error: no allowed values registered for value "
-              << static_cast<int64_t>(value) << " in context: " << context_str
-              << "\n";
+    std::cerr << "dispatch error: no allowed values registered for value "
+              << static_cast<int64_t>(value)
+              << " in the context: " << context_str << "\n";
     std::abort();
   }
 };
@@ -106,12 +107,12 @@ struct DispatchFuncUnwrap<ValueType, Functor, List<>, std::tuple<Args...>> {
 }  // namespace
 
 // (Single Dispatch) Dispatches a runtime value to a compile-time functor.
-template <typename ValueType, ValueType... AllValues, typename Functor,
+template <typename ValueType, ValueType... all_values, typename Functor,
           typename... Args>
 auto DispatchFunc(ValueType value, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
-  using FilteredPack =
-      typename Filter<Functor, std::tuple<Args...>, List<>, AllValues...>::type;
+  using FilteredPack = typename Filter<Functor, std::tuple<Args...>, List<>,
+                                       all_values...>::type;
 
   return DispatchFuncUnwrap<ValueType, Functor, FilteredPack,
                             std::tuple<Args...>>::call(value,
@@ -125,66 +126,66 @@ auto DispatchFunc(ValueType value, Functor &&func,
 // (Multi-Dispatch) Dispatches a vector of runtime values to a compile-time
 // functor.
 // Base Case: All dimensions resolved
-template <typename Functor, typename... Args, auto... Is>
+template <typename Functor, typename... Args, auto... items>
 auto DispatchFunc(const std::vector<int64_t> &values, size_t /*index*/,
-                  Functor &&func, std::string_view /*context_str*/, List<Is...>,
-                  Args &&...args) {
-  return std::forward<Functor>(func)(List<Is...>{},
+                  Functor &&func, std::string_view /*context_str*/,
+                  List<items...>, Args &&...args) {
+  return std::forward<Functor>(func)(List<items...>{},
                                      std::forward<Args>(args)...);
 }
 
 // Forward declaration of the recursive multi-dispatch overload.
 template <typename FirstList, typename... RestLists, typename Functor,
-          typename... Args, auto... Is>
+          typename... Args, auto... items>
 auto DispatchFunc(const std::vector<int64_t> &values, size_t index,
-                  Functor &&func, std::string_view context_str, List<Is...>,
+                  Functor &&func, std::string_view context_str, List<items...>,
                   Args &&...args);
 
 // Adapter used in the recursive multi-dispatch case: given a resolved value Val
 // recurse into the next dimension.
-template <typename RestListsPack, typename Functor, auto... Is>
+template <typename RestListsPack, typename Functor, auto... items>
 struct MultiDispatchRecurseAdapter;
 
-template <typename... RestLists, typename Functor, auto... Is>
-struct MultiDispatchRecurseAdapter<TypePack<RestLists...>, Functor, Is...> {
+template <typename... RestLists, typename Functor, auto... items>
+struct MultiDispatchRecurseAdapter<TypePack<RestLists...>, Functor, items...> {
   const std::vector<int64_t> &values;
   size_t next_index;
   Functor &func;
   std::string_view context_str;
 
-  template <auto Val, typename... Args>
-  auto operator()(ValueTag<Val>, Args &&...args) const {
+  template <auto val, typename... Args>
+  auto operator()(ValueTag<val>, Args &&...args) const {
     return DispatchFunc<RestLists...>(values, next_index, func, context_str,
-                                      List<Is..., Val>{},
+                                      List<items..., val>{},
                                       std::forward<Args>(args)...);
   }
 };
 
 template <typename RestListsPack, typename Functor, typename... Args,
-          auto... Is, auto... Allowed>
+          auto... items, auto... allowed>
 auto MultiDispatchFirstDim(const std::vector<int64_t> &values, size_t index,
                            Functor &func, std::string_view context_str,
-                           List<Is...>, List<Allowed...>, Args &&...args) {
-  static_assert(sizeof...(Allowed) > 0,
+                           List<items...>, List<allowed...>, Args &&...args) {
+  static_assert(sizeof...(allowed) > 0,
                 "`DispatchFunc` dimension list is empty");
-  using EnumType = std::common_type_t<decltype(Allowed)...>;
+  using EnumType = std::common_type_t<decltype(allowed)...>;
 
-  MultiDispatchRecurseAdapter<RestListsPack, Functor, Is...> adapter{
+  MultiDispatchRecurseAdapter<RestListsPack, Functor, items...> adapter{
       values, index + 1, func, context_str};
 
-  return DispatchFunc<EnumType, Allowed...>(
+  return DispatchFunc<EnumType, allowed...>(
       static_cast<EnumType>(values.at(index)), adapter, context_str,
       std::forward<Args>(args)...);
 }
 
 // (Multi-Dispatch) Recursive Case
 template <typename FirstList, typename... RestLists, typename Functor,
-          typename... Args, auto... Is>
+          typename... Args, auto... items>
 auto DispatchFunc(const std::vector<int64_t> &values, size_t index,
-                  Functor &&func, std::string_view context_str, List<Is...>,
+                  Functor &&func, std::string_view context_str, List<items...>,
                   Args &&...args) {
   return MultiDispatchFirstDim<TypePack<RestLists...>>(
-      values, index, func, context_str, List<Is...>{}, FirstList{},
+      values, index, func, context_str, List<items...>{}, FirstList{},
       std::forward<Args>(args)...);
 }
 
@@ -201,9 +202,9 @@ template <typename Functor>
 struct DataTypeAdapter {
   Functor &func;
 
-  template <auto DT, typename... Args>
-  auto operator()(ValueTag<DT>, Args &&...args) const {
-    using T = TypeMapType<static_cast<DataType>(DT)>;
+  template <auto dtype, typename... Args>
+  auto operator()(ValueTag<dtype>, Args &&...args) const {
+    using T = TypeMapType<static_cast<DataType>(dtype)>;
     return func(TypeTag<T>{}, std::forward<Args>(args)...);
   }
 };
@@ -212,9 +213,9 @@ template <typename Functor>
 struct DataTypeMultiAdapter {
   Functor &func;
 
-  template <auto... DTs, typename... Args>
-  auto operator()(List<DTs...>, Args &&...args) const {
-    return func(TypeTag<TypeMapType<static_cast<DataType>(DTs)>>{}...,
+  template <auto... dtypes, typename... Args>
+  auto operator()(List<dtypes...>, Args &&...args) const {
+    return func(TypeTag<TypeMapType<static_cast<DataType>(dtypes)>>{}...,
                 std::forward<Args>(args)...);
   }
 };
@@ -223,9 +224,9 @@ template <typename Functor>
 struct DeviceAdapter {
   Functor &func;
 
-  template <auto Dev, typename... Args>
-  auto operator()(ValueTag<Dev>, Args &&...args) const {
-    return func(ValueTag<Dev>{}, std::forward<Args>(args)...);
+  template <auto dev, typename... Args>
+  auto operator()(ValueTag<dev>, Args &&...args) const {
+    return func(ValueTag<dev>{}, std::forward<Args>(args)...);
   }
 };
 
@@ -233,9 +234,9 @@ template <typename Functor>
 struct DeviceMultiAdapter {
   Functor &func;
 
-  template <auto... Ds, typename... Args>
-  auto operator()(List<Ds...>, Args &&...args) const {
-    return func(ValueTag<Ds>{}..., std::forward<Args>(args)...);
+  template <auto... devs, typename... Args>
+  auto operator()(List<devs...>, Args &&...args) const {
+    return func(ValueTag<devs>{}..., std::forward<Args>(args)...);
   }
 };
 
@@ -263,12 +264,12 @@ auto DispatchFunc(std::initializer_list<DataType> dtypes, Functor &&func,
 }
 
 // Device Dispatch
-template <auto... AllowedDevices, typename Functor, typename... Args>
+template <auto... allowed_devices, typename Functor, typename... Args>
 auto DispatchFunc(Device::Type device, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
   DeviceAdapter<std::remove_reference_t<Functor>> adapter{func};
   return DispatchFunc<Device::Type,
-                      static_cast<Device::Type>(AllowedDevices)...>(
+                      static_cast<Device::Type>(allowed_devices)...>(
       device, adapter, context_str, std::forward<Args>(args)...);
 }
 
@@ -284,11 +285,11 @@ auto DispatchFunc(std::initializer_list<Device::Type> devices, Functor &&func,
                                 std::forward<Args>(args)...);
 }
 
-template <typename ValueType, typename Functor, typename... Args, auto... Is>
+template <typename ValueType, typename Functor, typename... Args, auto... items>
 auto DispatchFuncListAliasImpl(ValueType value, Functor &&func,
-                               std::string_view context_str, List<Is...>,
+                               std::string_view context_str, List<items...>,
                                Args &&...args) {
-  return DispatchFunc<static_cast<std::decay_t<ValueType>>(Is)...>(
+  return DispatchFunc<static_cast<std::decay_t<ValueType>>(items)...>(
       value, std::forward<Functor>(func), context_str,
       std::forward<Args>(args)...);
 }
