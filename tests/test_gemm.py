@@ -6,12 +6,6 @@ from tests.utils import Payload, empty_strided, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
-# TODO: Add support for more data types.
-@pytest.mark.parametrize("dtype, rtol, atol", ((torch.float32, 1e-3, 1e-3),))
-@pytest.mark.parametrize("trans_b", (False, True))
-@pytest.mark.parametrize("trans_a", (False, True))
-@pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
-@pytest.mark.parametrize("alpha", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize(
     "a_shape, b_shape, c_shape, a_strides, b_strides, c_strides",
     (
@@ -22,6 +16,12 @@ from tests.utils import Payload, empty_strided, randn_strided
         ((4, 48, 64), (4, 64, 6), (4, 48, 6), None, None, None),
     ),
 )
+@pytest.mark.parametrize("alpha", (-1, -0.5, 0, 0.5, 1))
+@pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
+@pytest.mark.parametrize("trans_a", (False, True))
+@pytest.mark.parametrize("trans_b", (False, True))
+# TODO: Add support for more data types.
+@pytest.mark.parametrize(("dtype", "rtol", "atol"), ((torch.float32, 1e-3, 1e-3),))
 def test_gemm(
     a_shape,
     b_shape,
