@@ -3,8 +3,15 @@ import random
 
 import pytest
 import torch
+import torch.utils.benchmark as benchmark
 
 from tests.utils import get_available_devices
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--benchmark", action="store_true", help="Run performance benchmarks."
+    )
 
 
 def pytest_configure(config):
@@ -72,6 +79,28 @@ def pytest_pyfunc_call(pyfuncitem):
 
         output = func(*args, **kwargs)
         expected = ref(*ref_args, **ref_kwargs)
+
+        if pyfuncitem.config.getoption("--benchmark"):
+            stmt = "func(*args, **kwargs)"
+
+            func_timer = benchmark.Timer(
+                stmt=stmt,
+                globals={"func": func, "args": args, "kwargs": kwargs},
+                label=func.__name__,
+                description="InfiniOps",
+            )
+
+            ref_timer = benchmark.Timer(
+                stmt=stmt,
+                globals={"func": ref, "args": ref_args, "kwargs": ref_kwargs},
+                label=func.__name__,
+                description="Reference",
+            )
+
+            func_measurement = func_timer.blocked_autorange()
+            ref_measurement = ref_timer.blocked_autorange()
+
+            benchmark.Compare((func_measurement, ref_measurement)).print()
 
         rtol = payload.rtol
         atol = payload.atol
