@@ -35,11 +35,26 @@ if(AUTO_DETECT_DEVICES)
         message(STATUS "Auto-detected Iluvatar environment.")
     endif()
 
-    # TODO: Please test and uncomment/update the auto-detection for MetaX.
-    # if(DEFINED ENV{MACA_PATH})
-    #     set(WITH_METAX ON)
-    #     message(STATUS "Auto-detected MetaX environment.")
-    # endif()
+    if(DEFINED ENV{MACA_PATH})
+        set(WITH_METAX ON)
+        message(STATUS "Auto-detected MetaX environment from MACA_PATH")
+    else()
+        execute_process(
+            COMMAND sh -c "grep -h 9999 /sys/bus/pci/devices/*/vendor 2>/dev/null"
+            OUTPUT_VARIABLE _pci_vendor_output
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+
+        string(FIND "${_pci_vendor_output}" "9999" _found_pos)
+
+        if(_found_pos GREATER -1)
+            set(WITH_METAX ON)
+            message(STATUS "Detected MetaX GPU from PCI vendor ID 0x9999")
+        else()
+            set(WITH_METAX OFF)
+            message(STATUS "No MetaX GPU detected")
+        endif()
+    endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
