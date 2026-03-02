@@ -22,25 +22,23 @@ _INCLUDE_DIR = _GENERATION_DIR / "include"
 _INDENTATION = "  "
 
 
+def _get_system_include_flags():
+    system_include_flags = []
+    for line in subprocess.getoutput("g++ -E -x c++ -v /dev/null").splitlines():
+        if not line.startswith(" "):
+            continue
+        system_include_flags.append("-isystem")
+        system_include_flags.append(line.strip())
+    return system_include_flags
+
+
 class _OperatorExtractor:
-    def __call__(self, op_name):
-        def _get_system_include_flags():
-            system_include_flags = []
-
-            for line in subprocess.getoutput("g++ -E -x c++ -v /dev/null").splitlines():
-                if not line.startswith(" "):
-                    continue
-
-                system_include_flags.append("-isystem")
-                system_include_flags.append(line.strip())
-
-            return system_include_flags
-
+    def __call__(self, op_name, base_stem=None):
         system_include_flags = _get_system_include_flags()
-
         index = clang.cindex.Index.create()
         args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name.lower()}.h", args=args)
+        header = f"src/base/{(base_stem or op_name.lower())}.h"
+        translation_unit = index.parse(header, args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -53,7 +51,8 @@ class _OperatorExtractor:
             elif node.kind == CursorKind.CXX_METHOD and node.spelling == "operator()":
                 calls.append(node)
 
-        return _Operator(op_name, constructors, calls)
+        header_name = base_stem if base_stem is not None else op_name.lower()
+        return _Operator(op_name, constructors, calls, header_name=header_name)
 
     @staticmethod
     def _find(node, op_name):
@@ -65,12 +64,34 @@ class _OperatorExtractor:
 
 
 class _Operator:
-    def __init__(self, name, constructors, calls):
+    def __init__(self, name, constructors, calls, header_name=None):
         self.name = name
-
         self.constructors = constructors
-
         self.calls = calls
+        self.header_name = header_name if header_name is not None else name.lower()
+
+
+def _make_mock_node(params):
+    """Create a mock node with get_arguments() for manual operator specs."""
+
+    class _Type:
+        def __init__(self, spelling):
+            self.spelling = spelling
+
+    class _Arg:
+        def __init__(self, type_spelling, name):
+            self.type = _Type(type_spelling)
+            self.spelling = name
+
+    class _MockNode:
+        def get_arguments(self):
+            return [_Arg(typ, name) for typ, name in params]
+
+    return _MockNode()
+
+
+# Operators that fail libclang parse; provide manual spec for wrapper generation.
+_MANUAL_OP_SPECS = {}
 
 
 def _generate_pybind11(operator):
@@ -118,7 +139,8 @@ def _generate_pybind11(operator):
     )
     calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
     callers = "\n".join(
-        _generate_call(operator.name, call, method=False) for call in operator.calls
+        _generate_call(operator.header_name, call, method=False)
+        for call in operator.calls
     )
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -127,7 +149,7 @@ def _generate_pybind11(operator):
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "base/{op_name.lower()}.h"
+#include "base/{operator.header_name}.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;
@@ -158,7 +180,7 @@ def _generate_legacy_c(operator, paths):
 
         return f"""#include "../../handle.h"
 #include "../../tensor.h"
-#include "infiniop/ops/{operator.name.lower()}.h"
+#include "infiniop/ops/{operator.header_name}.h"
 {impl_includes}
 
 static infini::ops::DataType DataTypeFromInfiniDType(
@@ -215,7 +237,7 @@ __C {_generate_destroy_func_def(operator)}
         return f"""#ifndef __INFINIOP_{operator.name.upper()}_API_H__
 #define __INFINIOP_{operator.name.upper()}_API_H__
 
-#include "base/{operator.name.lower()}.h"
+#include "base/{operator.header_name}.h"
 
 typedef struct infini::ops::Operator<infini::ops::{operator.name}> *infiniop{operator.name}Descriptor_t;
 
@@ -327,20 +349,21 @@ __C __export {_generate_destroy_func_decl(operator)};
 def _get_all_ops(devices):
     ops = {}
 
-    for file_path in _BASE_DIR.iterdir():
-        if not file_path.is_file():
+    for base_file in _BASE_DIR.iterdir():
+        if not base_file.is_file():
             continue
 
-        op_name = "".join(word.capitalize() for word in file_path.stem.split("_"))
+        op_name = "".join(word.capitalize() for word in base_file.stem.split("_"))
+        impl_paths = []
 
-        ops[op_name] = []
-
-        for file_path in _SRC_DIR.rglob("*"):
-            if not file_path.is_file() or file_path.parent.parent.name not in devices:
+        for impl_path in _SRC_DIR.rglob("*"):
+            if not impl_path.is_file() or impl_path.parent.parent.name not in devices:
                 continue
 
-            if f"class Operator<{op_name}" in file_path.read_text():
-                ops[op_name].append(file_path)
+            if f"class Operator<{op_name}" in impl_path.read_text():
+                impl_paths.append(impl_path)
+
+        ops[op_name] = {"base_stem": base_file.stem, "impl_paths": impl_paths}
 
     return ops
 
@@ -372,12 +395,33 @@ if __name__ == "__main__":
     header_paths = []
     bind_func_names = []
 
-    for op_name, impl_paths in ops.items():
-        extractor = _OperatorExtractor()
-        operator = extractor(op_name)
+    valid_ops = {}
+    for op_name, op_data in ops.items():
+        base_stem = op_data.get("base_stem") if isinstance(op_data, dict) else None
+        impl_paths = (
+            op_data.get("impl_paths", op_data) if isinstance(op_data, dict) else op_data
+        )
 
+        operator = None
+        if op_name in _MANUAL_OP_SPECS:
+            spec = _MANUAL_OP_SPECS[op_name]
+            operator = _Operator(
+                op_name,
+                constructors=[_make_mock_node(spec["constructor"])],
+                calls=[_make_mock_node(spec["call"])],
+                header_name=spec.get("header"),
+            )
+        else:
+            extractor = _OperatorExtractor()
+            try:
+                operator = extractor(op_name, base_stem=base_stem)
+            except clang.cindex.TranslationUnitLoadError as e:
+                print(f"Warning: Skipping {op_name} - failed to parse base header: {e}")
+                continue
+
+        valid_ops[op_name] = impl_paths
         source_path = _GENERATED_SRC_DIR / op_name.lower()
-        header_name = f"{op_name.lower()}.h"
+        header_name = f"{operator.header_name}.h"
         bind_func_name = f"Bind{op_name}"
 
         (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
@@ -394,7 +438,7 @@ if __name__ == "__main__":
 
     impl_includes = "\n".join(
         f'#include "{impl_path}"'
-        for impl_paths in ops.values()
+        for impl_paths in valid_ops.values()
         for impl_path in impl_paths
     )
     op_includes = "\n".join(f'#include "{header_path}"' for header_path in header_paths)
@@ -402,7 +446,12 @@ if __name__ == "__main__":
         f"{bind_func_name}(m);" for bind_func_name in bind_func_names
     )
 
-    (_BINDINGS_DIR / "ops.cc").write_text(f"""#include <pybind11/pybind11.h>
+    has_cuda_impl = any(
+        str(p).endswith(".cu") for impls in valid_ops.values() for p in impls
+    )
+    ops_source = "ops.cu" if has_cuda_impl else "ops.cc"
+
+    (_BINDINGS_DIR / ops_source).write_text(f"""#include <pybind11/pybind11.h>
 
 // clang-format off
 {impl_includes}

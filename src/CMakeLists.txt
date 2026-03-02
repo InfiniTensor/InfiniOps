@@ -43,6 +43,32 @@ if(WITH_NVIDIA)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
 
     list(APPEND DEVICE_LIST "nvidia")
+    set_target_properties(infiniops PROPERTIES CUDA_STANDARD 17
+                                               CUDA_STANDARD_REQUIRED ON)
+endif()
+
+# Iluvatar: CUDA-compatible device; -x ivcore and flags from top-level CMakeLists.txt
+if(WITH_ILUVATAR)
+    set(ILUVATAR_PATTERNS
+        "cuda/*.cc"
+        "cuda/*.cpp"
+        "cuda/*.cu"
+        "iluvatar/*.cc"
+        "iluvatar/*.cpp"
+        "iluvatar/*.cu"
+    )
+    file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
+
+    target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
+    target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
+
+    find_package(CUDAToolkit REQUIRED)
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+
+    set_target_properties(infiniops PROPERTIES CUDA_STANDARD 17
+                                             CUDA_STANDARD_REQUIRED ON)
+
+    list(APPEND DEVICE_LIST "iluvatar")
 endif()
 
 if(WITH_ILUVATAR)
