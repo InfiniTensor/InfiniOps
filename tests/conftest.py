@@ -4,6 +4,8 @@ import random
 import pytest
 import torch
 
+from tests.utils import get_available_devices
+
 
 def pytest_configure(config):
     torch.backends.fp32_precision = "tf32"
@@ -34,6 +36,23 @@ def _set_random_seed(seed):
     torch.manual_seed(seed)
 
 
+def pytest_generate_tests(metafunc):
+    already_parametrized = _get_parametrized_args(metafunc)
+
+    if "dtype" in metafunc.fixturenames and "dtype" not in already_parametrized:
+        metafunc.parametrize(
+            "dtype, rtol, atol",
+            (
+                (torch.float32, 1e-7, 1e-7),
+                (torch.float16, 1e-3, 1e-3),
+                (torch.bfloat16, 1e-3, 1e-3),
+            ),
+        )
+
+    if "device" in metafunc.fixturenames and "device" not in already_parametrized:
+        metafunc.parametrize("device", get_available_devices())
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_pyfunc_call(pyfuncitem):
     if pyfuncitem.get_closest_marker("auto_act_and_assert"):
@@ -60,6 +79,20 @@ def pytest_pyfunc_call(pyfuncitem):
         assert torch.allclose(output, expected, rtol=rtol, atol=atol)
 
         return True
+
+
+def _get_parametrized_args(metafunc):
+    parametrized_args = set()
+
+    for marker in metafunc.definition.iter_markers(name="parametrize"):
+        args = marker.args[0]
+
+        if isinstance(args, str):
+            parametrized_args.update(x.strip() for x in args.split(","))
+        elif isinstance(args, (list, tuple)):
+            parametrized_args.update(args)
+
+    return parametrized_args
 
 
 def _test_case_path_from_request(request):

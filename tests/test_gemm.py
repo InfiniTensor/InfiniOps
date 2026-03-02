@@ -2,11 +2,10 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_available_devices, randn_strided
+from tests.utils import Payload, empty_strided, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize("device", get_available_devices())
 # TODO: Add support for more data types.
 @pytest.mark.parametrize("dtype, rtol, atol", ((torch.float32, 1e-3, 1e-3),))
 @pytest.mark.parametrize("trans_b", (False, True))

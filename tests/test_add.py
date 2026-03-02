@@ -2,19 +2,10 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_available_devices, randn_strided
+from tests.utils import Payload, empty_strided, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize("device", get_available_devices())
-@pytest.mark.parametrize(
-    "dtype, rtol, atol",
-    (
-        (torch.float32, 1e-7, 1e-7),
-        (torch.float16, 1e-3, 1e-3),
-        (torch.bfloat16, 1e-3, 1e-3),
-    ),
-)
 @pytest.mark.parametrize(
     "shape, a_strides, b_strides, c_strides",
     (
