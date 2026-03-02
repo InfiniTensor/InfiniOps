@@ -78,8 +78,8 @@ if(WITH_METAX)
 
     # Normally can be found at: `/opt/maca/`.
     set(MACA_PATH $ENV{MACA_PATH})
-    set(CMAKE_C_COMPILER ${MACA_PATH}/mxgpu_llvm/bin/mxcc)
-    set(CMAKE_CXX_COMPILER ${MACA_PATH}/mxgpu_llvm/bin/mxcc)
+    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
+    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
 
     include_directories("${MACA_PATH}/include")
     link_directories("${MACA_PATH}/lib")
