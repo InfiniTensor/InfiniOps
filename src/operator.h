@@ -36,7 +36,7 @@ class Operator : public OperatorBase {
             op_ptr = std::make_unique<Operator<Key, dev>>(
                 tensor, std::forward<Args>(args)...);
           } else {
-            assert("operator is not implemented for this device");
+            assert(false && "operator is not implemented for this device");
           }
         },
         "Operator::make");
