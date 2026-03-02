@@ -7,7 +7,7 @@ from tests.utils import Payload, empty_strided, randn_strided
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
-    "shape, a_strides, b_strides, c_strides",
+    "shape, input_strides, other_strides, out_strides",
     (
         ((13, 4), None, None, None),
         ((13, 4), (10, 1), (10, 1), (10, 1)),
@@ -23,19 +23,21 @@ from tests.utils import Payload, empty_strided, randn_strided
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
-def test_add(shape, a_strides, b_strides, c_strides, dtype, device, rtol, atol):
-    a = randn_strided(shape, a_strides, dtype=dtype, device=device)
-    b = randn_strided(shape, b_strides, dtype=dtype, device=device)
-    c = empty_strided(shape, c_strides, dtype=dtype, device=device)
+def test_add(
+    shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
+):
+    input = randn_strided(shape, input_strides, dtype=dtype, device=device)
+    other = randn_strided(shape, other_strides, dtype=dtype, device=device)
+    out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(_add, _torch_add, (a, b, c), {}, rtol=rtol, atol=atol)
-
-
-def _add(a, b, c):
-    infini.ops.add(a, b, c)
-
-    return c
+    return Payload(_add, _torch_add, (input, other, out), {}, rtol=rtol, atol=atol)
 
 
-def _torch_add(a, b, c):
-    return torch.add(a, b, out=c)
+def _add(input, other, out):
+    infini.ops.add(input, other, out)
+
+    return out
+
+
+def _torch_add(input, other, out):
+    return torch.add(input, other, out=out)
