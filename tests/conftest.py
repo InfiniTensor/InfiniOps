@@ -5,7 +5,7 @@ import pytest
 import torch
 import torch.utils.benchmark as benchmark
 
-from tests.utils import get_available_devices
+from tests.utils import clone_strided, get_available_devices
 
 
 def pytest_addoption(parser):
@@ -138,7 +138,7 @@ def _hash(string):
 
 def _clone(obj):
     if isinstance(obj, torch.Tensor):
-        return obj.clone()
+        return clone_strided(obj)
 
     if isinstance(obj, tuple):
         return tuple(_clone(a) for a in obj)

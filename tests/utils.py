@@ -51,3 +51,15 @@ def randn_strided(shape, strides, *, dtype=None, device=None):
     ).normal_()
 
     return output
+
+
+def clone_strided(input):
+    output = empty_strided(
+        input.size(), input.stride(), dtype=input.dtype, device=input.device
+    )
+
+    as_strided_args = (output.untyped_storage().size() // output.element_size(),), (1,)
+
+    output.as_strided(*as_strided_args).copy_(input.as_strided(*as_strided_args))
+
+    return output
