@@ -11,38 +11,39 @@ namespace infini::ops {
 
 class RmsNorm : public Operator<RmsNorm> {
  public:
-  RmsNorm(const Tensor y, const Tensor x, const Tensor w, float epsilon)
-      : epsilon_{epsilon},
-        y_shape_{y.shape()},
-        x_shape_{x.shape()},
-        y_strides_{y.strides()},
-        x_strides_{x.strides()},
-        dim_{y.size(-1)},
-        ndim_{y.ndim()},
-        batch_size_{ndim_ == 2 ? y.size(-2) : y.size(-3)},
-        nhead_{ndim_ == 2 ? 1 : y.size(-2)} {}
+  // Parameter order and naming follow PyTorch: input, weight, eps, out.
+  RmsNorm(const Tensor out, const Tensor input, const Tensor weight, float eps)
+      : eps_{eps},
+        out_shape_{out.shape()},
+        input_shape_{input.shape()},
+        out_strides_{out.strides()},
+        input_strides_{input.strides()},
+        dim_{out.size(-1)},
+        ndim_{out.ndim()},
+        batch_size_{ndim_ == 2 ? out.size(-2) : out.size(-3)},
+        nhead_{ndim_ == 2 ? 1 : out.size(-2)} {}
 
-  RmsNorm(const Tensor y, const Tensor x, const Tensor w)
-      : RmsNorm{y, x, w, 1e-6f} {}
+  RmsNorm(const Tensor out, const Tensor input, const Tensor weight)
+      : RmsNorm{out, input, weight, 1e-6f} {}
 
-  virtual void operator()(void* stream, Tensor y, const Tensor x,
-                          const Tensor w, float epsilon) const = 0;
+  virtual void operator()(void* stream, Tensor out, const Tensor input,
+                          const Tensor weight, float eps) const = 0;
 
-  virtual void operator()(void* stream, Tensor y, const Tensor x,
-                          const Tensor w) const {
-    return operator()(stream, y, x, w, epsilon_);
+  virtual void operator()(void* stream, Tensor out, const Tensor input,
+                          const Tensor weight) const {
+    return operator()(stream, out, input, weight, eps_);
   }
 
  protected:
-  float epsilon_{1e-6f};
+  float eps_{1e-6f};
 
-  Tensor::Shape y_shape_;
+  Tensor::Shape out_shape_;
 
-  Tensor::Shape x_shape_;
+  Tensor::Shape input_shape_;
 
-  Tensor::Strides y_strides_;
+  Tensor::Strides out_strides_;
 
-  Tensor::Strides x_strides_;
+  Tensor::Strides input_strides_;
 
   Tensor::Size dim_{0};
 

@@ -36,11 +36,6 @@ class Gemm : public Operator<Gemm> {
     // TODO: Check constraints.
   }
 
-  Gemm(const Tensor a, const Tensor b, float alpha, float beta, bool trans_a,
-       bool trans_b, Tensor c)
-      : Gemm{a, b, std::optional<float>(alpha), std::optional<float>(beta),
-             std::optional<int>(static_cast<int>(trans_a)),
-             std::optional<int>(static_cast<int>(trans_b)), c} {}
 
   Gemm(const Tensor a, const Tensor b, Tensor c)
       : Gemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
@@ -49,15 +44,6 @@ class Gemm : public Operator<Gemm> {
                           std::optional<float> alpha, std::optional<float> beta,
                           std::optional<int> trans_a,
                           std::optional<int> trans_b, Tensor c) const = 0;
-
-  virtual void operator()(void* stream, const Tensor a, const Tensor b,
-                          float alpha, float beta, bool trans_a, bool trans_b,
-                          Tensor c) const {
-    return operator()(stream, a, b, std::optional<float>(alpha),
-                      std::optional<float>(beta),
-                      std::optional<int>(static_cast<int>(trans_a)),
-                      std::optional<int>(static_cast<int>(trans_b)), c);
-  }
 
   virtual void operator()(void* stream, const Tensor a, const Tensor b,
                           Tensor c) const {

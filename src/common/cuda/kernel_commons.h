@@ -5,7 +5,7 @@
 #include <cuda_runtime.h>
 #elif defined(WITH_ILUVATAR)
 #include <cuda_runtime.h>
-#elif WITH_METAX
+#elif WITH_METAX  // TODO: Use `defined`.
 #include <mcr/mc_runtime.h>
 #endif
 

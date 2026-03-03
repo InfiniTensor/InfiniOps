@@ -9,6 +9,9 @@ version = "0.1.0"
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff", "torch"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.scikit-build.wheel]
 install-dir = "infini"
 

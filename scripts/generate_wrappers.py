@@ -72,20 +72,19 @@ inline Device::Type DeviceTypeFromString(const std::string& name) {
 """
 
 
-def _get_system_include_flags():
-    system_include_flags = []
-    for line in subprocess.getoutput(
-        "clang++ -E -x c++ -v /dev/null"
-    ).splitlines():
-        if not line.startswith(" "):
-            continue
-        system_include_flags.append("-isystem")
-        system_include_flags.append(line.strip())
-    return system_include_flags
-
-
 class _OperatorExtractor:
     def __call__(self, op_name, base_stem=None):
+        def _get_system_include_flags():
+            system_include_flags = []
+            for line in subprocess.getoutput(
+                "g++ -E -x c++ -v /dev/null"
+            ).splitlines():
+                if not line.startswith(" "):
+                    continue
+                system_include_flags.append("-isystem")
+                system_include_flags.append(line.strip())
+            return system_include_flags
+
         system_include_flags = _get_system_include_flags()
         index = clang.cindex.Index.create()
         args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
@@ -121,29 +120,6 @@ class _Operator:
         self.constructors = constructors
         self.calls = calls
         self.header_name = header_name if header_name is not None else name.lower()
-
-
-def _make_mock_node(params):
-    """Create a mock node with get_arguments() for manual operator specs."""
-
-    class _Type:
-        def __init__(self, spelling):
-            self.spelling = spelling
-
-    class _Arg:
-        def __init__(self, type_spelling, name):
-            self.type = _Type(type_spelling)
-            self.spelling = name
-
-    class _MockNode:
-        def get_arguments(self):
-            return [_Arg(typ, name) for typ, name in params]
-
-    return _MockNode()
-
-
-# Operators that fail libclang parse; provide manual spec for wrapper generation.
-_MANUAL_OP_SPECS = {}
 
 
 def _generate_pybind11(operator):
@@ -406,11 +382,11 @@ __C __export {_generate_destroy_func_decl(operator)};
 def _get_all_ops(devices):
     ops = {}
 
-    for base_file in _BASE_DIR.iterdir():
-        if not base_file.is_file():
+    for base_path in _BASE_DIR.iterdir():
+        if not base_path.is_file():
             continue
 
-        op_name = "".join(word.capitalize() for word in base_file.stem.split("_"))
+        op_name = "".join(word.capitalize() for word in base_path.stem.split("_"))
         impl_paths = []
 
         for impl_path in _SRC_DIR.rglob("*"):
@@ -420,7 +396,7 @@ def _get_all_ops(devices):
             if f"class Operator<{op_name}" in impl_path.read_text():
                 impl_paths.append(impl_path)
 
-        ops[op_name] = {"base_stem": base_file.stem, "impl_paths": impl_paths}
+        ops[op_name] = {"base_stem": base_path.stem, "impl_paths": impl_paths}
 
     return ops
 
@@ -463,24 +439,14 @@ if __name__ == "__main__":
             else op_data
         )
 
-        operator = None
-        if op_name in _MANUAL_OP_SPECS:
-            spec = _MANUAL_OP_SPECS[op_name]
-            operator = _Operator(
-                op_name,
-                constructors=[_make_mock_node(spec["constructor"])],
-                calls=[_make_mock_node(spec["call"])],
-                header_name=spec.get("header"),
+        extractor = _OperatorExtractor()
+        try:
+            operator = extractor(op_name, base_stem=base_stem)
+        except clang.cindex.TranslationUnitLoadError as e:
+            print(
+                f"Warning: Skipping {op_name} - failed to parse base header: {e}"
             )
-        else:
-            extractor = _OperatorExtractor()
-            try:
-                operator = extractor(op_name, base_stem=base_stem)
-            except clang.cindex.TranslationUnitLoadError as e:
-                print(
-                    f"Warning: Skipping {op_name} - failed to parse base header: {e}"
-                )
-                continue
+            continue
 
         valid_ops[op_name] = impl_paths
         source_path = _GENERATED_SRC_DIR / op_name.lower()
@@ -509,12 +475,7 @@ if __name__ == "__main__":
         f"{bind_func_name}(m);" for bind_func_name in bind_func_names
     )
 
-    has_cuda_impl = any(
-        str(p).endswith(".cu") for impls in valid_ops.values() for p in impls
-    )
-    ops_source = "ops.cu" if has_cuda_impl else "ops.cc"
-
-    (_BINDINGS_DIR / ops_source).write_text(f"""#include <pybind11/pybind11.h>
+    (_BINDINGS_DIR / "ops.cc").write_text(f"""#include <pybind11/pybind11.h>
 
 // clang-format off
 {impl_includes}

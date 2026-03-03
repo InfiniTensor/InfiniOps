@@ -43,7 +43,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # NVIDIA and Iluvatar are parallel backends; only one GPU backend at a time.
 if(WITH_NVIDIA AND WITH_ILUVATAR)
-    message(FATAL_ERROR "WITH_NVIDIA and WITH_ILUVATAR cannot both be ON. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA` and `WITH_ILUVATAR` cannot both be `ON`. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NVIDIA)
@@ -52,8 +52,8 @@ if(WITH_NVIDIA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# Iluvatar: CUDA-compatible device, uses clang++ with -x ivcore (not nvcc).
-# Reference: InfiniCore xmake/iluvatar.lua
+# Iluvatar: CUDA-compatible device, uses `clang++` with `-x ivcore` (not `nvcc`).
+# Reference: `InfiniCore` `xmake/iluvatar.lua`.
 if(WITH_ILUVATAR)
     add_compile_definitions(WITH_ILUVATAR=1)
     set(ILUVATAR_ARCH "ivcore20" CACHE STRING "Iluvatar GPU architecture")

@@ -5,14 +5,14 @@ import torch
 from tests.utils import Payload, empty_strided, randn_strided
 
 
-def _rms_norm(x, w, out, *, epsilon=1e-6):
-    infini.ops.rms_norm(out, x, w, epsilon)
+def _rms_norm(x, w, out, *, eps=1e-6):
+    infini.ops.rms_norm(out, x, w, eps)
 
     return out
 
 
-def _torch_rms_norm(x, w, out, *, epsilon=1e-6):
-    rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + epsilon)
+def _torch_rms_norm(x, w, out, *, eps=1e-6):
+    rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + eps)
     result = x * w / rms
     out.copy_(result)
 
@@ -31,7 +31,7 @@ def _torch_rms_norm(x, w, out, *, epsilon=1e-6):
         ((4, 48, 64), (64,), (3072, 64, 1), (1,), (3072, 64, 1)),
     ),
 )
-@pytest.mark.parametrize("epsilon", (1e-6, 1e-5))
+@pytest.mark.parametrize("eps", (1e-6, 1e-5))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -41,7 +41,7 @@ def _torch_rms_norm(x, w, out, *, epsilon=1e-6):
     ),
 )
 def test_rms_norm(
-    x_shape, w_shape, x_strides, w_strides, out_strides, epsilon, dtype, device, rtol, atol
+    x_shape, w_shape, x_strides, w_strides, out_strides, eps, dtype, device, rtol, atol
 ):
     if getattr(infini.ops, "rms_norm", None) is None:
         pytest.skip("rms_norm not available (wrapper generation skipped)")
@@ -54,5 +54,5 @@ def test_rms_norm(
     out = empty_strided(x_shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
-        _rms_norm, _torch_rms_norm, (x, w, out), {"epsilon": epsilon}, rtol=rtol, atol=atol
+        _rms_norm, _torch_rms_norm, (x, w, out), {"eps": eps}, rtol=rtol, atol=atol
     )

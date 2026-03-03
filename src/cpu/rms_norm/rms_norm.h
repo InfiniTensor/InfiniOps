@@ -12,43 +12,49 @@ namespace infini::ops {
 template <>
 class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
  public:
-  Operator(const Tensor y, const Tensor x, const Tensor w, float epsilon)
-      : RmsNorm{y, x, w, epsilon} {}
+  Operator(const Tensor out, const Tensor input, const Tensor weight,
+           float eps)
+      : RmsNorm{out, input, weight, eps} {}
 
-  Operator(const Tensor y, const Tensor x, const Tensor w)
-      : Operator{y, x, w, 1e-6f} {}
+  Operator(const Tensor out, const Tensor input, const Tensor weight)
+      : Operator{out, input, weight, 1e-6f} {}
 
-  void operator()(void* stream, Tensor y, const Tensor x, const Tensor w,
-                  float /*epsilon*/ = 0) const override {
+  void operator()(void* stream, Tensor out, const Tensor input,
+                  const Tensor weight, float /*eps*/ = 0) const override {
     // CPU backend supports fp32 only; fp16/bf16 use GPU backends.
-    if (y.dtype() != DataType::kFloat32 || x.dtype() != DataType::kFloat32 ||
-        w.dtype() != DataType::kFloat32) {
+    if (out.dtype() != DataType::kFloat32 || input.dtype() != DataType::kFloat32 ||
+        weight.dtype() != DataType::kFloat32) {
       abort();
     }
 
-    auto* y_ptr = static_cast<float*>(y.data());
-    const auto* x_ptr = static_cast<const float*>(x.data());
-    const auto* w_ptr = static_cast<const float*>(w.data());
+    auto* out_ptr = static_cast<float*>(out.data());
+    const auto* input_ptr = static_cast<const float*>(input.data());
+    const auto* weight_ptr = static_cast<const float*>(weight.data());
 
-    auto stride_x_batch = x_strides_.size() > 1 ? x_strides_[0] : 0;
-    auto stride_x_nhead = x_strides_.size() > 1 ? x_strides_[1] : x_strides_[0];
-    auto stride_y_batch = y_strides_.size() > 1 ? y_strides_[0] : 0;
-    auto stride_y_nhead = y_strides_.size() > 1 ? y_strides_[1] : y_strides_[0];
+    auto stride_input_batch =
+        input_strides_.size() > 1 ? input_strides_[0] : 0;
+    auto stride_input_nhead =
+        input_strides_.size() > 1 ? input_strides_[1] : input_strides_[0];
+    auto stride_out_batch = out_strides_.size() > 1 ? out_strides_[0] : 0;
+    auto stride_out_nhead =
+        out_strides_.size() > 1 ? out_strides_[1] : out_strides_[0];
 
     for (Tensor::Size bi = 0; bi < batch_size_; ++bi) {
       for (Tensor::Size hi = 0; hi < nhead_; ++hi) {
-        const float* x_row = x_ptr + bi * stride_x_batch + hi * stride_x_nhead;
-        float* y_row = y_ptr + bi * stride_y_batch + hi * stride_y_nhead;
+        const float* input_row =
+            input_ptr + bi * stride_input_batch + hi * stride_input_nhead;
+        float* out_row =
+            out_ptr + bi * stride_out_batch + hi * stride_out_nhead;
 
         float ss = 0;
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          float v = x_row[k];
+          float v = input_row[k];
           ss += v * v;
         }
-        float rms = 1.f / std::sqrt(ss / static_cast<float>(dim_) + epsilon_);
+        float rms = 1.f / std::sqrt(ss / static_cast<float>(dim_) + eps_);
 
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          y_row[k] = x_row[k] * w_ptr[k] * rms;
+          out_row[k] = input_row[k] * weight_ptr[k] * rms;
         }
       }
     }
