@@ -27,9 +27,7 @@ class _OperatorExtractor:
         def _get_system_include_flags():
             system_include_flags = []
 
-            for line in subprocess.getoutput(
-                "clang++ -E -x c++ -v /dev/null"
-            ).splitlines():
+            for line in subprocess.getoutput("g++ -E -x c++ -v /dev/null").splitlines():
                 if not line.startswith(" "):
                     continue
 
