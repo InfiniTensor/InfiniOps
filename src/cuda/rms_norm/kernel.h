@@ -23,39 +23,44 @@ constexpr unsigned int kBlockSize = 256;
 template <typename Backend>
 class CudaRmsNorm : public RmsNorm {
  public:
-  CudaRmsNorm(const Tensor y, const Tensor x, const Tensor w, float epsilon)
-      : RmsNorm{y, x, w, epsilon} {}
+  CudaRmsNorm(const Tensor out, const Tensor input, const Tensor weight,
+              float eps)
+      : RmsNorm{out, input, weight, eps} {}
 
-  CudaRmsNorm(const Tensor y, const Tensor x, const Tensor w)
-      : CudaRmsNorm{y, x, w, 1e-6f} {}
+  CudaRmsNorm(const Tensor out, const Tensor input, const Tensor weight)
+      : CudaRmsNorm{out, input, weight, 1e-6f} {}
 
-  void operator()(void* stream, Tensor y, const Tensor x, const Tensor w,
-                  float /*epsilon*/) const override {
+  void operator()(void* stream, Tensor out, const Tensor input,
+                  const Tensor weight, float /*eps*/) const override {
     auto cuda_stream =
         static_cast<typename Backend::stream_t>(stream ? stream : 0);
 
-    Backend::setDevice(y.device().index());
+    Backend::setDevice(out.device().index());
 
-    auto stride_x_batch = x_strides_.size() > 1 ? x_strides_[0] : 0;
-    auto stride_x_nhead = x_strides_.size() > 1 ? x_strides_[1] : x_strides_[0];
-    auto stride_y_batch = y_strides_.size() > 1 ? y_strides_[0] : 0;
-    auto stride_y_nhead = y_strides_.size() > 1 ? y_strides_[1] : y_strides_[0];
+    auto stride_input_batch =
+        input_strides_.size() > 1 ? input_strides_[0] : 0;
+    auto stride_input_nhead =
+        input_strides_.size() > 1 ? input_strides_[1] : input_strides_[0];
+    auto stride_out_batch = out_strides_.size() > 1 ? out_strides_[0] : 0;
+    auto stride_out_nhead =
+        out_strides_.size() > 1 ? out_strides_[1] : out_strides_[0];
 
     uint32_t num_blocks = static_cast<uint32_t>(batch_size_ * nhead_);
 
-    if (y.dtype() != x.dtype() || y.dtype() != w.dtype()) {
+    if (out.dtype() != input.dtype() || out.dtype() != weight.dtype()) {
       std::abort();
     }
 
     DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
-        y.dtype(),
+        out.dtype(),
         [&]<typename T>() {
           rmsnormKernel<kBlockSize, float, T, T>
               <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
-                  reinterpret_cast<T*>(y.data()), stride_y_batch,
-                  stride_y_nhead, reinterpret_cast<const T*>(x.data()),
-                  stride_x_batch, stride_x_nhead,
-                  reinterpret_cast<const T*>(w.data()), nhead_, dim_, epsilon_);
+                  reinterpret_cast<T*>(out.data()), stride_out_batch,
+                  stride_out_nhead, reinterpret_cast<const T*>(input.data()),
+                  stride_input_batch, stride_input_nhead,
+                  reinterpret_cast<const T*>(weight.data()), nhead_, dim_,
+                  eps_);
         },
         "CudaRmsNorm::operator()");
 
