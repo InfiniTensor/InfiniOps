@@ -35,8 +35,6 @@ class CudaRmsNorm : public RmsNorm {
     auto cuda_stream =
         static_cast<typename Backend::stream_t>(stream ? stream : 0);
 
-    Backend::setDevice(out.device().index());
-
     auto stride_input_batch =
         input_strides_.size() > 1 ? input_strides_[0] : 0;
     auto stride_input_nhead =
@@ -64,7 +62,6 @@ class CudaRmsNorm : public RmsNorm {
         },
         "CudaRmsNorm::operator()");
 
-    Backend::streamSynchronize(cuda_stream);
   }
 };
 

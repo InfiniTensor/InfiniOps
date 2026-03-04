@@ -12,27 +12,27 @@ namespace infini::ops {
 
 namespace {
 
-template <unsigned int BLOCK_SIZE, typename Tdata, typename Tcompute>
-__device__ __forceinline__ Tcompute sumSquared(const Tdata* data_ptr,
-                                               size_t count) {
-  Tcompute ss = 0;
-  for (size_t i = threadIdx.x; i < count; i += BLOCK_SIZE) {
-    ss += Tcompute(data_ptr[i]) * Tcompute(data_ptr[i]);
+template <unsigned int block_size, typename Data, typename Compute>
+__device__ __forceinline__ Compute sumSquared(const Data* data_ptr,
+                                              size_t count) {
+  Compute ss = 0;
+  for (size_t i = threadIdx.x; i < count; i += block_size) {
+    ss += Compute(data_ptr[i]) * Compute(data_ptr[i]);
   }
-  using BlockReduce = cub::BlockReduce<Tcompute, BLOCK_SIZE>;
+  using BlockReduce = cub::BlockReduce<Compute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
   return BlockReduce(temp_storage).Sum(ss);
 }
 
 }  // namespace
 
-template <unsigned int BLOCK_SIZE, typename Tcompute, typename Tdata,
-          typename Tweight>
-__global__ void rmsnormKernel(Tdata* __restrict__ y, int64_t stride_y_batch,
+template <unsigned int block_size, typename Compute, typename Data,
+          typename Weight>
+__global__ void rmsnormKernel(Data* __restrict__ y, int64_t stride_y_batch,
                               int64_t stride_y_nhead,
-                              const Tdata* __restrict__ x,
+                              const Data* __restrict__ x,
                               int64_t stride_x_batch, int64_t stride_x_nhead,
-                              const Tweight* __restrict__ w, size_t nhead,
+                              const Weight* __restrict__ w, size_t nhead,
                               size_t dim, float epsilon) {
   size_t batch_idx = blockIdx.x / nhead;
   size_t head_idx = blockIdx.x % nhead;
@@ -41,16 +41,16 @@ __global__ void rmsnormKernel(Tdata* __restrict__ y, int64_t stride_y_batch,
   auto x_ptr = x + batch_idx * stride_x_batch + head_idx * stride_x_nhead;
   auto w_ptr = w;
 
-  Tcompute ss = sumSquared<BLOCK_SIZE, Tdata, Tcompute>(x_ptr, dim);
+  Compute ss = sumSquared<block_size, Data, Compute>(x_ptr, dim);
 
-  __shared__ Tcompute rms;
+  __shared__ Compute rms;
   if (threadIdx.x == 0) {
-    rms = Tcompute(rsqrtf(ss / Tcompute(dim) + epsilon));
+    rms = Compute(rsqrtf(ss / Compute(dim) + epsilon));
   }
   __syncthreads();
 
-  for (size_t i = threadIdx.x; i < dim; i += BLOCK_SIZE) {
-    y_ptr[i] = Tdata(Tcompute(x_ptr[i]) * Tcompute(w_ptr[i]) * rms);
+  for (size_t i = threadIdx.x; i < dim; i += block_size) {
+    y_ptr[i] = Data(Compute(x_ptr[i]) * Compute(w_ptr[i]) * rms);
   }
 }
 

@@ -14,17 +14,17 @@ struct List {};
 // List Queries
 // -----------------------------------------------------------------------------
 
-// Check at compile-time if a Value exists within a construct (e.g., List<>).
+// Check at compile-time if a value exists within a construct (e.g., List<>).
 // Example: static_assert(ContainsValue<SupportedTiles, 32>);
-template <typename T, auto Value>
+template <typename T, auto value>
 struct Contains;
 
-template <auto Value, auto... Items>
-struct Contains<List<Items...>, Value>
-    : std::disjunction<std::bool_constant<Value == Items>...> {};
+template <auto value, auto... items>
+struct Contains<List<items...>, value>
+    : std::disjunction<std::bool_constant<value == items>...> {};
 
-template <typename T, auto Value>
-inline constexpr bool ContainsValue = Contains<T, Value>::value;
+template <typename T, auto value>
+inline constexpr bool ContainsValue = Contains<T, value>::value;
 
 // Check at compile-time if a type T is present in a variadic list of types Ts.
 // Example: static_assert(IsTypeInList<T, float, int>);
@@ -37,35 +37,35 @@ inline constexpr bool IsTypeInList = (std::is_same_v<T, Ts> || ...);
 
 // Concatenates two List types into a single List.
 // Example: ConcatType<List<1, 2>, List<3, 4>> is List<1, 2, 3, 4>.
-template <typename L1, typename L2>
+template <typename List1, typename List2>
 struct Concat;
 
-template <auto... I1, auto... I2>
-struct Concat<List<I1...>, List<I2...>> {
-  using type = List<I1..., I2...>;
+template <auto... i1, auto... i2>
+struct Concat<List<i1...>, List<i2...>> {
+  using type = List<i1..., i2...>;
 };
 
-template <typename L1, typename L2>
-using ConcatType = typename Concat<L1, L2>::type;
+template <typename List1, typename List2>
+using ConcatType = typename Concat<List1, List2>::type;
 
 // -----------------------------------------------------------------------------
 // Invocability Detection (SFINAE)
 // -----------------------------------------------------------------------------
 
-// Checks if a Functor's template operator()<Value> can be called with Args.
-template <typename Functor, auto Value, typename = void, typename... Args>
+// Checks if a Functor's template operator()<value> can be called with Args.
+template <typename Functor, auto value, typename = void, typename... Args>
 struct IsInvocable : std::false_type {};
 
-template <typename Functor, auto Value, typename... Args>
+template <typename Functor, auto value, typename... Args>
 struct IsInvocable<
-    Functor, Value,
-    std::void_t<decltype(std::declval<Functor>().template operator()<Value>(
+    Functor, value,
+    std::void_t<decltype(std::declval<Functor>().template operator()<value>(
         std::declval<Args>()...))>,
     Args...> : std::true_type {};
 
-template <typename Functor, auto Value, typename... Args>
+template <typename Functor, auto value, typename... Args>
 inline constexpr bool IsInvocableValue =
-    IsInvocable<Functor, Value, void, Args...>::value;
+    IsInvocable<Functor, value, void, Args...>::value;
 
 // -----------------------------------------------------------------------------
 // Filtering Logic
@@ -73,34 +73,34 @@ inline constexpr bool IsInvocableValue =
 
 // Recursive template to filter values based on Functor support at compile-time.
 template <typename Functor, typename ArgsTuple, typename Result,
-          auto... Remaining>
+          auto... remaining>
 struct Filter;
 
 // Base case: All values processed.
-template <typename Functor, typename... Args, auto... Filtered>
-struct Filter<Functor, std::tuple<Args...>, List<Filtered...>> {
-  using type = List<Filtered...>;
+template <typename Functor, typename... Args, auto... filtered>
+struct Filter<Functor, std::tuple<Args...>, List<filtered...>> {
+  using type = List<filtered...>;
 };
 
-// Recursive step: Test the 'Head' value and accumulate if supported.
-template <typename Functor, typename... Args, auto... Filtered, auto Head,
-          auto... Tail>
-struct Filter<Functor, std::tuple<Args...>, List<Filtered...>, Head, Tail...> {
+// Recursive step: Test the head value and accumulate if supported.
+template <typename Functor, typename... Args, auto... filtered, auto head,
+          auto... tail>
+struct Filter<Functor, std::tuple<Args...>, List<filtered...>, head, tail...> {
   using type = typename std::conditional_t<
-      IsInvocableValue<Functor, Head, Args...> &&
-          !ContainsValue<List<Filtered...>, Head>,
-      Filter<Functor, std::tuple<Args...>, List<Filtered..., Head>, Tail...>,
-      Filter<Functor, std::tuple<Args...>, List<Filtered...>, Tail...>>::type;
+      IsInvocableValue<Functor, head, Args...> &&
+          !ContainsValue<List<filtered...>, head>,
+      Filter<Functor, std::tuple<Args...>, List<filtered..., head>, tail...>,
+      Filter<Functor, std::tuple<Args...>, List<filtered...>, tail...>>::type;
 };
 
 // Interface to filter a List type directly.
 template <typename Functor, typename ArgsTuple, typename ListType>
 struct FilterList;
 
-template <typename Functor, typename... Args, auto... Items>
-struct FilterList<Functor, std::tuple<Args...>, List<Items...>> {
+template <typename Functor, typename... Args, auto... items>
+struct FilterList<Functor, std::tuple<Args...>, List<items...>> {
   using type =
-      typename Filter<Functor, std::tuple<Args...>, List<>, Items...>::type;
+      typename Filter<Functor, std::tuple<Args...>, List<>, items...>::type;
 };
 
 }  // namespace infini::ops

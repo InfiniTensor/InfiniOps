@@ -36,7 +36,6 @@ class Gemm : public Operator<Gemm> {
     // TODO: Check constraints.
   }
 
-
   Gemm(const Tensor a, const Tensor b, Tensor c)
       : Gemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
 

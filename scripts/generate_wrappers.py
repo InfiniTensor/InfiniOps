@@ -138,7 +138,6 @@ class _Operator:
         self.header_name = header_name if header_name is not None else name.lower()
 
 
-
 def _generate_pybind11(operator):
     def _generate_params(node):
         return (

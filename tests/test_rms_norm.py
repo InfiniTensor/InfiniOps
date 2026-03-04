@@ -5,15 +5,15 @@ import torch
 from tests.utils import Payload, empty_strided, randn_strided
 
 
-def _rms_norm(x, w, out, *, eps=1e-6):
-    infini.ops.rms_norm(out, x, w, eps)
+def _rms_norm(input_, weight, out, *, eps=1e-6):
+    infini.ops.rms_norm(out, input_, weight, eps)
 
     return out
 
 
-def _torch_rms_norm(x, w, out, *, eps=1e-6):
-    rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + eps)
-    result = x * w / rms
+def _torch_rms_norm(input_, weight, out, *, eps=1e-6):
+    rms = torch.sqrt(torch.mean(input_**2, dim=-1, keepdim=True) + eps)
+    result = input_ * weight / rms
     out.copy_(result)
 
     return out
@@ -21,7 +21,7 @@ def _torch_rms_norm(x, w, out, *, eps=1e-6):
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
-    "x_shape, w_shape, x_strides, w_strides, out_strides",
+    "input_shape, weight_shape, input_strides, weight_strides, out_strides",
     (
         ((1, 64), (64,), None, None, None),
         ((2, 128), (128,), None, None, None),
@@ -41,7 +41,16 @@ def _torch_rms_norm(x, w, out, *, eps=1e-6):
     ),
 )
 def test_rms_norm(
-    x_shape, w_shape, x_strides, w_strides, out_strides, eps, dtype, device, rtol, atol
+    input_shape,
+    weight_shape,
+    input_strides,
+    weight_strides,
+    out_strides,
+    eps,
+    dtype,
+    device,
+    rtol,
+    atol,
 ):
     if getattr(infini.ops, "rms_norm", None) is None:
         pytest.skip("rms_norm not available (wrapper generation skipped)")
@@ -49,10 +58,19 @@ def test_rms_norm(
     if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("CPU backend does not support fp16/bf16")
 
-    x = randn_strided(x_shape, x_strides, dtype=dtype, device=device)
-    w = randn_strided(w_shape, w_strides, dtype=dtype, device=device)
-    out = empty_strided(x_shape, out_strides, dtype=dtype, device=device)
+    input_ = randn_strided(
+        input_shape, input_strides, dtype=dtype, device=device
+    )
+    weight = randn_strided(
+        weight_shape, weight_strides, dtype=dtype, device=device
+    )
+    out = empty_strided(input_shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
-        _rms_norm, _torch_rms_norm, (x, w, out), {"eps": eps}, rtol=rtol, atol=atol
+        _rms_norm,
+        _torch_rms_norm,
+        (input_, weight, out),
+        {"eps": eps},
+        rtol=rtol,
+        atol=atol,
     )
