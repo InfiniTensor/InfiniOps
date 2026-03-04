@@ -16,11 +16,6 @@ namespace rms_norm {
 struct IluvatarBackend {
   using stream_t = cudaStream_t;
 
-  static constexpr auto setDevice = [](int dev) { cudaSetDevice(dev); };
-
-  static constexpr auto streamSynchronize = [](stream_t s) {
-    cudaStreamSynchronize(s);
-  };
 };
 
 }  // namespace rms_norm
