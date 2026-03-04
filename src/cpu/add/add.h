@@ -22,14 +22,14 @@ class Operator<Add, Device::Type::kCpu> : public Add {
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          compute<T>(stream, input, other, out);
+          Compute<T>(stream, input, other, out);
         },
-        "Operator<Add, Device::Type::kCpu>::operator()");
+        "`Operator<Add, Device::Type::kCpu>::operator()`");
   }
 
  private:
   template <typename T>
-  void compute(void* stream, const Tensor input, const Tensor other,
+  void Compute(void* stream, const Tensor input, const Tensor other,
                Tensor out) const {
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* other_ptr = static_cast<const T*>(other.data());
