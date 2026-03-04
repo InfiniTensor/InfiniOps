@@ -16,7 +16,7 @@ namespace infini::ops {
 // Core Generic Runtime Dispatchers
 // -----------------------------------------------------------------------------
 
-namespace {
+namespace detail {
 
 // Implements the dispatch body over a resolved List<head, tail...>.
 template <typename ValueType, typename Functor, typename... Args, auto head,
@@ -104,7 +104,7 @@ struct DispatchFuncUnwrap<ValueType, Functor, List<>, std::tuple<Args...>> {
   }
 };
 
-}  // namespace
+}  // namespace detail
 
 // (Single Dispatch) Dispatches a runtime value to a compile-time functor.
 template <typename ValueType, ValueType... all_values, typename Functor,
@@ -114,13 +114,10 @@ auto DispatchFunc(ValueType value, Functor &&func,
   using FilteredPack = typename Filter<Functor, std::tuple<Args...>, List<>,
                                        all_values...>::type;
 
-  return DispatchFuncUnwrap<ValueType, Functor, FilteredPack,
-                            std::tuple<Args...>>::call(value,
-                                                       std::forward<Functor>(
-                                                           func),
-                                                       context_str,
-                                                       std::forward<Args>(
-                                                           args)...);
+  return detail::DispatchFuncUnwrap<
+      ValueType, Functor, FilteredPack,
+      std::tuple<Args...>>::call(value, std::forward<Functor>(func),
+                                 context_str, std::forward<Args>(args)...);
 }
 
 // (Multi-Dispatch) Dispatches a vector of runtime values to a compile-time
@@ -194,7 +191,7 @@ auto DispatchFunc(const std::vector<int64_t> &values, size_t index,
 // -----------------------------------------------------------------------------
 // These provide cleaner and more convenient APIs for common InfiniOps types.
 
-namespace {
+namespace detail {
 
 // Bridges the generic value dispatch layer to the DataType-specific type
 // dispatch layer.
@@ -240,13 +237,13 @@ struct DeviceMultiAdapter {
   }
 };
 
-}  // namespace
+}  // namespace detail
 
 // DataType Dispatch
 template <DataType... allowed_dtypes, typename Functor, typename... Args>
 auto DispatchFunc(DataType dtype, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
-  DataTypeAdapter<std::remove_reference_t<Functor>> adapter{func};
+  detail::DataTypeAdapter<std::remove_reference_t<Functor>> adapter{func};
   return DispatchFunc<DataType, allowed_dtypes...>(dtype, adapter, context_str,
                                                    std::forward<Args>(args)...);
 }
@@ -258,7 +255,7 @@ auto DispatchFunc(std::initializer_list<DataType> dtypes, Functor &&func,
   std::vector<int64_t> v;
   for (auto d : dtypes) v.push_back(static_cast<int64_t>(d));
 
-  DataTypeMultiAdapter<std::remove_reference_t<Functor>> adapter{func};
+  detail::DataTypeMultiAdapter<std::remove_reference_t<Functor>> adapter{func};
   return DispatchFunc<Lists...>(v, 0, adapter, context_str, List<>{},
                                 std::forward<Args>(args)...);
 }
@@ -267,7 +264,7 @@ auto DispatchFunc(std::initializer_list<DataType> dtypes, Functor &&func,
 template <auto... allowed_devices, typename Functor, typename... Args>
 auto DispatchFunc(Device::Type device, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
-  DeviceAdapter<std::remove_reference_t<Functor>> adapter{func};
+  detail::DeviceAdapter<std::remove_reference_t<Functor>> adapter{func};
   return DispatchFunc<Device::Type,
                       static_cast<Device::Type>(allowed_devices)...>(
       device, adapter, context_str, std::forward<Args>(args)...);
@@ -280,7 +277,7 @@ auto DispatchFunc(std::initializer_list<Device::Type> devices, Functor &&func,
   std::vector<int64_t> v;
   for (auto d : devices) v.push_back(static_cast<int64_t>(d));
 
-  DeviceMultiAdapter<std::remove_reference_t<Functor>> adapter{func};
+  detail::DeviceMultiAdapter<std::remove_reference_t<Functor>> adapter{func};
   return DispatchFunc<Lists...>(v, 0, adapter, context_str, List<>{},
                                 std::forward<Args>(args)...);
 }
