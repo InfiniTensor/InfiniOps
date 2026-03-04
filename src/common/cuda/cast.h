@@ -14,14 +14,14 @@ namespace infini::ops {
 namespace detail {
 
 template <typename T>
-using pure_t = std::remove_cv_t<std::remove_reference_t<T>>;
+using PureType = std::remove_cv_t<std::remove_reference_t<T>>;
 
 template <typename T>
 __host__ __device__ constexpr float ToFloatHelper(T&& x) {
-  using T_raw = pure_t<T>;
-  if constexpr (IsBFloat16<T_raw>) {
+  using PureSrc = PureType<T>;
+  if constexpr (IsBFloat16<PureSrc>) {
     return __bfloat162float(x);
-  } else if constexpr (IsFP16<T_raw>) {
+  } else if constexpr (IsFP16<PureSrc>) {
     return __half2float(x);
   } else {
     return static_cast<float>(std::forward<T>(x));
@@ -30,10 +30,10 @@ __host__ __device__ constexpr float ToFloatHelper(T&& x) {
 
 template <typename Dst>
 __host__ __device__ constexpr Dst FromFloatHelper(float f) {
-  using Dst_raw = pure_t<Dst>;
-  if constexpr (IsBFloat16<Dst_raw>) {
+  using PureDst = PureType<Dst>;
+  if constexpr (IsBFloat16<PureDst>) {
     return __float2bfloat16(f);
-  } else if constexpr (IsFP16<Dst_raw>) {
+  } else if constexpr (IsFP16<PureDst>) {
     return __float2half(f);
   } else {
     return static_cast<Dst>(f);
@@ -59,20 +59,24 @@ __host__ __device__ constexpr Dst HardwareCast(Src&& x, PriorityLow) {
     return INTRINSIC(x);                                             \
   }
 
-DEFINE_DIRECT_CAST(__bfloat162int_rn,
-                   std::is_same_v<pure_t<Dst>, int>&& IsBFloat16<pure_t<Src>>)
-DEFINE_DIRECT_CAST(__bfloat162short_rn,
-                   std::is_same_v<pure_t<Dst>, short>&& IsBFloat16<pure_t<Src>>)
-DEFINE_DIRECT_CAST(__int2bfloat16_rn,
-                   IsBFloat16<pure_t<Dst>>&& std::is_same_v<pure_t<Src>, int>)
+DEFINE_DIRECT_CAST(
+    __bfloat162int_rn,
+    std::is_same_v<PureType<Dst>, int>&& IsBFloat16<PureType<Src>>)
+DEFINE_DIRECT_CAST(
+    __bfloat162short_rn,
+    std::is_same_v<PureType<Dst>, short>&& IsBFloat16<PureType<Src>>)
+DEFINE_DIRECT_CAST(
+    __int2bfloat16_rn,
+    IsBFloat16<PureType<Dst>>&& std::is_same_v<PureType<Src>, int>)
+DEFINE_DIRECT_CAST(__int2half_rn,
+                   IsFP16<PureType<Dst>>&& std::is_same_v<PureType<Src>, int>)
 DEFINE_DIRECT_CAST(
     __double2bfloat16,
-    IsBFloat16<pure_t<Dst>>&& std::is_same_v<pure_t<Src>, double>)
-DEFINE_DIRECT_CAST(__int2half_rn,
-                   IsFP16<pure_t<Dst>>&& std::is_same_v<pure_t<Src>, int>)
-DEFINE_DIRECT_CAST(__double2half,
-                   IsFP16<pure_t<Dst>>&& std::is_same_v<pure_t<Src>, double>)
-DEFINE_DIRECT_CAST(__half, IsFP16<pure_t<Dst>>&& IsBFloat16<pure_t<Src>>)
+    IsBFloat16<PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
+DEFINE_DIRECT_CAST(
+    __double2half,
+    IsFP16<PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
+DEFINE_DIRECT_CAST(__half, IsFP16<PureType<Dst>>&& IsBFloat16<PureType<Src>>)
 #undef DEFINE_DIRECT_CAST
 
 }  // namespace detail

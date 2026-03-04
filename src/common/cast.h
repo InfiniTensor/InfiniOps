@@ -9,8 +9,8 @@ namespace detail {
 
 template <typename T>
 constexpr float ToFloatHelper(T &&x) {
-  using PureT = std::remove_cv_t<std::remove_reference_t<T>>;
-  if constexpr (IsBFloat16<PureT> || IsFP16<PureT>) {
+  using PureSrc = std::remove_cv_t<std::remove_reference_t<T>>;
+  if constexpr (IsBFloat16<PureSrc> || IsFP16<PureSrc>) {
     return std::forward<T>(x).ToFloat();
   } else {
     return static_cast<float>(std::forward<T>(x));
