@@ -17,12 +17,6 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
     // TODO: Check constraints.
   }
 
-  Operator(const Tensor a, const Tensor b, float alpha, float beta,
-           bool trans_a, bool trans_b, Tensor c)
-      : Operator{a, b, std::optional<float>(alpha), std::optional<float>(beta),
-                  std::optional<int>(static_cast<int>(trans_a)),
-                  std::optional<int>(static_cast<int>(trans_b)), c} {}
-
   Operator(const Tensor a, const Tensor b, Tensor c)
       : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
                  c} {}

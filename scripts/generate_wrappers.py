@@ -75,17 +75,30 @@ inline Device::Type DeviceTypeFromString(const std::string& name) {
 class _OperatorExtractor:
     def __call__(self, op_name, base_stem=None):
         def _get_system_include_flags():
+            """Collect system include paths from g++ and clang++ so libclang can find STL (e.g. std::optional)."""
+            seen = set()
             system_include_flags = []
-            for line in subprocess.getoutput(
-                "g++ -E -x c++ -v /dev/null"
-            ).splitlines():
-                if not line.startswith(" "):
+
+            for compiler in ("clang++", "g++"):
+                try:
+                    for line in subprocess.getoutput(
+                        f"{compiler} -E -x c++ -v /dev/null"
+                    ).splitlines():
+                        if not line.startswith(" "):
+                            continue
+
+                        path = line.strip()
+                        if path and path not in seen:
+                            seen.add(path)
+                            system_include_flags.append("-isystem")
+                            system_include_flags.append(path)
+                except Exception:
                     continue
-                system_include_flags.append("-isystem")
-                system_include_flags.append(line.strip())
+
             return system_include_flags
 
         system_include_flags = _get_system_include_flags()
+
         index = clang.cindex.Index.create()
         args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
         header = f"src/base/{(base_stem or op_name.lower())}.h"
@@ -117,9 +130,13 @@ class _OperatorExtractor:
 class _Operator:
     def __init__(self, name, constructors, calls, header_name=None):
         self.name = name
+
         self.constructors = constructors
+
         self.calls = calls
+
         self.header_name = header_name if header_name is not None else name.lower()
+
 
 
 def _generate_pybind11(operator):
@@ -132,8 +149,6 @@ def _generate_pybind11(operator):
             )
             .replace("const Tensor", "py::object")
             .replace("Tensor", "py::object")
-            .replace("std::optional<float>", "float")
-            .replace("std::optional<int>", "bool")
         )
 
     def _generate_arguments(node):
