@@ -12,8 +12,7 @@ namespace infini::ops {
 template <>
 class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
  public:
-  Operator(const Tensor out, const Tensor input, const Tensor weight,
-           float eps)
+  Operator(const Tensor out, const Tensor input, const Tensor weight, float eps)
       : RmsNorm{out, input, weight, eps} {}
 
   Operator(const Tensor out, const Tensor input, const Tensor weight)
@@ -22,7 +21,8 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
   void operator()(void* stream, Tensor out, const Tensor input,
                   const Tensor weight, float /*eps*/ = 0) const override {
     // CPU backend supports fp32 only; fp16/bf16 use GPU backends.
-    if (out.dtype() != DataType::kFloat32 || input.dtype() != DataType::kFloat32 ||
+    if (out.dtype() != DataType::kFloat32 ||
+        input.dtype() != DataType::kFloat32 ||
         weight.dtype() != DataType::kFloat32) {
       abort();
     }
@@ -31,8 +31,7 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
     const auto* input_ptr = static_cast<const float*>(input.data());
     const auto* weight_ptr = static_cast<const float*>(weight.data());
 
-    auto stride_input_batch =
-        input_strides_.size() > 1 ? input_strides_[0] : 0;
+    auto stride_input_batch = input_strides_.size() > 1 ? input_strides_[0] : 0;
     auto stride_input_nhead =
         input_strides_.size() > 1 ? input_strides_[1] : input_strides_[0];
     auto stride_out_batch = out_strides_.size() > 1 ? out_strides_[0] : 0;

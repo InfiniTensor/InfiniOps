@@ -35,8 +35,7 @@ class CudaRmsNorm : public RmsNorm {
     auto cuda_stream =
         static_cast<typename Backend::stream_t>(stream ? stream : 0);
 
-    auto stride_input_batch =
-        input_strides_.size() > 1 ? input_strides_[0] : 0;
+    auto stride_input_batch = input_strides_.size() > 1 ? input_strides_[0] : 0;
     auto stride_input_nhead =
         input_strides_.size() > 1 ? input_strides_[1] : input_strides_[0];
     auto stride_out_batch = out_strides_.size() > 1 ? out_strides_[0] : 0;
@@ -61,7 +60,6 @@ class CudaRmsNorm : public RmsNorm {
                   eps_);
         },
         "CudaRmsNorm::operator()");
-
   }
 };
 

@@ -15,7 +15,6 @@ namespace rms_norm {
 
 struct IluvatarBackend {
   using stream_t = cudaStream_t;
-
 };
 
 }  // namespace rms_norm

@@ -21,8 +21,8 @@ template <typename ValueType, ValueType... all_values, typename Functor,
           typename... Args>
 auto DispatchFunc(ValueType value, Functor&& func,
                   std::string_view context_str = "", Args&&... args) {
-  using FilteredPack =
-      typename Filter<Functor, std::tuple<Args...>, List<>, all_values...>::type;
+  using FilteredPack = typename Filter<Functor, std::tuple<Args...>, List<>,
+                                       all_values...>::type;
 
   return [&]<auto head, auto... tail>(List<head, tail...>) {
     using ReturnType =
