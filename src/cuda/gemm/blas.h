@@ -21,12 +21,6 @@ class Blas : public Gemm {
     // TODO: Check constraints.
   }
 
-  Blas(const Tensor a, const Tensor b, float alpha, float beta, bool trans_a,
-       bool trans_b, Tensor c)
-      : Blas{a, b, std::optional<float>(alpha), std::optional<float>(beta),
-             std::optional<int>(static_cast<int>(trans_a)),
-             std::optional<int>(static_cast<int>(trans_b)), c} {}
-
   ~Blas() { Backend::blasDestroy(handle_); }
 
   Blas(const Tensor a, const Tensor b, std::optional<float> alpha,
