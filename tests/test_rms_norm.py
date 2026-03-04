@@ -5,20 +5,6 @@ import torch
 from tests.utils import Payload, empty_strided, randn_strided
 
 
-def _rms_norm(input_, weight, out, *, eps=1e-6):
-    infini.ops.rms_norm(out, input_, weight, eps)
-
-    return out
-
-
-def _torch_rms_norm(input_, weight, out, *, eps=1e-6):
-    rms = torch.sqrt(torch.mean(input_**2, dim=-1, keepdim=True) + eps)
-    result = input_ * weight / rms
-    out.copy_(result)
-
-    return out
-
-
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
     "input_shape, weight_shape, input_strides, weight_strides, out_strides",
@@ -52,21 +38,28 @@ def test_rms_norm(
     rtol,
     atol,
 ):
-    if getattr(infini.ops, "rms_norm", None) is None:
-        pytest.skip("rms_norm not available (wrapper generation skipped)")
-
     if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("CPU backend does not support fp16/bf16")
 
-    input_ = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
+    input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
     out = empty_strided(input_shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
         _rms_norm,
         _torch_rms_norm,
-        (input_, weight, out),
-        {"eps": eps},
+        (input, weight),
+        {"eps": eps, "out": out},
         rtol=rtol,
         atol=atol,
     )
+
+
+def _rms_norm(input, weight, *, eps=1e-6, out=None):
+    infini.ops.rms_norm(input, weight, eps, out)
+
+    return out
+
+
+def _torch_rms_norm(input, weight, *, eps=1e-6, out=None):
+    return torch.nn.functional.rms_norm(input, input.shape[-1:], weight=weight, eps=eps)

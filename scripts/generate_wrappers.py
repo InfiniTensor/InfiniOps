@@ -1,6 +1,7 @@
 import argparse
 import json
 import pathlib
+import shutil
 import subprocess
 import textwrap
 
@@ -25,25 +26,26 @@ _INDENTATION = "  "
 class _OperatorExtractor:
     def __call__(self, op_name, base_stem=None):
         def _get_system_include_flags():
-            """Collect system include paths from g++ and clang++ so libclang can find STL (e.g. std::optional)."""
-            seen = set()
+            def _get_compilers():
+                compilers = []
+
+                for compiler in ("clang++", "g++"):
+                    if shutil.which(compiler) is not None:
+                        compilers.append(compiler)
+
+                return compilers
+
             system_include_flags = []
 
-            for compiler in ("clang++", "g++"):
-                try:
-                    for line in subprocess.getoutput(
-                        f"{compiler} -E -x c++ -v /dev/null"
-                    ).splitlines():
-                        if not line.startswith(" "):
-                            continue
+            for compiler in _get_compilers():
+                for line in subprocess.getoutput(
+                    f"{compiler} -E -x c++ -v /dev/null"
+                ).splitlines():
+                    if not line.startswith(" "):
+                        continue
 
-                        path = line.strip()
-                        if path and path not in seen:
-                            seen.add(path)
-                            system_include_flags.append("-isystem")
-                            system_include_flags.append(path)
-                except Exception:
-                    continue
+                    system_include_flags.append("-isystem")
+                    system_include_flags.append(line.strip())
 
             return system_include_flags
 
@@ -389,21 +391,13 @@ if __name__ == "__main__":
     header_paths = []
     bind_func_names = []
 
-    valid_ops = {}
     for op_name, op_data in ops.items():
-        base_stem = op_data.get("base_stem") if isinstance(op_data, dict) else None
-        impl_paths = (
-            op_data.get("impl_paths", op_data) if isinstance(op_data, dict) else op_data
-        )
+        base_stem = op_data.get("base_stem")
+        impl_paths = op_data.get("impl_paths", op_data)
 
         extractor = _OperatorExtractor()
-        try:
-            operator = extractor(op_name, base_stem=base_stem)
-        except clang.cindex.TranslationUnitLoadError as e:
-            print(f"Warning: Skipping {op_name} - failed to parse base header: {e}")
-            continue
+        operator = extractor(op_name, base_stem=base_stem)
 
-        valid_ops[op_name] = impl_paths
         source_path = _GENERATED_SRC_DIR / op_name.lower()
         header_name = f"{operator.header_name}.h"
         bind_func_name = f"Bind{op_name}"
@@ -422,8 +416,8 @@ if __name__ == "__main__":
 
     impl_includes = "\n".join(
         f'#include "{impl_path}"'
-        for impl_paths in valid_ops.values()
-        for impl_path in impl_paths
+        for op_data in ops.values()
+        for impl_path in op_data["impl_paths"]
     )
     op_includes = "\n".join(f'#include "{header_path}"' for header_path in header_paths)
     bind_func_calls = "\n".join(

@@ -9,12 +9,12 @@ version = "0.1.0"
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff", "torch"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
 [tool.scikit-build.wheel]
 install-dir = "infini"
 
 [tool.scikit-build.cmake.define]
 AUTO_DETECT_DEVICES = "ON"
 GENERATE_PYTHON_BINDINGS = "ON"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -12,14 +12,10 @@ namespace infini::ops {
 template <>
 class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
  public:
-  Operator(const Tensor out, const Tensor input, const Tensor weight, float eps)
-      : RmsNorm{out, input, weight, eps} {}
+  using RmsNorm::RmsNorm;
 
-  Operator(const Tensor out, const Tensor input, const Tensor weight)
-      : Operator{out, input, weight, 1e-6f} {}
-
-  void operator()(void* stream, Tensor out, const Tensor input,
-                  const Tensor weight, float /*eps*/ = 0) const override {
+  void operator()(void* stream, const Tensor input, const Tensor weight,
+                  float eps, Tensor out) const override {
     // CPU backend supports fp32 only; fp16/bf16 use GPU backends.
     if (out.dtype() != DataType::kFloat32 ||
         input.dtype() != DataType::kFloat32 ||

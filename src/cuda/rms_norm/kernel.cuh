@@ -13,7 +13,7 @@ namespace infini::ops {
 namespace {
 
 template <unsigned int block_size, typename Data, typename Compute>
-__device__ __forceinline__ Compute sumSquared(const Data* data_ptr,
+__device__ __forceinline__ Compute SumSquared(const Data* data_ptr,
                                               size_t count) {
   Compute ss = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
@@ -28,7 +28,7 @@ __device__ __forceinline__ Compute sumSquared(const Data* data_ptr,
 
 template <unsigned int block_size, typename Compute, typename Data,
           typename Weight>
-__global__ void rmsnormKernel(Data* __restrict__ y, int64_t stride_y_batch,
+__global__ void RmsNormKernel(Data* __restrict__ y, int64_t stride_y_batch,
                               int64_t stride_y_nhead,
                               const Data* __restrict__ x,
                               int64_t stride_x_batch, int64_t stride_x_nhead,
@@ -41,7 +41,7 @@ __global__ void rmsnormKernel(Data* __restrict__ y, int64_t stride_y_batch,
   auto x_ptr = x + batch_idx * stride_x_batch + head_idx * stride_x_nhead;
   auto w_ptr = w;
 
-  Compute ss = sumSquared<block_size, Data, Compute>(x_ptr, dim);
+  Compute ss = SumSquared<block_size, Data, Compute>(x_ptr, dim);
 
   __shared__ Compute rms;
   if (threadIdx.x == 0) {

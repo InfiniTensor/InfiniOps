@@ -11,8 +11,7 @@ namespace infini::ops {
 
 class RmsNorm : public Operator<RmsNorm> {
  public:
-  // Parameter order and naming follow PyTorch: input, weight, eps, out.
-  RmsNorm(const Tensor out, const Tensor input, const Tensor weight, float eps)
+  RmsNorm(const Tensor input, const Tensor weight, float eps, Tensor out)
       : eps_{eps},
         out_shape_{out.shape()},
         input_shape_{input.shape()},
@@ -23,27 +22,27 @@ class RmsNorm : public Operator<RmsNorm> {
         batch_size_{ndim_ == 2 ? out.size(-2) : out.size(-3)},
         nhead_{ndim_ == 2 ? 1 : out.size(-2)} {}
 
-  RmsNorm(const Tensor out, const Tensor input, const Tensor weight)
-      : RmsNorm{out, input, weight, 1e-6f} {}
+  RmsNorm(const Tensor input, const Tensor weight, Tensor out)
+      : RmsNorm{input, weight, 1e-6f, out} {}
 
-  virtual void operator()(void* stream, Tensor out, const Tensor input,
-                          const Tensor weight, float eps) const = 0;
+  virtual void operator()(void* stream, const Tensor input, const Tensor weight,
+                          float eps, Tensor out) const = 0;
 
-  virtual void operator()(void* stream, Tensor out, const Tensor input,
-                          const Tensor weight) const {
-    return operator()(stream, out, input, weight, eps_);
+  virtual void operator()(void* stream, const Tensor input, const Tensor weight,
+                          Tensor out) const {
+    return operator()(stream, input, weight, eps_, out);
   }
 
  protected:
-  float eps_{1e-6f};
+  Tensor::Shape input_shape_;
 
   Tensor::Shape out_shape_;
 
-  Tensor::Shape input_shape_;
+  Tensor::Strides input_strides_;
 
   Tensor::Strides out_strides_;
 
-  Tensor::Strides input_strides_;
+  float eps_{1e-6f};
 
   Tensor::Size dim_{0};
 

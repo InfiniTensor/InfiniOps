@@ -23,15 +23,10 @@ constexpr unsigned int kBlockSize = 256;
 template <typename Backend>
 class CudaRmsNorm : public RmsNorm {
  public:
-  CudaRmsNorm(const Tensor out, const Tensor input, const Tensor weight,
-              float eps)
-      : RmsNorm{out, input, weight, eps} {}
+  using RmsNorm::RmsNorm;
 
-  CudaRmsNorm(const Tensor out, const Tensor input, const Tensor weight)
-      : CudaRmsNorm{out, input, weight, 1e-6f} {}
-
-  void operator()(void* stream, Tensor out, const Tensor input,
-                  const Tensor weight, float /*eps*/) const override {
+  void operator()(void* stream, const Tensor input, const Tensor weight,
+                  float eps, Tensor out) const override {
     auto cuda_stream =
         static_cast<typename Backend::stream_t>(stream ? stream : 0);
 
@@ -51,7 +46,7 @@ class CudaRmsNorm : public RmsNorm {
     DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
         out.dtype(),
         [&]<typename T>() {
-          rmsnormKernel<kBlockSize, float, T, T>
+          RmsNormKernel<kBlockSize, float, T, T>
               <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()), stride_out_batch,
                   stride_out_nhead, reinterpret_cast<const T*>(input.data()),
