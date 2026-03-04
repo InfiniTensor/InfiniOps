@@ -8,9 +8,9 @@
 
 namespace infini::ops {
 
-template <typename Key, typename Value, std::size_t N>
+template <typename Key, typename Value, std::size_t size>
 struct ConstexprMap {
-  constexpr ConstexprMap(std::array<std::pair<Key, Value>, N> data)
+  constexpr ConstexprMap(std::array<std::pair<Key, Value>, size> data)
       : data_(data) {}
 
   constexpr Value at(Key key) const {
@@ -24,7 +24,7 @@ struct ConstexprMap {
   }
 
  private:
-  std::array<std::pair<Key, Value>, N> data_;
+  std::array<std::pair<Key, Value>, size> data_;
 };
 
 }  // namespace infini::ops

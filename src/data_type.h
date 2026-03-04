@@ -7,7 +7,10 @@
 #ifdef WITH_NVIDIA
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
-#elif WITH_METAX
+#elif defined(WITH_ILUVATAR)
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
+#elif defined(WITH_METAX)
 #include <common/maca_bfloat16.h>
 #include <common/maca_fp16.h>
 #endif
@@ -111,10 +114,10 @@ DEFINE_DATA_TYPE_MAPPING(kInt64, int64_t)
 DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
 DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
 
-#ifdef WITH_NVIDIA
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
 DEFINE_DATA_TYPE_MAPPING(kFloat16, half)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
-#elif WITH_METAX
+#elif defined(WITH_METAX)
 DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, __maca_bfloat16)
 #else

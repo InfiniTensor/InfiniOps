@@ -41,18 +41,33 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# NVIDIA and Iluvatar are parallel backends; only one GPU backend at a time.
+if(WITH_NVIDIA AND WITH_ILUVATAR)
+    message(FATAL_ERROR "`WITH_NVIDIA` and `WITH_ILUVATAR` cannot both be `ON`. Build one GPU backend at a time.")
+endif()
+
 if(WITH_NVIDIA)
     add_compile_definitions(WITH_NVIDIA=1)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
+# Iluvatar: CUDA-compatible device, uses `clang++` with `-x ivcore` (not `nvcc`).
+# Reference: `InfiniCore` `xmake/iluvatar.lua`.
 if(WITH_ILUVATAR)
     add_compile_definitions(WITH_ILUVATAR=1)
-    if(NOT WITH_NVIDIA)
-        enable_language(CUDA)
-        find_package(CUDAToolkit REQUIRED)
+    set(ILUVATAR_ARCH "ivcore20" CACHE STRING "Iluvatar GPU architecture")
+    find_program(CLANGXX NAMES clang++)
+    if(CLANGXX)
+        set(CMAKE_CUDA_COMPILER "${CLANGXX}" CACHE STRING "Iluvatar CUDA compiler (clang++)")
+    else()
+        set(CMAKE_CUDA_COMPILER "clang++" CACHE STRING "Iluvatar CUDA compiler (clang++)")
     endif()
+    set(CMAKE_CUDA_FLAGS "-x ivcore -std=c++17 --cuda-gpu-arch=${ILUVATAR_ARCH} -fPIC -Wno-error=unused-variable -Wno-error=unused-private-field -Wno-unused-variable" CACHE STRING "Iluvatar CUDA flags")
+    set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Iluvatar")
+    message(STATUS "Iluvatar: CUDA compiler ${CMAKE_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
 endif()
 
 if(WITH_METAX)

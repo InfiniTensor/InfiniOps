@@ -1,6 +1,7 @@
 import argparse
 import json
 import pathlib
+import shutil
 import subprocess
 import textwrap
 
@@ -25,14 +26,26 @@ _INDENTATION = "  "
 class _OperatorExtractor:
     def __call__(self, op_name):
         def _get_system_include_flags():
+            def _get_compilers():
+                compilers = []
+
+                for compiler in ("clang++", "g++"):
+                    if shutil.which(compiler) is not None:
+                        compilers.append(compiler)
+
+                return compilers
+
             system_include_flags = []
 
-            for line in subprocess.getoutput("g++ -E -x c++ -v /dev/null").splitlines():
-                if not line.startswith(" "):
-                    continue
+            for compiler in _get_compilers():
+                for line in subprocess.getoutput(
+                    f"{compiler} -E -x c++ -v /dev/null"
+                ).splitlines():
+                    if not line.startswith(" "):
+                        continue
 
-                system_include_flags.append("-isystem")
-                system_include_flags.append(line.strip())
+                    system_include_flags.append("-isystem")
+                    system_include_flags.append(line.strip())
 
             return system_include_flags
 
@@ -40,7 +53,7 @@ class _OperatorExtractor:
 
         index = clang.cindex.Index.create()
         args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name.lower()}.h", args=args)
+        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -57,7 +70,12 @@ class _OperatorExtractor:
 
     @staticmethod
     def _find(node, op_name):
-        if node.semantic_parent and node.semantic_parent.spelling == op_name:
+        pascal_case_op_name = _snake_to_pascal(op_name)
+
+        if (
+            node.semantic_parent
+            and node.semantic_parent.spelling == pascal_case_op_name
+        ):
             yield node
 
         for child in node.get_children():
@@ -107,7 +125,7 @@ def _generate_pybind11(operator):
         call_params = _generate_params(call)
 
         if not method:
-            return f"""  m.def("{op_name.lower()}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
+            return f"""  m.def("{op_name}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
         return static_cast<const Operator<Self>&>(self)({_generate_arguments(call)});
@@ -121,23 +139,25 @@ def _generate_pybind11(operator):
         _generate_call(operator.name, call, method=False) for call in operator.calls
     )
 
+    pascal_case_op_name = _snake_to_pascal(op_name)
+
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "base/{op_name.lower()}.h"
+#include "base/{op_name}.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;
 
 namespace infini::ops {{
 
-void Bind{op_name}(py::module& m) {{
-  using Self = {op_name};
+void Bind{pascal_case_op_name}(py::module& m) {{
+  using Self = {pascal_case_op_name};
 
-  py::class_<Self>(m, "{op_name}")
+  py::class_<Self>(m, "{pascal_case_op_name}")
 {inits}
 {calls};
 
@@ -324,6 +344,10 @@ __C __export {_generate_destroy_func_decl(operator)};
     return _generate_source(operator), _generate_header(operator)
 
 
+def _snake_to_pascal(snake_str):
+    return "".join(word.capitalize() for word in snake_str.split("_"))
+
+
 def _get_all_ops(devices):
     ops = {}
 
@@ -331,7 +355,7 @@ def _get_all_ops(devices):
         if not file_path.is_file():
             continue
 
-        op_name = "".join(word.capitalize() for word in file_path.stem.split("_"))
+        op_name = file_path.stem
 
         ops[op_name] = []
 
@@ -339,7 +363,7 @@ def _get_all_ops(devices):
             if not file_path.is_file() or file_path.parent.parent.name not in devices:
                 continue
 
-            if f"class Operator<{op_name}" in file_path.read_text():
+            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
                 ops[op_name].append(file_path)
 
     return ops
@@ -376,17 +400,15 @@ if __name__ == "__main__":
         extractor = _OperatorExtractor()
         operator = extractor(op_name)
 
-        source_path = _GENERATED_SRC_DIR / op_name.lower()
-        header_name = f"{op_name.lower()}.h"
-        bind_func_name = f"Bind{op_name}"
+        source_path = _GENERATED_SRC_DIR / op_name
+        header_name = f"{op_name}.h"
+        bind_func_name = f"Bind{_snake_to_pascal(op_name)}"
 
         (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
 
         legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
         source_path.mkdir(exist_ok=True)
-        (_GENERATED_SRC_DIR / op_name.lower() / "operator.cc").write_text(
-            legacy_c_source
-        )
+        (_GENERATED_SRC_DIR / op_name / "operator.cc").write_text(legacy_c_source)
         (_INCLUDE_DIR / header_name).write_text(legacy_c_header)
 
         header_paths.append(header_name)

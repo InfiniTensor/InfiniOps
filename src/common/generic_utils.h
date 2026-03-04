@@ -16,8 +16,8 @@ std::size_t indexToOffset(std::size_t flat_index, std::size_t ndim,
   return res;
 }
 
-template <typename Tx, typename Ty>
-constexpr auto CeilDiv(const Tx& x, const Ty& y) {
+template <typename X, typename Y>
+constexpr auto CeilDiv(const X& x, const Y& y) {
   return (x + y - 1) / y;
 }
 
