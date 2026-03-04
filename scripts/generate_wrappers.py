@@ -24,7 +24,7 @@ _INDENTATION = "  "
 
 
 class _OperatorExtractor:
-    def __call__(self, op_name, base_stem=None):
+    def __call__(self, op_name):
         def _get_system_include_flags():
             def _get_compilers():
                 compilers = []
@@ -53,8 +53,7 @@ class _OperatorExtractor:
 
         index = clang.cindex.Index.create()
         args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        header = f"src/base/{(base_stem or op_name.lower())}.h"
-        translation_unit = index.parse(header, args=args)
+        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -67,12 +66,16 @@ class _OperatorExtractor:
             elif node.kind == CursorKind.CXX_METHOD and node.spelling == "operator()":
                 calls.append(node)
 
-        header_name = base_stem if base_stem is not None else op_name.lower()
-        return _Operator(op_name, constructors, calls, header_name=header_name)
+        return _Operator(op_name, constructors, calls)
 
     @staticmethod
     def _find(node, op_name):
-        if node.semantic_parent and node.semantic_parent.spelling == op_name:
+        pascal_case_op_name = _snake_to_pascal(op_name)
+
+        if (
+            node.semantic_parent
+            and node.semantic_parent.spelling == pascal_case_op_name
+        ):
             yield node
 
         for child in node.get_children():
@@ -80,14 +83,12 @@ class _OperatorExtractor:
 
 
 class _Operator:
-    def __init__(self, name, constructors, calls, header_name=None):
+    def __init__(self, name, constructors, calls):
         self.name = name
 
         self.constructors = constructors
 
         self.calls = calls
-
-        self.header_name = header_name if header_name is not None else name.lower()
 
 
 def _generate_pybind11(operator):
@@ -124,7 +125,7 @@ def _generate_pybind11(operator):
         call_params = _generate_params(call)
 
         if not method:
-            return f"""  m.def("{op_name.lower()}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
+            return f"""  m.def("{op_name}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
         return static_cast<const Operator<Self>&>(self)({_generate_arguments(call)});
@@ -135,9 +136,10 @@ def _generate_pybind11(operator):
     )
     calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
     callers = "\n".join(
-        _generate_call(operator.header_name, call, method=False)
-        for call in operator.calls
+        _generate_call(operator.name, call, method=False) for call in operator.calls
     )
+
+    pascal_case_op_name = _snake_to_pascal(op_name)
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -145,17 +147,17 @@ def _generate_pybind11(operator):
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "base/{operator.header_name}.h"
+#include "base/{op_name}.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;
 
 namespace infini::ops {{
 
-void Bind{op_name}(py::module& m) {{
-  using Self = {op_name};
+void Bind{pascal_case_op_name}(py::module& m) {{
+  using Self = {pascal_case_op_name};
 
-  py::class_<Self>(m, "{op_name}")
+  py::class_<Self>(m, "{pascal_case_op_name}")
 {inits}
 {calls};
 
@@ -176,7 +178,7 @@ def _generate_legacy_c(operator, paths):
 
         return f"""#include "../../handle.h"
 #include "../../tensor.h"
-#include "infiniop/ops/{operator.header_name}.h"
+#include "infiniop/ops/{operator.name.lower()}.h"
 {impl_includes}
 
 static infini::ops::DataType DataTypeFromInfiniDType(
@@ -233,7 +235,7 @@ __C {_generate_destroy_func_def(operator)}
         return f"""#ifndef __INFINIOP_{operator.name.upper()}_API_H__
 #define __INFINIOP_{operator.name.upper()}_API_H__
 
-#include "base/{operator.header_name}.h"
+#include "base/{operator.name.lower()}.h"
 
 typedef struct infini::ops::Operator<infini::ops::{operator.name}> *infiniop{operator.name}Descriptor_t;
 
@@ -342,24 +344,27 @@ __C __export {_generate_destroy_func_decl(operator)};
     return _generate_source(operator), _generate_header(operator)
 
 
+def _snake_to_pascal(snake_str):
+    return "".join(word.capitalize() for word in snake_str.split("_"))
+
+
 def _get_all_ops(devices):
     ops = {}
 
-    for base_path in _BASE_DIR.iterdir():
-        if not base_path.is_file():
+    for file_path in _BASE_DIR.iterdir():
+        if not file_path.is_file():
             continue
 
-        op_name = "".join(word.capitalize() for word in base_path.stem.split("_"))
-        impl_paths = []
+        op_name = file_path.stem
 
-        for impl_path in _SRC_DIR.rglob("*"):
-            if not impl_path.is_file() or impl_path.parent.parent.name not in devices:
+        ops[op_name] = []
+
+        for file_path in _SRC_DIR.rglob("*"):
+            if not file_path.is_file() or file_path.parent.parent.name not in devices:
                 continue
 
-            if f"class Operator<{op_name}" in impl_path.read_text():
-                impl_paths.append(impl_path)
-
-        ops[op_name] = {"base_stem": base_path.stem, "impl_paths": impl_paths}
+            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
+                ops[op_name].append(file_path)
 
     return ops
 
@@ -391,24 +396,19 @@ if __name__ == "__main__":
     header_paths = []
     bind_func_names = []
 
-    for op_name, op_data in ops.items():
-        base_stem = op_data.get("base_stem")
-        impl_paths = op_data.get("impl_paths", op_data)
-
+    for op_name, impl_paths in ops.items():
         extractor = _OperatorExtractor()
-        operator = extractor(op_name, base_stem=base_stem)
+        operator = extractor(op_name)
 
-        source_path = _GENERATED_SRC_DIR / op_name.lower()
-        header_name = f"{operator.header_name}.h"
-        bind_func_name = f"Bind{op_name}"
+        source_path = _GENERATED_SRC_DIR / op_name
+        header_name = f"{op_name}.h"
+        bind_func_name = f"Bind{_snake_to_pascal(op_name)}"
 
         (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
 
         legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
         source_path.mkdir(exist_ok=True)
-        (_GENERATED_SRC_DIR / op_name.lower() / "operator.cc").write_text(
-            legacy_c_source
-        )
+        (_GENERATED_SRC_DIR / op_name / "operator.cc").write_text(legacy_c_source)
         (_INCLUDE_DIR / header_name).write_text(legacy_c_header)
 
         header_paths.append(header_name)
@@ -416,8 +416,8 @@ if __name__ == "__main__":
 
     impl_includes = "\n".join(
         f'#include "{impl_path}"'
-        for op_data in ops.values()
-        for impl_path in op_data["impl_paths"]
+        for impl_paths in ops.values()
+        for impl_path in impl_paths
     )
     op_includes = "\n".join(f'#include "{header_path}"' for header_path in header_paths)
     bind_func_calls = "\n".join(
