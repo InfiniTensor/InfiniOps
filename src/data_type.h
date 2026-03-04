@@ -2,6 +2,7 @@
 #define INFINI_OPS_DATA_TYPE_H_
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #ifdef WITH_NVIDIA
@@ -80,6 +81,86 @@ constexpr ConstexprMap<std::string_view, DataType, 12> kStringToDataType{{{
     {"float64", DataType::kFloat64},
 }}};
 
+struct float16_t {
+  uint16_t bits;
+
+  static inline float16_t FromFloat(float val) {
+    uint32_t f32;
+    std::memcpy(&f32, &val, sizeof(f32));
+    uint16_t sign = (f32 >> 16) & 0x8000;
+    int32_t exponent = ((f32 >> 23) & 0xFF) - 127;
+    uint32_t mantissa = f32 & 0x7FFFFF;
+
+    if (exponent >= 16) {
+      // NaN
+      if (exponent == 128 && mantissa != 0) {
+        return {static_cast<uint16_t>(sign | 0x7E00)};
+      }
+      // Inf
+      return {static_cast<uint16_t>(sign | 0x7C00)};
+    } else if (exponent >= -14) {
+      return {static_cast<uint16_t>(sign | ((exponent + 15) << 10) |
+                                    (mantissa >> 13))};
+    } else if (exponent >= -24) {
+      mantissa |= 0x800000;
+      mantissa >>= (-14 - exponent);
+      return {static_cast<uint16_t>(sign | (mantissa >> 13))};
+    }
+    // Too small for subnormal: return signed zero
+    return {sign};
+  }
+
+  // Conversion back to float
+  inline float ToFloat() const {
+    uint32_t sign = (bits & 0x8000) << 16;
+    int32_t exponent = (bits >> 10) & 0x1F;
+    uint32_t mantissa = bits & 0x3FF;
+    uint32_t f32_bits;
+
+    if (exponent == 31) {
+      f32_bits = sign | 0x7F800000 | (mantissa << 13);
+    } else if (exponent == 0) {
+      if (mantissa == 0) {
+        f32_bits = sign;
+      } else {
+        exponent = -14;
+        while ((mantissa & 0x400) == 0) {
+          mantissa <<= 1;
+          exponent--;
+        }
+        mantissa &= 0x3FF;
+        f32_bits = sign | ((exponent + 127) << 23) | (mantissa << 13);
+      }
+    } else {
+      f32_bits = sign | ((exponent + 127 - 15) << 23) | (mantissa << 13);
+    }
+
+    float result;
+    std::memcpy(&result, &f32_bits, sizeof(result));
+    return result;
+  }
+};
+
+struct bfloat16_t {
+  uint16_t bits;
+
+  static inline bfloat16_t FromFloat(float val) {
+    uint32_t bits32;
+    std::memcpy(&bits32, &val, sizeof(bits32));
+
+    const uint32_t rounding_bias = 0x00007FFF + ((bits32 >> 16) & 1);
+    uint16_t bf16_bits = static_cast<uint16_t>((bits32 + rounding_bias) >> 16);
+    return {bf16_bits};
+  }
+
+  inline float ToFloat() const {
+    uint32_t bits32 = static_cast<uint32_t>(bits) << 16;
+    float result;
+    std::memcpy(&result, &bits32, sizeof(result));
+    return result;
+  }
+};
+
 template <DataType dtype>
 struct TypeMap;
 
@@ -121,19 +202,17 @@ DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
 DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, __maca_bfloat16)
 #else
-// TODO(lzm): currently there's an ambiguity of uint16_t mapping to both kUInt16
-// and kFloat16/kBFloat16 for CPU. When CPU custom bfloat16/float16 types are
-// defined, this should be replaced.
-template <>
-struct TypeMap<DataType::kFloat16> {
-  using type = uint16_t;
-};
-template <>
-struct TypeMap<DataType::kBFloat16> {
-  using type = uint16_t;
-};
+DEFINE_DATA_TYPE_MAPPING(kFloat16, float16_t)
+DEFINE_DATA_TYPE_MAPPING(kBFloat16, bfloat16_t)
 #endif
 #undef DEFINE_DATA_TYPE_MAPPING
+
+// Define the traits to check whether a type is bfloat16 or float16.
+template <typename T>
+inline constexpr bool IsBFloat16 = (DataTypeMapValue<T> == DataType::kBFloat16);
+
+template <typename T>
+inline constexpr bool IsFP16 = (DataTypeMapValue<T> == DataType::kFloat16);
 
 // Defines the common categories of data types using List.
 using FloatTypes = List<DataType::kFloat32, DataType::kFloat64>;
