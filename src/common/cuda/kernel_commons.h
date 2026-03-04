@@ -10,7 +10,6 @@
 #endif
 
 #include "cast.h"
-#include "data_type.h"
 
 namespace infini::ops {
 
