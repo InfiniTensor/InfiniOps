@@ -448,18 +448,14 @@ if __name__ == "__main__":
     for op_name, op_data in ops.items():
         base_stem = op_data.get("base_stem") if isinstance(op_data, dict) else None
         impl_paths = (
-            op_data.get("impl_paths", op_data)
-            if isinstance(op_data, dict)
-            else op_data
+            op_data.get("impl_paths", op_data) if isinstance(op_data, dict) else op_data
         )
 
         extractor = _OperatorExtractor()
         try:
             operator = extractor(op_name, base_stem=base_stem)
         except clang.cindex.TranslationUnitLoadError as e:
-            print(
-                f"Warning: Skipping {op_name} - failed to parse base header: {e}"
-            )
+            print(f"Warning: Skipping {op_name} - failed to parse base header: {e}")
             continue
 
         valid_ops[op_name] = impl_paths

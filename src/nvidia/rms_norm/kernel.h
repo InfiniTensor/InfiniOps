@@ -15,7 +15,6 @@ namespace rms_norm {
 
 struct NvidiaBackend {
   using stream_t = cudaStream_t;
-
 };
 
 }  // namespace rms_norm
