@@ -40,13 +40,13 @@ __global__ void AddKernel(
 
   if (idx < output_size) {
     Tensor::Size out_idx =
-        out_contiguous ? idx : indexToOffset(idx, ndim, out_shape, out_strides);
+        out_contiguous ? idx : IndexToOffset(idx, ndim, out_shape, out_strides);
     Tensor::Size input_idx =
         input_contiguous ? idx
-                         : indexToOffset(idx, ndim, input_shape, input_strides);
+                         : IndexToOffset(idx, ndim, input_shape, input_strides);
     Tensor::Size other_idx =
         other_contiguous ? idx
-                         : indexToOffset(idx, ndim, other_shape, other_strides);
+                         : IndexToOffset(idx, ndim, other_shape, other_strides);
 
     out[out_idx] = AddOp{}(input[input_idx], other[other_idx]);
   }
