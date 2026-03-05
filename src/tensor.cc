@@ -114,7 +114,10 @@ std::string Tensor::ToStringHelper() const {
   if (ndim() == 0) {
     return DispatchFunc<ConcatType<FloatTypes, AllIntTypes>>(
         dtype_,
-        [&]<typename T>() { return std::to_string(*static_cast<T*>(data_)); },
+        [&](auto tag) {
+          using T = typename decltype(tag)::type;
+          return std::to_string(*static_cast<T*>(data_));
+        },
         "Tensor::ToStringHelper()");
   }
 

@@ -25,11 +25,11 @@ class Add : public Operator<Add> {
         is_other_contiguous_{other.IsContiguous()},
         is_out_contiguous_{out.IsContiguous()} {
     assert(!out.HasBroadcastDim() &&
-           "The output of `Add` should NOT have broadcasted dim!");
+           "the output of `Add` should NOT have broadcasted dim!");
     // TODO(lzm): support mix-precision later using the generic elementwise
     // framework.
     assert(input_type_ == other_type_ && other_type_ == out_type_ &&
-           "Operator `Add` requires all input and output Tensors to have the "
+           "operator `Add` requires all input and output Tensors to have the "
            "same dtype");
   }
 

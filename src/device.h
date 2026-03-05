@@ -85,63 +85,43 @@ struct EnabledDeviceFilter {
   // and FilterList will exclude it from ActiveDevices.
 
 #ifdef WITH_CPU
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kCpu, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kCpu>) const {}
 #endif
 
 #ifdef WITH_NVIDIA
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kNvidia, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kNvidia>) const {}
 #endif
 
 #ifdef WITH_CAMBRICON
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kCambricon, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kCambricon>) const {}
 #endif
 
 #ifdef WITH_ASCEND
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kAscend, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kAscend>) const {}
 #endif
 
 #ifdef WITH_METAX
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kMetax, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kMetax>) const {}
 #endif
 
 #ifdef WITH_MOORE
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kMoore, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kMoore>) const {}
 #endif
 
 #ifdef WITH_ILUVATAR
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kIluvatar, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kIluvatar>) const {}
 #endif
 
 #ifdef WITH_KUNLUN
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kKunlun, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kKunlun>) const {}
 #endif
 
 #ifdef WITH_HYGON
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kHygon, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kHygon>) const {}
 #endif
 
 #ifdef WITH_QY
-  template <Device::Type dev,
-            std::enable_if_t<dev == Device::Type::kQy, int> = 0>
-  void operator()() const {}
+  void operator()(ValueTag<Device::Type::kQy>) const {}
 #endif
 };
 

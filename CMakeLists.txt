@@ -4,6 +4,9 @@ project(InfiniOps LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Internal variable to control pybind11's automatic optimization flags (like `-flto`).
+set(PYBIND11_ENABLE_EXTRAS ON)
+
 # Options for backends.
 option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
@@ -32,11 +35,26 @@ if(AUTO_DETECT_DEVICES)
         message(STATUS "Auto-detected Iluvatar environment.")
     endif()
 
-    # TODO: Please test and uncomment/update the auto-detection for MetaX.
-    # if(DEFINED ENV{MACA_PATH})
-    #     set(WITH_METAX ON)
-    #     message(STATUS "Auto-detected MetaX environment.")
-    # endif()
+    if(DEFINED ENV{MACA_PATH})
+        set(WITH_METAX ON)
+        message(STATUS "Auto-detected MetaX environment from MACA_PATH")
+    else()
+        execute_process(
+            COMMAND sh -c "grep -h 9999 /sys/bus/pci/devices/*/vendor 2>/dev/null"
+            OUTPUT_VARIABLE _pci_vendor_output
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+
+        string(FIND "${_pci_vendor_output}" "9999" _found_pos)
+
+        if(_found_pos GREATER -1)
+            set(WITH_METAX ON)
+            message(STATUS "Detected MetaX GPU from PCI vendor ID 0x9999")
+        else()
+            set(WITH_METAX OFF)
+            message(STATUS "No MetaX GPU detected")
+        endif()
+    endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -75,8 +93,8 @@ if(WITH_METAX)
 
     # Normally can be found at: `/opt/maca/`.
     set(MACA_PATH $ENV{MACA_PATH})
-    set(CMAKE_C_COMPILER ${MACA_PATH}/mxgpu_llvm/bin/mxcc)
-    set(CMAKE_CXX_COMPILER ${MACA_PATH}/mxgpu_llvm/bin/mxcc)
+    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
+    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
 
     include_directories("${MACA_PATH}/include")
     link_directories("${MACA_PATH}/lib")
@@ -90,6 +108,10 @@ endif()
 # If no GPU platform is enabled, CPU is enabled by default.
 if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX)
     add_compile_definitions(WITH_CPU=1)
+endif()
+
+if(WITH_METAX)
+    set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 
 add_subdirectory(src)
