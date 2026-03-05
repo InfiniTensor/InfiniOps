@@ -1,5 +1,5 @@
 #!/bin/bash
-# Filter out flags unsupported by mxcc
+# Filter out flags unsupported by `mxcc`.
 ARGS=()
 skip_next=0
 for arg in "$@"; do

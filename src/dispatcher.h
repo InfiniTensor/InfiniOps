@@ -18,7 +18,7 @@ namespace infini::ops {
 
 namespace detail {
 
-// Implements the dispatch body over a resolved List<head, tail...>.
+// Implements the dispatch body over a resolved `List<head, tail...>`.
 template <typename ValueType, typename Functor, typename... Args, auto head,
           auto... tail>
 auto DispatchFuncImpl(ValueType value, Functor &&func,
@@ -27,7 +27,7 @@ auto DispatchFuncImpl(ValueType value, Functor &&func,
   using ReturnType = decltype(std::forward<Functor>(func)(
       ValueTag<static_cast<ValueType>(head)>{}, std::forward<Args>(args)...));
 
-  // Path for Void Functions
+  // Path for void functions.
   if constexpr (std::is_void_v<ReturnType>) {
     bool handled = ((value == static_cast<ValueType>(tail)
                          ? (std::forward<Functor>(func)(
@@ -48,7 +48,7 @@ auto DispatchFuncImpl(ValueType value, Functor &&func,
       std::abort();
     }
   }
-  // Path for Non-Void Functions
+  // Path for non-void functions.
   else {
     std::optional<ReturnType> result;
     bool handled = ((value == static_cast<ValueType>(tail)
@@ -74,8 +74,8 @@ auto DispatchFuncImpl(ValueType value, Functor &&func,
   }
 }
 
-// Deduces head/tail from a List type via partial specialization,
-// then forwards to DispatchFuncImpl.
+// Deduces `head`/`tail` from a `List` type via partial specialization,
+// then forwards to `DispatchFuncImpl`.
 template <typename ValueType, typename Functor, typename FilteredList,
           typename ArgsTuple>
 struct DispatchFuncUnwrap;
@@ -122,7 +122,7 @@ auto DispatchFunc(ValueType value, Functor &&func,
 
 // (Multi-Dispatch) Dispatches a vector of runtime values to a compile-time
 // functor.
-// Base Case: All dimensions resolved
+// Base Case: All Dimensions Resolved
 template <typename Functor, typename... Args, auto... items>
 auto DispatchFunc(const std::vector<int64_t> &values, size_t /*index*/,
                   Functor &&func, std::string_view /*context_str*/,
@@ -138,8 +138,8 @@ auto DispatchFunc(const std::vector<int64_t> &values, size_t index,
                   Functor &&func, std::string_view context_str, List<items...>,
                   Args &&...args);
 
-// Adapter used in the recursive multi-dispatch case: given a resolved value Val
-// recurse into the next dimension.
+// Adapter used in the recursive multi-dispatch case: given a resolved value
+// `val` recurse into the next dimension.
 template <typename RestListsPack, typename Functor, auto... items>
 struct MultiDispatchRecurseAdapter;
 
@@ -193,7 +193,7 @@ auto DispatchFunc(const std::vector<int64_t> &values, size_t index,
 
 namespace detail {
 
-// Bridges the generic value dispatch layer to the DataType-specific type
+// Bridges the generic value dispatch layer to the `DataType`-specific type
 // dispatch layer.
 template <typename Functor>
 struct DataTypeAdapter {
@@ -239,7 +239,7 @@ struct DeviceMultiAdapter {
 
 }  // namespace detail
 
-// DataType Dispatch
+// `DataType` Dispatch
 template <DataType... allowed_dtypes, typename Functor, typename... Args>
 auto DispatchFunc(DataType dtype, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
@@ -248,7 +248,7 @@ auto DispatchFunc(DataType dtype, Functor &&func,
                                                    std::forward<Args>(args)...);
 }
 
-// DataType Multi-Dispatch
+// `DataType` Multi-Dispatch
 template <typename... Lists, typename Functor, typename... Args>
 auto DispatchFunc(std::initializer_list<DataType> dtypes, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
@@ -260,7 +260,7 @@ auto DispatchFunc(std::initializer_list<DataType> dtypes, Functor &&func,
                                 std::forward<Args>(args)...);
 }
 
-// Device Dispatch
+// `Device` Dispatch
 template <auto... allowed_devices, typename Functor, typename... Args>
 auto DispatchFunc(Device::Type device, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
@@ -270,7 +270,7 @@ auto DispatchFunc(Device::Type device, Functor &&func,
       device, adapter, context_str, std::forward<Args>(args)...);
 }
 
-// Device Multi-Dispatch
+// `Device` Multi-Dispatch
 template <typename... Lists, typename Functor, typename... Args>
 auto DispatchFunc(std::initializer_list<Device::Type> devices, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
@@ -291,7 +291,7 @@ auto DispatchFuncListAliasImpl(ValueType value, Functor &&func,
       std::forward<Args>(args)...);
 }
 
-// Interface for generic List Aliases
+// Interface for Generic `List` Aliases
 template <typename ListType, typename ValueType, typename Functor,
           typename... Args,
           typename = std::enable_if_t<IsListType<ListType>::value>>

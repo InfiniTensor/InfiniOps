@@ -11,7 +11,8 @@ namespace infini::ops {
 template <auto... items>
 struct List {};
 
-// ListGet<I>(List<Items...>{}) extracts the Ith value from a List tag.
+// `ListGet<index>(List<items...>{})` extracts the `i`th value from a `List`
+// tag.
 template <std::size_t index, auto head, auto... tail>
 constexpr auto ListGetImpl(List<head, tail...>) {
   if constexpr (index == 0)
@@ -35,13 +36,14 @@ struct TypePack {};
 // template parameters. This lets users write plain C++17 `[](auto tag)` lambdas
 // rather than C++20 template lambdas (`[]<typename T>()`).
 
-// TypeTag<T>: carries a C++ type. Recover with `typename decltype(tag)::type`.
+// `TypeTag<T>`: carries a C++ type. Recover with `typename
+// decltype(tag)::type`.
 template <typename T>
 struct TypeTag {
   using type = T;
 };
 
-// ValueTag<V>: carries a compile-time value. Recover with
+// `ValueTag<V>`: carries a compile-time value. Recover with
 // `decltype(tag)::value`.
 template <auto v>
 struct ValueTag {
@@ -53,8 +55,8 @@ struct ValueTag {
 // List Queries
 // -----------------------------------------------------------------------------
 
-// Check at compile-time if a Value exists within a construct (e.g., List<>).
-// Example: static_assert(ContainsValue<SupportedTiles, 32>);
+// Check at compile-time if a value exists within a construct (e.g., `List<>`).
+// Example: `static_assert(ContainsValue<SupportedTiles, 32>)`;
 template <typename T, auto value>
 struct Contains;
 
@@ -65,12 +67,13 @@ struct Contains<List<items...>, value>
 template <typename T, auto value>
 inline constexpr bool ContainsValue = Contains<T, value>::value;
 
-// Check at compile-time if a type T is present in a variadic list of types Ts.
-// Example: static_assert(IsTypeInList<T, float, int>);
+// Check at compile-time if a type `T` is present in a variadic list of types
+// `Ts`.
+// Example: `static_assert(IsTypeInList<T, float, int>)`;
 template <typename T, typename... Ts>
 inline constexpr bool IsTypeInList = (std::is_same_v<T, Ts> || ...);
 
-// Trait to detect whether T is a List<...> specialization.
+// Trait to detect whether `T` is a `List<...>` specialization.
 template <typename T>
 struct IsListType : std::false_type {};
 
@@ -81,9 +84,9 @@ struct IsListType<List<items...>> : std::true_type {};
 // List Operations
 // -----------------------------------------------------------------------------
 
-// Concatenates two List types into a single List.
-// Example: ConcatType<List<1, 2>, List<3, 4>> is List<1, 2, 3, 4>.
-template <typename List1, typename List2>
+// Concatenates two List types into a single `List`.
+// Example: `ConcatType<List<1, 2>, List<3, 4>>` is `List<1, 2, 3, 4>`.
+template <typename L1, typename L2>
 struct Concat;
 
 template <auto... item1, auto... item2>
@@ -91,8 +94,8 @@ struct Concat<List<item1...>, List<item2...>> {
   using type = List<item1..., item2...>;
 };
 
-template <typename List1, typename List2>
-using ConcatType = typename Concat<List1, List2>::type;
+template <typename L1, typename L2>
+using ConcatType = typename Concat<L1, L2>::type;
 
 template <typename... Lists>
 struct Flatten;
@@ -102,16 +105,16 @@ struct Flatten<List<items...>> {
   using type = List<items...>;
 };
 
-template <typename List1, typename List2, typename... Rest>
-struct Flatten<List1, List2, Rest...> {
-  using type = typename Flatten<ConcatType<List1, List2>, Rest...>::type;
+template <typename L1, typename L2, typename... Rest>
+struct Flatten<L1, L2, Rest...> {
+  using type = typename Flatten<ConcatType<L1, L2>, Rest...>::type;
 };
 
 // -----------------------------------------------------------------------------
 // Invocability Detection (SFINAE)
 // -----------------------------------------------------------------------------
 
-// Checks if a Functor can be called with a ValueTag<Value> and Args...
+// Checks if a `Functor` can be called with a `ValueTag<Value>` and `Args...`.
 template <typename Functor, auto value, typename = void, typename... Args>
 struct IsInvocable : std::false_type {};
 
@@ -129,7 +132,8 @@ inline constexpr bool IsInvocableValue =
 // Filtering Logic
 // -----------------------------------------------------------------------------
 
-// Recursive template to filter values based on Functor support at compile-time.
+// Recursive template to filter values based on `Functor` support at
+// compile-time.
 template <typename Functor, typename ArgsTuple, typename Result,
           auto... remaining>
 struct Filter;
@@ -140,7 +144,7 @@ struct Filter<Functor, std::tuple<Args...>, List<filtered...>> {
   using type = List<filtered...>;
 };
 
-// Recursive step: Test the 'Head' value and accumulate if supported.
+// Recursive step: Test the `head` value and accumulate if supported.
 template <typename Functor, typename... Args, auto... filtered, auto head,
           auto... tail>
 struct Filter<Functor, std::tuple<Args...>, List<filtered...>, head, tail...> {
@@ -151,7 +155,7 @@ struct Filter<Functor, std::tuple<Args...>, List<filtered...>, head, tail...> {
       Filter<Functor, std::tuple<Args...>, List<filtered...>, tail...>>::type;
 };
 
-// Interface to filter a List type directly.
+// Interface to filter a `List` type directly.
 template <typename Functor, typename ArgsTuple, typename ListType>
 struct FilterList;
 
