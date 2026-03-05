@@ -16,21 +16,20 @@ class Operator<Add, Device::Type::kCpu> : public Add {
     // TODO: Check constraints.
   }
 
-  void operator()(void* stream, const Tensor input, const Tensor other,
+  void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
     DispatchFunc<ConcatType<FloatTypes, AllIntTypes>>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          Compute<T>(stream, input, other, out);
+          Compute<T>(input, other, out);
         },
         "`Operator<Add, Device::Type::kCpu>::operator()`");
   }
 
  private:
   template <typename T>
-  void Compute(void* stream, const Tensor input, const Tensor other,
-               Tensor out) const {
+  void Compute(const Tensor input, const Tensor other, Tensor out) const {
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* other_ptr = static_cast<const T*>(other.data());
     auto* out_ptr = static_cast<T*>(out.data());

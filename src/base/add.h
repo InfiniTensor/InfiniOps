@@ -33,7 +33,7 @@ class Add : public Operator<Add> {
            "same dtype");
   }
 
-  virtual void operator()(void* stream, const Tensor input, const Tensor other,
+  virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;
 
  protected:

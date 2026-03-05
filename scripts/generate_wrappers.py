@@ -435,7 +435,6 @@ if __name__ == "__main__":
 namespace infini::ops {{
 
 PYBIND11_MODULE(ops, m) {{
-{_INDENTATION}m.def("set_stream", [](std::uintptr_t stream) {{ OperatorBase::set_stream(reinterpret_cast<void*>(stream)); }});
 {textwrap.indent(bind_func_calls, _INDENTATION)}
 }}
 

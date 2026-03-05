@@ -90,7 +90,7 @@ class CudaAdd : public Add {
     Backend::free(d_out_strides_);
   }
 
-  void operator()(void* stream, const Tensor input, const Tensor other,
+  void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
     DispatchFunc<AllTypes>(
         out_type_,
@@ -108,7 +108,7 @@ class CudaAdd : public Add {
 
           for (size_t i = 0; i < output_size_; i += step) {
             AddKernel<<<gridDims, blockDims, 0,
-                        static_cast<typename Backend::stream_t>(stream)>>>(
+                        static_cast<typename Backend::stream_t>(stream_)>>>(
                 d_out, d_input, d_other, d_out_shape_, d_input_shape_,
                 d_other_shape_, d_out_strides_, d_input_strides_,
                 d_other_strides_, output_size_, ndim_, i, is_out_contiguous_,
