@@ -7,14 +7,14 @@
 
 namespace infini::ops::cnnl_utils {
 
-inline cnnlDataType_t GetDtype(DataType dtype) {
+inline cnnlDataType_t GetDataType(DataType dtype) {
   switch (dtype) {
+    case DataType::kInt32:
+      return CNNL_DTYPE_INT32;
     case DataType::kFloat16:
       return CNNL_DTYPE_HALF;
     case DataType::kFloat32:
       return CNNL_DTYPE_FLOAT;
-    case DataType::kInt32:
-      return CNNL_DTYPE_INT32;
     default:
       return CNNL_DTYPE_INVALID;
   }

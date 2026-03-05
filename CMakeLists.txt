@@ -119,11 +119,11 @@ if(WITH_CAMBRICON)
     link_directories("${NEUWARE_HOME}/lib")
     link_directories("${NEUWARE_HOME}/lib64")
 
-    # Libraries: cnrt / cnnl / cnnl_extra / cnpapi.
-    find_library(CAMBRICON_RUNTIME_LIB NAMES cnrt HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
-    find_library(CAMBRICON_CNNL_LIB     NAMES cnnl HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
-    find_library(CAMBRICON_CNNL_EXTRA_LIB   NAMES cnnl_extra HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
-    find_library(CAMBRICON_PAPI_LIB    NAMES cnpapi HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    # Libraries: `cnrt` / `cnnl` / `cnnl_extra` / `cnpapi`.
+    find_library(CAMBRICON_RUNTIME_LIB    NAMES cnrt       HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    find_library(CAMBRICON_CNNL_LIB       NAMES cnnl       HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    find_library(CAMBRICON_CNNL_EXTRA_LIB NAMES cnnl_extra HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    find_library(CAMBRICON_PAPI_LIB       NAMES cnpapi     HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
 endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.

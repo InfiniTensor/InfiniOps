@@ -103,7 +103,6 @@ if(WITH_METAX)
     list(APPEND DEVICE_LIST "metax")
 endif()
 
-
 if(WITH_CAMBRICON)
     target_compile_definitions(infiniops PUBLIC WITH_CAMBRICON=1)
 

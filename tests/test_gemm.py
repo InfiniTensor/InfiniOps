@@ -38,10 +38,10 @@ def test_gemm(
     rtol,
     atol,
 ):
-    # Skip trans test for MLU platform as it is not currently supported
+    # Skip transposing test cases for MLU platform as transposing is not currently supported.
     if device == "mlu" and (trans_a or trans_b):
-        pytest.skip("目前MLU平台上的GEMM算子不支持trans相关设置")
-        
+        pytest.skip("transposing is not currently supported on MLU")
+
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
