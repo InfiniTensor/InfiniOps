@@ -40,11 +40,11 @@ __host__ __device__ constexpr Dst FromFloatHelper(float f) {
   }
 }
 
-// Priority tags for overload resolution
+// Priority tags for overload resolution.
 struct PriorityLow {};
 struct PriorityHigh : PriorityLow {};
 
-// Fallback: Lowest priority, always matches if nothing else does.
+// Fallback: lowest priority. This always matches if nothing else does.
 template <typename Dst, typename Src>
 __host__ __device__ constexpr Dst HardwareCast(Src&& x, PriorityLow) {
   return FromFloatHelper<Dst>(ToFloatHelper(std::forward<Src>(x)));

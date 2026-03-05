@@ -106,11 +106,10 @@ struct float16_t {
       mantissa >>= (-14 - exponent);
       return {static_cast<uint16_t>(sign | (mantissa >> 13))};
     }
-    // Too small for subnormal: return signed zero
+    // Too small for subnormal: return signed zero.
     return {sign};
   }
 
-  // Conversion back to float
   inline float ToFloat() const {
     uint32_t sign = (bits & 0x8000) << 16;
     int32_t exponent = (bits >> 10) & 0x1F;
