@@ -82,15 +82,14 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     cnnlDestroy(cnnl_handle_);
   }
 
-  void operator()(void* stream, const Tensor a, const Tensor b,
-                  std::optional<float> alpha, std::optional<float> beta,
-                  std::optional<int> trans_a, std::optional<int> trans_b,
-                  Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
+                  std::optional<float> beta, std::optional<int> trans_a,
+                  std::optional<int> trans_b, Tensor c) const override {
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
 
     // Set queue for this execution
-    cnnlSetQueue(cnnl_handle_, (cnrtQueue_t)stream);
+    cnnlSetQueue(cnnl_handle_, (cnrtQueue_t)stream_);
 
     // Allocate workspace using pre-computed size
     void* workspace = nullptr;
@@ -107,7 +106,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     if (workspace) {
       cnrtFree(workspace);
     }
-    cnrtQueueSync((cnrtQueue_t)stream);
+    cnrtQueueSync((cnrtQueue_t)stream_);
   }
 
  private:
