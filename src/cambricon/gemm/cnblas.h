@@ -5,8 +5,10 @@
 #include <memory>
 #include <vector>
 
+// clang-format off
 #include <cnnl.h>
 #include <cnrt.h>
+// clang-format on
 
 #include "base/gemm.h"
 #include "cambricon/common.h"
@@ -20,9 +22,12 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
            std::optional<float> beta, std::optional<int> trans_a,
            std::optional<int> trans_b, Tensor c)
       : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
-        a_rows_{a.size(-2)}, a_cols_{a.size(-1)},
-        b_rows_{b.size(-2)}, b_cols_{b.size(-1)},
-        c_rows_{c.size(-2)}, c_cols_{c.size(-1)} {
+        a_rows_{a.size(-2)},
+        a_cols_{a.size(-1)},
+        b_rows_{b.size(-2)},
+        b_cols_{b.size(-1)},
+        c_rows_{c.size(-2)},
+        c_cols_{c.size(-1)} {
     // Currently only support non-transposed matrices
     assert(!trans_a_ && "trans_a=true is not currently supported");
     assert(!trans_b_ && "trans_b=true is not currently supported");
@@ -52,11 +57,11 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     SetupTensorDescriptor(desc_c_, c_strides_, c_type_, c_rows_, c_cols_,
                           batch_count_, batch_stride_c_);
     int count = 0;
-    cnnlGetBatchMatMulExAlgoHeuristic(
-                        cnnl_handle_,
-                        matmul_desc_, desc_a_, desc_b_, desc_c_,
-                        NULL, 1, &heuristic_result_, &count);
-    cnnlGetBatchMatMulExHeuristicResult(heuristic_result_, matmul_algo_, &workspace_size_);
+    cnnlGetBatchMatMulExAlgoHeuristic(cnnl_handle_, matmul_desc_, desc_a_,
+                                      desc_b_, desc_c_, NULL, 1,
+                                      &heuristic_result_, &count);
+    cnnlGetBatchMatMulExHeuristicResult(heuristic_result_, matmul_algo_,
+                                        &workspace_size_);
   }
 
   Operator(const Tensor a, const Tensor b, Tensor c)
@@ -94,11 +99,9 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     }
 
     // Execute batch matrix multiply
-    cnnlBatchMatMulEx(
-        cnnl_handle_, matmul_desc_, matmul_algo_, &alpha_value, desc_a_,
-        a.data(), desc_b_,
-        b.data(), &beta_value, desc_c_,
-        c.data(), workspace, workspace_size_);
+    cnnlBatchMatMulEx(cnnl_handle_, matmul_desc_, matmul_algo_, &alpha_value,
+                      desc_a_, a.data(), desc_b_, b.data(), &beta_value,
+                      desc_c_, c.data(), workspace, workspace_size_);
 
     // Cleanup workspace
     if (workspace) {
@@ -116,7 +119,8 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
     if (batch > 1) {
       // Batched tensor: [batch, rows, cols]
-      std::vector<int> dims = {static_cast<int>(batch), static_cast<int>(rows), static_cast<int>(cols)};
+      std::vector<int> dims = {static_cast<int>(batch), static_cast<int>(rows),
+                               static_cast<int>(cols)};
       std::vector<int> strides_arr = {
           static_cast<int>(batch_stride),
           static_cast<int>(strides[strides.size() - 2]),
