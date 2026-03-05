@@ -60,8 +60,8 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     cnnlGetBatchMatMulExAlgoHeuristic(cnnl_handle_, matmul_desc_, desc_a_,
                                       desc_b_, desc_c_, NULL, 1,
                                       &heuristic_result_, &count);
-    cnnlGetBatchMatMulExHeuristicResult(heuristic_result_, matmul_algo_,
-                                        &workspace_size_);
+
+    cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
   }
 
   Operator(const Tensor a, const Tensor b, Tensor c)
@@ -73,6 +73,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
       : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
 
   ~Operator() {
+    cnrtFree(default_workspace_);
     cnnlDestroyTensorDescriptor(desc_a_);
     cnnlDestroyTensorDescriptor(desc_b_);
     cnnlDestroyTensorDescriptor(desc_c_);
@@ -91,22 +92,24 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     // Set queue for this execution
     cnnlSetQueue(cnnl_handle_, (cnrtQueue_t)stream_);
 
-    // Allocate workspace using pre-computed size
-    void* workspace = nullptr;
-    if (workspace_size_ > 0) {
-      cnrtMalloc(&workspace, workspace_size_);
-    }
+    auto workspace{workspace_ ? workspace_ : default_workspace_};
+    auto workspace_size{workspace_size_in_bytes_ ? workspace_size_in_bytes_
+                                                 : workspace_size_in_bytes()};
 
     // Execute batch matrix multiply
     cnnlBatchMatMulEx(cnnl_handle_, matmul_desc_, matmul_algo_, &alpha_value,
                       desc_a_, a.data(), desc_b_, b.data(), &beta_value,
-                      desc_c_, c.data(), workspace, workspace_size_);
+                      desc_c_, c.data(), workspace, workspace_size);
 
-    // Cleanup workspace
-    if (workspace) {
-      cnrtFree(workspace);
-    }
     cnrtQueueSync((cnrtQueue_t)stream_);
+  }
+
+  std::size_t workspace_size_in_bytes() const override {
+    std::size_t size{0};
+
+    cnnlGetBatchMatMulExHeuristicResult(heuristic_result_, matmul_algo_, &size);
+
+    return size;
   }
 
  private:
@@ -149,6 +152,10 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
   Tensor::Size a_rows_, a_cols_;
   Tensor::Size b_rows_, b_cols_;
   Tensor::Size c_rows_, c_cols_;
+
+  // TODO: Remove the following member after default workspace mechanism has
+  // been introduced globally.
+  void* default_workspace_{nullptr};
 };
 
 }  // namespace infini::ops
