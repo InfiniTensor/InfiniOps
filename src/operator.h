@@ -16,6 +16,8 @@ class OperatorBase {
  public:
   virtual ~OperatorBase() = default;
 
+  virtual std::size_t workspace_size_in_bytes() const { return 0; }
+
   void set_handle(const Handle& handle) { handle_ = handle; }
 
   void set_stream(void* stream) { stream_ = stream; }
