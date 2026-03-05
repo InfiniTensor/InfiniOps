@@ -28,6 +28,15 @@
 #define DEVICE_MEMCPY_HOST_TO_DEVICE mcMemcpyHostToDevice
 #define DEVICE_MEMCPY_DEVICE_TO_HOST mcMemcpyDeviceToHost
 #define DEFAULT_DEVICE_TYPE Device::Type::kMetax
+#elif WITH_CAMBRICON
+#include <cnrt.h>
+#define DEVICE_MALLOC cnrtMalloc
+#define DEVICE_FREE cnrtFree
+#define DEVICE_MEMCPY cnrtMemcpy
+#define DEVICE_MEMSET cnrtMemset
+#define DEVICE_MEMCPY_HOST_TO_DEVICE cnrtMemcpyHostToDev
+#define DEVICE_MEMCPY_DEVICE_TO_HOST cnrtMemcpyDevToHost
+#define DEFAULT_DEVICE_TYPE Device::Type::kCambricon
 #elif WITH_CPU
 #include <cstdlib>
 #include <cstring>

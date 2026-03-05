@@ -12,6 +12,7 @@ option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
+option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
@@ -54,6 +55,11 @@ if(AUTO_DETECT_DEVICES)
             set(WITH_METAX OFF)
             message(STATUS "No MetaX GPU detected")
         endif()
+    endif()
+
+    if(DEFINED ENV{NEUWARE_HOME})
+        set(WITH_CAMBRICON ON)
+        message(STATUS "Auto-detected Cambricon environment.")
     endif()
 endif()
 
@@ -105,7 +111,22 @@ if(WITH_METAX)
     find_library(MACA_BLAS_LIB    NAMES mcblas    HINTS "${MACA_PATH}/lib" REQUIRED)
 endif()
 
-# If no GPU platform is enabled, CPU is enabled by default.
+if(WITH_CAMBRICON)
+    add_compile_definitions(WITH_CAMBRICON=1)
+    set(NEUWARE_HOME $ENV{NEUWARE_HOME})
+
+    include_directories("${NEUWARE_HOME}/include")
+    link_directories("${NEUWARE_HOME}/lib")
+    link_directories("${NEUWARE_HOME}/lib64")
+
+    # Libraries: `cnrt` / `cnnl` / `cnnl_extra` / `cnpapi`.
+    find_library(CAMBRICON_RUNTIME_LIB    NAMES cnrt       HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    find_library(CAMBRICON_CNNL_LIB       NAMES cnnl       HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    find_library(CAMBRICON_CNNL_EXTRA_LIB NAMES cnnl_extra HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+    find_library(CAMBRICON_PAPI_LIB       NAMES cnpapi     HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
+endif()
+
+# If all other platforms are not enabled, CPU is enabled by default.
 if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX)
     add_compile_definitions(WITH_CPU=1)
 endif()

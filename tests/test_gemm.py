@@ -38,6 +38,10 @@ def test_gemm(
     rtol,
     atol,
 ):
+    # Skip transposing test cases for MLU platform as transposing is not currently supported.
+    if device == "mlu" and (trans_a or trans_b):
+        pytest.skip("transposing is not currently supported on MLU")
+
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 

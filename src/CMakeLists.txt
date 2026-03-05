@@ -103,6 +103,15 @@ if(WITH_METAX)
     list(APPEND DEVICE_LIST "metax")
 endif()
 
+if(WITH_CAMBRICON)
+    target_compile_definitions(infiniops PUBLIC WITH_CAMBRICON=1)
+
+    target_include_directories(infiniops PUBLIC "${NEUWARE_HOME}/include")
+    target_link_libraries(infiniops PUBLIC ${CAMBRICON_RUNTIME_LIB} ${CAMBRICON_CNNL_LIB} ${CAMBRICON_CNNL_EXTRA_LIB} ${CAMBRICON_PAPI_LIB})
+
+    list(APPEND DEVICE_LIST "cambricon")
+endif()
+
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(GENERATE_PYTHON_BINDINGS)
