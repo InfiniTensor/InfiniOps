@@ -4,8 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "data_type.h"
-#include "device.h"
+#include "tensor.h"
 
 namespace py = pybind11;
 
