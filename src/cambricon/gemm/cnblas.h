@@ -69,9 +69,9 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
   ~Operator() {
     cnrtFree(default_workspace_);
-    cnnlDestroyTensorDescriptor(desc_a_);
-    cnnlDestroyTensorDescriptor(desc_b_);
     cnnlDestroyTensorDescriptor(desc_c_);
+    cnnlDestroyTensorDescriptor(desc_b_);
+    cnnlDestroyTensorDescriptor(desc_a_);
     cnnlDestroyMatMulDescriptor(matmul_desc_);
     cnnlDestroyMatMulAlgo(matmul_algo_);
     cnnlDestroyMatMulHeuristicResult(heuristic_result_);
