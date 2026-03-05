@@ -25,10 +25,9 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
            std::optional<float> beta, Tensor c)
       : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
 
-  void operator()(void* stream, const Tensor a, const Tensor b,
-                  std::optional<float> alpha, std::optional<float> beta,
-                  std::optional<int> trans_a, std::optional<int> trans_b,
-                  Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
+                  std::optional<float> beta, std::optional<int> trans_a,
+                  std::optional<int> trans_b, Tensor c) const override {
     const auto* A = static_cast<const float*>(a.data());
     const auto* B = static_cast<const float*>(b.data());
     auto* C = static_cast<float*>(c.data());

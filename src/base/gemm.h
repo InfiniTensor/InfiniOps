@@ -39,21 +39,20 @@ class Gemm : public Operator<Gemm> {
   Gemm(const Tensor a, const Tensor b, Tensor c)
       : Gemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
 
-  virtual void operator()(void* stream, const Tensor a, const Tensor b,
+  virtual void operator()(const Tensor a, const Tensor b,
                           std::optional<float> alpha, std::optional<float> beta,
                           std::optional<int> trans_a,
                           std::optional<int> trans_b, Tensor c) const = 0;
 
-  virtual void operator()(void* stream, const Tensor a, const Tensor b,
-                          Tensor c) const {
-    return operator()(stream, a, b, std::nullopt, std::nullopt, std::nullopt,
+  virtual void operator()(const Tensor a, const Tensor b, Tensor c) const {
+    return operator()(a, b, std::nullopt, std::nullopt, std::nullopt,
                       std::nullopt, c);
   }
 
-  virtual void operator()(void* stream, const Tensor a, const Tensor b,
+  virtual void operator()(const Tensor a, const Tensor b,
                           std::optional<float> alpha, std::optional<float> beta,
                           Tensor c) const {
-    return operator()(stream, a, b, alpha, beta, std::nullopt, std::nullopt, c);
+    return operator()(a, b, alpha, beta, std::nullopt, std::nullopt, c);
   }
 
  protected:

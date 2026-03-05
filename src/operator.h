@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "dispatcher.h"
+#include "handle.h"
 #include "tensor.h"
 
 namespace infini::ops {
@@ -15,10 +16,24 @@ class OperatorBase {
  public:
   virtual ~OperatorBase() = default;
 
-  static void set_stream(void* stream) { stream_ = stream; }
+  void set_handle(const Handle& handle) { handle_ = handle; }
+
+  void set_stream(void* stream) { stream_ = stream; }
+
+  void set_workspace(void* workspace) { workspace_ = workspace; }
+
+  void set_workspace_size_in_bytes(std::size_t workspace_size_in_bytes) {
+    workspace_size_in_bytes_ = workspace_size_in_bytes;
+  }
 
  protected:
-  inline static thread_local void* stream_{nullptr};
+  Handle handle_;
+
+  void* stream_{nullptr};
+
+  void* workspace_{nullptr};
+
+  std::size_t workspace_size_in_bytes_{0};
 };
 
 template <typename Key, Device::Type device = Device::Type::kCount>
@@ -46,7 +61,8 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto call(void* stream, Args&&... args) {
+  static auto call(const Handle& handle, void* stream, void* workspace,
+                   std::size_t workspace_size_in_bytes, Args&&... args) {
     static std::unordered_map<std::size_t, std::unique_ptr<Operator>> cache;
 
     std::size_t hash{0};
@@ -59,23 +75,30 @@ class Operator : public OperatorBase {
       it = cache.emplace(hash, make(std::forward<Args>(args)...)).first;
     }
 
-    return (*it->second)(stream, std::forward<Args>(args)...);
+    auto& op{it->second};
+
+    auto resolved_stream{stream ? stream : handle.stream()};
+    auto resolved_workspace{workspace ? workspace : handle.workspace()};
+    auto resolved_workspace_size{workspace_size_in_bytes
+                                     ? workspace_size_in_bytes
+                                     : handle.workspace_size_in_bytes()};
+
+    op->set_handle(handle);
+    op->set_stream(resolved_stream);
+    op->set_workspace(resolved_workspace);
+    op->set_workspace_size_in_bytes(resolved_workspace_size);
+
+    return (*op)(std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   static auto call(const Tensor tensor, Args&&... args) {
-    return call(stream_, tensor, std::forward<Args>(args)...);
+    return call({}, nullptr, nullptr, 0, tensor, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
-  auto operator()(void* stream, Args&&... args) const {
-    return (*static_cast<const Key*>(this))(stream,
-                                            std::forward<Args>(args)...);
-  }
-
-  template <typename... Args>
-  auto operator()(const Tensor tensor, Args&&... args) const {
-    return operator()(stream_, tensor, std::forward<Args>(args)...);
+  auto operator()(Args&&... args) const {
+    return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
   }
 };
 

@@ -14,8 +14,8 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
  public:
   using RmsNorm::RmsNorm;
 
-  void operator()(void* stream, const Tensor input, const Tensor weight,
-                  float eps, Tensor out) const override {
+  void operator()(const Tensor input, const Tensor weight, float eps,
+                  Tensor out) const override {
     // CPU backend supports fp32 only; fp16/bf16 use GPU backends.
     if (out.dtype() != DataType::kFloat32 ||
         input.dtype() != DataType::kFloat32 ||

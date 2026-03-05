@@ -70,7 +70,7 @@ int main() {
   Tensor c_device{c_ptr, c_host.shape(), c_host.dtype(), a_host.device(),
                   c_host.strides()};
 
-  Gemm::call(nullptr, a_device, b_device, c_device);
+  Gemm::call(a_device, b_device, c_device);
 
   DEVICE_MEMCPY(c_vec.data(), c_ptr, c_size, DEVICE_MEMCPY_DEVICE_TO_HOST);
   DEVICE_FREE(a_ptr);

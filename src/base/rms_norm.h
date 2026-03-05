@@ -25,12 +25,12 @@ class RmsNorm : public Operator<RmsNorm> {
   RmsNorm(const Tensor input, const Tensor weight, Tensor out)
       : RmsNorm{input, weight, 1e-6f, out} {}
 
-  virtual void operator()(void* stream, const Tensor input, const Tensor weight,
-                          float eps, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const Tensor weight, float eps,
+                          Tensor out) const = 0;
 
-  virtual void operator()(void* stream, const Tensor input, const Tensor weight,
+  virtual void operator()(const Tensor input, const Tensor weight,
                           Tensor out) const {
-    return operator()(stream, input, weight, eps_, out);
+    return operator()(input, weight, eps_, out);
   }
 
  protected:

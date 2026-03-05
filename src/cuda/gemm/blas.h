@@ -30,12 +30,11 @@ class Blas : public Gemm {
   Blas(const Tensor a, const Tensor b, Tensor c)
       : Blas{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
 
-  void operator()(void* stream, const Tensor a, const Tensor b,
-                  std::optional<float> alpha, std::optional<float> beta,
-                  std::optional<int> trans_a, std::optional<int> trans_b,
-                  Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
+                  std::optional<float> beta, std::optional<int> trans_a,
+                  std::optional<int> trans_b, Tensor c) const override {
     Backend::blasSetStream(handle_,
-                           static_cast<typename Backend::stream_t>(stream));
+                           static_cast<typename Backend::stream_t>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
