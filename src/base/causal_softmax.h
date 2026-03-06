@@ -20,13 +20,13 @@ class CausalSoftmax : public Operator<CausalSoftmax> {
         input_strides_{input.strides()},
         out_strides_{out.strides()} {
     assert(input.shape() == out.shape() &&
-           "CausalSoftmax requires `input` and `out` same shape");
+           "`CausalSoftmax` requires `input` and `out` same shape");
     assert(input.dtype() == out.dtype() &&
-           "CausalSoftmax requires `input` and `out` same dtype");
+           "`CausalSoftmax` requires `input` and `out` same dtype");
     assert((ndim_ == 2 || ndim_ == 3) &&
-           "CausalSoftmax requires 2D or 3D tensor");
+           "`CausalSoftmax` requires 2D or 3D tensor");
     assert(seq_len_ <= total_seq_len_ &&
-           "CausalSoftmax requires shape[-2] <= shape[-1]");
+           "`CausalSoftmax` requires shape[-2] <= shape[-1]");
   }
 
   virtual void operator()(void* stream, const Tensor input,

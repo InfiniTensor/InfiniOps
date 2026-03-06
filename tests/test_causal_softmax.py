@@ -25,18 +25,14 @@ from tests.utils import Payload, empty_strided, randn_strided
         (torch.bfloat16, 1e-2, 1e-2),
     ),
 )
-def test_causal_softmax(
-    shape, input_strides, out_strides, dtype, device, rtol, atol
-):
+def test_causal_softmax(shape, input_strides, out_strides, dtype, device, rtol, atol):
     if getattr(infini.ops, "causal_softmax", None) is None:
         pytest.skip("causal_softmax not available (wrapper generation skipped)")
 
     if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("CPU backend does not support fp16/bf16")
 
-    input_tensor = randn_strided(
-        shape, input_strides, dtype=dtype, device=device
-    )
+    input_tensor = randn_strided(shape, input_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
