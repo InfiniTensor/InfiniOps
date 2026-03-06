@@ -26,9 +26,6 @@ from tests.utils import Payload, empty_strided, randn_strided
     ),
 )
 def test_causal_softmax(shape, input_strides, out_strides, dtype, device, rtol, atol):
-    if getattr(infini.ops, "causal_softmax", None) is None:
-        pytest.skip("causal_softmax not available (wrapper generation skipped)")
-
     if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("CPU backend does not support fp16/bf16")
 
