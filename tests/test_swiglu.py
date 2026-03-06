@@ -37,9 +37,7 @@ def test_swiglu(
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(
-        _swiglu, _torch_swiglu, (input, gate, out), {}, rtol=rtol, atol=atol
-    )
+    return Payload(_swiglu, _torch_swiglu, (input, gate, out), {}, rtol=rtol, atol=atol)
 
 
 def _swiglu(input, gate, out):
@@ -50,5 +48,5 @@ def _swiglu(input, gate, out):
 
 def _torch_swiglu(input, gate, out):
     swish_x = gate * torch.sigmoid(gate)
-    
+
     return torch.mul(input, swish_x, out=out)

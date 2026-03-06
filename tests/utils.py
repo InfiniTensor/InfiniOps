@@ -52,12 +52,13 @@ def randn_strided(shape, strides, *, dtype=None, device=None):
 
     return output
 
+
 def rand_strided(shape, strides, *, dtype=None, device=None):
     output = empty_strided(shape, strides, dtype=dtype, device=device)
 
     output.as_strided(
         (output.untyped_storage().size() // output.element_size(),), (1,)
-    ).uniform_(0,1)
+    ).uniform_(0, 1)
 
     return output
 
