@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, randn_strided
+from tests.utils import Payload, empty_strided, rand_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -22,9 +22,9 @@ from tests.utils import Payload, empty_strided, randn_strided
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
-        (torch.float32, 1e-4, 1e-4),
-        (torch.float16, 1e-2, 1e-2),
-        (torch.bfloat16, 1e-2, 1e-2),
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
 def test_swiglu(
@@ -32,8 +32,9 @@ def test_swiglu(
 ):
     if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("CPU backend does not support fp16/bf16")
-    input = randn_strided(shape, input_strides, dtype=dtype, device=device)
-    gate = randn_strided(shape, gate_strides, dtype=dtype, device=device)
+
+    input = rand_strided(shape, input_strides, dtype=dtype, device=device)
+    gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
@@ -48,8 +49,6 @@ def _swiglu(input, gate, out):
 
 
 def _torch_swiglu(input, gate, out):
-    # PyTorch implementation of SwiGLU
-    # SwiGLU(x, gate) = Swish(x) * gate
-    # where Swish(x) = x * sigmoid(x)
-    swish_x = input * torch.sigmoid(input)
-    return torch.mul(swish_x, gate, out=out)
+    swish_x = gate * torch.sigmoid(gate)
+    
+    return torch.mul(input, swish_x, out=out)

@@ -8,8 +8,8 @@
 // clang-format on
 
 #include "base/swiglu.h"
-#include "cuda/swiglu/kernel.cuh"
 #include "common/generic_utils.h"
+#include "cuda/swiglu/kernel.cuh"
 
 namespace infini::ops {
 
@@ -51,12 +51,15 @@ class CudaSwiglu : public Swiglu {
     Backend::free(d_out_strides_);
   }
 
-  void operator()(void* stream, const Tensor input, const Tensor gate,
+  void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
     DispatchFunc<AllFloatTypes>(
         out_type_,
-        [&]<typename T>() {
-          int block_size = getOptimalBlockSize();
+        [&](auto tag) {
+          using T = typename decltype(tag)::type;
+          auto cuda_stream =
+              static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
+          int block_size = GetOptimalBlockSize();
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(block_size), output_size_));
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));
@@ -66,16 +69,14 @@ class CudaSwiglu : public Swiglu {
           const T* d_input = reinterpret_cast<const T*>(input.data());
           const T* d_gate = reinterpret_cast<const T*>(gate.data());
 
-// Launch kernel with appropriate block size based on GPU architecture
-#define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                      \
-  for (size_t i = 0; i < output_size_; i += step) {                           \
-    SwigluKernel<T, BLOCK_SIZE>                                               \
-        <<<gridDims, blockDims, 0,                                            \
-           static_cast<typename Backend::stream_t>(stream)>>>(                \
-            d_out, d_input, d_gate, d_out_shape_, d_input_shape_,             \
-            d_gate_shape_, d_out_strides_, d_input_strides_, d_gate_strides_, \
-            output_size_, ndim_, i, is_out_contiguous_, is_input_contiguous_, \
-            is_gate_contiguous_);                                             \
+// Launch kernel with appropriate block size based on GPU architecture.
+#define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                     \
+  for (size_t i = 0; i < output_size_; i += step) {                          \
+    SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(    \
+        d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_, \
+        d_out_strides_, d_input_strides_, d_gate_strides_, output_size_,     \
+        ndim_, i, is_out_contiguous_, is_input_contiguous_,                  \
+        is_gate_contiguous_);                                                \
   }
 
           if (block_size == CUDA_BLOCK_SIZE_1024) {

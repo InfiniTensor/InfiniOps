@@ -7,13 +7,6 @@
 
 namespace infini::ops {
 
-/**
- * SwiGLU Activation Operator
- *
- * SwiGLU(x, gate) = Swish(x) * gate
- * where Swish(x) = x * sigmoid(x)
- *
- */
 class Swiglu : public Operator<Swiglu> {
  public:
   Swiglu(const Tensor input, const Tensor gate, Tensor out)
@@ -33,11 +26,11 @@ class Swiglu : public Operator<Swiglu> {
         is_out_contiguous_{out.IsContiguous()} {
     assert(
         input_type_ == gate_type_ && gate_type_ == out_type_ &&
-        "Operator `Swiglu` requires all input and output Tensors to have the "
+        "operator `Swiglu` requires all input and output tensors to have the "
         "same dtype");
   }
 
-  virtual void operator()(void* stream, const Tensor input, const Tensor gate,
+  virtual void operator()(const Tensor input, const Tensor gate,
                           Tensor out) const = 0;
 
  protected:

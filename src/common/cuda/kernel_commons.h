@@ -11,20 +11,21 @@ using cuda_bfloat162 = nv_bfloat162;
 #include <cuda_runtime.h>
 #elif WITH_METAX  // TODO: Use `defined`.
 #include <mcr/mc_runtime.h>
+using cuda_bfloat16 = maca_bfloat16;
+using cuda_bfloat162 = maca_bfloat162;
 #endif
 
 #include "cast.h"
 
 namespace infini::ops {
 
-// Block size constants for different GPU architectures
 constexpr int CUDA_BLOCK_SIZE_128 = 128;
 constexpr int CUDA_BLOCK_SIZE_256 = 256;
 constexpr int CUDA_BLOCK_SIZE_512 = 512;
 constexpr int CUDA_BLOCK_SIZE_1024 = 1024;
 
-// Query the maximum threads per block for the current CUDA device
-inline int queryMaxThreadsPerBlock() {
+// Query the maximum threads per block for the current CUDA device.
+inline int QueryMaxThreadsPerBlock() {
 #ifdef WITH_NVIDIA
   int device = 0;
   cudaGetDevice(&device);
@@ -32,17 +33,16 @@ inline int queryMaxThreadsPerBlock() {
   cudaGetDeviceProperties(&prop, device);
   return prop.maxThreadsPerBlock;
 #elif WITH_METAX
-  // TODO: Add MCR device properties query for Metax
-  return CUDA_BLOCK_SIZE_256;  // Default fallback
+  // TODO: Add MCR device properties query for Metax.
+  return CUDA_BLOCK_SIZE_256;
 #endif
 }
 
-// Get optimal block size based on GPU hardware architecture
-inline int getOptimalBlockSize() {
-  int max_threads = queryMaxThreadsPerBlock();
+// Get optimal block size based on GPU hardware architecture.
+inline int GetOptimalBlockSize() {
+  int max_threads = QueryMaxThreadsPerBlock();
 
-  // Select the largest supported block size for better performance
-  // Prioritize larger blocks for better GPU utilization
+  // Select the largest supported block size for better performance.
   if (max_threads >= CUDA_BLOCK_SIZE_1024) {
     return CUDA_BLOCK_SIZE_1024;
   } else if (max_threads >= CUDA_BLOCK_SIZE_512) {
@@ -50,7 +50,7 @@ inline int getOptimalBlockSize() {
   } else if (max_threads >= CUDA_BLOCK_SIZE_256) {
     return CUDA_BLOCK_SIZE_256;
   } else {
-    return CUDA_BLOCK_SIZE_128;  // Fallback to minimum
+    return CUDA_BLOCK_SIZE_128;
   }
 }
 
