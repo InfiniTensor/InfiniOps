@@ -36,7 +36,7 @@ class Operator<Add, Device::Type::kCpu> : public Add {
 
     auto get_idx = [&](Tensor::Size i, bool is_contig, const auto* shape,
                        const auto* strides) {
-      return is_contig ? i : utils::indexToOffset(i, ndim_, shape, strides);
+      return is_contig ? i : utils::IndexToOffset(i, ndim_, shape, strides);
     };
 
 #pragma omp parallel for
