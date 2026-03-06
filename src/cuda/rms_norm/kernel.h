@@ -20,7 +20,7 @@ class CudaRmsNorm : public RmsNorm {
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     auto cuda_stream =
-        static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
+        static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
 
     auto stride_input_batch = input_strides_.size() > 1 ? input_strides_[0] : 0;
     auto stride_input_nhead =

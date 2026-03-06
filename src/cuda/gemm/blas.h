@@ -8,30 +8,34 @@
 namespace infini::ops {
 
 template <typename Backend>
-class Blas : public Gemm {
+class BlasGemm : public Gemm {
  public:
-  Blas(const Tensor a, const Tensor b, std::optional<float> alpha,
-       std::optional<float> beta, std::optional<int> trans_a,
-       std::optional<int> trans_b, Tensor c)
+  BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
+           std::optional<float> beta, std::optional<int> trans_a,
+           std::optional<int> trans_b, Tensor c)
       : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
         swap_a_and_b_{c.stride(-1) == 1} {
+    Backend::BlasCreate(&handle_);
     // TODO: Check constraints.
   }
 
-  Blas(const Tensor a, const Tensor b, std::optional<float> alpha,
-       std::optional<float> beta, Tensor c)
-      : Blas{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+  ~BlasGemm() { Backend::BlasDestroy(handle_); }
 
-  Blas(const Tensor a, const Tensor b, Tensor c)
-      : Blas{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
+  BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
+           std::optional<float> beta, Tensor c)
+      : BlasGemm{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+
+  BlasGemm(const Tensor a, const Tensor b, Tensor c)
+      : BlasGemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                 c} {}
 
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
-    Backend::blasSetStream(GetHandle(),
-                           static_cast<typename Backend::stream_t>(stream_));
+    Backend::BlasSetStream(handle_,
+                           static_cast<typename Backend::Stream>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
@@ -43,10 +47,9 @@ class Blas : public Gemm {
     const void* alpha_ptr{GetAlphaPtr(alpha_value, c.dtype())};
     const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
 
-    Backend::blasGemmStridedBatchedEx(
-        GetHandle(), op_a, op_b, swap_a_and_b_ ? n_ : m_,
-        swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
-        swap_a_and_b_ ? b.data() : a.data(),
+    Backend::BlasGemmStridedBatchedEx(
+        handle_, op_a, op_b, swap_a_and_b_ ? n_ : m_, swap_a_and_b_ ? m_ : n_,
+        k_, alpha_ptr, swap_a_and_b_ ? b.data() : a.data(),
         Backend::GetDataType(swap_a_and_b_ ? b.dtype() : a.dtype()),
         swap_a_and_b_ ? ldb_ : lda_,
         swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
@@ -86,22 +89,13 @@ class Blas : public Gemm {
                                         : Backend::BLAS_OP_N;
   }
 
-  // TODO: This static singleton is not thread-safe under concurrent access
-  // from multiple host threads. Add proper synchronization in the future.
-  static typename Backend::blasHandle_t& GetHandle() {
-    static typename Backend::blasHandle_t handle = []() {
-      typename Backend::blasHandle_t h;
-      Backend::blasCreate(&h);
-      return h;
-    }();
-    return handle;
-  }
-
   bool a_is_col_major_{false};
 
   bool b_is_col_major_{false};
 
   bool swap_a_and_b_{false};
+
+  typename Backend::BlasHandle handle_;
 };
 
 }  // namespace infini::ops
