@@ -29,8 +29,7 @@ class CausalSoftmax : public Operator<CausalSoftmax> {
            "`CausalSoftmax` requires shape[-2] <= shape[-1]");
   }
 
-  virtual void operator()(void* stream, const Tensor input,
-                          Tensor out) const = 0;
+  virtual void operator()(const Tensor input, Tensor out) const = 0;
 
  protected:
   const DataType dtype_;
