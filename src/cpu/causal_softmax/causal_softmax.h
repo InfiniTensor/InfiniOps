@@ -14,8 +14,7 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
  public:
   Operator(const Tensor input, Tensor out) : CausalSoftmax{input, out} {}
 
-  void operator()(void* stream, const Tensor input,
-                  Tensor out) const override {
+  void operator()(void* stream, const Tensor input, Tensor out) const override {
     if (out.dtype() != DataType::kFloat32 ||
         input.dtype() != DataType::kFloat32) {
       std::abort();

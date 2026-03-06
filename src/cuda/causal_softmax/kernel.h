@@ -25,8 +25,7 @@ class CudaCausalSoftmax : public CausalSoftmax {
  public:
   using CausalSoftmax::CausalSoftmax;
 
-  void operator()(void* stream, const Tensor input,
-                  Tensor out) const override {
+  void operator()(void* stream, const Tensor input, Tensor out) const override {
     auto cuda_stream =
         static_cast<typename Backend::stream_t>(stream ? stream : 0);
 

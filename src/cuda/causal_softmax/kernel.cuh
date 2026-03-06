@@ -58,14 +58,11 @@ __device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
 }  // namespace
 
 template <unsigned int block_size, typename Data, typename Compute>
-__global__ void CausalSoftmaxKernel(Data* __restrict__ out_ptr,
-                                    const Data* __restrict__ input_ptr,
-                                    size_t batch_size, size_t seq_len,
-                                    size_t total_seq_len,
-                                    int64_t stride_out_batch,
-                                    int64_t stride_out_row,
-                                    int64_t stride_input_batch,
-                                    int64_t stride_input_row) {
+__global__ void CausalSoftmaxKernel(
+    Data* __restrict__ out_ptr, const Data* __restrict__ input_ptr,
+    size_t batch_size, size_t seq_len, size_t total_seq_len,
+    int64_t stride_out_batch, int64_t stride_out_row,
+    int64_t stride_input_batch, int64_t stride_input_row) {
   size_t row_idx = blockIdx.x;
   size_t batch_idx = blockIdx.y;
 
@@ -85,8 +82,8 @@ __global__ void CausalSoftmaxKernel(Data* __restrict__ out_ptr,
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
     if (col < valid_len) {
-      Compute diff = static_cast<Compute>(input_row[col]) -
-                     static_cast<Compute>(max_val);
+      Compute diff =
+          static_cast<Compute>(input_row[col]) - static_cast<Compute>(max_val);
       out_row[col] = ExpAndCast<Data, Compute>(diff);
     } else {
       out_row[col] = Data(0);
