@@ -81,40 +81,40 @@ constexpr ConstexprMap<std::string_view, DataType, 12> kStringToDataType{{{
     {"float64", DataType::kFloat64},
 }}};
 
-struct float16_t {
-  uint16_t bits;
+struct Float16 {
+  std::uint16_t bits;
 
-  static inline float16_t FromFloat(float val) {
-    uint32_t f32;
+  static inline Float16 FromFloat(float val) {
+    std::uint32_t f32;
     std::memcpy(&f32, &val, sizeof(f32));
-    uint16_t sign = (f32 >> 16) & 0x8000;
-    int32_t exponent = ((f32 >> 23) & 0xFF) - 127;
-    uint32_t mantissa = f32 & 0x7FFFFF;
+    std::uint16_t sign = (f32 >> 16) & 0x8000;
+    std::int32_t exponent = ((f32 >> 23) & 0xFF) - 127;
+    std::uint32_t mantissa = f32 & 0x7FFFFF;
 
     if (exponent >= 16) {
       // NaN
       if (exponent == 128 && mantissa != 0) {
-        return {static_cast<uint16_t>(sign | 0x7E00)};
+        return {static_cast<std::uint16_t>(sign | 0x7E00)};
       }
       // Inf
-      return {static_cast<uint16_t>(sign | 0x7C00)};
+      return {static_cast<std::uint16_t>(sign | 0x7C00)};
     } else if (exponent >= -14) {
-      return {static_cast<uint16_t>(sign | ((exponent + 15) << 10) |
-                                    (mantissa >> 13))};
+      return {static_cast<std::uint16_t>(sign | ((exponent + 15) << 10) |
+                                         (mantissa >> 13))};
     } else if (exponent >= -24) {
       mantissa |= 0x800000;
       mantissa >>= (-14 - exponent);
-      return {static_cast<uint16_t>(sign | (mantissa >> 13))};
+      return {static_cast<std::uint16_t>(sign | (mantissa >> 13))};
     }
     // Too small for subnormal: return signed zero.
     return {sign};
   }
 
   inline float ToFloat() const {
-    uint32_t sign = (bits & 0x8000) << 16;
-    int32_t exponent = (bits >> 10) & 0x1F;
-    uint32_t mantissa = bits & 0x3FF;
-    uint32_t f32_bits;
+    std::uint32_t sign = (bits & 0x8000) << 16;
+    std::int32_t exponent = (bits >> 10) & 0x1F;
+    std::uint32_t mantissa = bits & 0x3FF;
+    std::uint32_t f32_bits;
 
     if (exponent == 31) {
       f32_bits = sign | 0x7F800000 | (mantissa << 13);
@@ -140,20 +140,21 @@ struct float16_t {
   }
 };
 
-struct bfloat16_t {
-  uint16_t bits;
+struct BFloat16 {
+  std::uint16_t bits;
 
-  static inline bfloat16_t FromFloat(float val) {
-    uint32_t bits32;
+  static inline BFloat16 FromFloat(float val) {
+    std::uint32_t bits32;
     std::memcpy(&bits32, &val, sizeof(bits32));
 
-    const uint32_t rounding_bias = 0x00007FFF + ((bits32 >> 16) & 1);
-    uint16_t bf16_bits = static_cast<uint16_t>((bits32 + rounding_bias) >> 16);
+    const std::uint32_t rounding_bias = 0x00007FFF + ((bits32 >> 16) & 1);
+    std::uint16_t bf16_bits =
+        static_cast<std::uint16_t>((bits32 + rounding_bias) >> 16);
     return {bf16_bits};
   }
 
   inline float ToFloat() const {
-    uint32_t bits32 = static_cast<uint32_t>(bits) << 16;
+    std::uint32_t bits32 = static_cast<std::uint32_t>(bits) << 16;
     float result;
     std::memcpy(&result, &bits32, sizeof(result));
     return result;
@@ -183,14 +184,14 @@ inline constexpr DataType DataTypeMapValue = DataTypeMap<T>::value;
     static constexpr DataType value = DataType::ENUM_VALUE; \
   };
 
-DEFINE_DATA_TYPE_MAPPING(kUInt8, uint8_t)
-DEFINE_DATA_TYPE_MAPPING(kInt8, int8_t)
-DEFINE_DATA_TYPE_MAPPING(kUInt16, uint16_t)
-DEFINE_DATA_TYPE_MAPPING(kInt16, int16_t)
-DEFINE_DATA_TYPE_MAPPING(kUInt32, uint32_t)
-DEFINE_DATA_TYPE_MAPPING(kInt32, int32_t)
-DEFINE_DATA_TYPE_MAPPING(kUInt64, uint64_t)
-DEFINE_DATA_TYPE_MAPPING(kInt64, int64_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt8, std::uint8_t)
+DEFINE_DATA_TYPE_MAPPING(kInt8, std::int8_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt16, std::uint16_t)
+DEFINE_DATA_TYPE_MAPPING(kInt16, std::int16_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt32, std::uint32_t)
+DEFINE_DATA_TYPE_MAPPING(kInt32, std::int32_t)
+DEFINE_DATA_TYPE_MAPPING(kUInt64, std::uint64_t)
+DEFINE_DATA_TYPE_MAPPING(kInt64, std::int64_t)
 DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
 DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
 
@@ -201,8 +202,8 @@ DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
 DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, __maca_bfloat16)
 #else
-DEFINE_DATA_TYPE_MAPPING(kFloat16, float16_t)
-DEFINE_DATA_TYPE_MAPPING(kBFloat16, bfloat16_t)
+DEFINE_DATA_TYPE_MAPPING(kFloat16, Float16)
+DEFINE_DATA_TYPE_MAPPING(kBFloat16, BFloat16)
 #endif
 #undef DEFINE_DATA_TYPE_MAPPING
 
