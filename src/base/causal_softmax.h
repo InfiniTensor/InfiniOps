@@ -11,25 +11,26 @@ namespace infini::ops {
 
 class CausalSoftmax : public Operator<CausalSoftmax> {
  public:
-  CausalSoftmax(const Tensor y, const Tensor x)
-      : dtype_{y.dtype()},
-        ndim_{y.ndim()},
-        batch_size_{ndim_ == 2 ? 1 : y.size(-3)},
-        seq_len_{y.size(-2)},
-        total_seq_len_{y.size(-1)},
-        y_strides_{y.strides()},
-        x_strides_{x.strides()} {
-    assert(y.shape() == x.shape() &&
-           "CausalSoftmax requires y and x same shape");
-    assert(y.dtype() == x.dtype() &&
-           "CausalSoftmax requires y and x same dtype");
-    assert(ndim_ == 2 ||
-           ndim_ == 3 && "CausalSoftmax requires 2D or 3D tensor");
+  CausalSoftmax(const Tensor input, Tensor out)
+      : dtype_{input.dtype()},
+        ndim_{out.ndim()},
+        batch_size_{ndim_ == 2 ? 1 : out.size(-3)},
+        seq_len_{out.size(-2)},
+        total_seq_len_{out.size(-1)},
+        input_strides_{input.strides()},
+        out_strides_{out.strides()} {
+    assert(input.shape() == out.shape() &&
+           "CausalSoftmax requires `input` and `out` same shape");
+    assert(input.dtype() == out.dtype() &&
+           "CausalSoftmax requires `input` and `out` same dtype");
+    assert((ndim_ == 2 || ndim_ == 3) &&
+           "CausalSoftmax requires 2D or 3D tensor");
     assert(seq_len_ <= total_seq_len_ &&
            "CausalSoftmax requires shape[-2] <= shape[-1]");
   }
 
-  virtual void operator()(void* stream, Tensor y, const Tensor x) const = 0;
+  virtual void operator()(void* stream, const Tensor input,
+                          Tensor out) const = 0;
 
  protected:
   const DataType dtype_;
@@ -42,9 +43,9 @@ class CausalSoftmax : public Operator<CausalSoftmax> {
 
   Tensor::Size total_seq_len_{0};
 
-  Tensor::Strides y_strides_;
+  Tensor::Strides input_strides_;
 
-  Tensor::Strides x_strides_;
+  Tensor::Strides out_strides_;
 };
 
 }  // namespace infini::ops

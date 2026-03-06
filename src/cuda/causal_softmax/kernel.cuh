@@ -12,15 +12,15 @@ namespace infini::ops {
 
 namespace {
 
-template <typename Tdata, typename Tcompute>
-__device__ __forceinline__ Tdata ExpAndCast(Tcompute x) {
-  Tcompute e = std::exp(x);
-  if constexpr (std::is_same_v<Tdata, half>) {
+template <typename Data, typename Compute>
+__device__ __forceinline__ Data ExpAndCast(Compute x) {
+  Compute e = std::exp(x);
+  if constexpr (std::is_same_v<Data, half>) {
     return __float2half(static_cast<float>(e));
-  } else if constexpr (std::is_same_v<Tdata, __nv_bfloat16>) {
+  } else if constexpr (std::is_same_v<Data, __nv_bfloat16>) {
     return __float2bfloat16(static_cast<float>(e));
   } else {
-    return static_cast<Tdata>(e);
+    return static_cast<Data>(e);
   }
 }
 
@@ -31,49 +31,53 @@ struct BlockMaxOp {
   }
 };
 
-template <unsigned int block_size, typename Tdata>
-__device__ __forceinline__ Tdata BlockMax(const Tdata* data_ptr, size_t count) {
-  Tdata thread_max = count > 0 ? data_ptr[0] : Tdata{};
+template <unsigned int block_size, typename Data>
+__device__ __forceinline__ Data BlockMax(const Data* data_ptr, size_t count) {
+  Data thread_max = count > 0 ? data_ptr[0] : Data{};
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    Tdata v = data_ptr[i];
+    Data v = data_ptr[i];
     thread_max = (v > thread_max) ? v : thread_max;
   }
-  using BlockReduce = cub::BlockReduce<Tdata, block_size>;
+  using BlockReduce = cub::BlockReduce<Data, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
   return BlockReduce(temp_storage).Reduce(thread_max, BlockMaxOp());
 }
 
-template <unsigned int block_size, typename Tdata, typename Tcompute>
-__device__ __forceinline__ Tcompute BlockSum(const Tdata* data_ptr,
-                                             size_t count) {
-  Tcompute thread_sum = 0;
+template <unsigned int block_size, typename Data, typename Compute>
+__device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
+                                            size_t count) {
+  Compute thread_sum = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    thread_sum += Tcompute(data_ptr[i]);
+    thread_sum += Compute(data_ptr[i]);
   }
-  using BlockReduce = cub::BlockReduce<Tcompute, block_size>;
+  using BlockReduce = cub::BlockReduce<Compute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
   return BlockReduce(temp_storage).Sum(thread_sum);
 }
 
 }  // namespace
 
-template <unsigned int block_size, typename Tdata, typename Tcompute>
-__global__ void CausalSoftmaxKernel(Tdata* __restrict__ y,
-                                    const Tdata* __restrict__ x,
+template <unsigned int block_size, typename Data, typename Compute>
+__global__ void CausalSoftmaxKernel(Data* __restrict__ out_ptr,
+                                    const Data* __restrict__ input_ptr,
                                     size_t batch_size, size_t seq_len,
-                                    size_t total_seq_len, int64_t y_stride_b,
-                                    int64_t y_stride_i, int64_t x_stride_b,
-                                    int64_t x_stride_i) {
+                                    size_t total_seq_len,
+                                    int64_t stride_out_batch,
+                                    int64_t stride_out_row,
+                                    int64_t stride_input_batch,
+                                    int64_t stride_input_row) {
   size_t row_idx = blockIdx.x;
   size_t batch_idx = blockIdx.y;
 
-  Tdata* y_row = y + batch_idx * y_stride_b + row_idx * y_stride_i;
-  const Tdata* x_row = x + batch_idx * x_stride_b + row_idx * x_stride_i;
+  Data* out_row =
+      out_ptr + batch_idx * stride_out_batch + row_idx * stride_out_row;
+  const Data* input_row =
+      input_ptr + batch_idx * stride_input_batch + row_idx * stride_input_row;
 
   size_t valid_len = total_seq_len - seq_len + row_idx + 1;
 
-  __shared__ Tdata max_val;
-  Tdata block_max = BlockMax<block_size, Tdata>(x_row, valid_len);
+  __shared__ Data max_val;
+  Data block_max = BlockMax<block_size, Data>(input_row, valid_len);
   if (threadIdx.x == 0) {
     max_val = block_max;
   }
@@ -81,31 +85,31 @@ __global__ void CausalSoftmaxKernel(Tdata* __restrict__ y,
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
     if (col < valid_len) {
-      Tcompute diff =
-          static_cast<Tcompute>(x_row[col]) - static_cast<Tcompute>(max_val);
-      y_row[col] = ExpAndCast<Tdata, Tcompute>(diff);
+      Compute diff = static_cast<Compute>(input_row[col]) -
+                     static_cast<Compute>(max_val);
+      out_row[col] = ExpAndCast<Data, Compute>(diff);
     } else {
-      y_row[col] = Tdata(0);
+      out_row[col] = Data(0);
     }
   }
   __syncthreads();
 
-  __shared__ Tcompute sum_val;
-  Tcompute block_sum =
-      BlockSum<block_size, Tdata, Tcompute>(y_row, total_seq_len);
+  __shared__ Compute sum_val;
+  Compute block_sum =
+      BlockSum<block_size, Data, Compute>(out_row, total_seq_len);
   if (threadIdx.x == 0) {
     sum_val = block_sum;
   }
   __syncthreads();
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
-    Tcompute quot = static_cast<Tcompute>(y_row[col]) / sum_val;
-    if constexpr (std::is_same_v<Tdata, half>) {
-      y_row[col] = __float2half(static_cast<float>(quot));
-    } else if constexpr (std::is_same_v<Tdata, __nv_bfloat16>) {
-      y_row[col] = __float2bfloat16(static_cast<float>(quot));
+    Compute quot = static_cast<Compute>(out_row[col]) / sum_val;
+    if constexpr (std::is_same_v<Data, half>) {
+      out_row[col] = __float2half(static_cast<float>(quot));
+    } else if constexpr (std::is_same_v<Data, __nv_bfloat16>) {
+      out_row[col] = __float2bfloat16(static_cast<float>(quot));
     } else {
-      y_row[col] = static_cast<Tdata>(quot);
+      out_row[col] = static_cast<Data>(quot);
     }
   }
 }
