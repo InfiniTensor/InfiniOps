@@ -44,11 +44,14 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
                               gate_strides_.data());
       auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
                              out_strides_.data());
-      const T x = input_ptr[input_idx];
-      const T sigmoid_x =
-          static_cast<T>(1.0 / (1.0 + std::exp(-static_cast<double>(x))));
-      const T swish_x = x * sigmoid_x;
-      out_ptr[out_idx] = swish_x * gate_ptr[gate_idx];
+
+      const auto x{static_cast<double>(input_ptr[input_idx])};
+      const auto gate_val{static_cast<double>(gate_ptr[gate_idx])};
+
+      const auto sigmoid_x{1.0 / (1.0 + std::exp(-x))};
+      const auto swish_x{x * sigmoid_x};
+
+      out_ptr[out_idx] = static_cast<T>(swish_x * gate_val);
     }
   }
 };
