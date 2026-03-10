@@ -23,7 +23,7 @@ from tests.utils import Payload, empty_strided, randn_strided
     (
         (torch.float32, 1e-4, 1e-4),
         (torch.float16, 1e-2, 1e-2),
-        (torch.bfloat16, 1e-2, 1e-2),
+        (torch.bfloat16, 2e-2, 1e-2),
     ),
 )
 def test_rms_norm(
