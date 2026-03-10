@@ -20,8 +20,14 @@ from tests.utils import Payload, empty_strided, randn_strided
 @pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
-# TODO: Add support for more data types.
-@pytest.mark.parametrize(("dtype", "rtol", "atol"), ((torch.float32, 1e-3, 1e-3),))
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-3, 1e-3),
+        (torch.float16, 1e-2, 1e-2),
+        (torch.bfloat16, 1e-2, 1e-2),
+    ),
+)
 def test_gemm(
     a_shape,
     b_shape,
@@ -75,6 +81,11 @@ def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None)
 
     if trans_b:
         b = b.transpose(-2, -1)
+
+    # PyTorch `baddbmm`/`addmm` ignores `beta` when `alpha=0.0`.
+    if alpha == 0:
+        c.mul_(beta)
+        return c
 
     if a.ndim == 2:
         return torch.addmm(c, a, b, beta=beta, alpha=alpha, out=c)

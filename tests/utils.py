@@ -21,7 +21,7 @@ class Payload:
 
 
 def get_available_devices():
-    devices = []
+    devices = ["cpu"]
 
     if torch.cuda.is_available():
         devices.append("cuda")
@@ -59,6 +59,16 @@ def rand_strided(shape, strides, *, dtype=None, device=None):
     output.as_strided(
         (output.untyped_storage().size() // output.element_size(),), (1,)
     ).uniform_(0, 1)
+
+    return output
+
+
+def randint_strided(shape, strides, *, dtype=None, device=None, low=0, high=100):
+    output = empty_strided(shape, strides, dtype=dtype, device=device)
+
+    output.as_strided(
+        (output.untyped_storage().size() // output.element_size(),), (1,)
+    ).random_(low, high)
 
     return output
 

@@ -30,8 +30,6 @@ from tests.utils import Payload, empty_strided, rand_strided
 def test_swiglu(
     shape, input_strides, gate_strides, out_strides, dtype, device, rtol, atol
 ):
-    if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
-        pytest.skip("CPU backend does not support fp16/bf16")
 
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)

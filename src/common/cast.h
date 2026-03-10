@@ -1,6 +1,10 @@
 #ifndef INFINI_OPS_COMMON_CAST_H_
 #define INFINI_OPS_COMMON_CAST_H_
 
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR) || defined(WITH_METAX)
+#include "common/cuda/cast.h"
+#else
+
 #include "data_type.h"
 
 namespace infini::ops {
@@ -9,7 +13,7 @@ namespace detail {
 
 template <typename T>
 constexpr float ToFloatHelper(T &&x) {
-  using PureSrc = std::remove_cv_t<std::remove_reference_t<T>>;
+  using PureSrc = std::remove_cv_t<std::remove_reference_t<T> >;
   if constexpr (IsBFloat16<PureSrc> || IsFP16<PureSrc>) {
     return std::forward<T>(x).ToFloat();
   } else {
@@ -19,7 +23,7 @@ constexpr float ToFloatHelper(T &&x) {
 
 template <typename Dst>
 constexpr Dst FromFloatHelper(float f) {
-  using PureDst = std::remove_cv_t<std::remove_reference_t<Dst>>;
+  using PureDst = std::remove_cv_t<std::remove_reference_t<Dst> >;
   if constexpr (IsBFloat16<PureDst> || IsFP16<PureDst>) {
     return PureDst::FromFloat(f);
   } else {
@@ -34,8 +38,8 @@ Dst Cast(Src &&x) {
   static_assert(!std::is_reference_v<Dst>,
                 "`Cast` cannot return reference types");
 
-  using PureDst = std::remove_cv_t<std::remove_reference_t<Dst>>;
-  using PureSrc = std::remove_cv_t<std::remove_reference_t<Src>>;
+  using PureDst = std::remove_cv_t<std::remove_reference_t<Dst> >;
+  using PureSrc = std::remove_cv_t<std::remove_reference_t<Src> >;
 
   if constexpr (std::is_same_v<PureDst, PureSrc>) {
     return std::forward<Src>(x);
@@ -53,5 +57,7 @@ Dst Cast(Src &&x) {
 }
 
 }  // namespace infini::ops
+
+#endif
 
 #endif

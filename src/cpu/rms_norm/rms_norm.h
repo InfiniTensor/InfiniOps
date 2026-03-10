@@ -4,6 +4,8 @@
 #include <cmath>
 
 #include "base/rms_norm.h"
+#include "common/cast.h"
+#include "common/generic_utils.h"
 #include "data_type.h"
 #include "tensor.h"
 
@@ -16,16 +18,22 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
 
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
-    // CPU backend supports fp32 only; fp16/bf16 use GPU backends.
-    if (out.dtype() != DataType::kFloat32 ||
-        input.dtype() != DataType::kFloat32 ||
-        weight.dtype() != DataType::kFloat32) {
-      abort();
-    }
+    DispatchFunc<AllFloatTypes>(
+        out.dtype(),
+        [&](auto tag) {
+          using T = typename decltype(tag)::type;
+          Compute<T>(input, weight, eps, out);
+        },
+        "`Operator<RmsNorm, Device::Type::kCpu>::operator()`");
+  }
 
-    auto* out_ptr = static_cast<float*>(out.data());
-    const auto* input_ptr = static_cast<const float*>(input.data());
-    const auto* weight_ptr = static_cast<const float*>(weight.data());
+ private:
+  template <typename T>
+  void Compute(const Tensor input, const Tensor weight, float eps,
+               Tensor out) const {
+    auto* out_ptr = static_cast<T*>(out.data());
+    const auto* input_ptr = static_cast<const T*>(input.data());
+    const auto* weight_ptr = static_cast<const T*>(weight.data());
 
     auto stride_input_batch = input_strides_.size() > 1 ? input_strides_[0] : 0;
     auto stride_input_nhead =
@@ -36,20 +44,20 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
 
     for (Tensor::Size bi = 0; bi < batch_size_; ++bi) {
       for (Tensor::Size hi = 0; hi < nhead_; ++hi) {
-        const float* input_row =
+        const T* input_row =
             input_ptr + bi * stride_input_batch + hi * stride_input_nhead;
-        float* out_row =
-            out_ptr + bi * stride_out_batch + hi * stride_out_nhead;
+        T* out_row = out_ptr + bi * stride_out_batch + hi * stride_out_nhead;
 
         float ss = 0;
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          float v = input_row[k];
+          float v = Cast<float>(input_row[k]);
           ss += v * v;
         }
-        float rms = 1.f / std::sqrt(ss / static_cast<float>(dim_) + eps_);
+        float rms = 1.f / std::sqrt(ss / static_cast<float>(dim_) + eps);
 
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          out_row[k] = input_row[k] * weight_ptr[k] * rms;
+          out_row[k] = Cast<T>(Cast<float>(input_row[k]) *
+                               Cast<float>(weight_ptr[k]) * rms);
         }
       }
     }
