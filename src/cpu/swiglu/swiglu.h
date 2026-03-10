@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "base/swiglu.h"
+#include "common/cast.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
@@ -27,6 +28,9 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor gate, Tensor out) const {
+    using ComputeType =
+        std::conditional_t<IsBFloat16<T> || IsFP16<T>, float, T>;
+
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* gate_ptr = static_cast<const T*>(gate.data());
     auto* out_ptr = static_cast<T*>(out.data());
@@ -44,11 +48,12 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
                               gate_strides_.data());
       auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
                              out_strides_.data());
-      const T x = input_ptr[input_idx];
-      const T sigmoid_x =
-          static_cast<T>(1.0 / (1.0 + std::exp(-static_cast<double>(x))));
-      const T swish_x = x * sigmoid_x;
-      out_ptr[out_idx] = swish_x * gate_ptr[gate_idx];
+      const ComputeType gate_val = Cast<ComputeType>(gate_ptr[gate_idx]);
+      const ComputeType sigmoid_gate = static_cast<ComputeType>(
+          1.0 / (1.0 + std::exp(-static_cast<double>(gate_val))));
+      const ComputeType swish_gate = gate_val * sigmoid_gate;
+      out_ptr[out_idx] =
+          Cast<T>(Cast<ComputeType>(input_ptr[input_idx]) * swish_gate);
     }
   }
 };
