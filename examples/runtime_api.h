@@ -37,6 +37,15 @@
 #define DEVICE_MEMCPY_HOST_TO_DEVICE cnrtMemcpyHostToDev
 #define DEVICE_MEMCPY_DEVICE_TO_HOST cnrtMemcpyDevToHost
 #define DEFAULT_DEVICE_TYPE Device::Type::kCambricon
+#elif WITH_MOORE
+#include <musa_runtime_api.h>
+#define DEVICE_MALLOC musaMalloc
+#define DEVICE_FREE musaFree
+#define DEVICE_MEMCPY musaMemcpy
+#define DEVICE_MEMSET musaMemset
+#define DEVICE_MEMCPY_HOST_TO_DEVICE musaMemcpyHostToDevice
+#define DEVICE_MEMCPY_DEVICE_TO_HOST musaMemcpyDeviceToHost
+#define DEFAULT_DEVICE_TYPE Device::Type::kMoore
 #elif WITH_CPU
 #include <cstdlib>
 #include <cstring>

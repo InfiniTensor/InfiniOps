@@ -17,6 +17,9 @@
 #if WITH_CAMBRICON
 #include "cambricon/gemm/cnblas.h"
 #endif
+#if WITH_MOORE
+#include "moore/gemm/mublas.h"
+#endif
 
 #include "runtime_api.h"
 #include "tensor.h"

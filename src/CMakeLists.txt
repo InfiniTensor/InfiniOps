@@ -112,6 +112,13 @@ if(WITH_CAMBRICON)
     list(APPEND DEVICE_LIST "cambricon")
 endif()
 
+if(WITH_MOORE)
+    target_compile_definitions(infiniops PUBLIC WITH_MOORE=1)
+    target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
+    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
+    list(APPEND DEVICE_LIST "moore")
+endif()
+
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(GENERATE_PYTHON_BINDINGS)

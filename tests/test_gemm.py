@@ -88,7 +88,16 @@ def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None)
 
         return c
 
-    if a.ndim == 2:
-        return torch.addmm(c, a, b, beta=beta, alpha=alpha, out=c)
+    # Some backends (e.g. `torch_musa`) may reject `addmm`/`baddbmm(out=...)`
+    # for certain strided outputs. Fall back to `matmul` plus fused `alpha`/`beta`
+    # update to keep reference coverage.
+    try:
+        if a.ndim == 2:
+            return torch.addmm(c, a, b, beta=beta, alpha=alpha, out=c)
 
-    return torch.baddbmm(c, a, b, beta=beta, alpha=alpha, out=c)
+        return torch.baddbmm(c, a, b, beta=beta, alpha=alpha, out=c)
+    except RuntimeError:
+        c_original = c.clone()
+        torch.matmul(a, b, out=c)
+        c.mul_(alpha).add_(c_original, alpha=beta)
+        return c
