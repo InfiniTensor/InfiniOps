@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, randn_strided
+from tests.utils import Payload, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -85,6 +85,7 @@ def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None)
     # PyTorch `baddbmm`/`addmm` ignores `beta` when `alpha=0.0`.
     if alpha == 0:
         c.mul_(beta)
+
         return c
 
     if a.ndim == 2:

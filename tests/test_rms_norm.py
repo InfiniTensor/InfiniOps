@@ -38,7 +38,6 @@ def test_rms_norm(
     rtol,
     atol,
 ):
-
     input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
     out = empty_strided(input_shape, out_strides, dtype=dtype, device=device)

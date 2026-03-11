@@ -19,7 +19,7 @@ class Operator<Add, Device::Type::kCpu> : public Add {
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
-    DispatchFunc<ConcatType<AllFloatTypes, AllIntTypes>>(
+    DispatchFunc<AllTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;

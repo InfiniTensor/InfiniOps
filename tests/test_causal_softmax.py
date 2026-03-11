@@ -26,7 +26,6 @@ from tests.utils import Payload, empty_strided, randn_strided
     ),
 )
 def test_causal_softmax(shape, input_strides, out_strides, dtype, device, rtol, atol):
-
     input_tensor = randn_strided(shape, input_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 

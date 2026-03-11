@@ -63,7 +63,7 @@ def rand_strided(shape, strides, *, dtype=None, device=None):
     return output
 
 
-def randint_strided(shape, strides, *, dtype=None, device=None, low=0, high=100):
+def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     output = empty_strided(shape, strides, dtype=dtype, device=device)
 
     output.as_strided(

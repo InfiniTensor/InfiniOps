@@ -46,15 +46,14 @@ _INT_DTYPES = (
         (torch.uint64, 0, 0),
     ),
 )
-def test_add(
-    shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
-):
+def test_add(shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol):
     if dtype in _INT_DTYPES:
-        input = randint_strided(shape, input_strides, dtype=dtype, device=device)
-        other = randint_strided(shape, other_strides, dtype=dtype, device=device)
+        input = randint_strided(0, 100, shape, input_strides, dtype=dtype, device=device)
+        other = randint_strided(0, 100, shape, other_strides, dtype=dtype, device=device)
     else:
         input = randn_strided(shape, input_strides, dtype=dtype, device=device)
         other = randn_strided(shape, other_strides, dtype=dtype, device=device)
+
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
     return Payload(_add, _torch_add, (input, other, out), {}, rtol=rtol, atol=atol)
@@ -69,8 +68,11 @@ def _add(input, other, out):
 def _torch_add(input, other, out):
     if input.dtype in (torch.uint16, torch.uint32, torch.uint64):
         input = input.to(torch.int64)
+
     if other.dtype in (torch.uint16, torch.uint32, torch.uint64):
         other = other.to(torch.int64)
+
     res = torch.add(input, other)
     out.copy_(res.to(out.dtype))
+
     return out
