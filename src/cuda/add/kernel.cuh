@@ -25,26 +25,25 @@ struct AddOp {
 };
 
 template <typename T, unsigned int BLOCK_SIZE>
-__global__ void AddKernel(
-    T* out, const T* input, const T* other, const size_t* out_shape,
-    const size_t* input_shape, const size_t* other_shape,
-    const ptrdiff_t* out_strides, const ptrdiff_t* input_strides,
-    const ptrdiff_t* other_strides, size_t output_size, size_t ndim,
-    size_t offset, bool out_contiguous, bool input_contiguous,
-    bool other_contiguous) {
+__global__ void AddKernel(T* out, const T* input, const T* other,
+                          const size_t* out_shape, const size_t* input_shape,
+                          const size_t* other_shape,
+                          const ptrdiff_t* out_strides,
+                          const ptrdiff_t* input_strides,
+                          const ptrdiff_t* other_strides, size_t output_size,
+                          size_t ndim, size_t offset, bool out_contiguous,
+                          bool input_contiguous, bool other_contiguous) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x + offset;
 
   if (idx < output_size) {
     size_t out_idx =
         out_contiguous ? idx : IndexToOffset(idx, ndim, out_shape, out_strides);
     size_t input_idx =
-        input_contiguous
-            ? idx
-            : IndexToOffset(idx, ndim, input_shape, input_strides);
+        input_contiguous ? idx
+                         : IndexToOffset(idx, ndim, input_shape, input_strides);
     size_t other_idx =
-        other_contiguous
-            ? idx
-            : IndexToOffset(idx, ndim, other_shape, other_strides);
+        other_contiguous ? idx
+                         : IndexToOffset(idx, ndim, other_shape, other_strides);
 
     out[out_idx] = AddOp{}(input[input_idx], other[other_idx]);
   }
