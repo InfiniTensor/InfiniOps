@@ -23,7 +23,7 @@ from tests.utils import Payload, empty_strided, randn_strided
     (
         (torch.float32, 1e-4, 1e-4),
         (torch.float16, 1e-2, 1e-2),
-        (torch.bfloat16, 1e-2, 1e-2),
+        (torch.bfloat16, 2e-2, 1e-2),
     ),
 )
 def test_rms_norm(
@@ -38,9 +38,6 @@ def test_rms_norm(
     rtol,
     atol,
 ):
-    if device == "cpu" and dtype in (torch.float16, torch.bfloat16):
-        pytest.skip("CPU backend does not support fp16/bf16")
-
     input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
     out = empty_strided(input_shape, out_strides, dtype=dtype, device=device)

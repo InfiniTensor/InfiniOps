@@ -3,7 +3,9 @@
 
 #ifdef WITH_NVIDIA
 #include <cuda_runtime.h>
-#elif WITH_METAX
+#elif defined(WITH_ILUVATAR)
+#include <cuda_runtime.h>
+#elif defined(WITH_METAX)
 #include <mcr/mc_runtime.h>
 #endif
 

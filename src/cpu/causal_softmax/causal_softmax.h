@@ -4,6 +4,8 @@
 #include <cmath>
 
 #include "base/causal_softmax.h"
+#include "common/cast.h"
+#include "common/generic_utils.h"
 #include "data_type.h"
 #include "tensor.h"
 
@@ -15,13 +17,20 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
   Operator(const Tensor input, Tensor out) : CausalSoftmax{input, out} {}
 
   void operator()(const Tensor input, Tensor out) const override {
-    if (out.dtype() != DataType::kFloat32 ||
-        input.dtype() != DataType::kFloat32) {
-      std::abort();
-    }
+    DispatchFunc<AllFloatTypes>(
+        out.dtype(),
+        [&](auto tag) {
+          using T = typename decltype(tag)::type;
+          Compute<T>(input, out);
+        },
+        "`Operator<CausalSoftmax, Device::Type::kCpu>::operator()`");
+  }
 
-    auto* out_ptr = static_cast<float*>(out.data());
-    const auto* input_ptr = static_cast<const float*>(input.data());
+ private:
+  template <typename T>
+  void Compute(const Tensor input, Tensor out) const {
+    auto* out_ptr = static_cast<T*>(out.data());
+    const auto* input_ptr = static_cast<const T*>(input.data());
 
     auto out_stride_b = ndim_ == 3 ? out_strides_[0] : 0;
     auto out_stride_i = out_strides_[ndim_ - 2];
@@ -34,18 +43,18 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
       for (Tensor::Size i = 0; i < seq_len_; ++i) {
         ptrdiff_t out_offset = bi * out_stride_b + i * out_stride_i;
         ptrdiff_t input_offset = bi * input_stride_b + i * input_stride_i;
-        float* out_row = out_ptr + out_offset;
-        const float* input_row = input_ptr + input_offset;
+        T* out_row = out_ptr + out_offset;
+        const T* input_row = input_ptr + input_offset;
 
         Tensor::Size valid_len = total_seq_len_ - seq_len_ + i + 1;
 
         for (Tensor::Size j = valid_len; j < total_seq_len_; ++j) {
-          out_row[j * out_stride_j] = 0.0f;
+          out_row[j * out_stride_j] = Cast<T>(0.0f);
         }
 
-        float max_val = input_row[0];
+        float max_val = Cast<float>(input_row[0]);
         for (Tensor::Size j = 1; j < valid_len; ++j) {
-          float v = input_row[j * input_stride_j];
+          float v = Cast<float>(input_row[j * input_stride_j]);
           if (v > max_val) {
             max_val = v;
           }
@@ -53,13 +62,15 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
 
         float sum = 0.0f;
         for (Tensor::Size j = 0; j < valid_len; ++j) {
-          float v = std::exp(input_row[j * input_stride_j] - max_val);
-          out_row[j * out_stride_j] = v;
+          float v =
+              std::exp(Cast<float>(input_row[j * input_stride_j]) - max_val);
+          out_row[j * out_stride_j] = Cast<T>(v);
           sum += v;
         }
 
         for (Tensor::Size j = 0; j < valid_len; ++j) {
-          out_row[j * out_stride_j] /= sum;
+          out_row[j * out_stride_j] =
+              Cast<T>(Cast<float>(out_row[j * out_stride_j]) / sum);
         }
       }
     }

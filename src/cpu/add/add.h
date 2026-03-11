@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "base/add.h"
+#include "common/cast.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
@@ -18,7 +19,7 @@ class Operator<Add, Device::Type::kCpu> : public Add {
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
-    DispatchFunc<ConcatType<FloatTypes, AllIntTypes>>(
+    DispatchFunc<AllTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
@@ -30,6 +31,9 @@ class Operator<Add, Device::Type::kCpu> : public Add {
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor other, Tensor out) const {
+    using ComputeType =
+        std::conditional_t<IsBFloat16<T> || IsFP16<T>, float, T>;
+
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* other_ptr = static_cast<const T*>(other.data());
     auto* out_ptr = static_cast<T*>(out.data());
@@ -48,7 +52,8 @@ class Operator<Add, Device::Type::kCpu> : public Add {
       auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
                              out_strides_.data());
 
-      out_ptr[out_idx] = input_ptr[input_idx] + other_ptr[other_idx];
+      out_ptr[out_idx] = Cast<T>(Cast<ComputeType>(input_ptr[input_idx]) +
+                                 Cast<ComputeType>(other_ptr[other_idx]));
     }
   }
 };
