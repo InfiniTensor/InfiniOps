@@ -43,6 +43,12 @@ class Device {
     return std::string{StringFromType(type_)} + ":" + std::to_string(index_);
   }
 
+  bool operator==(const Device& other) const {
+    return type_ == other.type_ && index_ == other.index_;
+  }
+
+  bool operator!=(const Device& other) const { return !(*this == other); }
+
  private:
   Type type_{Type::kCpu};
 

@@ -5,10 +5,64 @@
 #include <memory>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 #include "dispatcher.h"
 #include "handle.h"
 #include "tensor.h"
+
+namespace infini::ops {
+
+struct CacheKey {
+  std::size_t hash;
+
+  std::vector<Tensor> tensors;
+
+  std::size_t scalar_hash;
+
+  template <typename... Args>
+  static CacheKey Build(const Args&... args) {
+    CacheKey key;
+    key.hash = 0;
+    key.scalar_hash = 0;
+    (key.Absorb(args), ...);
+    return key;
+  }
+
+ private:
+  void Absorb(const Tensor& t) {
+    hash_combine(hash, t);
+    tensors.push_back(t);
+  }
+
+  template <typename T>
+  void Absorb(const T& v) {
+    hash_combine(hash, v);
+    hash_combine(scalar_hash, v);
+  }
+};
+
+}  // namespace infini::ops
+
+template <>
+struct std::hash<infini::ops::CacheKey> {
+  std::size_t operator()(const infini::ops::CacheKey& key) const {
+    return key.hash;
+  }
+};
+
+template <>
+struct std::equal_to<infini::ops::CacheKey> {
+  bool operator()(const infini::ops::CacheKey& a,
+                  const infini::ops::CacheKey& b) const {
+    if (a.scalar_hash != b.scalar_hash) return false;
+    if (a.tensors.size() != b.tensors.size()) return false;
+    for (std::size_t i = 0; i < a.tensors.size(); ++i) {
+      if (!a.tensors[i].MetaEqual(b.tensors[i])) return false;
+    }
+    return true;
+  }
+};
 
 namespace infini::ops {
 
@@ -65,16 +119,15 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static auto call(const Handle& handle, void* stream, void* workspace,
                    std::size_t workspace_size_in_bytes, Args&&... args) {
-    static std::unordered_map<std::size_t, std::unique_ptr<Operator>> cache;
+    static std::unordered_map<CacheKey, std::unique_ptr<Operator>> cache;
 
-    std::size_t hash{0};
+    auto key = CacheKey::Build(args...);
 
-    (hash_combine(hash, args), ...);
-
-    auto it{cache.find(hash)};
+    auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      it = cache.emplace(hash, make(std::forward<Args>(args)...)).first;
+      it = cache.emplace(std::move(key), make(std::forward<Args>(args)...))
+               .first;
     }
 
     auto& op{it->second};

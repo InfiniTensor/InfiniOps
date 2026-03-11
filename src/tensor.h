@@ -100,6 +100,11 @@ class Tensor {
 
   bool IsContiguous() const;
 
+  bool MetaEqual(const Tensor& other) const {
+    return dtype_ == other.dtype_ && device_ == other.device_ &&
+           shape_ == other.shape_ && strides_ == other.strides_;
+  }
+
  private:
   static const DataType DefaultDataType();
 
