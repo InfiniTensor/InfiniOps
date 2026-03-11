@@ -78,8 +78,9 @@ class CudaSwiglu : public Swiglu {
         ndim_, i, is_out_contiguous_, is_input_contiguous_,                  \
         is_gate_contiguous_);                                                \
   }
-
-          if (block_size == CUDA_BLOCK_SIZE_1024) {
+          if (block_size == CUDA_BLOCK_SIZE_2048) {
+            LAUNCH_SWIGLU_KERNEL(CUDA_BLOCK_SIZE_2048)
+          } else if (block_size == CUDA_BLOCK_SIZE_1024) {
             LAUNCH_SWIGLU_KERNEL(CUDA_BLOCK_SIZE_1024)
           } else if (block_size == CUDA_BLOCK_SIZE_512) {
             LAUNCH_SWIGLU_KERNEL(CUDA_BLOCK_SIZE_512)

@@ -1,56 +1,17 @@
 #ifndef INFINI_OPS_CUDA_ADD_KERNEL_H_
 #define INFINI_OPS_CUDA_ADD_KERNEL_H_
 
-#include <utility>
+#include <cstdint>
+
+// clang-format off
+#include <cuda_runtime.h>
+// clang-format on
 
 #include "base/add.h"
-#include "common/cuda/kernel_commons.h"
 #include "common/generic_utils.h"
+#include "cuda/add/kernel.cuh"
 
 namespace infini::ops {
-
-typedef struct AddOp {
- public:
-  static constexpr std::size_t num_inputs = 2;
-  template <typename T>
-  __device__ __forceinline__ T operator()(const T& input,
-                                          const T& other) const {
-    if constexpr (std::is_same_v<T, half2>) {
-      return __hadd2(input, other);
-    } else if constexpr (std::is_same_v<T, half> ||
-                         std::is_same_v<T, TypeMapType<DataType::kBFloat16>>) {
-      return __hadd(input, other);
-    } else if constexpr (std::is_same_v<T, float>) {
-      return __fadd_rn(input, other);
-    } else {
-      return input + other;
-    }
-  }
-} AddOp;
-
-template <typename T>
-__global__ void AddKernel(
-    T* out, const T* input, const T* other, const Tensor::Size* out_shape,
-    const Tensor::Size* input_shape, const Tensor::Size* other_shape,
-    const Tensor::Stride* out_strides, const Tensor::Stride* input_strides,
-    const Tensor::Stride* other_strides, size_t output_size, size_t ndim,
-    size_t offset, bool out_contiguous, bool input_contiguous,
-    bool other_contiguous) {
-  size_t idx = blockIdx.x * blockDim.x + threadIdx.x + offset;
-
-  if (idx < output_size) {
-    Tensor::Size out_idx =
-        out_contiguous ? idx : IndexToOffset(idx, ndim, out_shape, out_strides);
-    Tensor::Size input_idx =
-        input_contiguous ? idx
-                         : IndexToOffset(idx, ndim, input_shape, input_strides);
-    Tensor::Size other_idx =
-        other_contiguous ? idx
-                         : IndexToOffset(idx, ndim, other_shape, other_strides);
-
-    out[out_idx] = AddOp{}(input[input_idx], other[other_idx]);
-  }
-}
 
 template <typename Backend>
 class CudaAdd : public Add {
@@ -96,9 +57,11 @@ class CudaAdd : public Add {
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          // TODO(lzm): currently hard-code block_size to be 256.
+          auto cuda_stream =
+              static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
+          int block_size = GetOptimalBlockSize();
           dim3 blockDims(
-              std::min(static_cast<Tensor::Size>(256), output_size_));
+              std::min(static_cast<Tensor::Size>(block_size), output_size_));
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));
           size_t step = gridDims.x * blockDims.x;
 
@@ -106,14 +69,28 @@ class CudaAdd : public Add {
           const T* d_input = reinterpret_cast<const T*>(input.data());
           const T* d_other = reinterpret_cast<const T*>(other.data());
 
-          for (size_t i = 0; i < output_size_; i += step) {
-            AddKernel<<<gridDims, blockDims, 0,
-                        static_cast<typename Backend::stream_t>(stream_)>>>(
-                d_out, d_input, d_other, d_out_shape_, d_input_shape_,
-                d_other_shape_, d_out_strides_, d_input_strides_,
-                d_other_strides_, output_size_, ndim_, i, is_out_contiguous_,
-                is_input_contiguous_, is_other_contiguous_);
+#define LAUNCH_ADD_KERNEL(BLOCK_SIZE)                                       \
+  for (size_t i = 0; i < output_size_; i += step) {                         \
+    AddKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(      \
+        d_out, d_input, d_other, d_out_shape_, d_input_shape_,              \
+        d_other_shape_, d_out_strides_, d_input_strides_, d_other_strides_, \
+        output_size_, ndim_, i, is_out_contiguous_, is_input_contiguous_,   \
+        is_other_contiguous_);                                              \
+  }
+
+          if (block_size == CUDA_BLOCK_SIZE_2048) {
+            LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_2048)
+          } else if (block_size == CUDA_BLOCK_SIZE_1024) {
+            LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_1024)
+          } else if (block_size == CUDA_BLOCK_SIZE_512) {
+            LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_512)
+          } else if (block_size == CUDA_BLOCK_SIZE_256) {
+            LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_256)
+          } else {
+            LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_128)
           }
+
+#undef LAUNCH_ADD_KERNEL
         },
         "CudaAdd::operator()");
   }

@@ -8,8 +8,12 @@
 using cuda_bfloat16 = nv_bfloat16;
 using cuda_bfloat162 = nv_bfloat162;
 #elif defined(WITH_ILUVATAR)
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
-#elif WITH_METAX  // TODO: Use `defined`.
+using cuda_bfloat16 = nv_bfloat16;
+using cuda_bfloat162 = nv_bfloat162;
+#elif defined(WITH_METAX)
 #include <mcr/mc_runtime.h>
 using cuda_bfloat16 = maca_bfloat16;
 using cuda_bfloat162 = maca_bfloat162;
@@ -23,10 +27,11 @@ constexpr int CUDA_BLOCK_SIZE_128 = 128;
 constexpr int CUDA_BLOCK_SIZE_256 = 256;
 constexpr int CUDA_BLOCK_SIZE_512 = 512;
 constexpr int CUDA_BLOCK_SIZE_1024 = 1024;
+constexpr int CUDA_BLOCK_SIZE_2048 = 2048;
 
 // Query the maximum threads per block for the current CUDA device.
 inline int QueryMaxThreadsPerBlock() {
-#ifdef WITH_NVIDIA
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
   int device = 0;
   cudaGetDevice(&device);
   cudaDeviceProp prop;
@@ -43,7 +48,9 @@ inline int GetOptimalBlockSize() {
   int max_threads = QueryMaxThreadsPerBlock();
 
   // Select the largest supported block size for better performance.
-  if (max_threads >= CUDA_BLOCK_SIZE_1024) {
+  if (max_threads >= CUDA_BLOCK_SIZE_2048) {
+    return CUDA_BLOCK_SIZE_2048;
+  } else if (max_threads >= CUDA_BLOCK_SIZE_1024) {
     return CUDA_BLOCK_SIZE_1024;
   } else if (max_threads >= CUDA_BLOCK_SIZE_512) {
     return CUDA_BLOCK_SIZE_512;
