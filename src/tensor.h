@@ -145,4 +145,13 @@ struct std::hash<infini::ops::Tensor> {
   }
 };
 
+template <>
+struct std::equal_to<infini::ops::Tensor> {
+  bool operator()(const infini::ops::Tensor& a,
+                  const infini::ops::Tensor& b) const {
+    return a.dtype() == b.dtype() && a.device() == b.device() &&
+           a.shape() == b.shape() && a.strides() == b.strides();
+  }
+};
+
 #endif
