@@ -100,11 +100,6 @@ class Tensor {
 
   bool IsContiguous() const;
 
-  bool MetaEqual(const Tensor& other) const {
-    return dtype_ == other.dtype_ && device_ == other.device_ &&
-           shape_ == other.shape_ && strides_ == other.strides_;
-  }
-
  private:
   static const DataType DefaultDataType();
 
@@ -147,6 +142,15 @@ struct std::hash<infini::ops::Tensor> {
     }
 
     return seed;
+  }
+};
+
+template <>
+struct std::equal_to<infini::ops::Tensor> {
+  bool operator()(const infini::ops::Tensor& a,
+                  const infini::ops::Tensor& b) const {
+    return a.dtype() == b.dtype() && a.device() == b.device() &&
+           a.shape() == b.shape() && a.strides() == b.strides();
   }
 };
 

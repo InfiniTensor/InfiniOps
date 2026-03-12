@@ -11,7 +11,7 @@
 #include "handle.h"
 #include "tensor.h"
 
-namespace infini::ops {
+namespace infini::ops::detail {
 
 struct CacheKey {
   std::size_t hash;
@@ -42,23 +42,24 @@ struct CacheKey {
   }
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::detail
 
 template <>
-struct std::hash<infini::ops::CacheKey> {
-  std::size_t operator()(const infini::ops::CacheKey& key) const {
+struct std::hash<infini::ops::detail::CacheKey> {
+  std::size_t operator()(const infini::ops::detail::CacheKey& key) const {
     return key.hash;
   }
 };
 
 template <>
-struct std::equal_to<infini::ops::CacheKey> {
-  bool operator()(const infini::ops::CacheKey& a,
-                  const infini::ops::CacheKey& b) const {
+struct std::equal_to<infini::ops::detail::CacheKey> {
+  bool operator()(const infini::ops::detail::CacheKey& a,
+                  const infini::ops::detail::CacheKey& b) const {
     if (a.scalar_hash != b.scalar_hash) return false;
     if (a.tensors.size() != b.tensors.size()) return false;
+    std::equal_to<infini::ops::Tensor> eq;
     for (std::size_t i = 0; i < a.tensors.size(); ++i) {
-      if (!a.tensors[i].MetaEqual(b.tensors[i])) return false;
+      if (!eq(a.tensors[i], b.tensors[i])) return false;
     }
     return true;
   }
@@ -119,9 +120,10 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static auto call(const Handle& handle, void* stream, void* workspace,
                    std::size_t workspace_size_in_bytes, Args&&... args) {
-    static std::unordered_map<CacheKey, std::unique_ptr<Operator>> cache;
+    static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
+        cache;
 
-    auto key = CacheKey::Build(args...);
+    auto key = detail::CacheKey::Build(args...);
 
     auto it{cache.find(key)};
 
