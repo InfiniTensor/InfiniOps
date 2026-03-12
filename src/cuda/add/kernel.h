@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "base/add.h"
-#include "common/cuda/kernel_commons.h"
+#include "kernel_commons.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {

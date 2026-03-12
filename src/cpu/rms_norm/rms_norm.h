@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "base/rms_norm.h"
-#include "common/cast.h"
+#include "../cast.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "tensor.h"

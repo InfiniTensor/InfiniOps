@@ -127,7 +127,7 @@ if(WITH_CAMBRICON)
 endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX AND NOT WITH_CAMBRICON)
     add_compile_definitions(WITH_CPU=1)
 endif()
 

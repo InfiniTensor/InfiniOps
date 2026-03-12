@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "base/gemm.h"
-#include "common/cast.h"
+#include "../cast.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
