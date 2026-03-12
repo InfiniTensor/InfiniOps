@@ -43,20 +43,30 @@ class Blas : public Gemm {
     const auto& trans_b_value{trans_b.value_or(trans_b_)};
     auto op_a{GetOpA(trans_a_value, trans_b_value)};
     auto op_b{GetOpB(trans_a_value, trans_b_value)};
+    const void* alpha_ptr{GetAlphaPtr(alpha_value, c.dtype())};
+    const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
 
     Backend::blasGemmStridedBatchedEx(
         handle_, op_a, op_b, swap_a_and_b_ ? n_ : m_, swap_a_and_b_ ? m_ : n_,
-        k_, &alpha_value, swap_a_and_b_ ? b.data() : a.data(),
+        k_, alpha_ptr, swap_a_and_b_ ? b.data() : a.data(),
         Backend::GetDataType(swap_a_and_b_ ? b.dtype() : a.dtype()),
         swap_a_and_b_ ? ldb_ : lda_,
         swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
         swap_a_and_b_ ? a.data() : b.data(),
         Backend::GetDataType(swap_a_and_b_ ? a.dtype() : b.dtype()),
         swap_a_and_b_ ? lda_ : ldb_,
-        swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, &beta_value,
-        c.data(), Backend::GetDataType(c.dtype()), ldc_, batch_stride_c_,
-        batch_count_, Backend::GetComputeType(c.dtype()),
-        Backend::BLAS_GEMM_DEFAULT);
+        swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr, c.data(),
+        Backend::GetDataType(c.dtype()), ldc_, batch_stride_c_, batch_count_,
+        Backend::GetComputeType(c.dtype()), Backend::BLAS_GEMM_DEFAULT);
+  }
+
+ protected:
+  virtual const void* GetAlphaPtr(const float& alpha, DataType) const {
+    return &alpha;
+  }
+
+  virtual const void* GetBetaPtr(const float& beta, DataType) const {
+    return &beta;
   }
 
  private:
