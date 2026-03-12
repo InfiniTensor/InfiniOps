@@ -31,7 +31,7 @@ struct IluvatarBackend {
   // Iluvatar uses `cudaDataType` for `computeType`, so we need to use
   // `CUDA_R_32F` instead of `CUBLAS_COMPUTE_32F_FAST_TF32`.
   static constexpr auto BLAS_COMPUTE_32F = CUDA_R_32F;
-  
+
   static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 = CUDA_R_32F;
 
   // Iluvatar uses `CUBLAS_GEMM_DEFAULT_TENSOR_OP` instead of
