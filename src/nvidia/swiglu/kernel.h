@@ -22,6 +22,8 @@ struct NvidiaBackend {
 
   static constexpr auto memcpy = cudaMemcpy;
 
+  static constexpr auto memcpyAsync = cudaMemcpyAsync;
+
   static constexpr auto free = cudaFree;
 
   static constexpr auto memcpyH2D = cudaMemcpyHostToDevice;

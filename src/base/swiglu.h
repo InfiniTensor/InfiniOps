@@ -26,14 +26,57 @@ class Swiglu : public Operator<Swiglu> {
         is_out_contiguous_{out.IsContiguous()} {
     assert(
         input_type_ == gate_type_ && gate_type_ == out_type_ &&
-        "operator `Swiglu` requires all input and output tensors to have the "
-        "same dtype");
+        "Operator `Swiglu` requires all input and output tensors to have the "
+        "same dtype.");
   }
 
   virtual void operator()(const Tensor input, const Tensor gate,
                           Tensor out) const = 0;
 
  protected:
+  struct WorkspaceLayout {
+    Tensor::Size* input_shape{nullptr};
+
+    Tensor::Size* gate_shape{nullptr};
+
+    Tensor::Size* out_shape{nullptr};
+
+    Tensor::Stride* input_strides{nullptr};
+
+    Tensor::Stride* gate_strides{nullptr};
+
+    Tensor::Stride* out_strides{nullptr};
+  };
+
+  std::size_t MetadataWorkspaceSizeInBytes() const {
+    return 3 * ndim_ * sizeof(Tensor::Size) +
+           3 * ndim_ * sizeof(Tensor::Stride);
+  }
+
+  WorkspaceLayout ResolveWorkspaceLayout(void* workspace) const {
+    WorkspaceLayout layout;
+
+    if (workspace == nullptr) {
+      return layout;
+    }
+
+    auto* cursor = static_cast<char*>(workspace);
+
+    layout.input_shape = reinterpret_cast<Tensor::Size*>(cursor);
+    cursor += ndim_ * sizeof(Tensor::Size);
+    layout.gate_shape = reinterpret_cast<Tensor::Size*>(cursor);
+    cursor += ndim_ * sizeof(Tensor::Size);
+    layout.out_shape = reinterpret_cast<Tensor::Size*>(cursor);
+    cursor += ndim_ * sizeof(Tensor::Size);
+    layout.input_strides = reinterpret_cast<Tensor::Stride*>(cursor);
+    cursor += ndim_ * sizeof(Tensor::Stride);
+    layout.gate_strides = reinterpret_cast<Tensor::Stride*>(cursor);
+    cursor += ndim_ * sizeof(Tensor::Stride);
+    layout.out_strides = reinterpret_cast<Tensor::Stride*>(cursor);
+
+    return layout;
+  }
+
   Tensor::Size ndim_{0};
 
   Tensor::Size output_size_{0};

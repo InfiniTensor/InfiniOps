@@ -113,12 +113,55 @@ if(WITH_CAMBRICON)
 endif()
 
 if(WITH_MOORE)
+    set(MOORE_PATTERNS
+        "moore/*.cc"
+        "moore/*.cpp"
+        "moore/*.mu"
+        "moore/*/*.cc"
+        "moore/*/*.cpp"
+        "moore/*/*.mu"
+    )
+
+    file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
+
+    set(MOORE_CPP_SOURCES "")
+    set(MOORE_MU_SOURCES "")
+    foreach(source_file ${MOORE_SOURCES})
+        if(source_file MATCHES "\\.mu$")
+            list(APPEND MOORE_MU_SOURCES ${source_file})
+        else()
+            list(APPEND MOORE_CPP_SOURCES ${source_file})
+        endif()
+    endforeach()
+
+    if(MOORE_CPP_SOURCES)
+        target_sources(infiniops PRIVATE ${MOORE_CPP_SOURCES})
+    endif()
+
+    if(MOORE_MU_SOURCES)
+        list(APPEND MUSA_MCC_FLAGS
+            -O3
+            -fPIC
+            -Wall
+            -std=c++17
+            -pthread
+            -DWITH_MOORE=1
+        )
+        musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+        musa_compile(MOORE_MU_OBJECTS ${MOORE_MU_SOURCES})
+
+        set_source_files_properties(${MOORE_MU_OBJECTS} PROPERTIES
+            GENERATED TRUE
+            EXTERNAL_OBJECT TRUE
+        )
+        target_sources(infiniops PRIVATE ${MOORE_MU_OBJECTS})
+    endif()
+
     target_compile_definitions(infiniops PUBLIC WITH_MOORE=1)
-    target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
-    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
+    target_include_directories(infiniops PUBLIC ${MUSA_INCLUDE_DIRS})
+    target_link_libraries(infiniops PUBLIC ${MUSA_LIBRARIES} ${MUSA_MUBLAS_LIBRARIES})
     list(APPEND DEVICE_LIST "moore")
 endif()
-
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(GENERATE_PYTHON_BINDINGS)
