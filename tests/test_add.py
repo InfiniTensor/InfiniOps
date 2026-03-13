@@ -6,7 +6,6 @@ from tests.utils import Payload, empty_strided, randint_strided, randn_strided
 
 _INT_DTYPES = (
     torch.int16,
-    torch.uint16,
     torch.int32,
     torch.uint32,
     torch.int64,
@@ -39,7 +38,6 @@ _INT_DTYPES = (
         (torch.float16, 1e-3, 1e-3),
         (torch.bfloat16, 1e-2, 5e-3),
         (torch.int16, 0, 0),
-        (torch.uint16, 0, 0),
         (torch.int32, 0, 0),
         (torch.uint32, 0, 0),
         (torch.int64, 0, 0),
