@@ -122,8 +122,9 @@ endif()
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(GENERATE_PYTHON_BINDINGS)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
     execute_process(
-        COMMAND python ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
+        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )

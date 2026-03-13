@@ -100,4 +100,5 @@ def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None)
         c_original = c.clone()
         torch.matmul(a, b, out=c)
         c.mul_(alpha).add_(c_original, alpha=beta)
+
         return c
