@@ -4,13 +4,31 @@ import torch
 
 from tests.utils import Payload, empty_strided, randint_strided, randn_strided
 
-_INT_DTYPES = (
-    torch.int16,
-    torch.int32,
-    torch.uint32,
-    torch.int64,
-    torch.uint64,
+_INT_DTYPES = tuple(
+    d
+    for d in (
+        torch.int16,
+        torch.int32,
+        getattr(torch, "uint32", None),
+        torch.int64,
+        getattr(torch, "uint64", None),
+    )
+    if d is not None
 )
+
+
+def _dtype_parametrize():
+    candidates = [
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+        (torch.int16, 0, 0),
+        (torch.int32, 0, 0),
+        (getattr(torch, "uint32", None), 0, 0),
+        (torch.int64, 0, 0),
+        (getattr(torch, "uint64", None), 0, 0),
+    ]
+    return tuple((d, r, a) for (d, r, a) in candidates if d is not None)
 
 
 @pytest.mark.auto_act_and_assert
@@ -31,19 +49,7 @@ _INT_DTYPES = (
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float32, 1e-7, 1e-7),
-        (torch.float16, 1e-3, 1e-3),
-        (torch.bfloat16, 1e-2, 5e-3),
-        (torch.int16, 0, 0),
-        (torch.int32, 0, 0),
-        (torch.uint32, 0, 0),
-        (torch.int64, 0, 0),
-        (torch.uint64, 0, 0),
-    ),
-)
+@pytest.mark.parametrize(("dtype", "rtol", "atol"), _dtype_parametrize())
 def test_add(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
@@ -69,11 +75,18 @@ def _add(input, other, out):
     return out
 
 
+_UINT_DTYPES = tuple(
+    d
+    for name in ("uint16", "uint32", "uint64")
+    if (d := getattr(torch, name, None)) is not None
+)
+
+
 def _torch_add(input, other, out):
-    if input.dtype in (torch.uint16, torch.uint32, torch.uint64):
+    if input.dtype in _UINT_DTYPES:
         input = input.to(torch.int64)
 
-    if other.dtype in (torch.uint16, torch.uint32, torch.uint64):
+    if other.dtype in _UINT_DTYPES:
         other = other.to(torch.int64)
 
     res = torch.add(input, other)
