@@ -9,8 +9,16 @@ _INT_DTYPES = tuple(
     for d in (
         torch.int16,
         torch.int32,
-        getattr(torch, "uint32", None),
         torch.int64,
+    )
+    if d is not None
+)
+
+_UINT_DTYPES = tuple(
+    d
+    for d in (
+        getattr(torch, "uint16", None),
+        getattr(torch, "uint32", None),
         getattr(torch, "uint64", None),
     )
     if d is not None
@@ -53,7 +61,7 @@ def _dtype_parametrize():
 def test_add(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
-    if dtype in _INT_DTYPES:
+    if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
         input = randint_strided(
             0, 100, shape, input_strides, dtype=dtype, device=device
         )
@@ -73,13 +81,6 @@ def _add(input, other, out):
     infini.ops.add(input, other, out)
 
     return out
-
-
-_UINT_DTYPES = tuple(
-    d
-    for name in ("uint16", "uint32", "uint64")
-    if (d := getattr(torch, name, None)) is not None
-)
 
 
 def _torch_add(input, other, out):
