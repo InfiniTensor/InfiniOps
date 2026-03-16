@@ -43,10 +43,12 @@ class CudaRmsNorm : public RmsNorm {
       std::abort();
     }
 
-    DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
+    DispatchFunc<Backend::device_value, DataType::kFloat32, DataType::kFloat16,
+                 DataType::kBFloat16>(
         out.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
+
           RmsNormKernel<kBlockSize, float, T, T>
               <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()), stride_out_batch,

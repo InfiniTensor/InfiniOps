@@ -3,8 +3,8 @@
 
 #include <utility>
 
+#include "../kernel_commons.h"
 #include "base/add.h"
-#include "kernel_commons.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
@@ -92,10 +92,11 @@ class CudaAdd : public Add {
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
-    DispatchFunc<AllTypes>(
+    DispatchFunc<Backend::device_value, AllTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
+
           // TODO(lzm): currently hard-code block_size to be 256.
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(256), output_size_));

@@ -3,11 +3,13 @@
 
 #include <cmath>
 
-#include "base/swiglu.h"
 #include "../cast.h"
+#include "base/swiglu.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
+
+using infini::ops::cpu::Cast;
 
 template <>
 class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
@@ -16,7 +18,7 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
@@ -28,8 +30,9 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor gate, Tensor out) const {
-    using ComputeType =
-        std::conditional_t<IsBFloat16<T> || IsFP16<T>, float, T>;
+    using ComputeType = std::conditional_t<IsBFloat16<T, Device::Type::kCpu> ||
+                                               IsFP16<T, Device::Type::kCpu>,
+                                           float, T>;
 
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* gate_ptr = static_cast<const T*>(gate.data());

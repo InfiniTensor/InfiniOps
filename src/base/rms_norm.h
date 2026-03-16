@@ -12,17 +12,15 @@ namespace infini::ops {
 class RmsNorm : public Operator<RmsNorm> {
  public:
   RmsNorm(const Tensor input, const Tensor weight, float eps, Tensor out)
-      : input_shape_{input.shape()},
+      : eps_{eps},
         out_shape_{out.shape()},
-        input_strides_{input.strides()},
+        input_shape_{input.shape()},
         out_strides_{out.strides()},
-        eps_{eps},
+        input_strides_{input.strides()},
         dim_{out.size(-1)},
         ndim_{out.ndim()},
         batch_size_{ndim_ == 2 ? out.size(-2) : out.size(-3)},
-        nhead_{ndim_ == 2 ? 1 : out.size(-2)} {
-    assert(input.dtype() == out.dtype());
-  }
+        nhead_{ndim_ == 2 ? 1 : out.size(-2)} {}
 
   RmsNorm(const Tensor input, const Tensor weight, Tensor out)
       : RmsNorm{input, weight, 1e-6f, out} {}

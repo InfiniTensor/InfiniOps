@@ -1,9 +1,8 @@
 #ifndef INFINI_OPS_CUDA_SWIGLU_KERNEL_CUH_
 #define INFINI_OPS_CUDA_SWIGLU_KERNEL_CUH_
-
 #include <cmath>
 
-#include "common/cuda/kernel_commons.h"
+#include "../kernel_commons.h"
 
 namespace infini::ops {
 

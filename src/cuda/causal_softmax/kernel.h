@@ -41,10 +41,12 @@ class CudaCausalSoftmax : public CausalSoftmax {
       std::abort();
     }
 
-    DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
+    DispatchFunc<Backend::device_value, DataType::kFloat32, DataType::kFloat16,
+                 DataType::kBFloat16>(
         out.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
+
           CausalSoftmaxKernel<causal_softmax::kBlockSize, T, float>
               <<<grid, causal_softmax::kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()),

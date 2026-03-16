@@ -14,6 +14,8 @@ namespace infini::ops {
 namespace gemm {
 
 struct MetaxBackend {
+  static constexpr auto device_value = Device::Type::kMetax;
+
   using blasHandle_t = mcblasHandle_t;
 
   using stream_t = mcStream_t;

@@ -11,9 +11,17 @@
 
 #include "data_type.h"
 
-namespace infini::ops {
+namespace infini::ops::cuda {
 
 namespace detail {
+
+#ifdef WITH_NVIDIA
+constexpr Device::Type backend = Device::Type::kNvidia;
+#elif defined(WITH_ILUVATAR)
+constexpr Device::Type backend = Device::Type::kIluvatar;
+#elif defined(WITH_METAX)
+constexpr Device::Type backend = Device::Type::kMetax;
+#endif
 
 template <typename T>
 using PureType = std::remove_cv_t<std::remove_reference_t<T>>;
@@ -21,9 +29,9 @@ using PureType = std::remove_cv_t<std::remove_reference_t<T>>;
 template <typename T>
 __host__ __device__ constexpr float ToFloatHelper(T&& x) {
   using PureSrc = PureType<T>;
-  if constexpr (IsBFloat16<PureSrc>) {
+  if constexpr (IsBFloat16<PureSrc, backend>) {
     return __bfloat162float(x);
-  } else if constexpr (IsFP16<PureSrc>) {
+  } else if constexpr (IsFP16<PureSrc, backend>) {
     return __half2float(x);
   } else {
     return static_cast<float>(std::forward<T>(x));
@@ -33,9 +41,9 @@ __host__ __device__ constexpr float ToFloatHelper(T&& x) {
 template <typename Dst>
 __host__ __device__ constexpr Dst FromFloatHelper(float f) {
   using PureDst = PureType<Dst>;
-  if constexpr (IsBFloat16<PureDst>) {
+  if constexpr (IsBFloat16<PureDst, backend>) {
     return __float2bfloat16(f);
-  } else if constexpr (IsFP16<PureDst>) {
+  } else if constexpr (IsFP16<PureDst, backend>) {
     return __float2half(f);
   } else {
     return static_cast<Dst>(f);
@@ -64,22 +72,24 @@ __host__ __device__ constexpr Dst HardwareCast(Src&& x, PriorityLow) {
 
 DEFINE_DIRECT_CAST(
     __bfloat162int_rn,
-    std::is_same_v<PureType<Dst>, int>&& IsBFloat16<PureType<Src>>)
+    std::is_same_v<PureType<Dst>, int>&& IsBFloat16<PureType<Src>, backend>)
 DEFINE_DIRECT_CAST(
     __bfloat162short_rn,
-    std::is_same_v<PureType<Dst>, short>&& IsBFloat16<PureType<Src>>)
+    std::is_same_v<PureType<Dst>, short>&& IsBFloat16<PureType<Src>, backend>)
 DEFINE_DIRECT_CAST(
     __int2bfloat16_rn,
-    IsBFloat16<PureType<Dst>>&& std::is_same_v<PureType<Src>, int>)
-DEFINE_DIRECT_CAST(__int2half_rn,
-                   IsFP16<PureType<Dst>>&& std::is_same_v<PureType<Src>, int>)
+    IsBFloat16<PureType<Dst>, backend>&& std::is_same_v<PureType<Src>, int>)
+DEFINE_DIRECT_CAST(
+    __int2half_rn,
+    IsFP16<PureType<Dst>, backend>&& std::is_same_v<PureType<Src>, int>)
 DEFINE_DIRECT_CAST(
     __double2bfloat16,
-    IsBFloat16<PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
+    IsBFloat16<PureType<Dst>, backend>&& std::is_same_v<PureType<Src>, double>)
 DEFINE_DIRECT_CAST(
     __double2half,
-    IsFP16<PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
-DEFINE_DIRECT_CAST(__half, IsFP16<PureType<Dst>>&& IsBFloat16<PureType<Src>>)
+    IsFP16<PureType<Dst>, backend>&& std::is_same_v<PureType<Src>, double>)
+DEFINE_DIRECT_CAST(
+    __half, IsFP16<PureType<Dst>, backend>&& IsBFloat16<PureType<Src>, backend>)
 #undef DEFINE_DIRECT_CAST
 
 }  // namespace detail
@@ -100,6 +110,6 @@ __host__ __device__ Dst Cast(Src&& x) {
   }
 }
 
-}  // namespace infini::ops
+}  // namespace infini::ops::cuda
 
 #endif

@@ -59,8 +59,5 @@ def _rms_norm(input, weight, *, eps=1e-6, out=None):
 
 
 def _torch_rms_norm(input, weight, *, eps=1e-6, out=None):
-    input_dtype = input.dtype
-    hidden_states = input.to(torch.float32)
-    scale = hidden_states.pow(2).mean(-1, keepdim=True).add_(eps).rsqrt_()
-    return out.set_((hidden_states.mul_(scale).mul_(weight)).to(input_dtype))
-    # return torch.nn.functional.rms_norm(input, input.shape[-1:], weight=weight, eps=eps)
+    return torch.nn.functional.rms_norm(input, input.shape[-1:], weight=weight, eps=eps)
+    

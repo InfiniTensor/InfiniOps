@@ -14,6 +14,8 @@ namespace infini::ops {
 namespace rms_norm {
 
 struct IluvatarBackend {
+  static constexpr auto device_value = Device::Type::kIluvatar;
+
   using stream_t = cudaStream_t;
 };
 

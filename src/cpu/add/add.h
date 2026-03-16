@@ -3,11 +3,13 @@
 
 #include <utility>
 
-#include "base/add.h"
 #include "../cast.h"
+#include "base/add.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
+
+using infini::ops::cpu::Cast;
 
 template <>
 class Operator<Add, Device::Type::kCpu> : public Add {
@@ -19,7 +21,7 @@ class Operator<Add, Device::Type::kCpu> : public Add {
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
-    DispatchFunc<AllTypes>(
+    DispatchFunc<Device::Type::kCpu, AllTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
@@ -31,8 +33,9 @@ class Operator<Add, Device::Type::kCpu> : public Add {
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor other, Tensor out) const {
-    using ComputeType =
-        std::conditional_t<IsBFloat16<T> || IsFP16<T>, float, T>;
+    using ComputeType = std::conditional_t<IsBFloat16<T, Device::Type::kCpu> ||
+                                               IsFP16<T, Device::Type::kCpu>,
+                                           float, T>;
 
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* other_ptr = static_cast<const T*>(other.data());

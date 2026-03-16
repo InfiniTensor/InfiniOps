@@ -3,13 +3,15 @@
 
 #include <cmath>
 
-#include "base/causal_softmax.h"
 #include "../cast.h"
+#include "base/causal_softmax.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "tensor.h"
 
 namespace infini::ops {
+
+using infini::ops::cpu::Cast;
 
 template <>
 class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
@@ -17,7 +19,7 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
   Operator(const Tensor input, Tensor out) : CausalSoftmax{input, out} {}
 
   void operator()(const Tensor input, Tensor out) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         out.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;

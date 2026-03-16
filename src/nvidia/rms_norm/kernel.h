@@ -14,6 +14,8 @@ namespace infini::ops {
 namespace rms_norm {
 
 struct NvidiaBackend {
+  static constexpr auto device_value = Device::Type::kNvidia;
+
   using stream_t = cudaStream_t;
 };
 

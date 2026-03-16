@@ -3,11 +3,13 @@
 
 #include <utility>
 
-#include "base/gemm.h"
 #include "../cast.h"
+#include "base/gemm.h"
 #include "common/generic_utils.h"
 
 namespace infini::ops {
+
+using infini::ops::cpu::Cast;
 
 template <>
 class Operator<Gemm, Device::Type::kCpu> : public Gemm {
@@ -30,7 +32,7 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         c.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;

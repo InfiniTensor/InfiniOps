@@ -14,6 +14,8 @@ namespace infini::ops {
 namespace add {
 
 struct MetaxBackend {
+  static constexpr auto device_value = Device::Type::kMetax;
+
   using stream_t = mcStream_t;
 
   static constexpr auto malloc = mcMalloc;

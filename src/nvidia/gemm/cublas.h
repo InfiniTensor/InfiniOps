@@ -14,6 +14,8 @@ namespace infini::ops {
 namespace gemm {
 
 struct NvidiaBackend {
+  static constexpr auto device_value = Device::Type::kNvidia;
+
   using blasHandle_t = cublasHandle_t;
 
   using stream_t = cudaStream_t;

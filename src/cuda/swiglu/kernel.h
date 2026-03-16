@@ -53,10 +53,11 @@ class CudaSwiglu : public Swiglu {
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Backend::device_value, AllFloatTypes>(
         out_type_,
         [&](auto tag) {
-          using T = typename decltype(tag)::type;
+          using DeviceT = typename decltype(tag)::type;
+
           auto cuda_stream =
               static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
           int block_size = GetOptimalBlockSize();
@@ -65,18 +66,20 @@ class CudaSwiglu : public Swiglu {
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));
           size_t step = gridDims.x * blockDims.x;
 
-          T* d_out = reinterpret_cast<T*>(out.data());
-          const T* d_input = reinterpret_cast<const T*>(input.data());
-          const T* d_gate = reinterpret_cast<const T*>(gate.data());
+          DeviceT* d_out = reinterpret_cast<DeviceT*>(out.data());
+          const DeviceT* d_input =
+              reinterpret_cast<const DeviceT*>(input.data());
+          const DeviceT* d_gate = reinterpret_cast<const DeviceT*>(gate.data());
 
 // Launch kernel with appropriate block size based on GPU architecture.
-#define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                     \
-  for (size_t i = 0; i < output_size_; i += step) {                          \
-    SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(    \
-        d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_, \
-        d_out_strides_, d_input_strides_, d_gate_strides_, output_size_,     \
-        ndim_, i, is_out_contiguous_, is_input_contiguous_,                  \
-        is_gate_contiguous_);                                                \
+#define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                      \
+  for (size_t i = 0; i < output_size_; i += step) {                           \
+    SwigluKernel<DeviceT, BLOCK_SIZE>                                         \
+        <<<gridDims, blockDims, 0, cuda_stream>>>(                            \
+            d_out, d_input, d_gate, d_out_shape_, d_input_shape_,             \
+            d_gate_shape_, d_out_strides_, d_input_strides_, d_gate_strides_, \
+            output_size_, ndim_, i, is_out_contiguous_, is_input_contiguous_, \
+            is_gate_contiguous_);                                             \
   }
 
           if (block_size == CUDA_BLOCK_SIZE_1024) {

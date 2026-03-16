@@ -3,13 +3,15 @@
 
 #include <cmath>
 
-#include "base/rms_norm.h"
 #include "../cast.h"
+#include "base/rms_norm.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "tensor.h"
 
 namespace infini::ops {
+
+using infini::ops::cpu::Cast;
 
 template <>
 class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
@@ -18,7 +20,7 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
 
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         out.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;

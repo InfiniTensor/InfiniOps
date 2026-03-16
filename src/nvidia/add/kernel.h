@@ -14,6 +14,8 @@ namespace infini::ops {
 namespace add {
 
 struct NvidiaBackend {
+  static constexpr auto device_value = Device::Type::kNvidia;
+
   using stream_t = cudaStream_t;
 
   static constexpr auto malloc = [](auto&&... args) {
