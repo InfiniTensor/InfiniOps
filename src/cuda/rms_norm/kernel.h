@@ -41,12 +41,12 @@ class CudaRmsNorm : public RmsNorm {
         [&](auto tag) {
           using T = typename decltype(tag)::type;
 
-#define LAUNCH_RMS_NORM_KERNEL(BLOCK_SIZE)                                 \
-  RmsNormKernel<BLOCK_SIZE, float, T, T>                                   \
-      <<<num_blocks, BLOCK_SIZE, 0, cuda_stream>>>(                        \
-          reinterpret_cast<T*>(out.data()), stride_out_batch,              \
-          stride_out_nhead, reinterpret_cast<const T*>(input.data()),      \
-          stride_input_batch, stride_input_nhead,                          \
+#define LAUNCH_RMS_NORM_KERNEL(BLOCK_SIZE)                            \
+  RmsNormKernel<BLOCK_SIZE, float, T, T>                              \
+      <<<num_blocks, BLOCK_SIZE, 0, cuda_stream>>>(                   \
+          reinterpret_cast<T*>(out.data()), stride_out_batch,         \
+          stride_out_nhead, reinterpret_cast<const T*>(input.data()), \
+          stride_input_batch, stride_input_nhead,                     \
           reinterpret_cast<const T*>(weight.data()), nhead_, dim_, eps);
 
           if (block_size == CUDA_BLOCK_SIZE_2048) {

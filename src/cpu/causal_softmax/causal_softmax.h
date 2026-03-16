@@ -4,8 +4,8 @@
 #include <cmath>
 
 #include "base/causal_softmax.h"
-#include "common/cast.h"
 #include "common/generic_utils.h"
+#include "cpu/cast.h"
 #include "data_type.h"
 #include "tensor.h"
 

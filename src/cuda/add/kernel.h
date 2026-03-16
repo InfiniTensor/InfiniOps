@@ -6,6 +6,7 @@
 #include "base/add.h"
 #include "common/generic_utils.h"
 #include "cuda/add/kernel.cuh"
+#include "cuda/kernel_commons.h"
 
 namespace infini::ops {
 

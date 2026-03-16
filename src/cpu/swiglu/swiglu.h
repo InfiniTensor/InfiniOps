@@ -4,8 +4,8 @@
 #include <cmath>
 
 #include "base/swiglu.h"
-#include "common/cast.h"
 #include "common/generic_utils.h"
+#include "cpu/cast.h"
 
 namespace infini::ops {
 
