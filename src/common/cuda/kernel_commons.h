@@ -19,6 +19,8 @@ using cuda_bfloat16 = maca_bfloat16;
 using cuda_bfloat162 = maca_bfloat162;
 #endif
 
+#include <vector>
+
 #include "cast.h"
 
 namespace infini::ops {
@@ -29,25 +31,49 @@ constexpr int CUDA_BLOCK_SIZE_512 = 512;
 constexpr int CUDA_BLOCK_SIZE_1024 = 1024;
 constexpr int CUDA_BLOCK_SIZE_2048 = 2048;
 
-// Query the maximum threads per block for the current CUDA device.
-inline int QueryMaxThreadsPerBlock() {
 #if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
-  int device = 0;
-  cudaGetDevice(&device);
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, device);
-  return prop.maxThreadsPerBlock;
-#elif WITH_METAX
+// Cache cudaDeviceProp per device, initialized once at first access.
+class DevicePropertyCache {
+ public:
+  static const cudaDeviceProp& GetCurrentDeviceProps() {
+    int device_id = 0;
+    cudaGetDevice(&device_id);
+    return GetDeviceProps(device_id);
+  }
+
+  static const cudaDeviceProp& GetDeviceProps(int device_id) {
+    static std::vector<cudaDeviceProp> cache = []() {
+      int count = 0;
+      cudaGetDeviceCount(&count);
+      if (count == 0) return std::vector<cudaDeviceProp>{};
+      std::vector<cudaDeviceProp> props(count);
+      for (int i = 0; i < count; ++i) {
+        cudaGetDeviceProperties(&props[i], i);
+      }
+      return props;
+    }();
+
+    if (device_id < 0 || device_id >= static_cast<int>(cache.size())) {
+      static cudaDeviceProp dummy{};
+      return dummy;
+    }
+    return cache[device_id];
+  }
+};
+
+inline int QueryMaxThreadsPerBlock() {
+  return DevicePropertyCache::GetCurrentDeviceProps().maxThreadsPerBlock;
+}
+#elif defined(WITH_METAX)
+inline int QueryMaxThreadsPerBlock() {
   // TODO: Add MCR device properties query for Metax.
   return CUDA_BLOCK_SIZE_256;
-#endif
 }
+#endif
 
 // Get optimal block size based on GPU hardware architecture.
 inline int GetOptimalBlockSize() {
   int max_threads = QueryMaxThreadsPerBlock();
-
-  // Select the largest supported block size for better performance.
   if (max_threads >= CUDA_BLOCK_SIZE_2048) {
     return CUDA_BLOCK_SIZE_2048;
   } else if (max_threads >= CUDA_BLOCK_SIZE_1024) {

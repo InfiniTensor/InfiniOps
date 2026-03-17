@@ -53,13 +53,13 @@ class CudaSwiglu : public Swiglu {
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
+    int block_size = GetOptimalBlockSize();
     DispatchFunc<AllFloatTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
           auto cuda_stream =
               static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
-          int block_size = GetOptimalBlockSize();
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(block_size), output_size_));
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));
