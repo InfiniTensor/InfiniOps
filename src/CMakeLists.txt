@@ -112,11 +112,19 @@ if(WITH_CAMBRICON)
     list(APPEND DEVICE_LIST "cambricon")
 endif()
 
+if(WITH_MOORE)
+    target_compile_definitions(infiniops PUBLIC WITH_MOORE=1)
+    target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
+    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
+    list(APPEND DEVICE_LIST "moore")
+endif()
+
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(GENERATE_PYTHON_BINDINGS)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
     execute_process(
-        COMMAND python ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
+        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )

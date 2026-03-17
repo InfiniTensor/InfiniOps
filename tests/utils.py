@@ -29,6 +29,9 @@ def get_available_devices():
     if hasattr(torch, "mlu") and torch.mlu.is_available():
         devices.append("mlu")
 
+    if hasattr(torch, "musa") and torch.musa.is_available():
+        devices.append("musa")
+
     return tuple(devices)
 
 
