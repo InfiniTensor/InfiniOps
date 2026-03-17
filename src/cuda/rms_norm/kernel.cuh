@@ -1,39 +1,39 @@
 #ifndef INFINI_OPS_CUDA_RMS_NORM_KERNEL_CUH_
 #define INFINI_OPS_CUDA_RMS_NORM_KERNEL_CUH_
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <cub/block/block_reduce.cuh>
+
+#include "common/cuda/cast.h"
+#include "common/cuda/kernel_commons.h"
 
 namespace infini::ops {
 
 namespace {
 
-template <unsigned int block_size, typename Data, typename Compute>
-__device__ __forceinline__ Compute SumSquared(const Data* data_ptr,
-                                              size_t count) {
-  Compute ss = 0;
+template <unsigned int block_size, typename TData, typename TCompute>
+__device__ __forceinline__ TCompute SumSquared(const TData* data_ptr,
+                                               size_t count) {
+  TCompute ss = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    Compute val = Compute(data_ptr[i]);
-    ss += val * val;
+    TCompute value = Cast<TCompute>(data_ptr[i]);
+    ss += value * value;
   }
-  using BlockReduce = cub::BlockReduce<Compute, block_size>;
+  using BlockReduce = cub::BlockReduce<TCompute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
   return BlockReduce(temp_storage).Sum(ss);
 }
 
 }  // namespace
 
-template <unsigned int block_size, typename Compute, typename Data,
-          typename Weight>
-__global__ void RmsNormKernel(Data* __restrict__ y, int64_t stride_y_batch,
+template <unsigned int block_size, typename TCompute, typename TData,
+          typename TWeight>
+__global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
                               int64_t stride_y_nhead,
-                              const Data* __restrict__ x,
+                              const TData* __restrict__ x,
                               int64_t stride_x_batch, int64_t stride_x_nhead,
-                              const Weight* __restrict__ w, size_t nhead,
+                              const TWeight* __restrict__ w, size_t nhead,
                               size_t dim, float epsilon) {
   size_t batch_idx = blockIdx.x / nhead;
   size_t head_idx = blockIdx.x % nhead;
@@ -42,16 +42,17 @@ __global__ void RmsNormKernel(Data* __restrict__ y, int64_t stride_y_batch,
   auto x_ptr = x + batch_idx * stride_x_batch + head_idx * stride_x_nhead;
   auto w_ptr = w;
 
-  Compute ss = SumSquared<block_size, Data, Compute>(x_ptr, dim);
+  TCompute ss = SumSquared<block_size, TData, TCompute>(x_ptr, dim);
 
-  __shared__ Compute rms;
+  __shared__ TCompute rms;
   if (threadIdx.x == 0) {
-    rms = Compute(rsqrtf(ss / Compute(dim) + epsilon));
+    rms = Cast<TCompute>(rsqrtf(ss / Cast<TCompute>(dim) + epsilon));
   }
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < dim; i += block_size) {
-    y_ptr[i] = Data(Compute(x_ptr[i]) * Compute(w_ptr[i]) * rms);
+    y_ptr[i] =
+        Cast<TData>(Cast<TCompute>(x_ptr[i]) * Cast<TCompute>(w_ptr[i]) * rms);
   }
 }
 
