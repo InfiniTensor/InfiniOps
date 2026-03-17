@@ -33,15 +33,18 @@ __device__ __forceinline__ T Sigmoid(const T& x) {
 
 // SwiGLU(x, gate) = Swish(x) * gate = (x * sigmoid(x)) * gate.
 template <typename T, unsigned int BLOCK_SIZE>
-__global__ void SwigluKernel(T* out, const T* a, const T* b,
-                             const size_t* out_shape, const size_t* input_shape,
-                             const size_t* gate_shape,
-                             const ptrdiff_t* out_strides,
-                             const ptrdiff_t* input_strides,
-                             const ptrdiff_t* gate_strides, size_t output_size,
-                             size_t ndim, size_t offset, bool out_contiguous,
-                             bool input_contiguous, bool gate_contiguous) {
-  size_t idx = blockIdx.x * blockDim.x + threadIdx.x + offset;
+__global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
+                             const T* __restrict__ b,
+                             const size_t* __restrict__ out_shape,
+                             const size_t* __restrict__ input_shape,
+                             const size_t* __restrict__ gate_shape,
+                             const ptrdiff_t* __restrict__ out_strides,
+                             const ptrdiff_t* __restrict__ input_strides,
+                             const ptrdiff_t* __restrict__ gate_strides,
+                             size_t output_size, size_t ndim,
+                             bool out_contiguous, bool input_contiguous,
+                             bool gate_contiguous) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (idx < output_size) {
     size_t out_idx, input_idx, gate_idx;
@@ -74,21 +77,18 @@ __global__ void SwigluKernel(T* out, const T* a, const T* b,
       // Optimized `half` precision computation.
       out[out_idx] = __hmul(__hmul(gate, Sigmoid(gate)), up);
     } else if constexpr (std::is_same_v<T, cuda_bfloat162>) {
-      cuda_bfloat162 sig = Sigmoid(gate);
       float gate0 = __bfloat162float(__low2bfloat16(gate));
       float gate1 = __bfloat162float(__high2bfloat16(gate));
-      float sig0 = __bfloat162float(__low2bfloat16(sig));
-      float sig1 = __bfloat162float(__high2bfloat16(sig));
       float up0 = __bfloat162float(__low2bfloat16(up));
       float up1 = __bfloat162float(__high2bfloat16(up));
-      float res0 = __fmul_rn(__fmul_rn(gate0, sig0), up0);
-      float res1 = __fmul_rn(__fmul_rn(gate1, sig1), up1);
-      out[out_idx] = __floats2bfloat162_rn(res0, res1);
+      float sig0 = __frcp_rn(__fadd_rn(1.0f, __expf(-gate0)));
+      float sig1 = __frcp_rn(__fadd_rn(1.0f, __expf(-gate1)));
+      out[out_idx] = __floats2bfloat162_rn(__fmul_rn(__fmul_rn(gate0, sig0), up0),
+                                           __fmul_rn(__fmul_rn(gate1, sig1), up1));
     } else if constexpr (std::is_same_v<T, cuda_bfloat16>) {
-      cuda_bfloat16 sig = Sigmoid(gate);
       float gatef = __bfloat162float(gate);
-      float sigf = __bfloat162float(sig);
       float upf = __bfloat162float(up);
+      float sigf = __frcp_rn(__fadd_rn(1.0f, __expf(-gatef)));
       out[out_idx] =
           __float2bfloat16_rn(__fmul_rn(__fmul_rn(gatef, sigf), upf));
     } else if constexpr (std::is_same_v<T, float>) {

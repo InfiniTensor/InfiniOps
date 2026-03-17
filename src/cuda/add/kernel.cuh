@@ -25,15 +25,17 @@ struct AddOp {
 };
 
 template <typename T, unsigned int BLOCK_SIZE>
-__global__ void AddKernel(T* out, const T* input, const T* other,
-                          const size_t* out_shape, const size_t* input_shape,
-                          const size_t* other_shape,
-                          const ptrdiff_t* out_strides,
-                          const ptrdiff_t* input_strides,
-                          const ptrdiff_t* other_strides, size_t output_size,
-                          size_t ndim, size_t offset, bool out_contiguous,
+__global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
+                          const T* __restrict__ other,
+                          const size_t* __restrict__ out_shape,
+                          const size_t* __restrict__ input_shape,
+                          const size_t* __restrict__ other_shape,
+                          const ptrdiff_t* __restrict__ out_strides,
+                          const ptrdiff_t* __restrict__ input_strides,
+                          const ptrdiff_t* __restrict__ other_strides,
+                          size_t output_size, size_t ndim, bool out_contiguous,
                           bool input_contiguous, bool other_contiguous) {
-  size_t idx = blockIdx.x * blockDim.x + threadIdx.x + offset;
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (idx < output_size) {
     size_t out_idx =

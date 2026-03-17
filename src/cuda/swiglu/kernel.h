@@ -63,7 +63,6 @@ class CudaSwiglu : public Swiglu {
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(block_size), output_size_));
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));
-          size_t step = gridDims.x * blockDims.x;
 
           T* d_out = reinterpret_cast<T*>(out.data());
           const T* d_input = reinterpret_cast<const T*>(input.data());
@@ -71,13 +70,10 @@ class CudaSwiglu : public Swiglu {
 
 // Launch kernel with appropriate block size based on GPU architecture.
 #define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                     \
-  for (size_t i = 0; i < output_size_; i += step) {                          \
-    SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(    \
-        d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_, \
-        d_out_strides_, d_input_strides_, d_gate_strides_, output_size_,     \
-        ndim_, i, is_out_contiguous_, is_input_contiguous_,                  \
-        is_gate_contiguous_);                                                \
-  }
+  SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(      \
+      d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_,   \
+      d_out_strides_, d_input_strides_, d_gate_strides_, output_size_, ndim_, \
+      is_out_contiguous_, is_input_contiguous_, is_gate_contiguous_);
           if (block_size == CUDA_BLOCK_SIZE_2048) {
             LAUNCH_SWIGLU_KERNEL(CUDA_BLOCK_SIZE_2048)
           } else if (block_size == CUDA_BLOCK_SIZE_1024) {

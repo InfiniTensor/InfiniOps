@@ -63,20 +63,16 @@ class CudaAdd : public Add {
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(block_size), output_size_));
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));
-          size_t step = gridDims.x * blockDims.x;
 
           T* d_out = reinterpret_cast<T*>(out.data());
           const T* d_input = reinterpret_cast<const T*>(input.data());
           const T* d_other = reinterpret_cast<const T*>(other.data());
 
 #define LAUNCH_ADD_KERNEL(BLOCK_SIZE)                                          \
-  for (size_t i = 0; i < output_size_; i += step) {                            \
-    AddKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(         \
-        d_out, d_input, d_other, d_out_shape_, d_input_shape_, d_other_shape_, \
-        d_out_strides_, d_input_strides_, d_other_strides_, output_size_,      \
-        ndim_, i, is_out_contiguous_, is_input_contiguous_,                    \
-        is_other_contiguous_);                                                 \
-  }
+  AddKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(           \
+      d_out, d_input, d_other, d_out_shape_, d_input_shape_, d_other_shape_,   \
+      d_out_strides_, d_input_strides_, d_other_strides_, output_size_, ndim_, \
+      is_out_contiguous_, is_input_contiguous_, is_other_contiguous_);
 
           if (block_size == CUDA_BLOCK_SIZE_2048) {
             LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_2048)
