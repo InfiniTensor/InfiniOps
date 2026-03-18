@@ -19,6 +19,8 @@ using cuda_bfloat16 = maca_bfloat16;
 using cuda_bfloat162 = maca_bfloat162;
 #endif
 
+#include <cstdlib>
+#include <iostream>
 #include <vector>
 
 #include "cast.h"
@@ -54,8 +56,10 @@ class DevicePropertyCache {
     }();
 
     if (device_id < 0 || device_id >= static_cast<int>(cache.size())) {
-      static cudaDeviceProp dummy{};
-      return dummy;
+      std::cerr << "error: `device_id` " << device_id
+                << " is out of range [0, " << cache.size()
+                << ") in `GetDeviceProps`\n";
+      std::abort();
     }
     return cache[device_id];
   }
