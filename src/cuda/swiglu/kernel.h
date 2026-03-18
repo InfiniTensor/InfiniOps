@@ -3,17 +3,13 @@
 
 #include <cstdint>
 
-// clang-format off
-#include <cuda_runtime.h> // TODO: Remove this
-// clang-format on
-
 #include "base/swiglu.h"
 #include "common/generic_utils.h"
 #include "cuda/swiglu/kernel.cuh"
 
 namespace infini::ops {
 
-template <typename Backend>
+template <typename Backend, template <typename> class Op = CudaSwigluOp>
 class CudaSwiglu : public Swiglu {
  public:
   CudaSwiglu(const Tensor input, const Tensor gate, Tensor out)
@@ -70,7 +66,7 @@ class CudaSwiglu : public Swiglu {
 
 // Launch kernel with appropriate block size based on GPU architecture.
 #define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                      \
-  SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(       \
+  SwigluKernel<T, Op<T>, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(\
       d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_,    \
       d_out_strides_, d_input_strides_, d_gate_strides_, output_size_, ndim_, \
       is_out_contiguous_, is_input_contiguous_, is_gate_contiguous_);
