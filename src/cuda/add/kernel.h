@@ -3,10 +3,6 @@
 
 #include <cstdint>
 
-// clang-format off
-#include <cuda_runtime.h>
-// clang-format on
-
 #include "base/add.h"
 #include "common/generic_utils.h"
 #include "cuda/add/kernel.cuh"

@@ -4,7 +4,7 @@
 #include <cstdint>
 
 // clang-format off
-#include <cuda_runtime.h>
+#include <cuda_runtime.h> // TODO: Remove this
 // clang-format on
 
 #include "base/rms_norm.h"
