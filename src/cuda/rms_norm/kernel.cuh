@@ -17,7 +17,8 @@ __device__ __forceinline__ Compute SumSquared(const Data* data_ptr,
                                               size_t count) {
   Compute ss = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    ss += Compute(data_ptr[i]) * Compute(data_ptr[i]);
+    Compute val = Compute(data_ptr[i]);
+    ss += val * val;
   }
   using BlockReduce = cub::BlockReduce<Compute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;

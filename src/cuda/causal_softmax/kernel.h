@@ -4,21 +4,16 @@
 #include <cstdint>
 
 // clang-format off
-#include <cuda_runtime.h>
+#include <cuda_runtime.h> // TODO: Remove this
 // clang-format on
 
 #include "base/causal_softmax.h"
+#include "common/cuda/kernel_commons.h"
 #include "cuda/causal_softmax/kernel.cuh"
 #include "data_type.h"
 #include "dispatcher.h"
 
 namespace infini::ops {
-
-namespace causal_softmax {
-
-constexpr unsigned int kBlockSize = 256;
-
-}  // namespace causal_softmax
 
 template <typename Backend>
 class CudaCausalSoftmax : public CausalSoftmax {
@@ -41,16 +36,34 @@ class CudaCausalSoftmax : public CausalSoftmax {
       std::abort();
     }
 
+    int block_size = GetOptimalBlockSize();
+
     DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
         out.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          CausalSoftmaxKernel<causal_softmax::kBlockSize, T, float>
-              <<<grid, causal_softmax::kBlockSize, 0, cuda_stream>>>(
-                  reinterpret_cast<T*>(out.data()),
-                  reinterpret_cast<const T*>(input.data()), batch_size_,
-                  seq_len_, total_seq_len_, stride_out_batch, stride_out_row,
-                  stride_input_batch, stride_input_row);
+
+#define LAUNCH_CAUSAL_SOFTMAX_KERNEL(BLOCK_SIZE)                           \
+  CausalSoftmaxKernel<BLOCK_SIZE, T, float>                                \
+      <<<grid, BLOCK_SIZE, 0, cuda_stream>>>(                              \
+          reinterpret_cast<T*>(out.data()),                                \
+          reinterpret_cast<const T*>(input.data()), batch_size_, seq_len_, \
+          total_seq_len_, stride_out_batch, stride_out_row,                \
+          stride_input_batch, stride_input_row);
+
+          if (block_size == CUDA_BLOCK_SIZE_2048) {
+            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_2048)
+          } else if (block_size == CUDA_BLOCK_SIZE_1024) {
+            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_1024)
+          } else if (block_size == CUDA_BLOCK_SIZE_512) {
+            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_512)
+          } else if (block_size == CUDA_BLOCK_SIZE_256) {
+            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_256)
+          } else {
+            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_128)
+          }
+
+#undef LAUNCH_CAUSAL_SOFTMAX_KERNEL
         },
         "CudaCausalSoftmax::operator()");
   }
