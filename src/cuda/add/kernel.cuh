@@ -5,10 +5,8 @@
 
 namespace infini::ops {
 
-struct AddOp {
-  static constexpr std::size_t num_inputs = 2;
-
-  template <typename T>
+template <typename T>
+struct CudaAddOp {
   __device__ __forceinline__ T operator()(const T& input,
                                           const T& other) const {
     if constexpr (std::is_same_v<T, half2>) {
@@ -24,7 +22,7 @@ struct AddOp {
   }
 };
 
-template <typename T, unsigned int BLOCK_SIZE>
+template <typename T, typename Op, unsigned int BLOCK_SIZE>
 __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
                           const T* __restrict__ other,
                           const size_t* __restrict__ out_shape,
@@ -47,7 +45,7 @@ __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
         other_contiguous ? idx
                          : IndexToOffset(idx, ndim, other_shape, other_strides);
 
-    out[out_idx] = AddOp{}(input[input_idx], other[other_idx]);
+    out[out_idx] = Op{}(input[input_idx], other[other_idx]);
   }
 }
 

@@ -14,6 +14,9 @@
 #elif defined(WITH_METAX)
 #include <common/maca_bfloat16.h>
 #include <common/maca_fp16.h>
+#elif defined(WITH_MOORE)
+#include <musa_bf16.h>
+#include <musa_fp16.h>
 #endif
 
 #include "common/constexpr_map.h"
@@ -201,6 +204,9 @@ DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
 #elif defined(WITH_METAX)
 DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, __maca_bfloat16)
+#elif defined(WITH_MOORE)
+DEFINE_DATA_TYPE_MAPPING(kFloat16, half)
+DEFINE_DATA_TYPE_MAPPING(kBFloat16, __mt_bfloat16)
 #else
 DEFINE_DATA_TYPE_MAPPING(kFloat16, Float16)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, BFloat16)

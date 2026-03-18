@@ -17,6 +17,12 @@ using cuda_bfloat162 = nv_bfloat162;
 #include <mcr/mc_runtime.h>
 using cuda_bfloat16 = maca_bfloat16;
 using cuda_bfloat162 = maca_bfloat162;
+#elif defined(WITH_MOORE)
+#include <musa_bf16.h>
+#include <musa_fp16.h>
+#include <musa_runtime.h>
+using cuda_bfloat16 = __mt_bfloat16;
+using cuda_bfloat162 = __mt_bfloat162;
 #endif
 
 #include <cstdlib>
@@ -71,6 +77,14 @@ inline int QueryMaxThreadsPerBlock() {
 inline int QueryMaxThreadsPerBlock() {
   // TODO: Add MCR device properties query for Metax.
   return CUDA_BLOCK_SIZE_256;
+}
+#elif defined(WITH_MOORE)
+inline int QueryMaxThreadsPerBlock() {
+  int device = 0;
+  musaGetDevice(&device);
+  musaDeviceProp prop;
+  musaGetDeviceProperties(&prop, device);
+  return prop.maxThreadsPerBlock;
 }
 #endif
 
