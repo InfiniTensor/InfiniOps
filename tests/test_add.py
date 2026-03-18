@@ -46,10 +46,16 @@ _INT_DTYPES = (
         (torch.uint64, 0, 0),
     ),
 )
-def test_add(shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol):
+def test_add(
+    shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
+):
     if dtype in _INT_DTYPES:
-        input = randint_strided(0, 100, shape, input_strides, dtype=dtype, device=device)
-        other = randint_strided(0, 100, shape, other_strides, dtype=dtype, device=device)
+        input = randint_strided(
+            0, 100, shape, input_strides, dtype=dtype, device=device
+        )
+        other = randint_strided(
+            0, 100, shape, other_strides, dtype=dtype, device=device
+        )
     else:
         input = randn_strided(shape, input_strides, dtype=dtype, device=device)
         other = randn_strided(shape, other_strides, dtype=dtype, device=device)

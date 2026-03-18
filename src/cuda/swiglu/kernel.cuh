@@ -83,8 +83,9 @@ __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
       float up1 = __bfloat162float(__high2bfloat16(up));
       float sig0 = __frcp_rn(__fadd_rn(1.0f, __expf(-gate0)));
       float sig1 = __frcp_rn(__fadd_rn(1.0f, __expf(-gate1)));
-      out[out_idx] = __floats2bfloat162_rn(__fmul_rn(__fmul_rn(gate0, sig0), up0),
-                                           __fmul_rn(__fmul_rn(gate1, sig1), up1));
+      out[out_idx] =
+          __floats2bfloat162_rn(__fmul_rn(__fmul_rn(gate0, sig0), up0),
+                                __fmul_rn(__fmul_rn(gate1, sig1), up1));
     } else if constexpr (std::is_same_v<T, cuda_bfloat16>) {
       float gatef = __bfloat162float(gate);
       float upf = __bfloat162float(up);

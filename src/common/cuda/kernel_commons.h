@@ -34,7 +34,7 @@ constexpr int CUDA_BLOCK_SIZE_1024 = 1024;
 constexpr int CUDA_BLOCK_SIZE_2048 = 2048;
 
 #if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
-// Cache cudaDeviceProp per device, initialized once at first access.
+// Cache `cudaDeviceProp` per device, initialized once at first access.
 class DevicePropertyCache {
  public:
   static const cudaDeviceProp& GetCurrentDeviceProps() {
@@ -56,9 +56,8 @@ class DevicePropertyCache {
     }();
 
     if (device_id < 0 || device_id >= static_cast<int>(cache.size())) {
-      std::cerr << "error: `device_id` " << device_id
-                << " is out of range [0, " << cache.size()
-                << ") in `GetDeviceProps`\n";
+      std::cerr << "error: `device_id` " << device_id << " is out of range [0, "
+                << cache.size() << ") in `GetDeviceProps`\n";
       std::abort();
     }
     return cache[device_id];

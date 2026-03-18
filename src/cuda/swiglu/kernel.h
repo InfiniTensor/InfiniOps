@@ -69,9 +69,9 @@ class CudaSwiglu : public Swiglu {
           const T* d_gate = reinterpret_cast<const T*>(gate.data());
 
 // Launch kernel with appropriate block size based on GPU architecture.
-#define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                     \
-  SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(      \
-      d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_,   \
+#define LAUNCH_SWIGLU_KERNEL(BLOCK_SIZE)                                      \
+  SwigluKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(       \
+      d_out, d_input, d_gate, d_out_shape_, d_input_shape_, d_gate_shape_,    \
       d_out_strides_, d_input_strides_, d_gate_strides_, output_size_, ndim_, \
       is_out_contiguous_, is_input_contiguous_, is_gate_contiguous_);
           if (block_size == CUDA_BLOCK_SIZE_2048) {
