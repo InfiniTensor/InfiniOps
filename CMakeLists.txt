@@ -24,8 +24,9 @@ if(AUTO_DETECT_DEVICES)
     set(WITH_CPU ON)
 
     file(GLOB NVIDIA_DEV_FILES "/dev/nvidia*")
+    find_program(NVCC_EXECUTABLE NAMES nvcc)
 
-    if(NVIDIA_DEV_FILES)
+    if(NVIDIA_DEV_FILES OR NVCC_EXECUTABLE)
         set(WITH_NVIDIA ON)
         message(STATUS "Auto-detected NVIDIA environment.")
     endif()
