@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""CI image builder: detect changes, build, tag, and optionally push Docker images."""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    print(
+        "error: pyyaml is required. Install with: pip install pyyaml", file=sys.stderr
+    )
+    sys.exit(1)
+
+
+def load_config(path):
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def get_git_commit(ref="HEAD"):
+    result = subprocess.run(
+        ["git", "rev-parse", "--short", ref],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"error: failed to get commit hash for `{ref}`", file=sys.stderr)
+        sys.exit(1)
+
+    return result.stdout.strip()
+
+
+def has_dockerfile_changed(dockerfile_dir, base_ref="HEAD~1"):
+    """Check if any file under `dockerfile_dir` changed since `base_ref`."""
+    result = subprocess.run(
+        ["git", "diff", "--name-only", base_ref, "--", dockerfile_dir],
+        capture_output=True,
+        text=True,
+    )
+
+    return bool(result.stdout.strip())
+
+
+def build_image_tag(registry_url, project, platform, tag):
+    if registry_url:
+        return f"{registry_url}/{project}/{platform}:{tag}"
+
+    return f"{project}-ci/{platform}:{tag}"
+
+
+def build_image(platform, platform_cfg, registry_cfg, commit, push, dry_run):
+    """Build a single platform image. Returns True on success."""
+    registry_url = registry_cfg.get("url", "")
+    project = registry_cfg.get("project", "infiniops")
+    dockerfile_dir = platform_cfg["dockerfile"]
+
+    commit_tag = build_image_tag(registry_url, project, platform, commit)
+    latest_tag = build_image_tag(registry_url, project, platform, "latest")
+
+    build_args_cfg = platform_cfg.get("build_args", {})
+    build_cmd = ["docker", "build", "--network", "host"]
+    for key, value in build_args_cfg.items():
+        build_cmd.extend(["--build-arg", f"{key}={value}"])
+
+    for proxy_var in ("http_proxy", "https_proxy", "no_proxy"):
+        proxy_val = os.environ.get(proxy_var) or os.environ.get(proxy_var.upper())
+        if proxy_val:
+            build_cmd.extend(["--build-arg", f"{proxy_var}={proxy_val}"])
+
+    private_sdk = platform_cfg.get("private_sdk", {})
+    if private_sdk:
+        sdk_url = private_sdk.get("source", "")
+        if sdk_url.startswith("${") and sdk_url.endswith("}"):
+            env_var = sdk_url[2:-1]
+            sdk_url = os.environ.get(env_var, "")
+        if sdk_url:
+            build_cmd.extend(["--build-arg", f"PRIVATE_SDK_URL={sdk_url}"])
+
+    build_cmd.extend(["-t", commit_tag, "-t", latest_tag, dockerfile_dir])
+
+    if dry_run:
+        print(f"[dry-run] {' '.join(build_cmd)}")
+        if push:
+            print(f"[dry-run] docker push {commit_tag}")
+            print(f"[dry-run] docker push {latest_tag}")
+
+        return True
+
+    print(f"==> building {platform}: {commit_tag}", file=sys.stderr)
+    result = subprocess.run(build_cmd)
+    if result.returncode != 0:
+        error = {
+            "stage": "build",
+            "platform": platform,
+            "tag": commit_tag,
+            "exit_code": result.returncode,
+        }
+        print(json.dumps(error), file=sys.stderr)
+
+        return False
+
+    if push:
+        for tag in (commit_tag, latest_tag):
+            print(f"==> pushing {tag}", file=sys.stderr)
+            push_result = subprocess.run(["docker", "push", tag])
+            if push_result.returncode != 0:
+                error = {
+                    "stage": "push",
+                    "platform": platform,
+                    "tag": tag,
+                    "exit_code": push_result.returncode,
+                }
+                print(json.dumps(error), file=sys.stderr)
+
+                return False
+
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build CI Docker images")
+    parser.add_argument(
+        "--platform",
+        type=str,
+        default="all",
+        help="Platform to build: nvidia, ascend, or all (default: all)",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).resolve().parent / "config.yaml",
+        help="Path to config.yaml",
+    )
+    parser.add_argument(
+        "--commit",
+        type=str,
+        default="HEAD",
+        help="Git ref for tagging the image (default: HEAD)",
+    )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="Push images to registry after building",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip change detection and force build",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print commands without executing",
+    )
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    registry_cfg = config.get("registry", {})
+    images_cfg = config.get("images", {})
+
+    if not images_cfg:
+        print("error: no `images` section in config", file=sys.stderr)
+        sys.exit(1)
+
+    if args.platform == "all":
+        platforms = list(images_cfg.keys())
+    else:
+        if args.platform not in images_cfg:
+            print(
+                f"error: platform `{args.platform}` not found in config",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        platforms = [args.platform]
+
+    commit = get_git_commit(args.commit)
+    failed = False
+
+    for platform in platforms:
+        platform_cfg = images_cfg[platform]
+        dockerfile_dir = platform_cfg["dockerfile"]
+
+        if not Path(dockerfile_dir).is_dir():
+            print(
+                f"warning: dockerfile directory `{dockerfile_dir}` does not exist, skipping {platform}",
+                file=sys.stderr,
+            )
+            continue
+
+        if not args.force and not has_dockerfile_changed(dockerfile_dir):
+            print(f"==> {platform}: no changes detected, skipping", file=sys.stderr)
+            continue
+
+        ok = build_image(
+            platform, platform_cfg, registry_cfg, commit, args.push, args.dry_run
+        )
+        if not ok:
+            failed = True
+
+    if failed:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
