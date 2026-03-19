@@ -7,6 +7,10 @@
 #include <musa_runtime.h>
 // clang-format on
 
+// clang-format off
+#include "moore/polyfills.cuh"
+// clang-format on
+
 #include "cuda/add/kernel.h"
 
 namespace infini::ops {
