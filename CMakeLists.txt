@@ -73,30 +73,18 @@ if(AUTO_DETECT_DEVICES)
     endif()
 endif()
 
-if(WITH_MOORE)
-    set(MUSA_ROOT $ENV{MUSA_ROOT} $ENV{MUSA_HOME} $ENV{MUSA_PATH})
-    list(FILTER MUSA_ROOT EXCLUDE REGEX "^$")
-    list(GET MUSA_ROOT 0 MUSA_ROOT)
-    if(NOT MUSA_ROOT)
-        message(FATAL_ERROR "`WITH_MOORE` is `ON` but `MUSA_ROOT`/`MUSA_HOME`/`MUSA_PATH` is not set.")
-    endif()
-    message(STATUS "Using Moore from `${MUSA_ROOT}`.")
-    list(PREPEND CMAKE_MODULE_PATH "${MUSA_ROOT}/cmake")
-    set(MUSA_TOOLKIT_ROOT_DIR "${MUSA_ROOT}" CACHE PATH "Toolkit location." FORCE)
-    find_package(MUSA REQUIRED)
-    add_compile_definitions(WITH_MOORE=1)
-    include_directories("${MUSA_ROOT}/include")
-    link_directories("${MUSA_ROOT}/lib")
-    find_library(MUSA_LIB NAMES musa HINTS "${MUSA_ROOT}/lib" REQUIRED)
-    find_library(MUSART_LIB NAMES musart HINTS "${MUSA_ROOT}/lib" REQUIRED)
-    find_library(MUBLAS_LIB NAMES mublas HINTS "${MUSA_ROOT}/lib" REQUIRED)
-endif()
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# NVIDIA and Iluvatar are parallel backends; only one GPU backend at a time.
-if(WITH_NVIDIA AND WITH_ILUVATAR)
-    message(FATAL_ERROR "`WITH_NVIDIA` and `WITH_ILUVATAR` cannot both be `ON`. Build one GPU backend at a time.")
+# Only one CUDA-like GPU backend can be enabled at a time.
+set(_gpu_backend_count 0)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_METAX WITH_MOORE)
+    if(${_gpu_backend})
+        math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
+    endif()
+endforeach()
+
+if(_gpu_backend_count GREATER 1)
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_METAX`, and `WITH_MOORE` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NVIDIA)
@@ -140,6 +128,41 @@ if(WITH_METAX)
     find_library(MACA_BLAS_LIB    NAMES mcblas    HINTS "${MACA_PATH}/lib" REQUIRED)
 endif()
 
+if(WITH_MOORE)
+    add_compile_definitions(WITH_MOORE=1)
+
+    set(MUSA_ROOT "")
+    foreach(_musa_env MUSA_ROOT MUSA_HOME MUSA_PATH)
+        if(NOT MUSA_ROOT AND DEFINED ENV{${_musa_env}} AND NOT "$ENV{${_musa_env}}" STREQUAL "")
+            set(MUSA_ROOT "$ENV{${_musa_env}}")
+        endif()
+    endforeach()
+
+    if(NOT MUSA_ROOT AND EXISTS "/usr/local/musa")
+        set(MUSA_ROOT "/usr/local/musa")
+    endif()
+
+    if(NOT MUSA_ROOT)
+        message(FATAL_ERROR "`WITH_MOORE` is `ON` but `MUSA_ROOT`/`MUSA_HOME`/`MUSA_PATH` is not set and `/usr/local/musa` was not found.")
+    endif()
+
+    if(NOT EXISTS "${MUSA_ROOT}/bin/mcc")
+        message(FATAL_ERROR "Could not find `mcc` under `${MUSA_ROOT}/bin`.")
+    endif()
+
+    message(STATUS "Using Moore from `${MUSA_ROOT}`.")
+
+    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh)
+    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh)
+
+    include_directories("${MUSA_ROOT}/include")
+    link_directories("${MUSA_ROOT}/lib")
+
+    find_library(MUSA_LIB   NAMES musa   HINTS "${MUSA_ROOT}/lib" REQUIRED)
+    find_library(MUSART_LIB NAMES musart HINTS "${MUSA_ROOT}/lib" REQUIRED)
+    find_library(MUBLAS_LIB NAMES mublas HINTS "${MUSA_ROOT}/lib" REQUIRED)
+endif()
+
 if(WITH_CAMBRICON)
     add_compile_definitions(WITH_CAMBRICON=1)
     set(NEUWARE_HOME $ENV{NEUWARE_HOME})
@@ -160,7 +183,7 @@ if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX AND NOT WITH_MOORE)
     add_compile_definitions(WITH_CPU=1)
 endif()
 
-if(WITH_METAX)
+if(WITH_METAX OR WITH_MOORE)
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 

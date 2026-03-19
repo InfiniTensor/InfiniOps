@@ -41,6 +41,11 @@ _UINT_DTYPES = tuple(
 def test_add(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
+    if device == "musa" and dtype in _UINT_DTYPES:
+        pytest.skip(
+            "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
+        )
+
     if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
         input = randint_strided(
             0, 100, shape, input_strides, dtype=dtype, device=device

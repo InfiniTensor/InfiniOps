@@ -103,6 +103,29 @@ if(WITH_METAX)
     list(APPEND DEVICE_LIST "metax")
 endif()
 
+if(WITH_MOORE)
+    set(MOORE_PATTERNS
+        "cuda/*.cc"
+        "cuda/*.cpp"
+        "moore/*.cc"
+        "moore/*.cpp"
+        "moore/*.mu"
+    )
+
+    file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
+
+    set_source_files_properties(${MOORE_SOURCES} PROPERTIES LANGUAGE CXX)
+
+    target_compile_definitions(infiniops PRIVATE WITH_MOORE=1)
+    target_compile_options(infiniops PUBLIC "-x" "musa")
+    target_sources(infiniops PRIVATE ${MOORE_SOURCES})
+
+    target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
+    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
+
+    list(APPEND DEVICE_LIST "moore")
+endif()
+
 if(WITH_CAMBRICON)
     target_compile_definitions(infiniops PUBLIC WITH_CAMBRICON=1)
 
@@ -110,13 +133,6 @@ if(WITH_CAMBRICON)
     target_link_libraries(infiniops PUBLIC ${CAMBRICON_RUNTIME_LIB} ${CAMBRICON_CNNL_LIB} ${CAMBRICON_CNNL_EXTRA_LIB} ${CAMBRICON_PAPI_LIB})
 
     list(APPEND DEVICE_LIST "cambricon")
-endif()
-
-if(WITH_MOORE)
-    target_compile_definitions(infiniops PUBLIC WITH_MOORE=1)
-    target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
-    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
-    list(APPEND DEVICE_LIST "moore")
 endif()
 
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

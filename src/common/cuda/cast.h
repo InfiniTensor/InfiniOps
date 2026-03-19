@@ -7,6 +7,8 @@
 #include <cuda_runtime.h>
 #elif defined(WITH_METAX)
 #include <mcr/mc_runtime.h>
+#elif defined(WITH_MOORE)
+#include <musa_runtime.h>
 #endif
 
 #include "data_type.h"
