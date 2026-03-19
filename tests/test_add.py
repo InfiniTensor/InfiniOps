@@ -4,13 +4,10 @@ import torch
 
 from tests.utils import Payload, empty_strided, randint_strided, randn_strided
 
-_INT_DTYPES = (
-    torch.int16,
-    torch.uint16,
-    torch.int32,
-    torch.uint32,
-    torch.int64,
-    torch.uint64,
+_INT_DTYPES = (torch.int16, torch.int32, torch.int64)
+
+_UINT_DTYPES = tuple(
+    filter(None, (getattr(torch, f"uint{bits}", None) for bits in (16, 32, 64)))
 )
 
 
@@ -38,18 +35,13 @@ _INT_DTYPES = (
         (torch.float32, 1e-7, 1e-7),
         (torch.float16, 1e-3, 1e-3),
         (torch.bfloat16, 1e-2, 5e-3),
-        (torch.int16, 0, 0),
-        (torch.uint16, 0, 0),
-        (torch.int32, 0, 0),
-        (torch.uint32, 0, 0),
-        (torch.int64, 0, 0),
-        (torch.uint64, 0, 0),
-    ),
+    )
+    + tuple((dtype, 0, 0) for dtype in _INT_DTYPES + _UINT_DTYPES),
 )
 def test_add(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
-    if dtype in _INT_DTYPES:
+    if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
         input = randint_strided(
             0, 100, shape, input_strides, dtype=dtype, device=device
         )
@@ -72,10 +64,10 @@ def _add(input, other, out):
 
 
 def _torch_add(input, other, out):
-    if input.dtype in (torch.uint16, torch.uint32, torch.uint64):
+    if input.dtype in _UINT_DTYPES:
         input = input.to(torch.int64)
 
-    if other.dtype in (torch.uint16, torch.uint32, torch.uint64):
+    if other.dtype in _UINT_DTYPES:
         other = other.to(torch.int64)
 
     res = torch.add(input, other)
