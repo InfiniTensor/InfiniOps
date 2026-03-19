@@ -13,18 +13,6 @@ namespace infini::ops {
 
 namespace add {
 
-template <typename T>
-struct MooreAddOp {
-  __device__ __forceinline__ T operator()(const T& input,
-                                          const T& other) const {
-    if constexpr (std::is_same_v<T, TypeMapType<DataType::kBFloat16>>) {
-      return input + other;
-    } else {
-      return CudaAddOp<T>{}(input, other);
-    }
-  }
-};
-
 struct MooreBackend {
   using stream_t = musaStream_t;
 
@@ -46,10 +34,9 @@ struct MooreBackend {
 }  // namespace add
 
 template <>
-class Operator<Add, Device::Type::kMoore>
-    : public CudaAdd<add::MooreBackend, add::MooreAddOp> {
+class Operator<Add, Device::Type::kMoore> : public CudaAdd<add::MooreBackend> {
  public:
-  using CudaAdd<add::MooreBackend, add::MooreAddOp>::CudaAdd;
+  using CudaAdd<add::MooreBackend>::CudaAdd;
 };
 
 }  // namespace infini::ops

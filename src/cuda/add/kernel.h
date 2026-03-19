@@ -9,7 +9,7 @@
 
 namespace infini::ops {
 
-template <typename Backend, template <typename> class Op = CudaAddOp>
+template <typename Backend>
 class CudaAdd : public Add {
  public:
   CudaAdd(const Tensor input, const Tensor other, Tensor out)
@@ -64,11 +64,11 @@ class CudaAdd : public Add {
           const T* d_input = reinterpret_cast<const T*>(input.data());
           const T* d_other = reinterpret_cast<const T*>(other.data());
 
-#define LAUNCH_ADD_KERNEL(BLOCK_SIZE)                                         \
-  AddKernel<T, Op<T>, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(   \
-      d_out, d_input, d_other, d_out_shape_, d_input_shape_, d_other_shape_,  \
-      d_out_strides_, d_input_strides_, d_other_strides_, output_size_,       \
-      ndim_, is_out_contiguous_, is_input_contiguous_, is_other_contiguous_);
+#define LAUNCH_ADD_KERNEL(BLOCK_SIZE)                                          \
+  AddKernel<T, BLOCK_SIZE><<<gridDims, blockDims, 0, cuda_stream>>>(           \
+      d_out, d_input, d_other, d_out_shape_, d_input_shape_, d_other_shape_,   \
+      d_out_strides_, d_input_strides_, d_other_strides_, output_size_, ndim_, \
+      is_out_contiguous_, is_input_contiguous_, is_other_contiguous_);
 
           if (block_size == CUDA_BLOCK_SIZE_2048) {
             LAUNCH_ADD_KERNEL(CUDA_BLOCK_SIZE_2048)

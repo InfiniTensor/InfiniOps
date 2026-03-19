@@ -5,14 +5,36 @@
 
 namespace infini::ops {
 
+namespace detail {
+
+template <typename T, typename = void>
+struct HasHAdd : std::false_type {};
+
 template <typename T>
-struct CudaAddOp {
+struct HasHAdd<
+    T, std::void_t<
+           decltype(__hadd(std::declval<T>(), std::declval<T>())),
+           std::enable_if_t<std::is_convertible_v<
+               decltype(__hadd(std::declval<T>(), std::declval<T>())), T>>>>
+    : std::true_type {};
+
+template <typename T>
+inline constexpr bool HasHAddValue = HasHAdd<T>::value;
+
+}  // namespace detail
+
+struct AddOp {
+  static constexpr std::size_t num_inputs = 2;
+
+  template <typename T>
   __device__ __forceinline__ T operator()(const T& input,
                                           const T& other) const {
     if constexpr (std::is_same_v<T, half2>) {
       return __hadd2(input, other);
-    } else if constexpr (std::is_same_v<T, half> ||
-                         std::is_same_v<T, TypeMapType<DataType::kBFloat16>>) {
+    } else if constexpr ((std::is_same_v<T, half> ||
+                          std::is_same_v<T,
+                                         TypeMapType<DataType::kBFloat16>>) &&
+                         detail::HasHAddValue<T>) {
       return __hadd(input, other);
     } else if constexpr (std::is_same_v<T, float>) {
       return __fadd_rn(input, other);
@@ -22,7 +44,7 @@ struct CudaAddOp {
   }
 };
 
-template <typename T, typename Op, unsigned int BLOCK_SIZE>
+template <typename T, unsigned int BLOCK_SIZE>
 __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
                           const T* __restrict__ other,
                           const size_t* __restrict__ out_shape,
@@ -45,7 +67,7 @@ __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
         other_contiguous ? idx
                          : IndexToOffset(idx, ndim, other_shape, other_strides);
 
-    out[out_idx] = Op{}(input[input_idx], other[other_idx]);
+    out[out_idx] = AddOp{}(input[input_idx], other[other_idx]);
   }
 }
 
