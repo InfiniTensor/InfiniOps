@@ -5,24 +5,6 @@
 
 namespace infini::ops {
 
-namespace detail {
-
-template <typename T, typename = void>
-struct HasHAdd : std::false_type {};
-
-template <typename T>
-struct HasHAdd<
-    T, std::void_t<
-           decltype(__hadd(std::declval<T>(), std::declval<T>())),
-           std::enable_if_t<std::is_convertible_v<
-               decltype(__hadd(std::declval<T>(), std::declval<T>())), T>>>>
-    : std::true_type {};
-
-template <typename T>
-inline constexpr bool HasHAddValue = HasHAdd<T>::value;
-
-}  // namespace detail
-
 struct AddOp {
   static constexpr std::size_t num_inputs = 2;
 
@@ -31,10 +13,8 @@ struct AddOp {
                                           const T& other) const {
     if constexpr (std::is_same_v<T, half2>) {
       return __hadd2(input, other);
-    } else if constexpr ((std::is_same_v<T, half> ||
-                          std::is_same_v<T,
-                                         TypeMapType<DataType::kBFloat16>>) &&
-                         detail::HasHAddValue<T>) {
+    } else if constexpr (std::is_same_v<T, half> ||
+                         std::is_same_v<T, TypeMapType<DataType::kBFloat16>>) {
       return __hadd(input, other);
     } else if constexpr (std::is_same_v<T, float>) {
       return __fadd_rn(input, other);

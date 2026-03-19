@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_MOORE_ADD_KERNEL_H_
-#define INFINI_OPS_MOORE_ADD_KERNEL_H_
+#ifndef INFINI_OPS_MOORE_SWIGLU_KERNEL_H_
+#define INFINI_OPS_MOORE_SWIGLU_KERNEL_H_
 
 #include <utility>
 
@@ -11,11 +11,11 @@
 #include "moore/polyfills.cuh"
 // clang-format on
 
-#include "cuda/add/kernel.h"
+#include "cuda/swiglu/kernel.h"
 
 namespace infini::ops {
 
-namespace add {
+namespace swiglu {
 
 struct MooreBackend {
   using stream_t = musaStream_t;
@@ -35,12 +35,13 @@ struct MooreBackend {
   static constexpr auto memcpyH2D = musaMemcpyHostToDevice;
 };
 
-}  // namespace add
+}  // namespace swiglu
 
 template <>
-class Operator<Add, Device::Type::kMoore> : public CudaAdd<add::MooreBackend> {
+class Operator<Swiglu, Device::Type::kMoore>
+    : public CudaSwiglu<swiglu::MooreBackend> {
  public:
-  using CudaAdd<add::MooreBackend>::CudaAdd;
+  using CudaSwiglu<swiglu::MooreBackend>::CudaSwiglu;
 };
 
 }  // namespace infini::ops

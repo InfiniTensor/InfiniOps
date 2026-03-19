@@ -3,10 +3,6 @@
 
 #include <cstdint>
 
-// clang-format off
-#include <cuda_runtime.h> // TODO: Remove this
-// clang-format on
-
 #include "base/swiglu.h"
 #include "common/generic_utils.h"
 #include "cuda/swiglu/kernel.cuh"
