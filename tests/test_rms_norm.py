@@ -59,13 +59,19 @@ def _rms_norm(input, weight, *, eps=1e-6, out=None):
 
 
 def _torch_rms_norm(input, weight, *, eps=1e-6, out=None):
-    rms_norm_fn = getattr(torch.nn.functional, "rms_norm", None)
-    if rms_norm_fn is not None:
-        return rms_norm_fn(input, input.shape[-1:], weight=weight, eps=eps)
-    # Fallback for PyTorch < 2.3: RMS norm = (x / sqrt(mean(x^2) + eps)) * weight
-    rms = torch.sqrt(torch.mean(input * input, dim=-1, keepdim=True) + eps)
-    result = (input / rms) * weight
+    # Fallback for `torch<2.3`: `rms_norm = (x / sqrt(mean(x^2) + eps)) * weight`.
+    def _fallback(input, _normalized_shape, weight, *, eps=1e-6):
+        rms = torch.sqrt(torch.mean(input * input, dim=-1, keepdim=True) + eps)
+
+        return (input / rms) * weight
+
+    rms_norm_fn = getattr(torch.nn.functional, "rms_norm", _fallback)
+
+    result = rms_norm_fn(input, input.shape[-1:], weight=weight, eps=eps)
+
     if out is not None:
         out.copy_(result)
-        return out
-    return result
+    else:
+        out = result
+
+    return out
