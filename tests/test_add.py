@@ -10,12 +10,6 @@ _UINT_DTYPES = tuple(
     filter(None, (getattr(torch, f"uint{bits}", None) for bits in (16, 32, 64)))
 )
 
-_MUSA_UNSUPPORTED_UINT_DTYPES = (
-    torch.uint16,
-    torch.uint32,
-    torch.uint64,
-)
-
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
@@ -47,7 +41,7 @@ _MUSA_UNSUPPORTED_UINT_DTYPES = (
 def test_add(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
-    if device == "musa" and dtype in _MUSA_UNSUPPORTED_UINT_DTYPES:
+    if device == "musa" and dtype in _UINT_DTYPES:
         pytest.skip(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
