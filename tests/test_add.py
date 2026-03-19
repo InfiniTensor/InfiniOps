@@ -4,39 +4,11 @@ import torch
 
 from tests.utils import Payload, empty_strided, randint_strided, randn_strided
 
-_INT_DTYPES = tuple(
-    d
-    for d in (
-        torch.int16,
-        torch.int32,
-        torch.int64,
-    )
-    if d is not None
-)
+_INT_DTYPES = (torch.int16, torch.int32, torch.int64)
 
 _UINT_DTYPES = tuple(
-    d
-    for d in (
-        getattr(torch, "uint16", None),
-        getattr(torch, "uint32", None),
-        getattr(torch, "uint64", None),
-    )
-    if d is not None
+    filter(None, (getattr(torch, f"uint{bits}", None) for bits in (16, 32, 64)))
 )
-
-
-def _dtype_parametrize():
-    candidates = [
-        (torch.float32, 1e-7, 1e-7),
-        (torch.float16, 1e-3, 1e-3),
-        (torch.bfloat16, 1e-2, 5e-3),
-        (torch.int16, 0, 0),
-        (torch.int32, 0, 0),
-        (getattr(torch, "uint32", None), 0, 0),
-        (torch.int64, 0, 0),
-        (getattr(torch, "uint64", None), 0, 0),
-    ]
-    return tuple((d, r, a) for (d, r, a) in candidates if d is not None)
 
 
 @pytest.mark.auto_act_and_assert
@@ -57,7 +29,15 @@ def _dtype_parametrize():
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
-@pytest.mark.parametrize(("dtype", "rtol", "atol"), _dtype_parametrize())
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    )
+    + tuple((dtype, 0, 0) for dtype in _INT_DTYPES + _UINT_DTYPES),
+)
 def test_add(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
