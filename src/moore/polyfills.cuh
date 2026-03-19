@@ -1,37 +1,41 @@
 #ifndef INFINI_OPS_MOORE_POLYFILLS_CUH_
 #define INFINI_OPS_MOORE_POLYFILLS_CUH_
 
+#include <type_traits>
+
+// clang-format off
 #include <musa_bf16.h>
+// clang-format on
 
 namespace infini::ops {
 
-namespace detail {
-
-template <typename T, typename = void>
-struct HasHAdd : std::false_type {};
-
-template <typename T>
-struct HasHAdd<
-    T, std::void_t<
-           decltype(__hadd(std::declval<T>(), std::declval<T>())),
-           std::enable_if_t<std::is_convertible_v<
-               decltype(__hadd(std::declval<T>(), std::declval<T>())), T>>>>
-    : std::true_type {};
-
-template <typename T>
-inline constexpr bool HasHAddValue = HasHAdd<T>::value;
-
-}  // namespace detail
-
 template <typename T>
 __device__ __forceinline__ T __hadd(const T& a, const T& b) {
-  if constexpr (detail::HasHAdd<T>::value) {
-    return ::__hadd(a, b);
-  } else {
-    return a + b;
-  }
+  return a + b;
+}
+
+template <typename T>
+__device__ __forceinline__ auto __high2bfloat16(const T& a) {
+  return __float2bfloat16_rn(::__high2float(a));
+}
+
+template <typename T>
+__device__ __forceinline__ T __hneg(const T& a) {
+  return -a;
+}
+
+template <typename T>
+__device__ __forceinline__ auto __low2bfloat16(const T& a) {
+  return __float2bfloat16_rn(::__low2float(a));
+}
+
+template <typename T>
+__device__ __forceinline__ T hrcp(const T& a) {
+  return T(__frcp_rn(static_cast<float>(a)));
 }
 
 }  // namespace infini::ops
+
+#define hrcp infini::ops::hrcp
 
 #endif
