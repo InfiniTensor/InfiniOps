@@ -30,4 +30,4 @@ jobs:
 
     stages:
       - name: test
-        run: pytest tests/ -n auto -v --tb=short --junitxml=/workspace/results/test-results.xml
+        run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml

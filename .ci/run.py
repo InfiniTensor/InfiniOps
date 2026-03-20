@@ -83,6 +83,9 @@ for i in $(seq 1 "$NUM_STAGES"); do
   eval "$cmd" || failed=1
 done
 echo "========== Summary =========="
+if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
+  chown -R "$HOST_UID:$HOST_GID" /workspace/results 2>/dev/null || true
+fi
 exit $failed
 """
 
@@ -127,6 +130,10 @@ def build_docker_args(
         f"SETUP_CMD={setup_cmd}",
         "-e",
         f"NUM_STAGES={len(stages)}",
+        "-e",
+        f"HOST_UID={os.getuid()}",
+        "-e",
+        f"HOST_GID={os.getgid()}",
     ]
 
     for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
