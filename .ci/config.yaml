@@ -2,12 +2,7 @@ repo:
   url: https://github.com/InfiniTensor/InfiniOps.git
   branch: master
 
-registry:
-  url: ""                              # TODO: Harbor not ready yet
-  project: infiniops
-  credentials_env: REGISTRY_TOKEN
-
-images: 
+images:
   nvidia:
     dockerfile: .ci/images/nvidia/
     build_args:
@@ -17,20 +12,22 @@ images:
     build_args:
       BASE_IMAGE: ascendhub.huawei.com/public-ascendhub/ascend-pytorch:24.0.0
     private_sdk:
-      source: "${PRIVATE_SDK_URL}"
+      source_env: PRIVATE_SDK_URL
 
 jobs:
   nvidia_gpu:
-    image: stable
+    image: latest
     platform: nvidia
     resources:
       gpu_ids: "0"                       # 指定 GPU ID，如 "0" "0,2" "all"
-      gpu_type: A100
       memory: 32GB
+      shm_size: 16g                      # 避免 PyTorch 默认 64MB SHMEM 不足
       timeout: 3600
 
     setup: pip install .[dev]
+    # env:                             # 可选，注入容器环境变量
+    #   MY_VAR: value
 
     stages:
       - name: test
-        run: pytest tests/ -v --tb=short --junitxml=/workspace/test-results.xml
+        run: pytest tests/ -n auto -v --tb=short --junitxml=/workspace/results/test-results.xml
