@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +29,7 @@ def get_git_commit(ref="HEAD"):
         capture_output=True,
         text=True,
     )
+
     if result.returncode != 0:
         print(f"error: failed to get commit hash for `{ref}`", file=sys.stderr)
         sys.exit(1)
@@ -43,7 +45,59 @@ def has_dockerfile_changed(dockerfile_dir, base_ref="HEAD~1"):
         text=True,
     )
 
+    if result.returncode != 0:
+        print(
+            "warning: git diff failed (shallow clone or initial commit?);"
+            " assuming Dockerfile changed",
+            file=sys.stderr,
+        )
+        return True
+
     return bool(result.stdout.strip())
+
+
+def docker_login(registry_cfg, dry_run):
+    """Log in to the registry using `credentials_env` token.
+
+    Returns True on success.
+
+    NOTE: Registry support is currently unused (`config.yaml` has no registry
+    section). Retained for future integration with an external image management
+    system.
+    """
+    credentials_env = registry_cfg.get("credentials_env")
+    registry_url = registry_cfg.get("url", "")
+
+    if not credentials_env or not registry_url:
+        return True
+
+    token = os.environ.get(credentials_env)
+
+    if not token:
+        print(
+            f"error: {credentials_env} not set, cannot login",
+            file=sys.stderr,
+        )
+        return False
+
+    if dry_run:
+        print(
+            f"[dry-run] echo <token> | docker login {registry_url}"
+            " --username token --password-stdin"
+        )
+        return True
+
+    result = subprocess.run(
+        ["docker", "login", registry_url, "--username", "token", "--password-stdin"],
+        input=token,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        print("error: docker login failed", file=sys.stderr)
+        return False
+
+    return True
 
 
 def build_image_tag(registry_url, project, platform, tag):
@@ -53,46 +107,53 @@ def build_image_tag(registry_url, project, platform, tag):
     return f"{project}-ci/{platform}:{tag}"
 
 
-def build_image(platform, platform_cfg, registry_cfg, commit, push, dry_run):
+def build_image(platform, platform_cfg, registry_cfg, commit, push, dry_run, logged_in):
     """Build a single platform image. Returns True on success."""
     registry_url = registry_cfg.get("url", "")
     project = registry_cfg.get("project", "infiniops")
     dockerfile_dir = platform_cfg["dockerfile"]
-
     commit_tag = build_image_tag(registry_url, project, platform, commit)
     latest_tag = build_image_tag(registry_url, project, platform, "latest")
 
     build_args_cfg = platform_cfg.get("build_args", {})
     build_cmd = ["docker", "build", "--network", "host"]
+
     for key, value in build_args_cfg.items():
         build_cmd.extend(["--build-arg", f"{key}={value}"])
 
-    for proxy_var in ("http_proxy", "https_proxy", "no_proxy"):
-        proxy_val = os.environ.get(proxy_var) or os.environ.get(proxy_var.upper())
+    for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"):
+        proxy_val = os.environ.get(proxy_var) or os.environ.get(proxy_var.lower())
+
         if proxy_val:
             build_cmd.extend(["--build-arg", f"{proxy_var}={proxy_val}"])
+            build_cmd.extend(["--build-arg", f"{proxy_var.lower()}={proxy_val}"])
 
     private_sdk = platform_cfg.get("private_sdk", {})
+
     if private_sdk:
-        sdk_url = private_sdk.get("source", "")
-        if sdk_url.startswith("${") and sdk_url.endswith("}"):
-            env_var = sdk_url[2:-1]
-            sdk_url = os.environ.get(env_var, "")
+        source_env = private_sdk.get("source_env", "")
+        sdk_url = os.environ.get(source_env, "") if source_env else ""
+
         if sdk_url:
             build_cmd.extend(["--build-arg", f"PRIVATE_SDK_URL={sdk_url}"])
 
     build_cmd.extend(["-t", commit_tag, "-t", latest_tag, dockerfile_dir])
 
     if dry_run:
-        print(f"[dry-run] {' '.join(build_cmd)}")
+        print(f"[dry-run] {shlex.join(build_cmd)}")
+
         if push:
-            print(f"[dry-run] docker push {commit_tag}")
-            print(f"[dry-run] docker push {latest_tag}")
+            if not logged_in:
+                print("[dry-run] (skipping push: docker login failed)")
+            else:
+                print(f"[dry-run] docker push {commit_tag}")
+                print(f"[dry-run] docker push {latest_tag}")
 
         return True
 
     print(f"==> building {platform}: {commit_tag}", file=sys.stderr)
     result = subprocess.run(build_cmd)
+
     if result.returncode != 0:
         error = {
             "stage": "build",
@@ -105,9 +166,14 @@ def build_image(platform, platform_cfg, registry_cfg, commit, push, dry_run):
         return False
 
     if push:
+        if not logged_in:
+            print("error: docker login failed, cannot push", file=sys.stderr)
+            return False
+
         for tag in (commit_tag, latest_tag):
             print(f"==> pushing {tag}", file=sys.stderr)
             push_result = subprocess.run(["docker", "push", tag])
+
             if push_result.returncode != 0:
                 error = {
                     "stage": "push",
@@ -145,7 +211,7 @@ def main():
     parser.add_argument(
         "--push",
         action="store_true",
-        help="Push images to registry after building",
+        help="Push images to registry after building (requires registry in config)",
     )
     parser.add_argument(
         "--force",
@@ -179,6 +245,7 @@ def main():
         platforms = [args.platform]
 
     commit = get_git_commit(args.commit)
+    logged_in = docker_login(registry_cfg, args.dry_run) if args.push else True
     failed = False
 
     for platform in platforms:
@@ -187,7 +254,8 @@ def main():
 
         if not Path(dockerfile_dir).is_dir():
             print(
-                f"warning: dockerfile directory `{dockerfile_dir}` does not exist, skipping {platform}",
+                f"warning: dockerfile directory `{dockerfile_dir}` does not exist,"
+                f" skipping {platform}",
                 file=sys.stderr,
             )
             continue
@@ -197,8 +265,15 @@ def main():
             continue
 
         ok = build_image(
-            platform, platform_cfg, registry_cfg, commit, args.push, args.dry_run
+            platform,
+            platform_cfg,
+            registry_cfg,
+            commit,
+            args.push,
+            args.dry_run,
+            logged_in=logged_in,
         )
+
         if not ok:
             failed = True
 
