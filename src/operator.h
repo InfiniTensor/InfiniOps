@@ -103,10 +103,10 @@ class Operator : public OperatorBase {
     DispatchFunc<ActiveDevices>(
         tensor.device().type(),
         [&](auto tag) {
-          constexpr Device::Type dev = decltype(tag)::value;
-          if constexpr (std::is_constructible_v<Operator<Key, dev>,
+          constexpr Device::Type kDev = decltype(tag)::value;
+          if constexpr (std::is_constructible_v<Operator<Key, kDev>,
                                                 const Tensor&, Args...>) {
-            op_ptr = std::make_unique<Operator<Key, dev>>(
+            op_ptr = std::make_unique<Operator<Key, kDev>>(
                 tensor, std::forward<Args>(args)...);
           } else {
             assert(false && "operator is not implemented for this device");

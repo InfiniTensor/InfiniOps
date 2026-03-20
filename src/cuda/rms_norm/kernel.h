@@ -36,11 +36,14 @@ class CudaRmsNorm : public RmsNorm {
 
     int block_size = GetOptimalBlockSize();
 
-    DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
-        out.dtype(),
-        [&](auto tag) {
-          using T = typename decltype(tag)::type;
+    DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
+                 AllCudaBlockSizes>(
+        {static_cast<int64_t>(out.dtype()), block_size},
+        [&](auto list_tag) {
+          using T = TypeMapType<ListGet<0>(list_tag)>;
+          constexpr int kBlockSize = ListGet<1>(list_tag);
 
+<<<<<<< HEAD
 #define LAUNCH_RMS_NORM_KERNEL(BLOCK_SIZE)                            \
   RmsNormKernel<BLOCK_SIZE, float, T, T>                              \
       <<<num_blocks, BLOCK_SIZE, 0, cuda_stream>>>(                   \
@@ -62,6 +65,14 @@ class CudaRmsNorm : public RmsNorm {
           }
 
 #undef LAUNCH_RMS_NORM_KERNEL
+          == == == = RmsNormKernel<kBlockSize, float, T, T>
+              <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
+                  reinterpret_cast<T*>(out.data()), stride_out_batch,
+                  stride_out_nhead, reinterpret_cast<const T*>(input.data()),
+                  stride_input_batch, stride_input_nhead,
+                  reinterpret_cast<const T*>(weight.data()), nhead_, dim_,
+                  eps_);
+>>>>>>> ae94669 (feat: add a convenient interface for any `int64_t`-convertible types and use `DispatchFunc()` to dispatch `DataType` and block sizes with a single call.)
         },
         "CudaRmsNorm::operator()");
   }

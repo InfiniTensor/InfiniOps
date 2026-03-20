@@ -302,6 +302,16 @@ auto DispatchFunc(ValueType value, Functor &&func,
                                    std::forward<Args>(args)...);
 }
 
+// Interface for Any `int64_t`-convertible Types
+template <typename... Lists, typename Functor, typename... Args>
+auto DispatchFunc(std::initializer_list<int64_t> keys, Functor &&func,
+                  std::string_view context_str = "", Args &&...args) {
+  std::vector<int64_t> v_keys(keys);
+  return DispatchFunc<Lists...>(v_keys, 0, std::forward<Functor>(func),
+                                context_str, List<>{},
+                                std::forward<Args>(args)...);
+}
+
 }  // namespace infini::ops
 
 #endif
