@@ -77,6 +77,34 @@ if(WITH_ILUVATAR)
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
 
+if(WITH_HYGON)
+    set(HYGON_PATTERNS
+        "cuda/*.cc"
+        "cuda/*.cpp"
+        "cuda/*.cu"
+        "hygon/*.cc"
+        "hygon/*.cpp"
+        "hygon/*.cu"
+    )
+
+    file(GLOB_RECURSE HYGON_SOURCES CONFIGURE_DEPENDS ${HYGON_PATTERNS})
+
+    enable_language(CUDA)
+
+    target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
+    target_sources(infiniops PRIVATE ${HYGON_SOURCES})
+
+    find_package(CUDAToolkit REQUIRED)
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
+
+    set_target_properties(infiniops PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+    )
+
+    list(APPEND DEVICE_LIST "hygon")
+endif()
+
 if(WITH_METAX)
     set(METAX_PATTERNS
         "cuda/*.cc"
@@ -191,7 +219,7 @@ if(GENERATE_PYTHON_BINDINGS)
     set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
 
     # TODO: There might be a better solution.
-    if(WITH_NVIDIA OR WITH_ILUVATAR)
+    if(WITH_NVIDIA OR WITH_ILUVATAR OR WITH_HYGON)
         set_source_files_properties(${PYBIND11_SOURCES} PROPERTIES LANGUAGE CUDA)
     endif()
 

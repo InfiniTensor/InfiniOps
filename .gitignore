@@ -1,5 +1,7 @@
 # Generated files
 build/
+build-*/
+cmake-build-*/
 generated/
 
 # Prerequisites

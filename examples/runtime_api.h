@@ -19,6 +19,15 @@
 #define DEVICE_MEMCPY_HOST_TO_DEVICE cudaMemcpyHostToDevice
 #define DEVICE_MEMCPY_DEVICE_TO_HOST cudaMemcpyDeviceToHost
 #define DEFAULT_DEVICE_TYPE Device::Type::kIluvatar
+#elif WITH_HYGON
+#include <cuda_runtime.h>
+#define DEVICE_MALLOC cudaMalloc
+#define DEVICE_FREE cudaFree
+#define DEVICE_MEMCPY cudaMemcpy
+#define DEVICE_MEMSET cudaMemset
+#define DEVICE_MEMCPY_HOST_TO_DEVICE cudaMemcpyHostToDevice
+#define DEVICE_MEMCPY_DEVICE_TO_HOST cudaMemcpyDeviceToHost
+#define DEFAULT_DEVICE_TYPE Device::Type::kHygon
 #elif WITH_METAX
 #include <mcr/mc_runtime.h>
 #define DEVICE_MALLOC mcMalloc

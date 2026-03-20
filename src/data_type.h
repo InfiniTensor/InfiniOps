@@ -5,10 +5,7 @@
 #include <cstring>
 #include <string>
 
-#ifdef WITH_NVIDIA
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#elif defined(WITH_ILUVATAR)
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR) || defined(WITH_HYGON)
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #elif defined(WITH_METAX)
@@ -201,7 +198,7 @@ DEFINE_DATA_TYPE_MAPPING(kInt64, std::int64_t)
 DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
 DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
 
-#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR) || defined(WITH_HYGON)
 DEFINE_DATA_TYPE_MAPPING(kFloat16, half)
 DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
 #elif defined(WITH_METAX)

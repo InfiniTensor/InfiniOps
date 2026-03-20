@@ -1,15 +1,8 @@
 #ifndef INFINI_OPS_COMMON_CUDA_KERNEL_COMMONS_H_
 #define INFINI_OPS_COMMON_CUDA_KERNEL_COMMONS_H_
 
-#ifdef WITH_NVIDIA
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR) || defined(WITH_HYGON)
 #include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
-using cuda_bfloat16 = nv_bfloat16;
-using cuda_bfloat162 = nv_bfloat162;
-#elif defined(WITH_ILUVATAR)
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
 #include <cuda_runtime.h>
 using cuda_bfloat16 = nv_bfloat16;
 using cuda_bfloat162 = nv_bfloat162;
@@ -39,7 +32,7 @@ constexpr int CUDA_BLOCK_SIZE_512 = 512;
 constexpr int CUDA_BLOCK_SIZE_1024 = 1024;
 constexpr int CUDA_BLOCK_SIZE_2048 = 2048;
 
-#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
+#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR) || defined(WITH_HYGON)
 // Cache `cudaDeviceProp` per device, initialized once at first access.
 class DevicePropertyCache {
  public:
