@@ -2,6 +2,10 @@ file(GLOB_RECURSE EXAMPLE_SOURCES CONFIGURE_DEPENDS "*.cc")
 
 # Iterate through each file and create an executable.
 foreach(source_file ${EXAMPLE_SOURCES})
+    if(WITH_HYGON AND source_file MATCHES "/gemm\\.cc$")
+        continue()
+    endif()
+
     get_filename_component(example_name ${source_file} NAME_WE)
 
     add_executable(${example_name} ${source_file})
