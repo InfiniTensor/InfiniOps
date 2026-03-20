@@ -5,7 +5,7 @@
 
 #include "base/add.h"
 #include "common/generic_utils.h"
-#include "cpu/cast.h"
+#include "cpu/cast_.h"
 
 namespace infini::ops {
 
@@ -52,8 +52,9 @@ class Operator<Add, Device::Type::kCpu> : public Add {
       auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
                              out_strides_.data());
 
-      out_ptr[out_idx] = Cast<T>(Cast<ComputeType>(input_ptr[input_idx]) +
-                                 Cast<ComputeType>(other_ptr[other_idx]));
+      out_ptr[out_idx] = Cast<device_type_, T>(
+          Cast<device_type_, ComputeType>(input_ptr[input_idx]) +
+          Cast<device_type_, ComputeType>(other_ptr[other_idx]));
     }
   }
 };

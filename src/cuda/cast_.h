@@ -1,8 +1,16 @@
-#ifndef INFINI_OPS_COMMON_CAMBRICON_CAST_H_
-#define INFINI_OPS_COMMON_CAMBRICON_CAST_H_
+#ifndef INFINI_OPS_COMMON_CUDA_CAST_H_
+#define INFINI_OPS_COMMON_CUDA_CAST_H_
 
-#include "bang_bf16.h"
-#include "bang_fp16.h"
+#ifdef WITH_NVIDIA
+#include <cuda_runtime.h>
+#elif defined(WITH_ILUVATAR)
+#include <cuda_runtime.h>
+#elif defined(WITH_METAX)
+#include <mcr/mc_runtime.h>
+#elif defined(WITH_MOORE)
+#include <musa_runtime.h>
+#endif
+
 #include "data_type.h"
 
 namespace infini::ops {
@@ -16,7 +24,7 @@ template <typename T>
 __host__ __device__ constexpr float ToFloatHelper(T&& x) {
   using PureSrc = PureType<T>;
   if constexpr (IsBFloat16<PureSrc>) {
-    return __bfloat162float__(x);
+    return __bfloat162float(x);
   } else if constexpr (IsFP16<PureSrc>) {
     return __half2float(x);
   } else {
@@ -28,9 +36,9 @@ template <typename Dst>
 __host__ __device__ constexpr Dst FromFloatHelper(float f) {
   using PureDst = PureType<Dst>;
   if constexpr (IsBFloat16<PureDst>) {
-    return __float2bfloat16__(f);
+    return __float2bfloat16(f);
   } else if constexpr (IsFP16<PureDst>) {
-    return __float2half__(f);
+    return __float2half(f);
   } else {
     return static_cast<Dst>(f);
   }
@@ -57,21 +65,21 @@ __host__ __device__ constexpr Dst HardwareCast(Src&& x, PriorityLow) {
   }
 
 DEFINE_DIRECT_CAST(
-    __bfloat162int_rz__,
+    __bfloat162int_rn,
     std::is_same_v<PureType<Dst>, int>&& IsBFloat16<PureType<Src>>)
 DEFINE_DIRECT_CAST(
-    __bfloat162short_rz__,
+    __bfloat162short_rn,
     std::is_same_v<PureType<Dst>, short>&& IsBFloat16<PureType<Src>>)
 DEFINE_DIRECT_CAST(
-    __int2bfloat16_rn__,
+    __int2bfloat16_rn,
     IsBFloat16<PureType<Dst>>&& std::is_same_v<PureType<Src>, int>)
-DEFINE_DIRECT_CAST(__int2half_rn__,
+DEFINE_DIRECT_CAST(__int2half_rn,
                    IsFP16<PureType<Dst>>&& std::is_same_v<PureType<Src>, int>)
 DEFINE_DIRECT_CAST(
-    __float2bfloat16__,
+    __double2bfloat16,
     IsBFloat16<PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
 DEFINE_DIRECT_CAST(
-    __float2half__,
+    __double2half,
     IsFP16<PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
 DEFINE_DIRECT_CAST(__half, IsFP16<PureType<Dst>>&& IsBFloat16<PureType<Src>>)
 #undef DEFINE_DIRECT_CAST
@@ -89,8 +97,8 @@ __host__ __device__ Dst Cast(Src&& x) {
   if constexpr (std::is_same_v<PureSrc, PureDst>) {
     return std::forward<Src>(x);
   } else {
-    return detail::HardwareCast<PureDst>(std::forward<Src>(x),
-                                         detail::PriorityHigh{});
+    return detail::HardwareCast<device_type_, PureDst>(std::forward<Src>(x),
+                                                       detail::PriorityHigh{});
   }
 }
 

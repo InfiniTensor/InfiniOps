@@ -93,7 +93,7 @@ class OperatorBase {
   std::size_t workspace_size_in_bytes_{0};
 };
 
-template <typename Key, Device::Type device = Device::Type::kCount>
+template <typename Key, Device::Type device_type = Device::Type::kCount>
 class Operator : public OperatorBase {
  public:
   template <typename... Args>
@@ -157,6 +157,9 @@ class Operator : public OperatorBase {
   auto operator()(Args&&... args) const {
     return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
   }
+
+ protected:
+  static constexpr Device::Type device_type_{device_type};
 };
 
 }  // namespace infini::ops
