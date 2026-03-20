@@ -1,12 +1,12 @@
 #ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_CUH_
 #define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_CUH_
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-
 #include <cmath>
 #include <cstddef>
 #include <cub/block/block_reduce.cuh>
+
+#include "common/cuda/cast.h"
+#include "common/cuda/kernel_commons.h"
 
 namespace infini::ops {
 
@@ -14,14 +14,7 @@ namespace {
 
 template <typename Data, typename Compute>
 __device__ __forceinline__ Data ExpAndCast(Compute x) {
-  Compute e = std::exp(x);
-  if constexpr (std::is_same_v<Data, half>) {
-    return __float2half(static_cast<float>(e));
-  } else if constexpr (std::is_same_v<Data, __nv_bfloat16>) {
-    return __float2bfloat16(static_cast<float>(e));
-  } else {
-    return static_cast<Data>(e);
-  }
+  return Cast<Data>(expf(Cast<float>(x)));
 }
 
 struct BlockMaxOp {
@@ -48,7 +41,7 @@ __device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
                                             size_t count) {
   Compute thread_sum = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    thread_sum += Compute(data_ptr[i]);
+    thread_sum += Cast<Compute>(data_ptr[i]);
   }
   using BlockReduce = cub::BlockReduce<Compute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
@@ -83,10 +76,10 @@ __global__ void CausalSoftmaxKernel(
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
     if (col < valid_len) {
       Compute diff =
-          static_cast<Compute>(input_row[col]) - static_cast<Compute>(max_val);
+          Cast<Compute>(input_row[col]) - Cast<Compute>(max_val);
       out_row[col] = ExpAndCast<Data, Compute>(diff);
     } else {
-      out_row[col] = Data(0);
+      out_row[col] = Cast<Data>(0.0f);
     }
   }
   __syncthreads();
@@ -100,14 +93,8 @@ __global__ void CausalSoftmaxKernel(
   __syncthreads();
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
-    Compute quot = static_cast<Compute>(out_row[col]) / sum_val;
-    if constexpr (std::is_same_v<Data, half>) {
-      out_row[col] = __float2half(static_cast<float>(quot));
-    } else if constexpr (std::is_same_v<Data, __nv_bfloat16>) {
-      out_row[col] = __float2bfloat16(static_cast<float>(quot));
-    } else {
-      out_row[col] = static_cast<Data>(quot);
-    }
+    Compute quot = Cast<Compute>(out_row[col]) / sum_val;
+    out_row[col] = Cast<Data>(quot);
   }
 }
 

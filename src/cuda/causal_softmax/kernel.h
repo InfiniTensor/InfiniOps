@@ -3,10 +3,6 @@
 
 #include <cstdint>
 
-// clang-format off
-#include <cuda_runtime.h> // TODO: Remove this
-// clang-format on
-
 #include "base/causal_softmax.h"
 #include "common/cuda/kernel_commons.h"
 #include "cuda/causal_softmax/kernel.cuh"
