@@ -25,6 +25,7 @@ class RmsNorm : public Operator<RmsNorm> {
   RmsNorm(const Tensor input, const Tensor weight, Tensor out)
       : RmsNorm{input, weight, 1e-6f, out} {}
 
+  // TODO: Type of `eps` should be `std::optional<float>` instead of `float`.
   virtual void operator()(const Tensor input, const Tensor weight, float eps,
                           Tensor out) const = 0;
 
