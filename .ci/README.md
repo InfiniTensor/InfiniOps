@@ -241,3 +241,154 @@ Agent 自动检测 GPU 利用率和系统内存，动态决定并行度：
 - `success` / `failure` — job 执行完成
 
 Status context 格式：`ci/infiniops/{job_name}`
+
+---
+
+## 多机部署指南
+
+以 NVIDIA + Iluvatar 双平台为例，说明如何在两台机器上部署 Agent 并实现跨平台并行测试。
+
+### 前置条件（两台机器共同）
+
+```bash
+# 1. Python 3.10+ 和依赖
+pip install pyyaml
+
+# 2. Docker 已安装
+docker --version
+
+# 3. 克隆仓库
+git clone https://github.com/InfiniTensor/InfiniOps.git
+cd InfiniOps
+```
+
+### NVIDIA 机器配置
+
+```bash
+# 1. 安装 NVIDIA Container Toolkit
+#    参考: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
+# 2. 验证 GPU 可见
+nvidia-smi
+
+# 3. 构建 CI 镜像
+python .ci/build.py --platform nvidia
+```
+
+### Iluvatar 机器配置
+
+```bash
+# 1. 确认 CoreX 运行时已安装
+ixsmi
+
+# 2. 确认基础镜像已导入（非公开镜像，需提前准备）
+docker images | grep corex    # 应有 corex:qs_pj20250825
+
+# 3. 构建 CI 镜像
+python .ci/build.py --platform iluvatar
+```
+
+### 启动 Agent 服务
+
+在各自机器上启动 Agent：
+
+```bash
+# NVIDIA 机器
+python .ci/agent.py serve --platform nvidia --port 8080
+
+# Iluvatar 机器
+python .ci/agent.py serve --platform iluvatar --port 8080
+```
+
+验证连通性：
+
+```bash
+curl http://<nvidia-ip>:8080/health
+curl http://<iluvatar-ip>:8080/health
+```
+
+### 配置远程 Agent 地址
+
+在触发端的 `config.yaml` 中添加 `agents` 段：
+
+```yaml
+agents:
+  nvidia:
+    url: http://<nvidia-ip>:8080
+  iluvatar:
+    url: http://<iluvatar-ip>:8080
+```
+
+### 触发跨平台测试
+
+```bash
+# 一键运行所有平台的 job
+python .ci/agent.py run --branch master
+
+# 预览模式（不实际执行）
+python .ci/agent.py run --branch master --dry-run --no-status
+
+# 只运行指定平台
+python .ci/agent.py run --branch master --platform nvidia
+```
+
+### 可选配置
+
+#### GitHub Status 上报
+
+两台机器均设置环境变量，各自上报所属平台的测试状态：
+
+```bash
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+#### API Token 认证
+
+Agent 暴露在非可信网络时，建议启用 Token 认证：
+
+```bash
+# 启动 Agent 时指定 token
+python .ci/agent.py serve --platform nvidia --port 8080 --api-token <secret>
+
+# 或通过环境变量
+export API_TOKEN=<secret>
+```
+
+#### GitHub Webhook 自动触发
+
+在 GitHub repo → Settings → Webhooks 中为每台机器添加 Webhook：
+
+| 字段 | 值 |
+|---|---|
+| Payload URL | `http://<机器IP>:8080/webhook` |
+| Content type | `application/json` |
+| Secret | 与 `--webhook-secret` 一致 |
+| Events | `push` 和 `pull_request` |
+
+启动时配置 secret：
+
+```bash
+python .ci/agent.py serve --platform nvidia --port 8080 --webhook-secret <github-secret>
+
+# 或通过环境变量
+export WEBHOOK_SECRET=<github-secret>
+```
+
+### 验证清单
+
+```bash
+# 1. 各机器单独 dry-run
+python .ci/agent.py run --branch master --platform nvidia --dry-run --no-status
+python .ci/agent.py run --branch master --platform iluvatar --dry-run --no-status
+
+# 2. 健康检查
+curl http://<nvidia-ip>:8080/health
+curl http://<iluvatar-ip>:8080/health
+
+# 3. 查看资源状态
+curl http://<nvidia-ip>:8080/status
+curl http://<iluvatar-ip>:8080/status
+
+# 4. 跨平台一键测试
+python .ci/agent.py run --branch master
+```
