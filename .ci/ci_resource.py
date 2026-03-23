@@ -30,13 +30,14 @@ class SystemResources:
 class ResourcePool:
     """Thread-safe GPU and system resource manager.
 
-    Detects available GPUs via platform-specific tools (nvidia-smi, ixsmi)
+    Detects available GPUs via platform-specific tools (nvidia-smi, ixsmi, mx-smi)
     and tracks allocations to enable dynamic parallel scheduling.
     """
 
     GPU_QUERY_TOOLS = {
         "nvidia": "nvidia-smi",
         "iluvatar": "ixsmi",
+        "metax": "mx-smi",
     }
 
     def __init__(self, platform, utilization_threshold=10):
@@ -56,6 +57,9 @@ class ResourcePool:
 
     def detect_gpus(self) -> list[GpuInfo]:
         """Query GPU status via platform-specific CLI tool."""
+        if self._platform == "metax":
+            return self._detect_gpus_metax()
+
         tool = self.GPU_QUERY_TOOLS.get(self._platform)
 
         if not tool:
@@ -98,6 +102,83 @@ class ResourcePool:
             except (ValueError, IndexError):
                 continue
 
+        return gpus
+
+    def _detect_gpus_metax(self) -> list[GpuInfo]:
+        """Parse mx-smi output for MetaX GPUs.
+
+        Runs --show-memory and --show-usage separately and merges results.
+        Output format example:
+            GPU#0  MXC550  0000:1a:00.0
+                Memory
+                    vis_vram total  : 67108864 KB
+                    vis_vram used   : 879032 KB
+                Utilization
+                    GPU             : 0 %
+        """
+        import re
+
+        def run_mxsmi(flag):
+            try:
+                r = subprocess.run(
+                    ["mx-smi", flag],
+                    capture_output=True, text=True, timeout=10,
+                )
+                return r.stdout if r.returncode == 0 else ""
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                return ""
+
+        mem_out = run_mxsmi("--show-memory")
+        util_out = run_mxsmi("--show-usage")
+
+        # Parse memory: collect {index: (used_kb, total_kb)}
+        mem = {}
+        current = None
+        for line in mem_out.splitlines():
+            m = re.match(r"GPU#(\d+)", line.strip())
+            if m:
+                current = int(m.group(1))
+                mem[current] = [0.0, 0.0]
+                continue
+            if current is None:
+                continue
+            m = re.search(r"vis_vram total\s*:\s*([\d.]+)\s*KB", line)
+            if m:
+                mem[current][1] = float(m.group(1)) / 1024  # KB -> MB
+            m = re.search(r"vis_vram used\s*:\s*([\d.]+)\s*KB", line)
+            if m:
+                mem[current][0] = float(m.group(1)) / 1024  # KB -> MB
+
+        # Parse utilization: collect {index: utilization_pct}
+        util = {}
+        current = None
+        in_util = False
+        for line in util_out.splitlines():
+            m = re.match(r"GPU#(\d+)", line.strip())
+            if m:
+                current = int(m.group(1))
+                in_util = False
+                continue
+            if current is None:
+                continue
+            if "Utilization" in line:
+                in_util = True
+                continue
+            if in_util:
+                m = re.match(r"\s*GPU\s*:\s*([\d.]+)\s*%", line)
+                if m:
+                    util[current] = float(m.group(1))
+                    in_util = False
+
+        gpus = []
+        for idx in sorted(mem):
+            used_mb, total_mb = mem[idx]
+            gpus.append(GpuInfo(
+                index=idx,
+                memory_used_mb=used_mb,
+                memory_total_mb=total_mb,
+                utilization_pct=util.get(idx, 0.0),
+            ))
         return gpus
 
     def detect_system_resources(self) -> SystemResources:
