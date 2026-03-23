@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -717,13 +717,18 @@ def cmd_run(args):
 
     if args.dry_run:
         for name, agent_url in jobs_to_dispatch:
-            print(f"[dry-run] dispatch {name} to {agent_url}")
+            platform, _, job = name.partition("_")
+            print(f"[dry-run] dispatch {platform} {job} job to {agent_url}")
     else:
-        # Dispatch all jobs, then poll concurrently
+        # Dispatch all jobs, then poll concurrently.
         dispatched = []  # [(name, agent_url, job_id)]
 
         for name, agent_url in jobs_to_dispatch:
-            print(f"==> dispatching {name} to {agent_url}", file=sys.stderr)
+            platform, _, job = name.partition("_")
+            print(
+                f"==> dispatching {platform} {job} job to {agent_url}",
+                file=sys.stderr,
+            )
             job_id = dispatch_remote_job(
                 agent_url, name, branch, commit_sha, args.image_tag,
                 api_token=api_token or None,
@@ -743,14 +748,21 @@ def cmd_run(args):
                     for name, url, jid in dispatched
                 }
 
-                for future in futures:
+                for future in as_completed(futures):
                     name, _, _ = futures[future]
                     result = future.result()
 
                     if result:
+                        state = result.get("state", "unknown")
+                        duration = result.get("duration_seconds", 0)
+                        tag = "PASS" if state == STATE_SUCCESS else "FAIL"
+                        print(
+                            f"<== {tag}  {name}  ({duration:.0f}s)",
+                            file=sys.stderr,
+                        )
                         results.append(result)
                     else:
-                        print(f"    timeout waiting for {name}", file=sys.stderr)
+                        print(f"<== TIMEOUT  {name}", file=sys.stderr)
                         results.append({"job_name": name, "state": "timeout"})
 
     # Summary
