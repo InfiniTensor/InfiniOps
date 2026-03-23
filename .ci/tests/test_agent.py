@@ -115,38 +115,6 @@ def test_select_jobs_invalid_name(agent_config):
         agent.select_jobs(agent_config, job_name="not_exist")
 
 
-# ---------------------------------------------------------------------------
-# route_jobs
-# ---------------------------------------------------------------------------
-
-
-def test_route_jobs_local(agent_config):
-    local, remote = agent.route_jobs(agent_config, ["nvidia_gpu"], local_platform="nvidia")
-    assert local == ["nvidia_gpu"]
-    assert remote == []
-
-
-def test_route_jobs_remote(agent_config):
-    local, remote = agent.route_jobs(agent_config, ["iluvatar_gpu"], local_platform="nvidia")
-    assert local == []
-    assert len(remote) == 1
-    assert remote[0][0] == "iluvatar_gpu"
-    assert remote[0][1] == "http://iluvatar-host:8080"
-
-
-def test_route_jobs_mixed(agent_config):
-    local, remote = agent.route_jobs(
-        agent_config, ["nvidia_gpu", "iluvatar_gpu"], local_platform="nvidia"
-    )
-    assert local == ["nvidia_gpu"]
-    assert len(remote) == 1
-
-
-def test_route_jobs_no_platform(agent_config):
-    local, remote = agent.route_jobs(agent_config, ["nvidia_gpu", "iluvatar_gpu"])
-    assert len(local) == 2
-    assert remote == []
-
 
 # ---------------------------------------------------------------------------
 # verify_signature

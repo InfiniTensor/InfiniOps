@@ -2,6 +2,7 @@
 """Resource detection and allocation for CI Runner Agent."""
 
 import os
+import shutil
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -239,3 +240,12 @@ def parse_memory_requirement(job_config) -> float:
         return float(memory) * 1024  # Default: GB
     except ValueError:
         return 0
+
+
+def detect_platform():
+    """Auto-detect the current platform by probing GPU query tools on PATH."""
+    for platform, tool in ResourcePool.GPU_QUERY_TOOLS.items():
+        if shutil.which(tool):
+            return platform
+
+    return None

@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ci_resource import GPU_STYLE_NVIDIA, GPU_STYLE_NONE
+from ci_resource import GPU_STYLE_NVIDIA, GPU_STYLE_NONE, detect_platform
 from utils import get_git_commit, load_config
 
 
@@ -183,6 +183,42 @@ def build_docker_args(
     return args
 
 
+def resolve_job_names(jobs, platform, job=None):
+    """Resolve job names for a platform.
+
+    - ``job=None`` — all jobs for the platform.
+    - ``job="gpu"`` (short name) — matched via ``short_name`` field.
+    - ``job="nvidia_gpu"`` (full name) — direct lookup.
+    """
+    if job and job in jobs:
+        return [job]
+
+    if job:
+        matches = [
+            name for name, cfg in jobs.items()
+            if cfg.get("platform") == platform and cfg.get("short_name") == job
+        ]
+
+        if not matches:
+            print(
+                f"error: job {job!r} not found for platform {platform!r}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        return matches
+
+    matches = [
+        name for name, cfg in jobs.items() if cfg.get("platform") == platform
+    ]
+
+    if not matches:
+        print(f"error: no jobs for platform {platform!r}", file=sys.stderr)
+        sys.exit(1)
+
+    return matches
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run Docker CI pipeline")
     parser.add_argument(
@@ -191,8 +227,12 @@ def main():
         default=Path(__file__).resolve().parent / "config.yaml",
         help="Path to config.yaml",
     )
-    parser.add_argument("--branch", type=str, help="Override repo branch")
-    parser.add_argument("--job", type=str, help="Job name to run (default: first job)")
+    parser.add_argument("--branch", type=str, help="Override repo branch (default: config repo.branch)")
+    parser.add_argument(
+        "--job",
+        type=str,
+        help="Job name: short name (gpu) or full name (nvidia_gpu). Default: all jobs",
+    )
     parser.add_argument(
         "--stage",
         type=str,
@@ -226,53 +266,68 @@ def main():
     repo_url = repo.get("url", "https://github.com/InfiniTensor/InfiniOps.git")
     branch = args.branch or repo.get("branch", "master")
 
+    platform = detect_platform()
+
+    if not platform:
+        print(
+            "error: could not detect platform (no nvidia-smi or ixsmi found)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"platform: {platform}", file=sys.stderr)
+
     jobs = config.get("jobs", {})
 
     if not jobs:
         print("error: no jobs in config", file=sys.stderr)
         sys.exit(1)
 
-    job_name = args.job or next(iter(jobs))
+    job_names = resolve_job_names(jobs, platform, job=args.job)
+    failed = 0
 
-    if job_name not in jobs:
-        print(f"error: job {job_name!r} not in config", file=sys.stderr)
-        sys.exit(1)
+    for job_name in job_names:
+        job = jobs[job_name]
+        all_stages = job.get("stages", [])
 
-    job = jobs[job_name]
-    all_stages = job.get("stages", [])
+        if args.stage:
+            stages = [s for s in all_stages if s["name"] == args.stage]
 
-    if args.stage:
-        stages = [s for s in all_stages if s["name"] == args.stage]
+            if not stages:
+                print(f"error: stage {args.stage!r} not found in {job_name}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            stages = all_stages
 
-        if not stages:
-            print(f"error: stage {args.stage!r} not found", file=sys.stderr)
-            sys.exit(1)
-    else:
-        stages = all_stages
+        job_platform = job.get("platform", platform)
+        commit = get_git_commit()
+        results_dir = build_results_dir(args.results_dir, job_platform, stages, commit)
 
-    platform = job.get("platform", "nvidia")
-    commit = get_git_commit()
-    results_dir = build_results_dir(args.results_dir, platform, stages, commit)
+        docker_args = build_docker_args(
+            config,
+            job_name,
+            repo_url,
+            branch,
+            stages,
+            "/workspace",
+            args.image_tag,
+            gpu_id_override=args.gpu_id,
+            results_dir=results_dir,
+        )
 
-    workdir = "/workspace"
-    docker_args = build_docker_args(
-        config,
-        job_name,
-        repo_url,
-        branch,
-        stages,
-        workdir,
-        args.image_tag,
-        gpu_id_override=args.gpu_id,
-        results_dir=results_dir,
-    )
+        if args.dry_run:
+            print(shlex.join(docker_args))
+            continue
 
-    if args.dry_run:
-        print(shlex.join(docker_args))
-        return
+        print(f"==> running job: {job_name}", file=sys.stderr)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        returncode = subprocess.run(docker_args).returncode
 
-    results_dir.mkdir(parents=True, exist_ok=True)
-    sys.exit(subprocess.run(docker_args).returncode)
+        if returncode != 0:
+            print(f"job {job_name} failed (exit code {returncode})", file=sys.stderr)
+            failed += 1
+
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":
