@@ -9,32 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print(
-        "error: pyyaml is required. Install with: pip install pyyaml", file=sys.stderr
-    )
-    sys.exit(1)
-
-
-def load_config(path):
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def get_git_commit(ref="HEAD"):
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", ref],
-        capture_output=True,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        print(f"error: failed to get commit hash for `{ref}`", file=sys.stderr)
-        sys.exit(1)
-
-    return result.stdout.strip()
+from utils import get_git_commit, load_config
 
 
 def has_dockerfile_changed(dockerfile_dir, base_ref="HEAD~1"):
