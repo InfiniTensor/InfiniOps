@@ -3,11 +3,11 @@
 
 Usage:
     # Run jobs locally (or dispatch to remote agents)
-    python .ci/agent.py run --branch master
+    python .ci/agent.py run
     python .ci/agent.py run --branch master --job nvidia_gpu --dry-run
 
-    # Start webhook server
-    python .ci/agent.py serve --platform nvidia --port 8080
+    # Start webhook server (auto-detects platform)
+    python .ci/agent.py serve --port 8080
 """
 
 import argparse
@@ -136,32 +136,6 @@ def select_jobs(config, platform=None, job_name=None):
 
     return list(jobs.keys())
 
-
-def route_jobs(config, job_names, local_platform=None):
-    """Split jobs into local and remote.
-
-    Returns (local_jobs, remote_jobs) where remote_jobs is a list of
-    (job_name, agent_url) tuples.
-    """
-    agents = config.get("agents", {})
-    jobs = config.get("jobs", {})
-    local = []
-    remote = []
-
-    for name in job_names:
-        job = jobs.get(name, {})
-        platform = job.get("platform", "")
-
-        if not local_platform:
-            local.append(name)
-        elif platform == local_platform:
-            local.append(name)
-        elif platform in agents:
-            remote.append((name, agents[platform].get("url", "")))
-        else:
-            local.append(name)
-
-    return local, remote
 
 
 # ---------------------------------------------------------------------------
@@ -707,8 +681,10 @@ def poll_remote_job(agent_url, job_id, interval=5.0, timeout=7200):
 
 
 def cmd_run(args):
-    """Handle 'run' subcommand: execute jobs locally and/or remotely."""
+    """Handle 'run' subcommand: dispatch jobs to platform agents via HTTP."""
     config = run.load_config(args.config)
+    agents = config.get("agents", {})
+    branch = args.branch or config.get("repo", {}).get("branch", "master")
     commit_sha = args.commit or run.get_git_commit(short=False)
 
     # Determine which jobs to run
@@ -722,57 +698,34 @@ def cmd_run(args):
         print("error: no matching jobs found", file=sys.stderr)
         sys.exit(1)
 
-    # Detect local platform (if running serve on this machine, use that; otherwise guess)
-    local_platform = args.platform
-    local_jobs, remote_jobs = route_jobs(config, job_names, local_platform)
+    # Resolve agent URL for each job
+    jobs_to_dispatch = []  # [(name, agent_url)]
 
-    # Run local jobs
-    local_results = []
+    for name in job_names:
+        job = config.get("jobs", {}).get(name, {})
+        platform = job.get("platform", "")
+        agent_url = agents.get(platform, {}).get("url", "")
 
-    if local_jobs:
-        pool = res.ResourcePool(
-            local_platform or "unknown",
-            utilization_threshold=args.utilization_threshold,
-        )
-        scheduler = Scheduler(
-            config,
-            local_platform or "unknown",
-            pool,
-            results_dir=args.results_dir,
-            no_status=args.no_status,
-            dry_run=args.dry_run,
-        )
+        if not agent_url:
+            print(f"error: no agent URL configured for platform {platform!r} (job {name})", file=sys.stderr)
+            sys.exit(1)
 
-        for name in local_jobs:
-            req = JobRequest(
-                job_name=name,
-                branch=args.branch,
-                commit_sha=commit_sha,
-                config=config,
-                image_tag=args.image_tag,
-                results_dir=args.results_dir,
-            )
-            scheduler.submit(req)
+        jobs_to_dispatch.append((name, agent_url))
 
-        local_results = scheduler.wait_all()
-
-    # Dispatch remote jobs
-    remote_results = []
     api_token = os.environ.get("AGENT_API_TOKEN", "")
+    results = []
 
-    if remote_jobs and not args.dry_run:
-        # Dispatch all remote jobs first, then poll concurrently
+    if args.dry_run:
+        for name, agent_url in jobs_to_dispatch:
+            print(f"[dry-run] dispatch {name} to {agent_url}")
+    else:
+        # Dispatch all jobs, then poll concurrently
         dispatched = []  # [(name, agent_url, job_id)]
 
-        for name, agent_url in remote_jobs:
-            if not agent_url:
-                print(f"warning: no agent URL for {name}, skipping", file=sys.stderr)
-                remote_results.append({"job_name": name, "state": "error"})
-                continue
-
+        for name, agent_url in jobs_to_dispatch:
             print(f"==> dispatching {name} to {agent_url}", file=sys.stderr)
             job_id = dispatch_remote_job(
-                agent_url, name, args.branch, commit_sha, args.image_tag,
+                agent_url, name, branch, commit_sha, args.image_tag,
                 api_token=api_token or None,
             )
 
@@ -781,9 +734,8 @@ def cmd_run(args):
                 dispatched.append((name, agent_url, job_id))
             else:
                 print(f"    failed to dispatch {name}", file=sys.stderr)
-                remote_results.append({"job_name": name, "state": "error"})
+                results.append({"job_name": name, "state": "error"})
 
-        # Poll all dispatched jobs concurrently
         if dispatched:
             with ThreadPoolExecutor(max_workers=len(dispatched)) as executor:
                 futures = {
@@ -796,28 +748,16 @@ def cmd_run(args):
                     result = future.result()
 
                     if result:
-                        remote_results.append(result)
+                        results.append(result)
                     else:
                         print(f"    timeout waiting for {name}", file=sys.stderr)
-                        remote_results.append({"job_name": name, "state": "timeout"})
-
-    elif remote_jobs and args.dry_run:
-        for name, agent_url in remote_jobs:
-            print(f"[dry-run] dispatch {name} to {agent_url}")
+                        results.append({"job_name": name, "state": "timeout"})
 
     # Summary
     print("\n========== Results ==========")
     all_ok = True
 
-    for r in local_results:
-        status = "PASS" if r.returncode == 0 else "FAIL"
-
-        if r.returncode != 0:
-            all_ok = False
-
-        print(f"  {status}  {r.job_name}  ({r.duration:.0f}s)  {r.results_dir}")
-
-    for r in remote_results:
+    for r in results:
         state = r.get("state", "unknown")
         name = r.get("job_name", "?")
         status = "PASS" if state == STATE_SUCCESS else "FAIL"
@@ -826,7 +766,7 @@ def cmd_run(args):
             all_ok = False
 
         duration = r.get("duration_seconds", 0)
-        print(f"  {status}  {name}  ({duration:.0f}s)  [remote]")
+        print(f"  {status}  {name}  ({duration:.0f}s)")
 
     if not all_ok:
         sys.exit(1)
@@ -836,13 +776,31 @@ def cmd_serve(args):
     """Handle 'serve' subcommand: start webhook server."""
     config = run.load_config(args.config)
 
+    platform = res.detect_platform()
+
+    if not platform:
+        print(
+            "error: could not detect platform (no nvidia-smi or ixsmi found)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    platform_jobs = select_jobs(config, platform=platform)
+
+    if not platform_jobs:
+        print(
+            f"error: platform {platform!r} detected but no jobs defined in config",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     pool = res.ResourcePool(
-        args.platform,
+        platform,
         utilization_threshold=args.utilization_threshold,
     )
     scheduler = Scheduler(
         config,
-        args.platform,
+        platform,
         pool,
         results_dir=args.results_dir,
     )
@@ -869,14 +827,14 @@ def cmd_serve(args):
         args.port,
         config,
         scheduler,
-        args.platform,
+        platform,
         webhook_secret=webhook_secret or None,
         api_token=api_token or None,
         results_dir=args.results_dir,
     )
 
     print(
-        f"Agent serving on {args.host}:{args.port} (platform={args.platform})",
+        f"Agent serving on {args.host}:{args.port} (platform={platform})",
         file=sys.stderr,
     )
     print(f"  POST /webhook  — GitHub webhook", file=sys.stderr)
@@ -905,23 +863,11 @@ def main():
         type=Path,
         default=Path(__file__).resolve().parent / "config.yaml",
     )
-    run_parser.add_argument("--branch", type=str, required=True, help="Branch to test")
+    run_parser.add_argument("--branch", type=str, help="Branch to test (default: config repo.branch)")
     run_parser.add_argument("--job", type=str, help="Specific job name")
     run_parser.add_argument("--platform", type=str, help="Filter jobs by platform")
     run_parser.add_argument("--image-tag", type=str, help="Override image tag")
     run_parser.add_argument("--commit", type=str, help="Override commit SHA")
-    run_parser.add_argument(
-        "--results-dir",
-        type=Path,
-        default=Path("ci-results"),
-    )
-    run_parser.add_argument(
-        "--utilization-threshold",
-        type=int,
-        default=10,
-        help="GPU utilization threshold (%%) to consider free (default: 10)",
-    )
-    run_parser.add_argument("--no-status", action="store_true", help="Skip GitHub status")
     run_parser.add_argument("--dry-run", action="store_true")
 
     # --- serve subcommand ---
@@ -930,12 +876,6 @@ def main():
         "--config",
         type=Path,
         default=Path(__file__).resolve().parent / "config.yaml",
-    )
-    serve_parser.add_argument(
-        "--platform",
-        type=str,
-        required=True,
-        help="Platform this agent handles (nvidia, iluvatar, etc.)",
     )
     serve_parser.add_argument("--port", type=int, default=8080)
     serve_parser.add_argument("--host", type=str, default="0.0.0.0")

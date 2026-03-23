@@ -61,6 +61,7 @@ def normalize_config(raw):
             full_name = f"{platform}_{job_name}"
             flat = {
                 "platform": platform,
+                "short_name": job_name,
                 "image": defaults.get("image_tag", "latest"),
             }
 
@@ -73,6 +74,16 @@ def normalize_config(raw):
             flat.update(job_cfg)
 
             config["jobs"][full_name] = flat
+
+    # Warn on mismatched agent/platform keys (catches typos like 'nvdia').
+    agent_keys = set(config.get("agents", {}).keys())
+    platform_keys = set(raw.get("platforms", {}).keys())
+
+    for key in agent_keys - platform_keys:
+        print(
+            f"warning: agents.{key} has no matching platform in platforms.*",
+            file=sys.stderr,
+        )
 
     return config
 
