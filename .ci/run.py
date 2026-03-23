@@ -9,31 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print(
-        "error: pyyaml is required. Install with: pip install pyyaml", file=sys.stderr
-    )
-    sys.exit(1)
-
-
-def load_config(path):
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def get_git_commit(ref="HEAD"):
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", ref],
-        capture_output=True,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        return "unknown"
-
-    return result.stdout.strip()
+from ci_resource import GPU_STYLE_NVIDIA, GPU_STYLE_NONE
+from utils import get_git_commit, load_config
 
 
 def build_results_dir(base, platform, stages, commit):
@@ -155,16 +132,29 @@ def build_docker_args(
         args.append("-e")
         args.append(f"STAGE_{i + 1}_CMD={s['run']}")
 
+    # Platform-specific device access
+    for flag in job.get("docker_args", []):
+        args.append(flag)
+
+    for vol in job.get("volumes", []):
+        args.extend(["-v", vol])
+
     gpu_id = gpu_id_override or str(resources.get("gpu_ids", ""))
     gpu_count = resources.get("gpu_count", 0)
+    gpu_style = resources.get("gpu_style", GPU_STYLE_NVIDIA)
 
-    if gpu_id:
-        if gpu_id == "all":
-            args.extend(["--gpus", "all"])
-        else:
-            args.extend(["--gpus", f'"device={gpu_id}"'])
-    elif gpu_count and gpu_count > 0:
-        args.extend(["--gpus", f"count={gpu_count}"])
+    if gpu_style == GPU_STYLE_NVIDIA:
+        if gpu_id:
+            if gpu_id == "all":
+                args.extend(["--gpus", "all"])
+            else:
+                args.extend(["--gpus", f'"device={gpu_id}"'])
+        elif gpu_count and gpu_count > 0:
+            args.extend(["--gpus", f"count={gpu_count}"])
+    elif gpu_style == GPU_STYLE_NONE and gpu_id and gpu_id != "all":
+        # For platforms like Iluvatar/CoreX that use --privileged + /dev mount,
+        # control visible GPUs via CUDA_VISIBLE_DEVICES.
+        args.extend(["-e", f"CUDA_VISIBLE_DEVICES={gpu_id}"])
 
     memory = resources.get("memory")
 

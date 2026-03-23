@@ -2,32 +2,69 @@ repo:
   url: https://github.com/InfiniTensor/InfiniOps.git
   branch: master
 
-images:
+github:
+  status_context_prefix: "ci/infiniops"    # GitHub Commit Status context 前缀
+
+# agents:                                  # 远程 Agent 地址（CLI 跨机器触发用）
+#   nvidia:
+#     url: http://nvidia-host:8080
+#   iluvatar:
+#     url: http://iluvatar-host:8080
+
+platforms:
   nvidia:
-    dockerfile: .ci/images/nvidia/
-    build_args:
-      BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
-  ascend:                              # TODO: Ascend image is not ready yet
-    dockerfile: .ci/images/ascend/
-    build_args:
-      BASE_IMAGE: ascendhub.huawei.com/public-ascendhub/ascend-pytorch:24.0.0
-    private_sdk:
-      source_env: PRIVATE_SDK_URL
+    image:
+      dockerfile: .ci/images/nvidia/
+      build_args:
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
+    setup: pip install .[dev] --no-build-isolation
+    jobs:
+      gpu:
+        resources:
+          gpu_ids: "0"                     # 指定 GPU ID，如 "0" "0,2" "all"
+          memory: 32GB
+          shm_size: 16g                    # 避免 PyTorch 默认 64MB SHMEM 不足
+          timeout: 3600
+        # env:                             # 可选，注入容器环境变量
+        #   MY_VAR: value
+        stages:
+          - name: test
+            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
-jobs:
-  nvidia_gpu:
-    image: latest
-    platform: nvidia
-    resources:
-      gpu_ids: "0"                       # 指定 GPU ID，如 "0" "0,2" "all"
-      memory: 32GB
-      shm_size: 16g                      # 避免 PyTorch 默认 64MB SHMEM 不足
-      timeout: 3600
+  iluvatar:
+    image:
+      dockerfile: .ci/images/iluvatar/
+      build_args:
+        BASE_IMAGE: corex:qs_pj20250825
+        APT_MIRROR: http://archive.ubuntu.com/ubuntu
+        PIP_INDEX_URL: https://pypi.org/simple
+    docker_args:
+      - "--privileged"
+      - "--cap-add=ALL"
+      - "--pid=host"
+      - "--ipc=host"
+    volumes:
+      - /dev:/dev
+      - /lib/firmware:/lib/firmware
+      - /usr/src:/usr/src
+      - /lib/modules:/lib/modules
+    setup: pip install .[dev] --no-build-isolation
+    jobs:
+      gpu:
+        resources:
+          gpu_ids: "0"                     # 通过 CUDA_VISIBLE_DEVICES 控制可见 GPU
+          gpu_style: none                  # CoreX 设备通过 --privileged + /dev 挂载透传
+          memory: 32GB
+          shm_size: 16g
+          timeout: 3600
+        stages:
+          - name: test
+            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
-    setup: pip install .[dev]
-    # env:                             # 可选，注入容器环境变量
-    #   MY_VAR: value
-
-    stages:
-      - name: test
-        run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+  ascend:                                  # TODO: Ascend image is not ready yet
+    image:
+      dockerfile: .ci/images/ascend/
+      build_args:
+        BASE_IMAGE: ascendhub.huawei.com/public-ascendhub/ascend-pytorch:24.0.0
+      private_sdk:
+        source_env: PRIVATE_SDK_URL
