@@ -1,9 +1,9 @@
-#ifndef INFINI_OPS_COMMON_CAMBRICON_CAST_H_
-#define INFINI_OPS_COMMON_CAMBRICON_CAST_H_
+#ifndef INFINI_OPS_COMMON_CAMBRICON_CASTER_H_
+#define INFINI_OPS_COMMON_CAMBRICON_CASTER_H_
 
 #include "bang_bf16.h"
 #include "bang_fp16.h"
-#include "cast.h"
+#include "caster.h"
 
 namespace infini::ops {
 

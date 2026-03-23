@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CAST_H_
-#define INFINI_OPS_CAST_H_
+#ifndef INFINI_OPS_CASTER_H_
+#define INFINI_OPS_CASTER_H_
 
 #include "data_type.h"
 #include "device.h"

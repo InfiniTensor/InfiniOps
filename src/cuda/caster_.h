@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_COMMON_CUDA_CAST_H_
-#define INFINI_OPS_COMMON_CUDA_CAST_H_
+#ifndef INFINI_OPS_COMMON_CUDA_CASTER_H_
+#define INFINI_OPS_COMMON_CUDA_CASTER_H_
 
 #ifdef WITH_NVIDIA
 #include <cuda_runtime.h>

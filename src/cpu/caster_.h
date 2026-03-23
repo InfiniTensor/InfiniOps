@@ -1,9 +1,9 @@
-#ifndef INFINI_OPS_COMMON_CPU_CAST_H_
-#define INFINI_OPS_COMMON_CPU_CAST_H_
+#ifndef INFINI_OPS_COMMON_CPU_CASTER_H_
+#define INFINI_OPS_COMMON_CPU_CASTER_H_
 
 #include <type_traits>
 
-#include "cast.h"
+#include "caster.h"
 
 namespace infini::ops {
 
