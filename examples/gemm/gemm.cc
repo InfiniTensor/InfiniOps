@@ -11,6 +11,9 @@
 #if WITH_ILUVATAR
 #include "iluvatar/gemm/cublas.h"
 #endif
+#if WITH_HYGON
+#include "hygon/gemm/cublas.h"
+#endif
 #if WITH_METAX
 #include "metax/gemm/mcblas.h"
 #endif

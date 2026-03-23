@@ -21,7 +21,11 @@ class Blas : public Gemm {
     // TODO: Check constraints.
   }
 
-  ~Blas() { Backend::blasDestroy(handle_); }
+  ~Blas() {
+    if (handle_ != nullptr) {
+      Backend::blasDestroy(handle_);
+    }
+  }
 
   Blas(const Tensor a, const Tensor b, std::optional<float> alpha,
        std::optional<float> beta, Tensor c)
@@ -69,7 +73,6 @@ class Blas : public Gemm {
     return &beta;
   }
 
- private:
   auto GetOpA(int trans_a, int trans_b) const {
     if (swap_a_and_b_) {
       return (b_is_col_major_ == trans_b) ? Backend::BLAS_OP_T
@@ -88,13 +91,14 @@ class Blas : public Gemm {
                                         : Backend::BLAS_OP_N;
   }
 
+  bool swap_a_and_b_{false};
+
+  mutable typename Backend::blasHandle_t handle_{};
+
+ private:
   bool a_is_col_major_{false};
 
   bool b_is_col_major_{false};
-
-  bool swap_a_and_b_{false};
-
-  typename Backend::blasHandle_t handle_;
 };
 
 }  // namespace infini::ops
