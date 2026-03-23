@@ -97,8 +97,8 @@ __host__ __device__ Dst Cast(Src&& x) {
   if constexpr (std::is_same_v<PureSrc, PureDst>) {
     return std::forward<Src>(x);
   } else {
-    return detail::HardwareCast<device_type_, PureDst>(std::forward<Src>(x),
-                                                       detail::PriorityHigh{});
+    return detail::HardwareCast<PureDst>(std::forward<Src>(x),
+                                         detail::PriorityHigh{});
   }
 }
 

@@ -6,19 +6,8 @@
 
 namespace infini::ops {
 
-namespace detail {
-
-template <Device::Type device_type, typename Dst, typename Src>
-struct CastHelper {
-  Dst operator()(const Src& x) const { return static_cast<Dst>(x); };
-};
-
-}  // namespace detail
-
-template <Device::Type device_type, typename Dst, typename Src>
-Dst Cast(Src&& x) {
-  return detail::CastHelper<device_type, Dst, Src>{}(x);
-}
+template <Device::Type device_type>
+struct Caster;
 
 }  // namespace infini::ops
 

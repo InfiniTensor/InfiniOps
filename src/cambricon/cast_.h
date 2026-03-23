@@ -78,9 +78,10 @@ DEFINE_DIRECT_CAST(__half, IsFP16<PureType<Dst>>&& IsBFloat16<PureType<Src>>)
 
 }  // namespace detail
 
-template <typename Dst, typename Src>
-struct CastHelper<Device::Type::kNvidia, Dst, Src> {
-  Dst operator()(Src&& x) const {
+template <>
+struct Caster<Device::Type::kCambricon> {
+  template <typename Dst, typename Src>
+  static Dst Cast(Src&& x) {
     static_assert(!std::is_reference_v<Dst>,
                   "`Cast` cannot return reference types");
 
@@ -90,8 +91,8 @@ struct CastHelper<Device::Type::kNvidia, Dst, Src> {
     if constexpr (std::is_same_v<PureSrc, PureDst>) {
       return std::forward<Src>(x);
     } else {
-      return detail::HardwareCast<device_type_, PureDst>(
-          std::forward<Src>(x), detail::PriorityHigh{});
+      return detail::HardwareCast<PureDst>(std::forward<Src>(x),
+                                           detail::PriorityHigh{});
     }
   }
 };

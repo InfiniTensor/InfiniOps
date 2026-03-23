@@ -10,7 +10,8 @@
 namespace infini::ops {
 
 template <>
-class Operator<Add, Device::Type::kCpu> : public Add {
+class Operator<Add, Device::Type::kCpu> : public Add,
+                                          Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor input, const Tensor other, Tensor out)
       : Add{input, other, out} {
@@ -52,9 +53,8 @@ class Operator<Add, Device::Type::kCpu> : public Add {
       auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
                              out_strides_.data());
 
-      out_ptr[out_idx] = Cast<device_type_, T>(
-          Cast<device_type_, ComputeType>(input_ptr[input_idx]) +
-          Cast<device_type_, ComputeType>(other_ptr[other_idx]));
+      out_ptr[out_idx] = Cast<T>(Cast<ComputeType>(input_ptr[input_idx]) +
+                                 Cast<ComputeType>(other_ptr[other_idx]));
     }
   }
 };

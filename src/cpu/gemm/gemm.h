@@ -10,7 +10,8 @@
 namespace infini::ops {
 
 template <>
-class Operator<Gemm, Device::Type::kCpu> : public Gemm {
+class Operator<Gemm, Device::Type::kCpu> : public Gemm,
+                                           Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
            std::optional<float> beta, std::optional<int> trans_a,
@@ -78,19 +79,14 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm {
           float sum = 0.0f;
 
           for (Tensor::Size l = 0; l < k_; ++l) {
-            float a_val = Cast<device_type_, float>(
-                A_batch[i * stride_a_m + l * stride_a_k]);
-            float b_val = Cast<device_type_, float>(
-                B_batch[l * stride_b_k + j * stride_b_n]);
+            float a_val = Cast<float>(A_batch[i * stride_a_m + l * stride_a_k]);
+            float b_val = Cast<float>(B_batch[l * stride_b_k + j * stride_b_n]);
             sum += a_val * b_val;
           }
 
           Tensor::Size idx = i * stride_c_m + j * stride_c_n;
-          float c_val = beta_value == 0.0f
-                            ? 0.0f
-                            : Cast<device_type_, float>(C_batch[idx]);
-          C_batch[idx] =
-              Cast<device_type_, T>(alpha_value * sum + beta_value * c_val);
+          float c_val = beta_value == 0.0f ? 0.0f : Cast<float>(C_batch[idx]);
+          C_batch[idx] = Cast<T>(alpha_value * sum + beta_value * c_val);
         }
       }
     }

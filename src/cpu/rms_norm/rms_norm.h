@@ -12,7 +12,8 @@
 namespace infini::ops {
 
 template <>
-class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
+class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
+                                              Caster<Device::Type::kCpu> {
  public:
   using RmsNorm::RmsNorm;
 
@@ -50,15 +51,14 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
 
         float ss = 0;
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          float v = Cast<device_type_, float>(input_row[k]);
+          float v = Cast<float>(input_row[k]);
           ss += v * v;
         }
         float rms = 1.f / std::sqrt(ss / static_cast<float>(dim_) + eps);
 
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          out_row[k] = Cast<device_type_, T>(
-              Cast<device_type_, float>(input_row[k]) *
-              Cast<device_type_, float>(weight_ptr[k]) * rms);
+          out_row[k] = Cast<T>(Cast<float>(input_row[k]) *
+                               Cast<float>(weight_ptr[k]) * rms);
         }
       }
     }

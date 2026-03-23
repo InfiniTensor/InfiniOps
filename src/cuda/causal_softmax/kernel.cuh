@@ -14,7 +14,7 @@ namespace {
 
 template <typename Data, typename Compute>
 __device__ __forceinline__ Data ExpAndCast(Compute x) {
-  return Cast<device_type_, Data>(expf(Cast<device_type_, float>(x)));
+  return Cast<Data>(expf(Cast<float>(x)));
 }
 
 struct BlockMaxOp {
@@ -41,7 +41,7 @@ __device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
                                             size_t count) {
   Compute thread_sum = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    thread_sum += Cast<device_type_, Compute>(data_ptr[i]);
+    thread_sum += Cast<Compute>(data_ptr[i]);
   }
   using BlockReduce = cub::BlockReduce<Compute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
@@ -75,11 +75,10 @@ __global__ void CausalSoftmaxKernel(
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
     if (col < valid_len) {
-      Compute diff = Cast<device_type_, Compute>(input_row[col]) -
-                     Cast<device_type_, Compute>(max_val);
-      out_row[col] = ExpAndCast<device_type_, Data, Compute>(diff);
+      Compute diff = Cast<Compute>(input_row[col]) - Cast<Compute>(max_val);
+      out_row[col] = ExpAndCast<Data, Compute>(diff);
     } else {
-      out_row[col] = Cast<device_type_, Data>(0.0f);
+      out_row[col] = Cast<Data>(0.0f);
     }
   }
   __syncthreads();
@@ -93,8 +92,8 @@ __global__ void CausalSoftmaxKernel(
   __syncthreads();
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
-    Compute quot = Cast<device_type_, Compute>(out_row[col]) / sum_val;
-    out_row[col] = Cast<device_type_, Data>(quot);
+    Compute quot = Cast<Compute>(out_row[col]) / sum_val;
+    out_row[col] = Cast<Data>(quot);
   }
 }
 

@@ -17,7 +17,7 @@ __device__ __forceinline__ TCompute SumSquared(const TData* data_ptr,
                                                size_t count) {
   TCompute ss = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    TCompute value = Cast<device_type_, TCompute>(data_ptr[i]);
+    TCompute value = Cast<TCompute>(data_ptr[i]);
     ss += value * value;
   }
   using BlockReduce = cub::BlockReduce<TCompute, block_size>;
@@ -46,15 +46,13 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
 
   __shared__ TCompute rms;
   if (threadIdx.x == 0) {
-    rms = Cast<device_type_, TCompute>(
-        rsqrtf(ss / Cast<device_type_, TCompute>(dim) + epsilon));
+    rms = Cast<TCompute>(rsqrtf(ss / Cast<TCompute>(dim) + epsilon));
   }
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < dim; i += block_size) {
     y_ptr[i] =
-        Cast<device_type_, TData>(Cast<device_type_, TCompute>(x_ptr[i]) *
-                                  Cast<device_type_, TCompute>(w_ptr[i]) * rms);
+        Cast<TData>(Cast<TCompute>(x_ptr[i]) * Cast<TCompute>(w_ptr[i]) * rms);
   }
 }
 

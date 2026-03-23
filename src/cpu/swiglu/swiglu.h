@@ -10,7 +10,8 @@
 namespace infini::ops {
 
 template <>
-class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
+class Operator<Swiglu, Device::Type::kCpu> : public Swiglu,
+                                             Caster<Device::Type::kCpu> {
  public:
   using Swiglu::Swiglu;
 
@@ -48,13 +49,12 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
                               gate_strides_.data());
       auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
                              out_strides_.data());
-      const ComputeType gate_val =
-          Cast<device_type_, ComputeType>(gate_ptr[gate_idx]);
+      const ComputeType gate_val = Cast<ComputeType>(gate_ptr[gate_idx]);
       const ComputeType sigmoid_gate = static_cast<ComputeType>(
           1.0 / (1.0 + std::exp(-static_cast<double>(gate_val))));
       const ComputeType swish_gate = gate_val * sigmoid_gate;
-      out_ptr[out_idx] = Cast<device_type_, T>(
-          Cast<device_type_, ComputeType>(input_ptr[input_idx]) * swish_gate);
+      out_ptr[out_idx] =
+          Cast<T>(Cast<ComputeType>(input_ptr[input_idx]) * swish_gate);
     }
   }
 };
