@@ -29,14 +29,6 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print(
-        "error: pyyaml is required. Install with: pip install pyyaml", file=sys.stderr
-    )
-    sys.exit(1)
-
 import ci_resource as res
 import github_status as gh
 import run
@@ -920,11 +912,11 @@ def cmd_serve(args):
         f"Agent serving on {args.host}:{args.port} (platform={platform})",
         file=sys.stderr,
     )
-    print(f"  POST /webhook  — GitHub webhook", file=sys.stderr)
-    print(f"  POST /api/run  — remote job trigger", file=sys.stderr)
-    print(f"  GET  /health   — health check", file=sys.stderr)
-    print(f"  GET  /status   — queue & resource status", file=sys.stderr)
-    print(f"  GET  /api/job/{{id}} — job status", file=sys.stderr)
+    print("  POST /webhook  — GitHub webhook", file=sys.stderr)
+    print("  POST /api/run  — remote job trigger", file=sys.stderr)
+    print("  GET  /health   — health check", file=sys.stderr)
+    print("  GET  /status   — queue & resource status", file=sys.stderr)
+    print("  GET  /api/job/{id} — job status", file=sys.stderr)
 
     try:
         server.serve_forever()

@@ -1,6 +1,5 @@
 import threading
 
-import pytest
 
 import ci_resource as res
 
@@ -11,13 +10,17 @@ import ci_resource as res
 
 
 def test_gpu_info_fields():
-    g = res.GpuInfo(index=0, memory_used_mb=1000, memory_total_mb=8000, utilization_pct=50)
+    g = res.GpuInfo(
+        index=0, memory_used_mb=1000, memory_total_mb=8000, utilization_pct=50
+    )
     assert g.index == 0
     assert g.memory_total_mb == 8000
 
 
 def test_system_resources_fields():
-    s = res.SystemResources(total_memory_mb=32000, available_memory_mb=16000, cpu_count=8)
+    s = res.SystemResources(
+        total_memory_mb=32000, available_memory_mb=16000, cpu_count=8
+    )
     assert s.cpu_count == 8
 
 
@@ -90,7 +93,7 @@ def test_detect_system_resources(monkeypatch, tmp_path):
         "MemAvailable:   20000000 kB\n"
     )
 
-    import io
+
     _real_open = open
 
     def fake_open(path, **kw):

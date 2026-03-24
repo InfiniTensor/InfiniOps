@@ -59,7 +59,9 @@ def post_commit_status(
         return False
 
     if not owner or not repo or not sha:
-        print("warning: missing owner/repo/sha, skipping status update", file=sys.stderr)
+        print(
+            "warning: missing owner/repo/sha, skipping status update", file=sys.stderr
+        )
         return False
 
     url = f"https://api.github.com/repos/{owner}/{repo}/statuses/{sha}"

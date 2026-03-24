@@ -2,9 +2,8 @@ import hashlib
 import hmac
 import json
 import threading
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -81,7 +80,12 @@ def mock_resource_pool():
     pool.platform = "nvidia"
     pool.allocate.return_value = ([0], True)
     pool.release.return_value = None
-    pool.get_status.return_value = {"platform": "nvidia", "gpus": [], "allocated_gpu_ids": [], "system": {}}
+    pool.get_status.return_value = {
+        "platform": "nvidia",
+        "gpus": [],
+        "allocated_gpu_ids": [],
+        "system": {},
+    }
     return pool
 
 
@@ -113,7 +117,6 @@ def test_select_jobs_all(agent_config):
 def test_select_jobs_invalid_name(agent_config):
     with pytest.raises(ValueError, match="not_exist"):
         agent.select_jobs(agent_config, job_name="not_exist")
-
 
 
 # ---------------------------------------------------------------------------
@@ -171,13 +174,21 @@ def test_scheduler_submit_and_run(agent_config, mock_resource_pool, monkeypatch)
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
         results_dir=Path("/tmp/test-results"),
-        no_status=True, dry_run=True,
+        no_status=True,
+        dry_run=True,
     )
-    req = agent.JobRequest("nvidia_gpu", "master", "abc123", agent_config,
-                           results_dir=Path("/tmp/test-results"))
-    jid = scheduler.submit(req)
+    req = agent.JobRequest(
+        "nvidia_gpu",
+        "master",
+        "abc123",
+        agent_config,
+        results_dir=Path("/tmp/test-results"),
+    )
+    scheduler.submit(req)
     results = scheduler.wait_all()
     assert len(results) == 1
     assert results[0].state == "success"
@@ -186,11 +197,19 @@ def test_scheduler_submit_and_run(agent_config, mock_resource_pool, monkeypatch)
 def test_scheduler_queues_when_no_resources(agent_config, monkeypatch):
     pool = MagicMock(spec=res.ResourcePool)
     pool.allocate.return_value = ([], False)
-    pool.get_status.return_value = {"platform": "nvidia", "gpus": [], "allocated_gpu_ids": [], "system": {}}
+    pool.get_status.return_value = {
+        "platform": "nvidia",
+        "gpus": [],
+        "allocated_gpu_ids": [],
+        "system": {},
+    }
 
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", pool,
-        no_status=True, dry_run=False,
+        agent_config,
+        "nvidia",
+        pool,
+        no_status=True,
+        dry_run=False,
     )
 
     req = agent.JobRequest("nvidia_gpu", "master", "abc123", agent_config)
@@ -202,8 +221,11 @@ def test_scheduler_queues_when_no_resources(agent_config, monkeypatch):
 
 def test_scheduler_get_status(agent_config, mock_resource_pool):
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
-        no_status=True, dry_run=True,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+        dry_run=True,
     )
 
     status = scheduler.get_status()
@@ -256,11 +278,17 @@ def _urlopen_no_proxy(url_or_req, **kwargs):
 
 def test_health_endpoint(agent_config, mock_resource_pool):
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
         no_status=True,
     )
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
     )
     port = server.server_address[1]
 
@@ -280,11 +308,18 @@ def test_api_run_endpoint(agent_config, mock_resource_pool, monkeypatch):
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
-        no_status=True, dry_run=True,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+        dry_run=True,
     )
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
         results_dir=Path("/tmp/test-results"),
     )
     port = server.server_address[1]
@@ -314,12 +349,19 @@ def test_webhook_with_signature(agent_config, mock_resource_pool, monkeypatch):
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
-        no_status=True, dry_run=True,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+        dry_run=True,
     )
     secret = "test-secret"
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
         webhook_secret=secret,
         results_dir=Path("/tmp/test-results"),
     )
@@ -330,10 +372,12 @@ def test_webhook_with_signature(agent_config, mock_resource_pool, monkeypatch):
 
     import urllib.request
 
-    payload = json.dumps({
-        "ref": "refs/heads/master",
-        "after": "abc123def456",
-    }).encode()
+    payload = json.dumps(
+        {
+            "ref": "refs/heads/master",
+            "after": "abc123def456",
+        }
+    ).encode()
     sig = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
 
     req = urllib.request.Request(
@@ -356,11 +400,17 @@ def test_webhook_with_signature(agent_config, mock_resource_pool, monkeypatch):
 
 def test_webhook_invalid_signature(agent_config, mock_resource_pool):
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
         no_status=True,
     )
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
         webhook_secret="real-secret",
     )
     port = server.server_address[1]
@@ -401,11 +451,18 @@ def test_api_run_requires_token(agent_config, mock_resource_pool, monkeypatch):
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
-        no_status=True, dry_run=True,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+        dry_run=True,
     )
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
         api_token="my-secret-token",
         results_dir=Path("/tmp/test-results"),
     )
@@ -438,11 +495,18 @@ def test_api_run_accepts_valid_token(agent_config, mock_resource_pool, monkeypat
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool,
-        no_status=True, dry_run=True,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+        dry_run=True,
     )
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
         api_token="my-secret-token",
         results_dir=Path("/tmp/test-results"),
     )

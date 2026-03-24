@@ -1,7 +1,6 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 import github_status as gh
 
@@ -57,7 +56,9 @@ def test_post_status_no_token(monkeypatch):
 
 
 def test_post_status_missing_owner():
-    result = gh.post_commit_status("", "repo", "abc123", "success", "ctx", "desc", token="tok")
+    result = gh.post_commit_status(
+        "", "repo", "abc123", "success", "ctx", "desc", token="tok"
+    )
     assert result is False
 
 
