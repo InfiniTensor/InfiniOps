@@ -12,6 +12,8 @@
 ├── images/
 │   ├── nvidia/Dockerfile
 │   ├── iluvatar/Dockerfile
+│   ├── metax/Dockerfile
+│   ├── moore/Dockerfile
 │   └── ascend/Dockerfile
 └── tests/                   # 单元测试
     ├── conftest.py
@@ -119,7 +121,7 @@ platforms:
 
 | 参数 | 说明 |
 |---|---|
-| `--platform nvidia\|iluvatar\|ascend\|all` | 构建平台，默认 `all` |
+| `--platform nvidia\|iluvatar\|metax\|moore\|ascend\|all` | 构建平台，默认 `all` |
 | `--commit` | 指定 commit ref 作为镜像 tag（默认 HEAD） |
 | `--force` | 跳过 Dockerfile 变更检测 |
 | `--dry-run` | 打印命令不执行 |
@@ -144,7 +146,7 @@ python .ci/build.py --force
 
 ## 流水线执行 `run.py`
 
-平台自动发现（通过检测 `nvidia-smi`/`ixsmi`），无需手动指定。
+平台自动发现（通过检测 `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi`），无需手动指定。
 
 | 参数 | 说明 |
 |---|---|
@@ -182,6 +184,8 @@ python .ci/run.py --job gpu --stage test --dry-run
 |---|---|---|---|
 | NVIDIA | `--gpus` (NVIDIA Container Toolkit) | `nvcr.io/nvidia/pytorch:24.10-py3` | 标准 CUDA |
 | Iluvatar | `--privileged` + `/dev` 挂载 | `corex:qs_pj20250825` | CoreX 运行时，CUDA 兼容 |
+| MetaX | `--privileged` | `maca-pytorch:3.2.1.4` | MACA 运行时，通过 `mx-smi` 检测 |
+| Moore | `--privileged` | `vllm_musa:20251112_hygon` | MUSA 运行时，通过 `mthreads-gmi` 检测 |
 | Ascend | TODO | `ascend-pytorch:24.0.0` | 待完善，镜像和 job 尚未就绪 |
 
 ---
@@ -228,6 +232,9 @@ python .ci/agent.py serve --port 8080
 
 # Iluvatar 机器
 python .ci/agent.py serve --port 8080
+
+# MetaX 机器
+python .ci/agent.py serve --port 8080
 ```
 
 `serve` 子命令额外参数：
@@ -261,6 +268,10 @@ agents:
     url: http://nvidia-host:8080
   iluvatar:
     url: http://iluvatar-host:8080
+  metax:
+    url: http://metax-host:8080
+  moore:
+    url: http://moore-host:8080
 ```
 
 ### 资源调度
@@ -281,9 +292,9 @@ Status context 格式：`ci/infiniops/{job_name}`
 
 ## 多机部署指南
 
-以 NVIDIA + Iluvatar 双平台为例，说明如何在两台机器上部署 Agent 并实现跨平台并行测试。
+以 NVIDIA + Iluvatar + MetaX + Moore 多平台为例，说明如何在多台机器上部署 Agent 并实现跨平台并行测试。
 
-### 前置条件（两台机器共同）
+### 前置条件（所有机器共同）
 
 ```bash
 # 1. Python 3.10+ 和依赖
@@ -323,6 +334,32 @@ docker images | grep corex    # 应有 corex:qs_pj20250825
 python .ci/build.py --platform iluvatar
 ```
 
+### MetaX 机器配置
+
+```bash
+# 1. 确认 MACA 运行时已安装
+mx-smi
+
+# 2. 确认基础镜像已导入（非公开镜像，需提前准备）
+docker images | grep maca-pytorch    # 应有 maca-pytorch:3.2.1.4-torch2.4-py310-ubuntu22.04-amd64
+
+# 3. 构建 CI 镜像
+python .ci/build.py --platform metax
+```
+
+### Moore 机器配置
+
+```bash
+# 1. 确认 MUSA 运行时已安装
+mthreads-gmi
+
+# 2. 确认基础镜像已导入（非公开镜像，需提前准备）
+docker images | grep vllm_musa    # 应有 vllm_musa:20251112_hygon
+
+# 3. 构建 CI 镜像
+python .ci/build.py --platform moore
+```
+
 ### 启动 Agent 服务
 
 在各自机器上启动 Agent：
@@ -333,6 +370,12 @@ python .ci/agent.py serve --port 8080
 
 # Iluvatar 机器（平台自动发现）
 python .ci/agent.py serve --port 8080
+
+# MetaX 机器（平台自动发现）
+python .ci/agent.py serve --port 8080
+
+# Moore 机器（平台自动发现）
+python .ci/agent.py serve --port 8080
 ```
 
 验证连通性：
@@ -340,6 +383,8 @@ python .ci/agent.py serve --port 8080
 ```bash
 curl http://<nvidia-ip>:8080/health
 curl http://<iluvatar-ip>:8080/health
+curl http://<metax-ip>:8080/health
+curl http://<moore-ip>:8080/health
 ```
 
 ### 配置远程 Agent 地址
@@ -352,6 +397,10 @@ agents:
     url: http://<nvidia-ip>:8080
   iluvatar:
     url: http://<iluvatar-ip>:8080
+  metax:
+    url: http://<metax-ip>:8080
+  moore:
+    url: http://<moore-ip>:8080
 ```
 
 ### 触发跨平台测试
@@ -371,7 +420,7 @@ python .ci/agent.py run --platform nvidia
 
 #### GitHub Status 上报
 
-两台机器均设置环境变量，各自上报所属平台的测试状态：
+所有机器均设置环境变量，各自上报所属平台的测试状态：
 
 ```bash
 export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
@@ -415,14 +464,20 @@ export WEBHOOK_SECRET=<github-secret>
 # 1. 各机器单独 dry-run
 python .ci/agent.py run --platform nvidia --dry-run
 python .ci/agent.py run --platform iluvatar --dry-run
+python .ci/agent.py run --platform metax --dry-run
+python .ci/agent.py run --platform moore --dry-run
 
 # 2. 健康检查
 curl http://<nvidia-ip>:8080/health
 curl http://<iluvatar-ip>:8080/health
+curl http://<metax-ip>:8080/health
+curl http://<moore-ip>:8080/health
 
 # 3. 查看资源状态
 curl http://<nvidia-ip>:8080/status
 curl http://<iluvatar-ip>:8080/status
+curl http://<metax-ip>:8080/status
+curl http://<moore-ip>:8080/status
 
 # 4. 跨平台一键测试
 python .ci/agent.py run --branch master
