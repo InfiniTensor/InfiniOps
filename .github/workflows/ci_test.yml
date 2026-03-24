@@ -36,7 +36,7 @@ jobs:
             git init
             git remote add origin git@github.com:Vincent777/ci_autotest.git
             git fetch --depth=1 origin main
-            git show orgiin/main:ascend_test_suite/daemon.sh > daemon.sh
+            git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
             chmod a+x daemon.sh
             ./daemon.sh \
               Ascend  \
