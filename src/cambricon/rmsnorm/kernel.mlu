@@ -6,7 +6,7 @@ __nram__ char nram_buffer[NRAM_MAX_SIZE];
 namespace infini::ops {
 
 template <typename T, typename Tw>
-__mlu_global__ void rmsnorm(T *output, const T *input, const Tw *weight,
+__mlu_global__ void Rmsnorm(T *output, const T *input, const Tw *weight,
                             size_t *shape, ptrdiff_t *output_strides, ptrdiff_t *input_strides,
                             float epsilon, int num_dims, int norm_dim_size) {
     // Calculate problem dimensions
@@ -254,7 +254,7 @@ void RmsnormUnion(void *workspace, int core_per_cluster, int cluster_count, cnrt
     CNRT_CHECK(cnrtMemcpyAsync(mlu_y_strides, const_cast<ptrdiff_t *>(y_strides), ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
 
     // Launch kernel
-    rmsnorm<T, Tw><<<kernel_dim, kernel_type, queue>>>(y_, x_, w_, mlu_shape, mlu_y_strides, mlu_x_strides, eps, ndim, dim_s);
+    Rmsnorm<T, Tw><<<kernel_dim, kernel_type, queue>>>(y_, x_, w_, mlu_shape, mlu_y_strides, mlu_x_strides, eps, ndim, dim_s);
 
     cnrtQueueSync(queue);
 }
