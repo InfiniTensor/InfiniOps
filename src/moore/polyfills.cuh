@@ -1,12 +1,6 @@
 #ifndef INFINI_OPS_MOORE_POLYFILLS_CUH_
 #define INFINI_OPS_MOORE_POLYFILLS_CUH_
 
-#include <type_traits>
-
-// clang-format off
-#include <musa_bf16.h>
-// clang-format on
-
 namespace infini::ops {
 
 template <typename T>
@@ -36,6 +30,8 @@ __device__ __forceinline__ T hrcp(const T& a) {
 
 }  // namespace infini::ops
 
+// Force unqualified `hrcp` calls to resolve to our polyfill, bypassing ADL
+// which would otherwise pick the MUSA SDK's declared-but-undefined hrcp(__half).
 #define hrcp infini::ops::hrcp
 
 #endif

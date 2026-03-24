@@ -21,6 +21,7 @@ using cuda_bfloat162 = maca_bfloat162;
 #include <musa_bf16.h>
 #include <musa_fp16.h>
 #include <musa_runtime.h>
+#include "moore/polyfills.cuh"
 using cuda_bfloat16 = __mt_bfloat16;
 using cuda_bfloat162 = __mt_bfloat162;
 #endif
