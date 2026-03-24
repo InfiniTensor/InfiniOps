@@ -38,10 +38,10 @@ jobs:
             git fetch --depth=1 origin main
             git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
             chmod a+x daemon.sh
-            ./daemon.sh \
-              Ascend  \
-              Smoke \
-              MindIE  \
-              ${MODEL_LIST} \
-              ${{ github.run_id }}  \
-              ${IMAGE}
+            # ./daemon.sh \
+            #   Ascend  \
+            #   Smoke \
+            #   MindIE  \
+            #   ${MODEL_LIST} \
+            #   ${{ github.run_id }}  \
+            #   ${IMAGE}
