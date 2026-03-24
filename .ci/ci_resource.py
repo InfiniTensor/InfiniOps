@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Resource detection and allocation for CI Runner Agent."""
 
+import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -30,7 +32,7 @@ class SystemResources:
 class ResourcePool:
     """Thread-safe GPU and system resource manager.
 
-    Detects available GPUs via platform-specific tools (nvidia-smi, ixsmi, mx-smi)
+    Detects available GPUs via platform-specific tools (nvidia-smi, ixsmi, mx-smi, mthreads-gmi)
     and tracks allocations to enable dynamic parallel scheduling.
     """
 
@@ -38,6 +40,7 @@ class ResourcePool:
         "nvidia": "nvidia-smi",
         "iluvatar": "ixsmi",
         "metax": "mx-smi",
+        "moore": "mthreads-gmi",
     }
 
     def __init__(self, platform, utilization_threshold=10):
@@ -59,6 +62,9 @@ class ResourcePool:
         """Query GPU status via platform-specific CLI tool."""
         if self._platform == "metax":
             return self._detect_gpus_metax()
+
+        if self._platform == "moore":
+            return self._detect_gpus_moore()
 
         tool = self.GPU_QUERY_TOOLS.get(self._platform)
 
@@ -116,7 +122,6 @@ class ResourcePool:
                 Utilization
                     GPU             : 0 %
         """
-        import re
 
         def run_mxsmi(flag):
             try:
@@ -180,6 +185,73 @@ class ResourcePool:
                 utilization_pct=util.get(idx, 0.0),
             ))
         return gpus
+
+    def _detect_gpus_moore(self) -> list[GpuInfo]:
+        """Parse mthreads-gmi JSON output for Moore Threads GPUs.
+
+        Uses: mthreads-gmi -q --json
+        Expected JSON structure:
+            {
+              "Attached GPUs": {
+                "GPU 00000000:3B:00.0": {
+                  "Minor Number": "0",
+                  "Memory Usage": {
+                    "Total": "24576 MiB",
+                    "Used": "512 MiB"
+                  },
+                  "Utilization": {
+                    "Gpu": "5 %"
+                  }
+                }
+              }
+            }
+        """
+        def extract_number(s):
+            m = re.search(r"([\d.]+)", str(s))
+            return float(m.group(1)) if m else 0.0
+
+        try:
+            result = subprocess.run(
+                ["mthreads-gmi", "-q", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return []
+
+        if result.returncode != 0:
+            return []
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return []
+
+        gpus = []
+        attached = data.get("Attached GPUs", {})
+
+        for gpu_data in attached.values():
+            try:
+                index = int(gpu_data.get("Minor Number", len(gpus)))
+
+                mem = gpu_data.get("Memory Usage", {})
+                total_mb = extract_number(mem.get("Total", "0 MiB"))
+                used_mb = extract_number(mem.get("Used", "0 MiB"))
+                util_pct = extract_number(
+                    gpu_data.get("Utilization", {}).get("Gpu", "0 %")
+                )
+
+                gpus.append(GpuInfo(
+                    index=index,
+                    memory_used_mb=used_mb,
+                    memory_total_mb=total_mb,
+                    utilization_pct=util_pct,
+                ))
+            except (ValueError, AttributeError):
+                continue
+
+        return sorted(gpus, key=lambda g: g.index)
 
     def detect_system_resources(self) -> SystemResources:
         """Read system memory from /proc/meminfo and CPU count."""
