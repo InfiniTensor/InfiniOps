@@ -799,6 +799,9 @@ def cmd_run(args):
                     for name, url, jid in dispatched
                 }
 
+                # Collect name lengths for column alignment.
+                name_width = max(len(n) for n, _, _ in dispatched)
+
                 for future in as_completed(futures):
                     name, _, _ = futures[future]
                     result = future.result()
@@ -808,7 +811,7 @@ def cmd_run(args):
                         duration = result.get("duration_seconds", 0)
                         tag = "PASS" if state == STATE_SUCCESS else "FAIL"
                         print(
-                            f"<== {tag}  {name}  ({duration:.0f}s)",
+                            f"<== {tag}  {name:<{name_width}}  ({duration:.0f}s)",
                             file=sys.stderr,
                         )
 
@@ -827,25 +830,28 @@ def cmd_run(args):
 
                         results.append(result)
                     else:
-                        print(f"<== TIMEOUT  {name}", file=sys.stderr)
+                        print(
+                            f"<== TIMEOUT  {name:<{name_width}}",
+                            file=sys.stderr,
+                        )
                         results.append({"job_name": name, "state": "timeout"})
 
-    # Summary
-    print("\n========== Results ==========")
-    all_ok = True
+    # Summary: only print when there are failures.
+    failed = [r for r in results if r.get("state") != STATE_SUCCESS]
 
-    for r in results:
-        state = r.get("state", "unknown")
-        name = r.get("job_name", "?")
-        status = "PASS" if state == STATE_SUCCESS else "FAIL"
+    if failed:
+        print("\n========== Failed ==========", file=sys.stderr)
+        name_width = max(len(r.get("job_name", "?")) for r in failed)
 
-        if state != STATE_SUCCESS:
-            all_ok = False
+        for r in failed:
+            name = r.get("job_name", "?")
+            state = r.get("state", "unknown")
+            duration = r.get("duration_seconds", 0)
+            print(
+                f"  FAIL  {name:<{name_width}}  {state} ({duration:.0f}s)",
+                file=sys.stderr,
+            )
 
-        duration = r.get("duration_seconds", 0)
-        print(f"  {status}  {name}  ({duration:.0f}s)")
-
-    if not all_ok:
         sys.exit(1)
 
 
