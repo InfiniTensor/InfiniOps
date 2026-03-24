@@ -52,6 +52,8 @@ STATE_SUCCESS = "success"
 STATE_FAILURE = "failure"
 STATE_ERROR = "error"
 
+TAIL_LINES = 50
+
 # urllib helpers (module-level for easier mocking in tests)
 urllib_request = urllib.request.Request
 urllib_urlopen = urllib.request.urlopen
@@ -65,7 +67,9 @@ urllib_urlopen = urllib.request.urlopen
 class JobRequest:
     """Describes a CI job to be executed."""
 
-    def __init__(self, job_name, branch, commit_sha, config, image_tag=None, results_dir=None):
+    def __init__(
+        self, job_name, branch, commit_sha, config, image_tag=None, results_dir=None
+    ):
         self.job_id = str(uuid.uuid4())[:8]
         self.job_name = job_name
         self.branch = branch
@@ -92,18 +96,28 @@ class JobRequest:
 class JobResult:
     """Outcome of a completed job."""
 
-    def __init__(self, job_id, job_name, commit_sha, returncode, results_dir, duration):
+    def __init__(
+        self,
+        job_id,
+        job_name,
+        commit_sha,
+        returncode,
+        results_dir,
+        duration,
+        error_tail=None,
+    ):
         self.job_id = job_id
         self.job_name = job_name
         self.commit_sha = commit_sha
         self.returncode = returncode
         self.results_dir = results_dir
         self.duration = duration
+        self.error_tail = error_tail or []
 
         self.state = STATE_SUCCESS if returncode == 0 else STATE_FAILURE
 
     def to_dict(self):
-        return {
+        d = {
             "job_id": self.job_id,
             "job_name": self.job_name,
             "commit_sha": self.commit_sha,
@@ -112,6 +126,11 @@ class JobResult:
             "results_dir": str(self.results_dir),
             "duration_seconds": round(self.duration, 1),
         }
+
+        if self.error_tail:
+            d["error_tail"] = self.error_tail
+
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +149,9 @@ def select_jobs(config, platform=None, job_name=None):
         return [job_name]
 
     if platform:
-        return [
-            name for name, job in jobs.items() if job.get("platform") == platform
-        ]
+        return [name for name, job in jobs.items() if job.get("platform") == platform]
 
     return list(jobs.keys())
-
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +227,7 @@ class Scheduler:
     def get_status(self):
         """Return scheduler status for the /status endpoint."""
         with self._lock:
-            queued = [
-                self._jobs[r.job_id]["request"].to_dict()
-                for r in self._queue
-            ]
+            queued = [self._jobs[r.job_id]["request"].to_dict() for r in self._queue]
             running = []
             completed = []
 
@@ -222,7 +235,9 @@ class Scheduler:
                 state = entry["state"]
 
                 if state == STATE_RUNNING:
-                    running.append({**entry["request"].to_dict(), "gpu_ids": entry["gpu_ids"]})
+                    running.append(
+                        {**entry["request"].to_dict(), "gpu_ids": entry["gpu_ids"]}
+                    )
                 elif state in (STATE_SUCCESS, STATE_FAILURE):
                     completed.append(entry["result"].to_dict())
 
@@ -238,7 +253,8 @@ class Scheduler:
         while True:
             with self._lock:
                 pending = any(
-                    e["state"] in (STATE_QUEUED, STATE_RUNNING) for e in self._jobs.values()
+                    e["state"] in (STATE_QUEUED, STATE_RUNNING)
+                    for e in self._jobs.values()
                 )
 
             if not pending:
@@ -248,11 +264,7 @@ class Scheduler:
             self._done_event.clear()
 
         with self._lock:
-            return [
-                e["result"]
-                for e in self._jobs.values()
-                if e["result"] is not None
-            ]
+            return [e["result"] for e in self._jobs.values() if e["result"] is not None]
 
     def _try_schedule(self):
         """Try to run queued jobs that have enough resources.
@@ -315,7 +327,9 @@ class Scheduler:
             job_cfg = self._config["jobs"][req.job_name]
             all_stages = job_cfg.get("stages", [])
             repo_url = self._config.get("repo", {}).get("url", "")
-            commit_short = req.commit_sha[:7] if len(req.commit_sha) > 7 else req.commit_sha
+            commit_short = (
+                req.commit_sha[:7] if len(req.commit_sha) > 7 else req.commit_sha
+            )
             results_dir = run.build_results_dir(
                 req.results_dir, req.platform, all_stages, commit_short
             )
@@ -338,10 +352,30 @@ class Scheduler:
             if self._dry_run:
                 print(f"[dry-run] {req.job_name}: {shlex.join(docker_args)}")
                 returncode = 0
+                error_tail = []
             else:
                 results_dir.mkdir(parents=True, exist_ok=True)
-                proc = subprocess.run(docker_args)
-                returncode = proc.returncode
+                proc = subprocess.Popen(
+                    docker_args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                tail_buf = collections.deque(maxlen=TAIL_LINES)
+
+                for line in proc.stdout:
+                    sys.stdout.buffer.write(line)
+                    tail_buf.append(line)
+
+                proc.stdout.close()
+                returncode = proc.wait()
+
+                if returncode != 0:
+                    error_tail = [
+                        raw.decode("utf-8", errors="replace").rstrip("\n")
+                        for raw in tail_buf
+                    ]
+                else:
+                    error_tail = []
 
             duration = time.monotonic() - start
 
@@ -352,6 +386,7 @@ class Scheduler:
                 returncode=returncode,
                 results_dir=results_dir,
                 duration=duration,
+                error_tail=error_tail,
             )
 
             # Post final status
@@ -365,7 +400,9 @@ class Scheduler:
                     f"{req.job_name}: {result.state} in {duration:.0f}s",
                 )
         except Exception as e:
-            print(f"error: job {req.job_name} failed with exception: {e}", file=sys.stderr)
+            print(
+                f"error: job {req.job_name} failed with exception: {e}", file=sys.stderr
+            )
 
             if result is None:
                 result = JobResult(
@@ -375,6 +412,7 @@ class Scheduler:
                     returncode=-1,
                     results_dir=req.results_dir,
                     duration=0,
+                    error_tail=[str(e)],
                 )
 
             if not self._no_status:
@@ -392,7 +430,9 @@ class Scheduler:
 
             with self._lock:
                 self._jobs[req.job_id]["result"] = result
-                self._jobs[req.job_id]["state"] = result.state if result else STATE_FAILURE
+                self._jobs[req.job_id]["state"] = (
+                    result.state if result else STATE_FAILURE
+                )
 
             self._done_event.set()
             self._try_schedule()
@@ -410,9 +450,9 @@ def verify_signature(secret, body, signature_header):
     if not signature_header:
         return False
 
-    expected = "sha256=" + hmac.new(
-        secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
+    expected = (
+        "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    )
     return hmac.compare_digest(expected, signature_header)
 
 
@@ -567,7 +607,9 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
     def _submit_jobs(self, branch, sha, job_name=None, image_tag=None):
         config = self.server.config
-        job_names = select_jobs(config, platform=self.server.platform, job_name=job_name)
+        job_names = select_jobs(
+            config, platform=self.server.platform, job_name=job_name
+        )
         job_ids = []
 
         for name in job_names:
@@ -621,7 +663,9 @@ class AgentServer(HTTPServer):
 # ---------------------------------------------------------------------------
 
 
-def dispatch_remote_job(agent_url, job_name, branch, commit_sha, image_tag=None, api_token=None):
+def dispatch_remote_job(
+    agent_url, job_name, branch, commit_sha, image_tag=None, api_token=None
+):
     """Send a job to a remote agent via HTTP API. Returns job_id or None."""
     url = f"{agent_url.rstrip('/')}/api/run"
     body = {
@@ -707,7 +751,10 @@ def cmd_run(args):
         agent_url = agents.get(platform, {}).get("url", "")
 
         if not agent_url:
-            print(f"error: no agent URL configured for platform {platform!r} (job {name})", file=sys.stderr)
+            print(
+                f"error: no agent URL configured for platform {platform!r} (job {name})",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         jobs_to_dispatch.append((name, agent_url))
@@ -730,7 +777,11 @@ def cmd_run(args):
                 file=sys.stderr,
             )
             job_id = dispatch_remote_job(
-                agent_url, name, branch, commit_sha, args.image_tag,
+                agent_url,
+                name,
+                branch,
+                commit_sha,
+                args.image_tag,
                 api_token=api_token or None,
             )
 
@@ -760,6 +811,20 @@ def cmd_run(args):
                             f"<== {tag}  {name}  ({duration:.0f}s)",
                             file=sys.stderr,
                         )
+
+                        error_tail = result.get("error_tail", [])
+
+                        if error_tail:
+                            print(
+                                f"--- error output (last {len(error_tail)} lines) ---",
+                                file=sys.stderr,
+                            )
+
+                            for line in error_tail:
+                                print(f"    {line}", file=sys.stderr)
+
+                            print("---", file=sys.stderr)
+
                         results.append(result)
                     else:
                         print(f"<== TIMEOUT  {name}", file=sys.stderr)
@@ -875,7 +940,9 @@ def main():
         type=Path,
         default=Path(__file__).resolve().parent / "config.yaml",
     )
-    run_parser.add_argument("--branch", type=str, help="Branch to test (default: config repo.branch)")
+    run_parser.add_argument(
+        "--branch", type=str, help="Branch to test (default: config repo.branch)"
+    )
     run_parser.add_argument("--job", type=str, help="Specific job name")
     run_parser.add_argument("--platform", type=str, help="Filter jobs by platform")
     run_parser.add_argument("--image-tag", type=str, help="Override image tag")
