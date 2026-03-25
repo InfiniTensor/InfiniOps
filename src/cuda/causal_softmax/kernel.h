@@ -1,7 +1,9 @@
 #ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
 #define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
 
+#include <algorithm>
 #include <cstdint>
+#include <type_traits>
 
 #include "base/causal_softmax.h"
 #include "cuda/causal_softmax/kernel.cuh"
@@ -10,6 +12,17 @@
 #include "dispatcher.h"
 
 namespace infini::ops {
+
+namespace causal_softmax::detail {
+
+template <typename Backend, typename = void>
+struct MaxBlockSize : std::integral_constant<int, CUDA_BLOCK_SIZE_2048> {};
+
+template <typename Backend>
+struct MaxBlockSize<Backend, std::void_t<decltype(Backend::max_block_size)>>
+    : std::integral_constant<int, Backend::max_block_size> {};
+
+}  // namespace causal_softmax::detail
 
 template <typename Backend>
 class CudaCausalSoftmax : public CausalSoftmax {
@@ -32,7 +45,9 @@ class CudaCausalSoftmax : public CausalSoftmax {
       std::abort();
     }
 
-    int block_size = GetOptimalBlockSize();
+    constexpr int kMaxBlockSize =
+        causal_softmax::detail::MaxBlockSize<Backend>::value;
+    int block_size = std::min(GetOptimalBlockSize(), kMaxBlockSize);
 
     DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
         out.dtype(),
@@ -47,17 +62,31 @@ class CudaCausalSoftmax : public CausalSoftmax {
           total_seq_len_, stride_out_batch, stride_out_row,                \
           stride_input_batch, stride_input_row);
 
-          if (block_size == CUDA_BLOCK_SIZE_2048) {
-            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_2048)
-          } else if (block_size == CUDA_BLOCK_SIZE_1024) {
-            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_1024)
-          } else if (block_size == CUDA_BLOCK_SIZE_512) {
-            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_512)
-          } else if (block_size == CUDA_BLOCK_SIZE_256) {
-            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_256)
-          } else {
-            LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_128)
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_2048) {
+            if (block_size == CUDA_BLOCK_SIZE_2048) {
+              LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_2048)
+              return;
+            }
           }
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_1024) {
+            if (block_size == CUDA_BLOCK_SIZE_1024) {
+              LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_1024)
+              return;
+            }
+          }
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_512) {
+            if (block_size == CUDA_BLOCK_SIZE_512) {
+              LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_512)
+              return;
+            }
+          }
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_256) {
+            if (block_size == CUDA_BLOCK_SIZE_256) {
+              LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_256)
+              return;
+            }
+          }
+          LAUNCH_CAUSAL_SOFTMAX_KERNEL(CUDA_BLOCK_SIZE_128)
 
 #undef LAUNCH_CAUSAL_SOFTMAX_KERNEL
         },
