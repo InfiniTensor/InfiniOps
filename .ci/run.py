@@ -87,9 +87,14 @@ def build_runner_script():
 set -e
 cd /workspace
 mkdir -p /workspace/results
-git clone "$REPO_URL" repo
-cd repo
-git checkout "$BRANCH"
+if [ -n "$LOCAL_SRC" ]; then
+  cp -r "$LOCAL_SRC" /tmp/src
+  cd /tmp/src
+else
+  git clone "$REPO_URL" repo
+  cd repo
+  git checkout "$BRANCH"
+fi
 echo "========== Setup =========="
 eval "$SETUP_CMD"
 set +e
@@ -120,6 +125,7 @@ def build_docker_args(
     image_tag_override,
     gpu_id_override=None,
     results_dir=None,
+    local_path=None,
 ):
     job = config["jobs"][job_name]
     platform = job.get("platform", "nvidia")
@@ -168,6 +174,10 @@ def build_docker_args(
 
     if results_dir:
         args.extend(["-v", f"{results_dir.resolve()}:/workspace/results"])
+
+    if local_path:
+        args.extend(["-v", f"{local_path}:/workspace/repo:ro"])
+        args.extend(["-e", "LOCAL_SRC=/workspace/repo"])
 
     for i, s in enumerate(stages):
         args.append("-e")
@@ -308,6 +318,11 @@ def main():
         help='Override pytest test path, e.g. "tests/test_gemm.py" or "tests/test_gemm.py::test_gemm"',
     )
     parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Mount current directory (read-only) into the container instead of cloning from git",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print docker command and exit",
@@ -363,6 +378,7 @@ def main():
         commit = get_git_commit()
         results_dir = build_results_dir(args.results_dir, job_platform, stages, commit)
 
+        local_path = Path.cwd().resolve() if args.local else None
         docker_args = build_docker_args(
             config,
             job_name,
@@ -373,6 +389,7 @@ def main():
             args.image_tag,
             gpu_id_override=args.gpu_id,
             results_dir=results_dir,
+            local_path=local_path,
         )
 
         if args.dry_run:

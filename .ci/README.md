@@ -59,7 +59,7 @@ platforms:
     jobs:
       gpu:                              # Flattened as nvidia_gpu
         resources:
-          gpu_ids: "0"                  # "0" | "0,2" | "all"
+          ngpus: 1                      # Scheduler auto-picks this many free GPUs
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -108,8 +108,9 @@ platforms:
 | | `volumes` | Extra volume mounts |
 | | `setup` | In-container setup command |
 | | `env` | Injected container env vars |
-| **Job** | `resources.gpu_ids` | GPU device IDs |
-| | `resources.gpu_style` | GPU passthrough: `nvidia` (default) or `none` |
+| **Job** | `resources.ngpus` | Number of GPUs — scheduler auto-picks free ones (NVIDIA only) |
+| | `resources.gpu_ids` | Static GPU device IDs (e.g., `"0"`, `"0,2"`) |
+| | `resources.gpu_style` | GPU passthrough: `nvidia` (default), `none`, or `mlu` |
 | | `resources.memory` | Container memory limit |
 | | `resources.shm_size` | Shared memory size |
 | | `resources.timeout` | Max run time in seconds |
@@ -147,7 +148,7 @@ Proxy and `no_proxy` env vars are forwarded from the host to `docker build` auto
 
 ## Pipeline runner `run.py`
 
-Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi` on PATH), no manual specification needed.
+Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi`/`cnmon` on PATH), no manual specification needed.
 
 | Flag | Description |
 |---|---|
@@ -157,7 +158,9 @@ Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi` on P
 | `--stage` | Run only the specified stage |
 | `--image-tag` | Override image tag |
 | `--gpu-id` | Override GPU device IDs (nvidia via `--gpus`, others via `CUDA_VISIBLE_DEVICES`) |
+| `--test` | Override pytest test path (e.g., `tests/test_gemm.py::test_gemm`) |
 | `--results-dir` | Host directory mounted to `/workspace/results` inside the container |
+| `--local` | Mount current directory (read-only) instead of cloning from git |
 | `--dry-run` | Print docker command without executing |
 
 ```bash
@@ -172,23 +175,29 @@ python .ci/run.py --job nvidia_gpu
 
 # Run only the test stage, preview mode
 python .ci/run.py --job gpu --stage test --dry-run
+
+# Test local uncommitted changes without pushing
+python .ci/run.py --local
 ```
 
 Container execution flow: `git clone` → `checkout` → `setup` → stages.
+With `--local`, the current directory is mounted read-only at `/workspace/repo` and copied to a writable temp directory inside the container before setup runs — host files are never modified.
 Proxy vars are forwarded from the host. Test results are written to `--results-dir`. Each run uses a clean environment (no host pip cache mounted).
 
 ---
 
 ## Platform differences
 
-| Platform | GPU passthrough | Base image | Notes |
-|---|---|---|---|
-| NVIDIA | `--gpus` (NVIDIA Container Toolkit) | `nvcr.io/nvidia/pytorch:24.10-py3` | Standard CUDA |
-| Iluvatar | `--privileged` + `/dev` mount | `corex:qs_pj20250825` | CoreX runtime, CUDA compatible |
-| MetaX | `--privileged` | `maca-pytorch:3.2.1.4` | MACA runtime, detected via `mx-smi` |
-| Moore | `--privileged` | `vllm_musa:20251112_hygon` | MUSA runtime, detected via `mthreads-gmi` |
-| Cambricon | `--privileged` | `cambricon/pytorch:v1.25.3` | Neuware runtime, detected via `cnmon` |
-| Ascend | TODO | `ascend-pytorch:24.0.0` | Not ready, image and jobs pending |
+| Platform | GPU passthrough | `gpu_style` | Base image | Detection tool |
+|---|---|---|---|---|
+| NVIDIA | `--gpus` (NVIDIA Container Toolkit) | `nvidia` (default) | `nvcr.io/nvidia/pytorch:24.10-py3` | `nvidia-smi` |
+| Iluvatar | `--privileged` + `/dev` mount | `none` | `corex:qs_pj20250825` | `ixsmi` |
+| MetaX | `--privileged` | `none` | `maca-pytorch:3.2.1.4-...` | `mx-smi` |
+| Moore | `--privileged` | `none` | `vllm_musa:20251112_hygon` | `mthreads-gmi` |
+| Cambricon | `--privileged` | `mlu` | `cambricon/pytorch:v1.25.3` | `cnmon` |
+| Ascend | TODO | — | `ascend-pytorch:24.0.0` | — |
+
+`gpu_style` controls the Docker device injection mechanism: `nvidia` uses `--gpus`, `none` uses `CUDA_VISIBLE_DEVICES` (or skips injection for Moore), `mlu` uses `MLU_VISIBLE_DEVICES`.
 
 ---
 
@@ -220,22 +229,15 @@ python .ci/agent.py run --dry-run
 | `--branch` | Test branch (default: config `repo.branch`) |
 | `--job` | Specific job name |
 | `--platform` | Filter jobs by platform |
-| `--commit` | Override commit SHA |
+| `--commit` | Override commit SHA used for GitHub status reporting |
 | `--image-tag` | Override image tag |
 | `--dry-run` | Preview mode |
 
 ### Webhook server
 
-Deploy one Agent instance per platform machine (platform is auto-detected):
+Deploy one Agent instance per platform machine (platform is auto-detected). On each machine:
 
 ```bash
-# NVIDIA machine
-python .ci/agent.py serve --port 8080
-
-# Iluvatar machine
-python .ci/agent.py serve --port 8080
-
-# MetaX machine
 python .ci/agent.py serve --port 8080
 ```
 
@@ -267,13 +269,13 @@ Configure agent URLs in `config.yaml`; the CLI automatically dispatches remote j
 ```yaml
 agents:
   nvidia:
-    url: http://nvidia-host:8080
+    url: http://<nvidia-ip>:8080
   iluvatar:
-    url: http://iluvatar-host:8080
+    url: http://<iluvatar-ip>:8080
   metax:
-    url: http://metax-host:8080
+    url: http://<metax-ip>:8080
   moore:
-    url: http://moore-host:8080
+    url: http://<moore-ip>:8080
 ```
 
 ### Resource scheduling
@@ -294,116 +296,28 @@ Status context format: `ci/infiniops/{job_name}`
 
 ## Multi-machine deployment guide
 
-Example with NVIDIA + Iluvatar + MetaX + Moore multi-platform setup, showing how to deploy agents across machines for cross-platform parallel testing.
+### Per-platform setup
 
-### Prerequisites (all machines)
+Each machine needs Docker installed, the platform runtime, and the base CI image built.
 
-```bash
-# 1. Python 3.10+ and dependencies
-pip install pyyaml
-
-# 2. Docker installed
-docker --version
-
-# 3. Clone the repository
-git clone https://github.com/InfiniTensor/InfiniOps.git
-cd InfiniOps
-```
-
-### NVIDIA machine setup
-
-```bash
-# 1. Install NVIDIA Container Toolkit
-#    See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
-
-# 2. Verify GPU visibility
-nvidia-smi
-
-# 3. Build CI image
-python .ci/build.py --platform nvidia
-```
-
-### Iluvatar machine setup
-
-```bash
-# 1. Verify CoreX runtime is installed
-ixsmi
-
-# 2. Verify base image is imported (non-public, must be prepared in advance)
-docker images | grep corex    # Should show corex:qs_pj20250825
-
-# 3. Build CI image
-python .ci/build.py --platform iluvatar
-```
-
-### MetaX machine setup
-
-```bash
-# 1. Verify MACA runtime is installed
-mx-smi
-
-# 2. Verify base image is imported (non-public, must be prepared in advance)
-docker images | grep maca-pytorch    # Should show maca-pytorch:3.2.1.4-torch2.4-py310-ubuntu22.04-amd64
-
-# 3. Build CI image
-python .ci/build.py --platform metax
-```
-
-### Moore machine setup
-
-```bash
-# 1. Verify MUSA runtime is installed
-mthreads-gmi
-
-# 2. Verify base image is imported (non-public, must be prepared in advance)
-docker images | grep vllm_musa    # Should show vllm_musa:20251112_hygon
-
-# 3. Build CI image
-python .ci/build.py --platform moore
-```
+| Platform | Runtime check | Base image | Build command |
+|---|---|---|---|
+| NVIDIA | `nvidia-smi` (+ [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)) | `nvcr.io/nvidia/pytorch:24.10-py3` (public) | `python .ci/build.py --platform nvidia` |
+| Iluvatar | `ixsmi` | `corex:qs_pj20250825` (import in advance) | `python .ci/build.py --platform iluvatar` |
+| MetaX | `mx-smi` | `maca-pytorch:3.2.1.4-...` (import in advance) | `python .ci/build.py --platform metax` |
+| Moore | `mthreads-gmi` | `vllm_musa:20251112_hygon` (import in advance) | `python .ci/build.py --platform moore` |
 
 ### Start Agent services
 
-Start the Agent on each machine:
+On each machine (platform is auto-detected):
 
 ```bash
-# NVIDIA machine (platform auto-detected)
 python .ci/agent.py serve --port 8080
-
-# Iluvatar machine (platform auto-detected)
-python .ci/agent.py serve --port 8080
-
-# MetaX machine (platform auto-detected)
-python .ci/agent.py serve --port 8080
-
-# Moore machine (platform auto-detected)
-python .ci/agent.py serve --port 8080
-```
-
-Verify connectivity:
-
-```bash
-curl http://<nvidia-ip>:8080/health
-curl http://<iluvatar-ip>:8080/health
-curl http://<metax-ip>:8080/health
-curl http://<moore-ip>:8080/health
 ```
 
 ### Configure remote agent URLs
 
-Add the `agents` section to `config.yaml` on the trigger machine:
-
-```yaml
-agents:
-  nvidia:
-    url: http://<nvidia-ip>:8080
-  iluvatar:
-    url: http://<iluvatar-ip>:8080
-  metax:
-    url: http://<metax-ip>:8080
-  moore:
-    url: http://<moore-ip>:8080
-```
+On the trigger machine, add the `agents` section to `config.yaml` (see [Remote agent configuration](#remote-agent-configuration) above for the format).
 
 ### Trigger cross-platform tests
 
@@ -433,11 +347,8 @@ export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 When agents are exposed on untrusted networks, enable token auth:
 
 ```bash
-# Specify token at startup
 python .ci/agent.py serve --port 8080 --api-token <secret>
-
-# Or via env var
-export AGENT_API_TOKEN=<secret>
+# Or: export AGENT_API_TOKEN=<secret>
 ```
 
 #### GitHub Webhook auto-trigger
@@ -451,36 +362,25 @@ In GitHub repo → Settings → Webhooks, add a webhook for each machine:
 | Secret | Must match `--webhook-secret` |
 | Events | `push` and `pull_request` |
 
-Configure the secret at startup:
-
 ```bash
 python .ci/agent.py serve --port 8080 --webhook-secret <github-secret>
-
-# Or via env var
-export WEBHOOK_SECRET=<github-secret>
+# Or: export WEBHOOK_SECRET=<github-secret>
 ```
 
 ### Verification checklist
 
 ```bash
 # 1. Dry-run each machine individually
-python .ci/agent.py run --platform nvidia --dry-run
-python .ci/agent.py run --platform iluvatar --dry-run
-python .ci/agent.py run --platform metax --dry-run
-python .ci/agent.py run --platform moore --dry-run
+for platform in nvidia iluvatar metax moore; do
+  python .ci/agent.py run --platform $platform --dry-run
+done
 
-# 2. Health checks
-curl http://<nvidia-ip>:8080/health
-curl http://<iluvatar-ip>:8080/health
-curl http://<metax-ip>:8080/health
-curl http://<moore-ip>:8080/health
+# 2. Health and resource checks
+for ip in <nvidia-ip> <iluvatar-ip> <metax-ip> <moore-ip>; do
+  curl http://$ip:8080/health
+  curl http://$ip:8080/status
+done
 
-# 3. Resource status
-curl http://<nvidia-ip>:8080/status
-curl http://<iluvatar-ip>:8080/status
-curl http://<metax-ip>:8080/status
-curl http://<moore-ip>:8080/status
-
-# 4. Cross-platform test
+# 3. Cross-platform test
 python .ci/agent.py run --branch master
 ```
