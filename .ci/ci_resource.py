@@ -429,6 +429,10 @@ def parse_gpu_requirement(job_config) -> int:
     if gpu_style == GPU_STYLE_NONE:
         return 0
 
+    ngpus = resources.get("ngpus")
+    if ngpus is not None:
+        return int(ngpus)
+
     gpu_ids = str(resources.get("gpu_ids", ""))
 
     if not gpu_ids:

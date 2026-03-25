@@ -183,7 +183,7 @@ def build_docker_args(
         args.extend(["-v", vol])
 
     gpu_id = gpu_id_override or str(resources.get("gpu_ids", ""))
-    gpu_count = resources.get("gpu_count", 0)
+    ngpus = resources.get("ngpus")
     gpu_style = resources.get("gpu_style", GPU_STYLE_NVIDIA)
 
     if gpu_style == GPU_STYLE_NVIDIA:
@@ -192,8 +192,8 @@ def build_docker_args(
                 args.extend(["--gpus", "all"])
             else:
                 args.extend(["--gpus", f'"device={gpu_id}"'])
-        elif gpu_count and gpu_count > 0:
-            args.extend(["--gpus", f"count={gpu_count}"])
+        elif ngpus:
+            args.extend(["--gpus", f"count={ngpus}"])
     elif gpu_style == GPU_STYLE_NONE and gpu_id and gpu_id != "all":
         # For platforms like Iluvatar/CoreX that use --privileged + /dev mount,
         # control visible GPUs via CUDA_VISIBLE_DEVICES.
