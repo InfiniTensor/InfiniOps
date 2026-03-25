@@ -1,11 +1,53 @@
 #ifndef INFINI_OPS_COMMON_CUDA_KERNEL_COMMONS_H_
 #define INFINI_OPS_COMMON_CUDA_KERNEL_COMMONS_H_
 
+#include <type_traits>
+
 #include "caster.h"
 
 namespace infini::ops {
 
 using AllCudaBlockSizes = List<128, 256, 512, 1024, 2048>;
+
+template <typename Backend, typename = void>
+struct BackendMaxBlockSize : std::integral_constant<int, 2048> {};
+
+template <typename Backend>
+struct BackendMaxBlockSize<Backend,
+                           std::void_t<decltype(Backend::max_block_size)>>
+    : std::integral_constant<int, Backend::max_block_size> {};
+
+template <int max_block_size>
+struct SupportedCudaBlockSizes;
+
+template <>
+struct SupportedCudaBlockSizes<2048> {
+  using type = AllCudaBlockSizes;
+};
+
+template <>
+struct SupportedCudaBlockSizes<1024> {
+  using type = List<128, 256, 512, 1024>;
+};
+
+template <>
+struct SupportedCudaBlockSizes<512> {
+  using type = List<128, 256, 512>;
+};
+
+template <>
+struct SupportedCudaBlockSizes<256> {
+  using type = List<128, 256>;
+};
+
+template <>
+struct SupportedCudaBlockSizes<128> {
+  using type = List<128>;
+};
+
+template <int max_block_size>
+using SupportedCudaBlockSizesType =
+    typename SupportedCudaBlockSizes<max_block_size>::type;
 
 __forceinline__ __device__ __host__ size_t
 IndexToOffset(size_t flat_index, size_t ndim, const size_t* shape,
