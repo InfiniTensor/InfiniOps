@@ -50,7 +50,7 @@ def test_gemm(
 
     # `cnnlBatchMatMulEx` does not accept `bfloat16` inputs on MLU.
     if device == "mlu" and dtype == torch.bfloat16:
-        pytest.skip("bfloat16 is not supported by cnnlBatchMatMulEx")
+        pytest.skip("`bfloat16` is not supported by `cnnlBatchMatMulEx`")
 
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
