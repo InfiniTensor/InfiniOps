@@ -31,7 +31,7 @@ jobs:
               mkdir -p Ascend_910_Test
             fi
             cd Ascend_910_Test
-            mkdir ${{ github.run_id }}
+            mkdir -p ${{ github.run_id }}
             cd ${{ github.run_id }}
             git init
             git remote add origin git@github.com:Vincent777/ci_autotest.git
