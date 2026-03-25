@@ -5,6 +5,9 @@ repo:
 github:
   status_context_prefix: "ci/infiniops"
 
+# Uncomment and replace the URLs below with actual host IPs to dispatch jobs to remote
+# machines via `agent.py run`. Required on the trigger machine when each platform's
+# agent runs on a separate host. See the README for multi-machine deployment details.
 # agents:
 #   nvidia:
 #     url: http://nvidia-host:8080
@@ -31,7 +34,7 @@ platforms:
           memory: 32GB
           shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit
           timeout: 3600
-        # env:                             # Optional: inject container env vars
+        # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
         stages:
           - name: test

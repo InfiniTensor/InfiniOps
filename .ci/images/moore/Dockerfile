@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# MUSA_HOME, PATH, LD_LIBRARY_PATH already set by base image
+# `MUSA_HOME`, `PATH`, `LD_LIBRARY_PATH` already set by base image.
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir \
     pytest-xdist \
     ruff==0.15.7
 
-# Pin pre-installed torch to prevent pip from replacing it with upstream version
+# Pin pre-installed `torch` to prevent `pip` from replacing it with upstream version.
 RUN echo "torch==$(pip show torch | grep '^Version:' | awk '{print $2}')" > /etc/pip-constraints.txt
 ENV PIP_CONSTRAINT=/etc/pip-constraints.txt
 

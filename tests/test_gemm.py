@@ -48,7 +48,7 @@ def test_gemm(
     if device == "mlu" and (trans_a or trans_b):
         pytest.skip("transposing is not currently supported on MLU")
 
-    # cnnlBatchMatMulEx does not accept bfloat16 inputs on MLU.
+    # `cnnlBatchMatMulEx` does not accept `bfloat16` inputs on MLU.
     if device == "mlu" and dtype == torch.bfloat16:
         pytest.skip("bfloat16 is not supported by cnnlBatchMatMulEx")
 
@@ -101,7 +101,7 @@ def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None)
 
         return torch.baddbmm(c, a, b, beta=beta, alpha=alpha, out=c)
     except RuntimeError:
-        # Fallback for backends that don't support addmm/baddbmm (e.g. CPU float16/bfloat16):
+        # Fallback for backends that don't support `addmm`/`baddbmm` (e.g. CPU `float16`/`bfloat16`):
         # compute in float32 and cast back.
         c_original = c.float()
         result = torch.matmul(a.float(), b.float())

@@ -6,7 +6,7 @@ import run
 
 
 # ---------------------------------------------------------------------------
-# resolve_image
+# Tests for `resolve_image`.
 # ---------------------------------------------------------------------------
 
 
@@ -22,7 +22,7 @@ def test_resolve_image_without_registry(minimal_config):
 
 
 # ---------------------------------------------------------------------------
-# build_runner_script
+# Tests for `build_runner_script`.
 # ---------------------------------------------------------------------------
 
 
@@ -47,7 +47,7 @@ def test_runner_script_creates_results_dir():
 
 
 # ---------------------------------------------------------------------------
-# build_docker_args — basic structure
+# Tests for `build_docker_args` basic structure.
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +93,7 @@ def test_docker_args_image_tag_override(minimal_config):
 
 
 # ---------------------------------------------------------------------------
-# build_docker_args — proxy passthrough
+# Tests for `build_docker_args` proxy passthrough.
 # ---------------------------------------------------------------------------
 
 
@@ -156,7 +156,7 @@ def test_docker_args_proxy_lowercase_fallback(minimal_config, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# build_docker_args — GPU flags
+# Tests for `build_docker_args` GPU flags.
 # ---------------------------------------------------------------------------
 
 
@@ -200,7 +200,7 @@ def test_docker_args_gpu_override(minimal_config):
 
 
 # ---------------------------------------------------------------------------
-# build_docker_args — memory format
+# Tests for `build_docker_args` memory format.
 # ---------------------------------------------------------------------------
 
 
@@ -222,7 +222,7 @@ def test_docker_args_memory_format(minimal_config, raw, expected):
 
 
 # ---------------------------------------------------------------------------
-# build_docker_args — stages encoding
+# Tests for `build_docker_args` stages encoding.
 # ---------------------------------------------------------------------------
 
 
@@ -249,7 +249,7 @@ def test_docker_args_multiple_stages(minimal_config):
 
 
 # ---------------------------------------------------------------------------
-# build_docker_args — results_dir mount
+# Tests for `build_docker_args` `results_dir` mount.
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +270,7 @@ def test_docker_args_results_dir(minimal_config, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# build_results_dir
+# Tests for `build_results_dir`.
 # ---------------------------------------------------------------------------
 
 

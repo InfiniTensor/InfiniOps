@@ -13,7 +13,7 @@ from utils import normalize_config
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Test fixtures.
 # ---------------------------------------------------------------------------
 
 
@@ -90,7 +90,7 @@ def mock_resource_pool():
 
 
 # ---------------------------------------------------------------------------
-# select_jobs
+# Tests for `select_jobs`.
 # ---------------------------------------------------------------------------
 
 
@@ -120,7 +120,7 @@ def test_select_jobs_invalid_name(agent_config):
 
 
 # ---------------------------------------------------------------------------
-# verify_signature
+# Tests for `verify_signature`.
 # ---------------------------------------------------------------------------
 
 
@@ -140,7 +140,7 @@ def test_verify_signature_empty():
 
 
 # ---------------------------------------------------------------------------
-# JobRequest / JobResult
+# Tests for `JobRequest` and `JobResult`.
 # ---------------------------------------------------------------------------
 
 
@@ -165,7 +165,7 @@ def test_job_result_failure():
 
 
 # ---------------------------------------------------------------------------
-# Scheduler
+# Tests for the `Scheduler` class.
 # ---------------------------------------------------------------------------
 
 
@@ -236,7 +236,7 @@ def test_scheduler_get_status(agent_config, mock_resource_pool):
 
 
 # ---------------------------------------------------------------------------
-# WebhookHandler — push event parsing
+# Tests for `WebhookHandler` push event parsing.
 # ---------------------------------------------------------------------------
 
 
@@ -264,12 +264,12 @@ def test_webhook_parse_pr():
 
 
 # ---------------------------------------------------------------------------
-# Integration-style: webhook HTTP test
+# Integration-style webhook HTTP tests.
 # ---------------------------------------------------------------------------
 
 
 def _urlopen_no_proxy(url_or_req, **kwargs):
-    """urlopen that bypasses any HTTP_PROXY."""
+    """`urlopen` mock that bypasses any `HTTP_PROXY`."""
     import urllib.request
 
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -442,12 +442,12 @@ def test_webhook_invalid_signature(agent_config, mock_resource_pool):
 
 
 # ---------------------------------------------------------------------------
-# API token authentication
+# Tests for API token authentication.
 # ---------------------------------------------------------------------------
 
 
 def test_api_run_requires_token(agent_config, mock_resource_pool, monkeypatch):
-    """When api_token is set, /api/run rejects requests without valid token."""
+    """When `api_token` is set, `/api/run` rejects requests without a valid token."""
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
@@ -491,7 +491,7 @@ def test_api_run_requires_token(agent_config, mock_resource_pool, monkeypatch):
 
 
 def test_api_run_accepts_valid_token(agent_config, mock_resource_pool, monkeypatch):
-    """When api_token is set, /api/run accepts requests with correct Bearer token."""
+    """When `api_token` is set, `/api/run` accepts requests with a correct Bearer token."""
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(

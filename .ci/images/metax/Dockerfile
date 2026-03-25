@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# conda Python is used in this image
+# `conda` Python is used in this image.
 ENV PATH=/opt/conda/bin:${PATH}
 
 ARG HTTP_PROXY
@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir \
     pyyaml \
     ruff==0.15.7
 
-# Pin pre-installed MetaX torch to prevent pip from replacing it with upstream version
+# Pin pre-installed MetaX `torch` to prevent `pip` from replacing it with upstream version.
 RUN pip show torch >/dev/null 2>&1 && \
     echo "torch==$(pip show torch | grep '^Version:' | awk '{print $2}')" > /etc/pip-constraints.txt || \
     touch /etc/pip-constraints.txt
