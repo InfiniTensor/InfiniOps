@@ -36,7 +36,7 @@ class CudaCausalSoftmax : public CausalSoftmax {
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(
-        // TODO: output dtype should use the one passed in during construction.
+        // TODO: Output dtype should use the one passed in during construction.
         {static_cast<int64_t>(out.dtype()), block_size},
         [&](auto list_tag) {
           using T = TypeMapType<ListGet<0>(list_tag)>;

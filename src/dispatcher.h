@@ -302,7 +302,7 @@ auto DispatchFunc(ValueType value, Functor &&func,
                                    std::forward<Args>(args)...);
 }
 
-// Interface for Any `int64_t`-convertible Types
+// Interface for Any `int64_t`-Convertible Types
 template <typename... Lists, typename Functor, typename... Args>
 auto DispatchFunc(std::initializer_list<int64_t> keys, Functor &&func,
                   std::string_view context_str = "", Args &&...args) {
