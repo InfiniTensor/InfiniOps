@@ -36,32 +36,20 @@ class CudaRmsNorm : public RmsNorm {
 
     int block_size = GetOptimalBlockSize();
 
-    DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
-        out.dtype(),
-        [&](auto tag) {
-          using T = typename decltype(tag)::type;
+    DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
+                 AllCudaBlockSizes>(
+        {static_cast<int64_t>(out.dtype()), block_size},
+        [&](auto list_tag) {
+          using T = TypeMapType<ListGet<0>(list_tag)>;
+          constexpr int kBlockSize = ListGet<1>(list_tag);
 
-#define LAUNCH_RMS_NORM_KERNEL(BLOCK_SIZE)                            \
-  RmsNormKernel<BLOCK_SIZE, float, T, T>                              \
-      <<<num_blocks, BLOCK_SIZE, 0, cuda_stream>>>(                   \
-          reinterpret_cast<T*>(out.data()), stride_out_batch,         \
-          stride_out_nhead, reinterpret_cast<const T*>(input.data()), \
-          stride_input_batch, stride_input_nhead,                     \
-          reinterpret_cast<const T*>(weight.data()), nhead_, dim_, eps);
-
-          if (block_size == CUDA_BLOCK_SIZE_2048) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_2048)
-          } else if (block_size == CUDA_BLOCK_SIZE_1024) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_1024)
-          } else if (block_size == CUDA_BLOCK_SIZE_512) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_512)
-          } else if (block_size == CUDA_BLOCK_SIZE_256) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_256)
-          } else {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_128)
-          }
-
-#undef LAUNCH_RMS_NORM_KERNEL
+          RmsNormKernel<kBlockSize, float, T, T>
+              <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
+                  reinterpret_cast<T*>(out.data()), stride_out_batch,
+                  stride_out_nhead, reinterpret_cast<const T*>(input.data()),
+                  stride_input_batch, stride_input_nhead,
+                  reinterpret_cast<const T*>(weight.data()), nhead_, dim_,
+                  eps_);
         },
         "CudaRmsNorm::operator()");
   }

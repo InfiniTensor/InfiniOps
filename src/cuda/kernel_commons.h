@@ -33,11 +33,7 @@ using cuda_bfloat162 = __mt_bfloat162;
 
 namespace infini::ops {
 
-constexpr int CUDA_BLOCK_SIZE_128 = 128;
-constexpr int CUDA_BLOCK_SIZE_256 = 256;
-constexpr int CUDA_BLOCK_SIZE_512 = 512;
-constexpr int CUDA_BLOCK_SIZE_1024 = 1024;
-constexpr int CUDA_BLOCK_SIZE_2048 = 2048;
+using AllCudaBlockSizes = List<128, 256, 512, 1024, 2048>;
 
 #if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
 // Cache `cudaDeviceProp` per device, initialized once at first access.
@@ -76,7 +72,7 @@ inline int QueryMaxThreadsPerBlock() {
 #elif defined(WITH_METAX)
 inline int QueryMaxThreadsPerBlock() {
   // TODO: Add MCR device properties query for Metax.
-  return CUDA_BLOCK_SIZE_256;
+  return 256;
 }
 #elif defined(WITH_MOORE)
 inline int QueryMaxThreadsPerBlock() {
@@ -91,16 +87,16 @@ inline int QueryMaxThreadsPerBlock() {
 // Get optimal block size based on GPU hardware architecture.
 inline int GetOptimalBlockSize() {
   int max_threads = QueryMaxThreadsPerBlock();
-  if (max_threads >= CUDA_BLOCK_SIZE_2048) {
-    return CUDA_BLOCK_SIZE_2048;
-  } else if (max_threads >= CUDA_BLOCK_SIZE_1024) {
-    return CUDA_BLOCK_SIZE_1024;
-  } else if (max_threads >= CUDA_BLOCK_SIZE_512) {
-    return CUDA_BLOCK_SIZE_512;
-  } else if (max_threads >= CUDA_BLOCK_SIZE_256) {
-    return CUDA_BLOCK_SIZE_256;
+  if (max_threads >= 2048) {
+    return 2048;
+  } else if (max_threads >= 1024) {
+    return 1024;
+  } else if (max_threads >= 512) {
+    return 512;
+  } else if (max_threads >= 256) {
+    return 256;
   } else {
-    return CUDA_BLOCK_SIZE_128;
+    return 128;
   }
 }
 
