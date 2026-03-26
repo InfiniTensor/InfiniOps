@@ -4,15 +4,16 @@
 #include <cmath>
 
 #include "base/causal_softmax.h"
-#include "common/cast.h"
 #include "common/generic_utils.h"
+#include "cpu/caster_.h"
 #include "data_type.h"
 #include "tensor.h"
 
 namespace infini::ops {
 
 template <>
-class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax {
+class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax,
+                                                    Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor input, Tensor out) : CausalSoftmax{input, out} {}
 

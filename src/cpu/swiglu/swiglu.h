@@ -4,13 +4,14 @@
 #include <cmath>
 
 #include "base/swiglu.h"
-#include "common/cast.h"
 #include "common/generic_utils.h"
+#include "cpu/caster_.h"
 
 namespace infini::ops {
 
 template <>
-class Operator<Swiglu, Device::Type::kCpu> : public Swiglu {
+class Operator<Swiglu, Device::Type::kCpu> : public Swiglu,
+                                             Caster<Device::Type::kCpu> {
  public:
   using Swiglu::Swiglu;
 

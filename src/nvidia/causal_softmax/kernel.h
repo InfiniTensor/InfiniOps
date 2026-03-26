@@ -7,6 +7,10 @@
 #include <cuda_runtime.h>
 // clang-format on
 
+// clang-format off
+#include "nvidia/device_.h"
+// clang-format on
+
 #include "cuda/causal_softmax/kernel.h"
 
 namespace infini::ops {

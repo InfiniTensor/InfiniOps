@@ -5,8 +5,8 @@
 #include <cstddef>
 #include <cub/block/block_reduce.cuh>
 
-#include "common/cuda/cast.h"
-#include "common/cuda/kernel_commons.h"
+#include "cuda/caster_.h"
+#include "cuda/kernel_commons.h"
 
 namespace infini::ops {
 
@@ -75,8 +75,7 @@ __global__ void CausalSoftmaxKernel(
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
     if (col < valid_len) {
-      Compute diff =
-          Cast<Compute>(input_row[col]) - Cast<Compute>(max_val);
+      Compute diff = Cast<Compute>(input_row[col]) - Cast<Compute>(max_val);
       out_row[col] = ExpAndCast<Data, Compute>(diff);
     } else {
       out_row[col] = Cast<Data>(0.0f);

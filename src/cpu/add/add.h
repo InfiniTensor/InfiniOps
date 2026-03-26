@@ -4,13 +4,14 @@
 #include <utility>
 
 #include "base/add.h"
-#include "common/cast.h"
 #include "common/generic_utils.h"
+#include "cpu/caster_.h"
 
 namespace infini::ops {
 
 template <>
-class Operator<Add, Device::Type::kCpu> : public Add {
+class Operator<Add, Device::Type::kCpu> : public Add,
+                                          Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor input, const Tensor other, Tensor out)
       : Add{input, other, out} {

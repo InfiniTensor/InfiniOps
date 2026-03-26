@@ -7,6 +7,10 @@
 #include <mcr/mc_runtime.h>
 // clang-format on
 
+// clang-format off
+#include "metax/device_.h"
+// clang-format on
+
 #include "cuda/rms_norm/kernel.h"
 
 namespace infini::ops {

@@ -29,7 +29,7 @@ using cuda_bfloat162 = __mt_bfloat162;
 #include <iostream>
 #include <vector>
 
-#include "cast.h"
+#include "caster.h"
 
 namespace infini::ops {
 

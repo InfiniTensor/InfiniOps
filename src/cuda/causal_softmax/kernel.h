@@ -4,8 +4,8 @@
 #include <cstdint>
 
 #include "base/causal_softmax.h"
-#include "common/cuda/kernel_commons.h"
 #include "cuda/causal_softmax/kernel.cuh"
+#include "cuda/kernel_commons.h"
 #include "data_type.h"
 #include "dispatcher.h"
 

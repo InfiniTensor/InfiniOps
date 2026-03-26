@@ -4,15 +4,16 @@
 #include <cmath>
 
 #include "base/rms_norm.h"
-#include "common/cast.h"
 #include "common/generic_utils.h"
+#include "cpu/caster_.h"
 #include "data_type.h"
 #include "tensor.h"
 
 namespace infini::ops {
 
 template <>
-class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm {
+class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
+                                              Caster<Device::Type::kCpu> {
  public:
   using RmsNorm::RmsNorm;
 

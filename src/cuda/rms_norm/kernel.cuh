@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <cub/block/block_reduce.cuh>
 
-#include "common/cuda/cast.h"
-#include "common/cuda/kernel_commons.h"
+#include "cuda/caster_.h"
+#include "cuda/kernel_commons.h"
 
 namespace infini::ops {
 
