@@ -1,7 +1,9 @@
 #ifndef INFINI_OPS_CUDA_RMS_NORM_KERNEL_H_
 #define INFINI_OPS_CUDA_RMS_NORM_KERNEL_H_
 
+#include <algorithm>
 #include <cstdint>
+#include <type_traits>
 
 #include "base/rms_norm.h"
 #include "cuda/kernel_commons.h"
@@ -10,6 +12,17 @@
 #include "dispatcher.h"
 
 namespace infini::ops {
+
+namespace rms_norm::detail {
+
+template <typename Backend, typename = void>
+struct MaxBlockSize : std::integral_constant<int, CUDA_BLOCK_SIZE_2048> {};
+
+template <typename Backend>
+struct MaxBlockSize<Backend, std::void_t<decltype(Backend::max_block_size)>>
+    : std::integral_constant<int, Backend::max_block_size> {};
+
+}  // namespace rms_norm::detail
 
 template <typename Backend>
 class CudaRmsNorm : public RmsNorm {
@@ -34,7 +47,8 @@ class CudaRmsNorm : public RmsNorm {
       std::abort();
     }
 
-    int block_size = GetOptimalBlockSize();
+    constexpr int kMaxBlockSize = rms_norm::detail::MaxBlockSize<Backend>::value;
+    int block_size = std::min(GetOptimalBlockSize(), kMaxBlockSize);
 
     DispatchFunc<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>(
         out.dtype(),
@@ -49,17 +63,31 @@ class CudaRmsNorm : public RmsNorm {
           stride_input_batch, stride_input_nhead,                     \
           reinterpret_cast<const T*>(weight.data()), nhead_, dim_, eps);
 
-          if (block_size == CUDA_BLOCK_SIZE_2048) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_2048)
-          } else if (block_size == CUDA_BLOCK_SIZE_1024) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_1024)
-          } else if (block_size == CUDA_BLOCK_SIZE_512) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_512)
-          } else if (block_size == CUDA_BLOCK_SIZE_256) {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_256)
-          } else {
-            LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_128)
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_2048) {
+            if (block_size == CUDA_BLOCK_SIZE_2048) {
+              LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_2048)
+              return;
+            }
           }
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_1024) {
+            if (block_size == CUDA_BLOCK_SIZE_1024) {
+              LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_1024)
+              return;
+            }
+          }
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_512) {
+            if (block_size == CUDA_BLOCK_SIZE_512) {
+              LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_512)
+              return;
+            }
+          }
+          if constexpr (kMaxBlockSize >= CUDA_BLOCK_SIZE_256) {
+            if (block_size == CUDA_BLOCK_SIZE_256) {
+              LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_256)
+              return;
+            }
+          }
+          LAUNCH_RMS_NORM_KERNEL(CUDA_BLOCK_SIZE_128)
 
 #undef LAUNCH_RMS_NORM_KERNEL
         },
