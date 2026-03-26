@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  smoketest:
+  smoketest_ascend:
     runs-on: self-hosted
     env:
       MODEL_LIST: DeepSeek-R1-Distill-Qwen-1.5B
@@ -42,6 +42,37 @@ jobs:
               Ascend  \
               Smoke \
               MindIE  \
+              ${MODEL_LIST} \
+              ${{ github.run_id }}  \
+              ${IMAGE}
+  smoketest_nvidia:
+    runs-on: self-hosted
+    env:
+      MODEL_LIST: Qwen3-32B-FP8
+      IMAGE: v0.10.0
+    steps:
+      - name: Trigger Nvidia GPU Smoke Test job
+        run: |
+            echo "Smoke Test Starting..."
+            echo "MODEL_LIST = $MODEL_LIST"
+            echo "Version = $IMAGE"
+            set -m
+            cd /home/zkjh
+            if [ ! -d Nvidia_910_Test ]; then
+              mkdir -p Nvidia_910_Test
+            fi
+            cd Nvidia_910_Test
+            mkdir -p ${{ github.run_id }}
+            cd ${{ github.run_id }}
+            git init
+            git remote add origin git@github.com:Vincent777/ci_autotest.git
+            git fetch --depth=1 origin main
+            git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
+            chmod a+x daemon.sh
+            ./daemon.sh \
+              Nvidia  \
+              Smoke \
+              vLLM  \
               ${MODEL_LIST} \
               ${{ github.run_id }}  \
               ${IMAGE}
