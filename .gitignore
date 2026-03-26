@@ -2,9 +2,6 @@
 build/
 generated/
 
-# CI test results
-ci-results/
-
 # Prerequisites
 *.d
 
