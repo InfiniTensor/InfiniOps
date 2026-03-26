@@ -76,3 +76,4 @@ jobs:
               ${MODEL_LIST} \
               ${{ github.run_id }}  \
               ${IMAGE}
+              
