@@ -3,8 +3,7 @@ FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# `conda` Python is used in this image.
-ENV PATH=/opt/conda/bin:${PATH}
+# MUSA_HOME, PATH, LD_LIBRARY_PATH already set by base image
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -19,10 +18,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-        git \
-        cmake \
         ninja-build \
-        coreutils \
         libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,17 +26,13 @@ ARG PIP_INDEX_URL
 RUN pip install --no-cache-dir \
     ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
     scikit-build-core \
-    pybind11 \
     libclang \
     pytest-cov \
     pytest-xdist \
-    pyyaml \
     ruff==0.15.7
 
-# Pin pre-installed MetaX `torch` to prevent `pip` from replacing it with upstream version.
-RUN pip show torch >/dev/null 2>&1 && \
-    echo "torch==$(pip show torch | grep '^Version:' | awk '{print $2}')" > /etc/pip-constraints.txt || \
-    touch /etc/pip-constraints.txt
+# Pin pre-installed torch to prevent pip from replacing it with upstream version
+RUN echo "torch==$(pip show torch | grep '^Version:' | awk '{print $2}')" > /etc/pip-constraints.txt
 ENV PIP_CONSTRAINT=/etc/pip-constraints.txt
 
 WORKDIR /workspace

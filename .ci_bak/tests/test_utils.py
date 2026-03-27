@@ -82,7 +82,7 @@ def test_normalize_preserves_top_level_keys():
 
 
 def test_normalize_passthrough_flat_config():
-    """Old flat format without `platforms` key is returned as-is."""
+    """Old flat format without 'platforms' key is returned as-is."""
     flat = {
         "images": {"nvidia": {}},
         "jobs": {"nvidia_gpu": {"platform": "nvidia"}},

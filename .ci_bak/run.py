@@ -9,51 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ci_resource import (
-    GPU_STYLE_NVIDIA,
-    GPU_STYLE_NONE,
-    GPU_STYLE_MLU,
-    ResourcePool,
-    detect_platform,
-)
+from ci_resource import GPU_STYLE_NVIDIA, GPU_STYLE_NONE, detect_platform
 from utils import get_git_commit, load_config
-
-# Flags that consume the next token as their value (e.g. -n 4, -k expr).
-_PYTEST_VALUE_FLAGS = {"-n", "-k", "-m", "-p", "--tb", "--junitxml", "--rootdir"}
-
-
-def apply_test_override(run_cmd, test_path):
-    """Replace positional test path(s) in a pytest stage command.
-
-    For example: ``pytest tests/ -n 4 ...`` becomes
-    ``pytest tests/test_gemm.py -n 4 ...`` when ``test_path`` is
-    ``tests/test_gemm.py``.
-    """
-    parts = shlex.split(run_cmd)
-
-    if not parts or parts[0] != "pytest":
-        return run_cmd
-
-    result = ["pytest", test_path]
-    skip_next = False
-
-    for p in parts[1:]:
-        if skip_next:
-            result.append(p)
-            skip_next = False
-            continue
-
-        if p.startswith("-"):
-            result.append(p)
-            if p in _PYTEST_VALUE_FLAGS:
-                skip_next = True
-            continue
-
-        # Skip existing test paths; the override is already in result[1].
-        if not ("/" in p or p.endswith(".py") or "::" in p):
-            result.append(p)
-
-    return shlex.join(result)
 
 
 def build_results_dir(base, platform, stages, commit):
@@ -87,14 +44,9 @@ def build_runner_script():
 set -e
 cd /workspace
 mkdir -p /workspace/results
-if [ -n "$LOCAL_SRC" ]; then
-  cp -r "$LOCAL_SRC" /tmp/src
-  cd /tmp/src
-else
-  git clone "$REPO_URL" repo
-  cd repo
-  git checkout "$BRANCH"
-fi
+git clone "$REPO_URL" repo
+cd repo
+git checkout "$BRANCH"
 echo "========== Setup =========="
 eval "$SETUP_CMD"
 set +e
@@ -105,7 +57,7 @@ for i in $(seq 1 "$NUM_STAGES"); do
   name="${!name_var}"
   cmd="${!cmd_var}"
   echo "========== Stage: $name =========="
-  [ -n "$cmd" ] && { eval "$cmd" || failed=1; }
+  eval "$cmd" || failed=1
 done
 echo "========== Summary =========="
 if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
@@ -125,7 +77,6 @@ def build_docker_args(
     image_tag_override,
     gpu_id_override=None,
     results_dir=None,
-    local_path=None,
 ):
     job = config["jobs"][job_name]
     platform = job.get("platform", "nvidia")
@@ -175,15 +126,11 @@ def build_docker_args(
     if results_dir:
         args.extend(["-v", f"{results_dir.resolve()}:/workspace/results"])
 
-    if local_path:
-        args.extend(["-v", f"{local_path}:/workspace/repo:ro"])
-        args.extend(["-e", "LOCAL_SRC=/workspace/repo"])
-
     for i, s in enumerate(stages):
         args.append("-e")
         args.append(f"STAGE_{i + 1}_NAME={s['name']}")
         args.append("-e")
-        args.append(f"STAGE_{i + 1}_CMD={s.get('run', '')}")
+        args.append(f"STAGE_{i + 1}_CMD={s['run']}")
 
     # Platform-specific device access
     for flag in job.get("docker_args", []):
@@ -193,7 +140,7 @@ def build_docker_args(
         args.extend(["-v", vol])
 
     gpu_id = gpu_id_override or str(resources.get("gpu_ids", ""))
-    ngpus = resources.get("ngpus")
+    gpu_count = resources.get("gpu_count", 0)
     gpu_style = resources.get("gpu_style", GPU_STYLE_NVIDIA)
 
     if gpu_style == GPU_STYLE_NVIDIA:
@@ -202,16 +149,12 @@ def build_docker_args(
                 args.extend(["--gpus", "all"])
             else:
                 args.extend(["--gpus", f'"device={gpu_id}"'])
-        elif ngpus:
-            args.extend(["--gpus", f"count={ngpus}"])
+        elif gpu_count and gpu_count > 0:
+            args.extend(["--gpus", f"count={gpu_count}"])
     elif gpu_style == GPU_STYLE_NONE and gpu_id and gpu_id != "all":
         # For platforms like Iluvatar/CoreX that use --privileged + /dev mount,
         # control visible GPUs via CUDA_VISIBLE_DEVICES.
         args.extend(["-e", f"CUDA_VISIBLE_DEVICES={gpu_id}"])
-    elif gpu_style == GPU_STYLE_MLU and gpu_id and gpu_id != "all":
-        # For Cambricon MLU platforms that use --privileged,
-        # control visible devices via MLU_VISIBLE_DEVICES.
-        args.extend(["-e", f"MLU_VISIBLE_DEVICES={gpu_id}"])
 
     memory = resources.get("memory")
 
@@ -252,8 +195,7 @@ def resolve_job_names(jobs, platform, job=None):
 
     if job:
         matches = [
-            name
-            for name, cfg in jobs.items()
+            name for name, cfg in jobs.items()
             if cfg.get("platform") == platform and cfg.get("short_name") == job
         ]
 
@@ -266,7 +208,9 @@ def resolve_job_names(jobs, platform, job=None):
 
         return matches
 
-    matches = [name for name, cfg in jobs.items() if cfg.get("platform") == platform]
+    matches = [
+        name for name, cfg in jobs.items() if cfg.get("platform") == platform
+    ]
 
     if not matches:
         print(f"error: no jobs for platform {platform!r}", file=sys.stderr)
@@ -283,9 +227,7 @@ def main():
         default=Path(__file__).resolve().parent / "config.yaml",
         help="Path to config.yaml",
     )
-    parser.add_argument(
-        "--branch", type=str, help="Override repo branch (default: config repo.branch)"
-    )
+    parser.add_argument("--branch", type=str, help="Override repo branch (default: config repo.branch)")
     parser.add_argument(
         "--job",
         type=str,
@@ -313,16 +255,6 @@ def main():
         help="Base directory for test results (default: ./ci-results)",
     )
     parser.add_argument(
-        "--test",
-        type=str,
-        help='Override pytest test path, e.g. "tests/test_gemm.py" or "tests/test_gemm.py::test_gemm"',
-    )
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help="Mount current directory (read-only) into the container instead of cloning from git",
-    )
-    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print docker command and exit",
@@ -337,8 +269,10 @@ def main():
     platform = detect_platform()
 
     if not platform:
-        tools = ", ".join(ResourcePool.GPU_QUERY_TOOLS.values())
-        print(f"error: could not detect platform (no {tools} found)", file=sys.stderr)
+        print(
+            "error: could not detect platform (no nvidia-smi or ixsmi found)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print(f"platform: {platform}", file=sys.stderr)
@@ -360,25 +294,15 @@ def main():
             stages = [s for s in all_stages if s["name"] == args.stage]
 
             if not stages:
-                print(
-                    f"error: stage {args.stage!r} not found in {job_name}",
-                    file=sys.stderr,
-                )
+                print(f"error: stage {args.stage!r} not found in {job_name}", file=sys.stderr)
                 sys.exit(1)
         else:
             stages = all_stages
-
-        if args.test:
-            stages = [
-                {**s, "run": apply_test_override(s.get("run", ""), args.test)}
-                for s in stages
-            ]
 
         job_platform = job.get("platform", platform)
         commit = get_git_commit()
         results_dir = build_results_dir(args.results_dir, job_platform, stages, commit)
 
-        local_path = Path.cwd().resolve() if args.local else None
         docker_args = build_docker_args(
             config,
             job_name,
@@ -389,7 +313,6 @@ def main():
             args.image_tag,
             gpu_id_override=args.gpu_id,
             results_dir=results_dir,
-            local_path=local_path,
         )
 
         if args.dry_run:

@@ -1,0 +1,152 @@
+name: CI From Custom Config
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ci_test"]
+  pull_request:
+    branches: ["ci_test"]
+
+jobs:
+  nvidia_gpu:
+    runs-on: [self-hosted, linux, nvidia]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build nvidia image
+        run: |
+          docker build \
+            -f .ci/images/nvidia/Dockerfile \
+            --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch:24.10-py3 \
+            -t infiniops-ci:nvidia .
+
+      - name: Run nvidia tests
+        run: |
+          docker run --rm \
+            --gpus all \
+            --shm-size 16g \
+            --memory 32g \
+            -v "${{ github.workspace }}:/workspace/repo" \
+            -w /workspace/repo \
+            infiniops-ci:nvidia \
+            bash -lc "pip install .[dev] --no-build-isolation && pytest tests/ -n 8 -v --tb=short"
+
+  iluvatar_gpu:
+    runs-on: [self-hosted, linux, iluvatar]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build iluvatar image
+        run: |
+          docker build \
+            -f .ci/images/iluvatar/Dockerfile \
+            --build-arg BASE_IMAGE=corex:qs_pj20250825 \
+            --build-arg APT_MIRROR=http://archive.ubuntu.com/ubuntu \
+            --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+            -t infiniops-ci:iluvatar .
+
+      - name: Run iluvatar tests
+        run: |
+          docker run --rm \
+            --privileged \
+            --cap-add=ALL \
+            --pid=host \
+            --ipc=host \
+            --shm-size 16g \
+            --memory 32g \
+            -v /dev:/dev \
+            -v /lib/firmware:/lib/firmware \
+            -v /usr/src:/usr/src \
+            -v /lib/modules:/lib/modules \
+            -e CUDA_VISIBLE_DEVICES=0 \
+            -v "${{ github.workspace }}:/workspace/repo" \
+            -w /workspace/repo \
+            infiniops-ci:iluvatar \
+            bash -lc "pip install .[dev] --no-build-isolation && pytest tests/ -n 8 -v --tb=short"
+
+  metax_gpu:
+    runs-on: [self-hosted, linux, metax]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build metax image
+        run: |
+          docker build \
+            -f .ci/images/metax/Dockerfile \
+            --build-arg BASE_IMAGE=cr.metax-tech.com/public-library/maca-pytorch:3.2.1.4-torch2.4-py310-ubuntu22.04-amd64 \
+            --build-arg APT_MIRROR=http://archive.ubuntu.com/ubuntu \
+            --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+            -t infiniops-ci:metax .
+
+      - name: Run metax tests
+        run: |
+          docker run --rm \
+            --privileged \
+            --ulimit=memlock=-1 \
+            --ulimit=stack=67108864 \
+            --shm-size 16g \
+            --memory 32g \
+            -v "${{ github.workspace }}:/workspace/repo" \
+            -w /workspace/repo \
+            infiniops-ci:metax \
+            bash -lc "pip install .[dev] --no-build-isolation && pytest tests/ -n 4 -v --tb=short"
+
+  moore_gpu:
+    runs-on: [self-hosted, linux, moore]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build moore image
+        run: |
+          docker build \
+            -f .ci/images/moore/Dockerfile \
+            --build-arg BASE_IMAGE=sh-harbor.mthreads.com/mcctest/vllm_musa:20251112_hygon \
+            --build-arg APT_MIRROR=http://archive.ubuntu.com/ubuntu \
+            --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+            -t infiniops-ci:moore .
+
+      - name: Run moore tests
+        run: |
+          docker run --rm \
+            --privileged \
+            --shm-size 16g \
+            --memory 32g \
+            -v "${{ github.workspace }}:/workspace/repo" \
+            -w /workspace/repo \
+            infiniops-ci:moore \
+            bash -lc "pip install .[dev] --no-build-isolation && pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py -n 4 -v --tb=short"
+
+  cambricon_gpu:
+    runs-on: [self-hosted, linux, cambricon]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build cambricon image
+        run: |
+          docker build \
+            -f .ci/images/cambricon/Dockerfile \
+            --build-arg BASE_IMAGE=cambricon/pytorch:v1.25.3-torch2.1-anolisos8.8-py310 \
+            --build-arg PIP_INDEX_URL=https://pypi.org/simple \
+            -t infiniops-ci:cambricon .
+
+      - name: Run cambricon tests
+        run: |
+          docker run --rm \
+            --privileged \
+            --shm-size 16g \
+            --memory 32g \
+            -e MLU_VISIBLE_DEVICES=0 \
+            -v "${{ github.workspace }}:/workspace/repo" \
+            -w /workspace/repo \
+            infiniops-ci:cambricon \
+            bash -lc "pip install .[dev] --no-build-isolation && pytest tests/test_gemm.py -n 4 -v --tb=short"

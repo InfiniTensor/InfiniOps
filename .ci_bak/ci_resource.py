@@ -2,18 +2,16 @@
 """Resource detection and allocation for CI Runner Agent."""
 
 import json
-import operator
 import os
 import re
 import shutil
 import subprocess
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # GPU passthrough styles
 GPU_STYLE_NVIDIA = "nvidia"
 GPU_STYLE_NONE = "none"
-GPU_STYLE_MLU = "mlu"
 
 
 @dataclass
@@ -43,7 +41,6 @@ class ResourcePool:
         "iluvatar": "ixsmi",
         "metax": "mx-smi",
         "moore": "mthreads-gmi",
-        "cambricon": "cnmon",
     }
 
     def __init__(self, platform, utilization_threshold=10):
@@ -68,9 +65,6 @@ class ResourcePool:
 
         if self._platform == "moore":
             return self._detect_gpus_moore()
-
-        if self._platform == "cambricon":
-            return self._detect_gpus_cambricon()
 
         tool = self.GPU_QUERY_TOOLS.get(self._platform)
 
@@ -133,9 +127,7 @@ class ResourcePool:
             try:
                 r = subprocess.run(
                     ["mx-smi", flag],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
+                    capture_output=True, text=True, timeout=10,
                 )
                 return r.stdout if r.returncode == 0 else ""
             except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -186,14 +178,12 @@ class ResourcePool:
         gpus = []
         for idx in sorted(mem):
             used_mb, total_mb = mem[idx]
-            gpus.append(
-                GpuInfo(
-                    index=idx,
-                    memory_used_mb=used_mb,
-                    memory_total_mb=total_mb,
-                    utilization_pct=util.get(idx, 0.0),
-                )
-            )
+            gpus.append(GpuInfo(
+                index=idx,
+                memory_used_mb=used_mb,
+                memory_total_mb=total_mb,
+                utilization_pct=util.get(idx, 0.0),
+            ))
         return gpus
 
     def _detect_gpus_moore(self) -> list[GpuInfo]:
@@ -216,7 +206,6 @@ class ResourcePool:
               }
             }
         """
-
         def extract_number(s):
             m = re.search(r"([\d.]+)", str(s))
             return float(m.group(1)) if m else 0.0
@@ -253,77 +242,16 @@ class ResourcePool:
                     gpu_data.get("Utilization", {}).get("Gpu", "0 %")
                 )
 
-                gpus.append(
-                    GpuInfo(
-                        index=index,
-                        memory_used_mb=used_mb,
-                        memory_total_mb=total_mb,
-                        utilization_pct=util_pct,
-                    )
-                )
+                gpus.append(GpuInfo(
+                    index=index,
+                    memory_used_mb=used_mb,
+                    memory_total_mb=total_mb,
+                    utilization_pct=util_pct,
+                ))
             except (ValueError, AttributeError):
                 continue
 
-        return sorted(gpus, key=operator.attrgetter("index"))
-
-    def _detect_gpus_cambricon(self) -> list[GpuInfo]:
-        """Parse cnmon output for Cambricon MLU cards.
-
-        Each card appears as two consecutive data rows:
-            Row 1: | {card}  {vf}  {name}  {fw} | {bus_id} | {util}%  {ecc} |
-            Row 2: | {fan}%  {temp}  {pwr} | {mem_used} MiB/ {mem_total} MiB | ... |
-        """
-        try:
-            result = subprocess.run(
-                ["cnmon"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return []
-
-        if result.returncode != 0:
-            return []
-
-        gpus = []
-        lines = result.stdout.splitlines()
-        i = 0
-
-        while i < len(lines):
-            line = lines[i]
-            # Row 1: "| {index} ... | {bus_id} | {util}%  {ecc} |"
-            m1 = re.match(r"^\|\s+(\d+)\s+.*\|\s*([\d.]+)%", line)
-
-            if m1 and i + 1 < len(lines):
-                try:
-                    card_index = int(m1.group(1))
-                    util_pct = float(m1.group(2))
-                    row2 = lines[i + 1]
-                    mem_m = re.search(r"([\d.]+)\s+MiB/\s*([\d.]+)\s+MiB", row2)
-
-                    if mem_m:
-                        used_mb = float(mem_m.group(1))
-                        total_mb = float(mem_m.group(2))
-                    else:
-                        used_mb, total_mb = 0.0, 0.0
-
-                    gpus.append(
-                        GpuInfo(
-                            index=card_index,
-                            memory_used_mb=used_mb,
-                            memory_total_mb=total_mb,
-                            utilization_pct=util_pct,
-                        )
-                    )
-                except (ValueError, AttributeError):
-                    pass
-                i += 2
-                continue
-
-            i += 1
-
-        return sorted(gpus, key=operator.attrgetter("index"))
+        return sorted(gpus, key=lambda g: g.index)
 
     def detect_system_resources(self) -> SystemResources:
         """Read system memory from /proc/meminfo and CPU count."""
@@ -350,7 +278,9 @@ class ResourcePool:
         """Return GPU indices with utilization below threshold."""
         gpus = self.detect_gpus()
         return [
-            g.index for g in gpus if g.utilization_pct < self._utilization_threshold
+            g.index
+            for g in gpus
+            if g.utilization_pct < self._utilization_threshold
         ]
 
     def allocate(self, gpu_count, memory_mb=0) -> tuple[list[int], bool]:
@@ -428,10 +358,6 @@ def parse_gpu_requirement(job_config) -> int:
 
     if gpu_style == GPU_STYLE_NONE:
         return 0
-
-    ngpus = resources.get("ngpus")
-    if ngpus is not None:
-        return int(ngpus)
 
     gpu_ids = str(resources.get("gpu_ids", ""))
 

@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pyyaml \
     ruff==0.15.7
 
-# Pin pre-installed torch to prevent pip from replacing it with a different version
+# Pin pre-installed `torch` to prevent `pip` from replacing it with a different version.
 RUN pip show torch >/dev/null 2>&1 && \
     echo "torch==$(pip show torch | grep '^Version:' | awk '{print $2}')" > /etc/pip-constraints.txt || \
     touch /etc/pip-constraints.txt

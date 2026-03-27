@@ -1,0 +1,78 @@
+name: CI Child Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      matrix_json:
+        description: "Matrix JSON generated from .ci/config.yaml"
+        required: true
+        type: string
+
+jobs:
+  platform-jobs:
+    # Matrix expands into independent jobs (one per platform/job entry),
+    # not serial steps in a single job. If a platform runner is busy/offline,
+    # only that matrix entry stays queued.
+    name: ${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix: ${{ fromJson(inputs.matrix_json) }}
+    runs-on: [self-hosted, "${{ matrix.runner_label }}"]
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python dependency
+        run: pip3 install pyyaml
+
+      - name: Show stage plan
+        env:
+          MATRIX_JSON: ${{ inputs.matrix_json }}
+          CURRENT_JOB: ${{ matrix.id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          data = json.loads(os.environ["MATRIX_JSON"])
+          current = os.environ["CURRENT_JOB"]
+          entry = next((x for x in data.get("include", []) if x.get("id") == current), None)
+          if not entry:
+              print(f"[warn] matrix entry not found for {current}")
+              raise SystemExit(0)
+
+          test_cmd = entry.get("test_cmd", "")
+          lines = [
+              f"job: {entry.get('id')}",
+              f"platform: {entry.get('platform')}",
+              "stage order:",
+              "  1) setup",
+              f"  2) test -> {test_cmd}",
+          ]
+          text = "\n".join(lines)
+          print(text)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write("### Stage plan\n\n")
+                  f.write("```\n")
+                  f.write(text)
+                  f.write("\n```\n\n")
+          PY
+
+      - name: Build image via .ci/build.py
+        run: |
+          python3 .ci/build.py \
+            --config .ci/config.yaml \
+            --platform "${{ matrix.platform }}" \
+            --force
+
+      - name: Run stages via .ci/run.py (sequential inside job)
+        run: |
+          python3 .ci/run.py \
+            --config .ci/config.yaml \
+            --job "${{ matrix.id }}" \
+            --local

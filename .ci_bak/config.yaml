@@ -3,22 +3,13 @@ repo:
   branch: master
 
 github:
-  status_context_prefix: "ci/infiniops"
+  status_context_prefix: "ci/infiniops"    # GitHub Commit Status context 前缀
 
-# Uncomment and replace the URLs below with actual host IPs to dispatch jobs to remote
-# machines via `agent.py run`. Required on the trigger machine when each platform's
-# agent runs on a separate host. See the README for multi-machine deployment details.
-# agents:
+# agents:                                  # 远程 Agent 地址（CLI 跨机器触发用）
 #   nvidia:
 #     url: http://nvidia-host:8080
 #   iluvatar:
 #     url: http://iluvatar-host:8080
-#   metax:
-#     url: http://metax-host:8080
-#   moore:
-#     url: http://moore-host:8080
-#   cambricon:
-#     url: http://cambricon-host:8080
 
 platforms:
   nvidia:
@@ -30,11 +21,11 @@ platforms:
     jobs:
       gpu:
         resources:
-          ngpus: 1                         # Scheduler auto-picks this many free GPUs
+          gpu_ids: "0"                     # 指定 GPU ID，如 "0" "0,2" "all"
           memory: 32GB
-          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit
+          shm_size: 16g                    # 避免 PyTorch 默认 64MB SHMEM 不足
           timeout: 3600
-        # env:                             # Uncomment to inject extra env vars into the container.
+        # env:                             # 可选，注入容器环境变量
         #   MY_VAR: value
         stages:
           - name: test
@@ -61,8 +52,8 @@ platforms:
     jobs:
       gpu:
         resources:
-          gpu_ids: "0"                     # GPU visibility via CUDA_VISIBLE_DEVICES
-          gpu_style: none                  # CoreX: passthrough via --privileged + /dev mount
+          gpu_ids: "0"                     # 通过 CUDA_VISIBLE_DEVICES 控制可见 GPU
+          gpu_style: none                  # CoreX 设备通过 --privileged + /dev 挂载透传
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -86,7 +77,7 @@ platforms:
       gpu:
         resources:
           gpu_ids: "0"
-          gpu_style: none                  # MetaX: passthrough via --privileged, no CUDA_VISIBLE_DEVICES
+          gpu_style: none                  # MetaX 设备通过 --privileged 透传，无需 CUDA_VISIBLE_DEVICES
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -108,34 +99,13 @@ platforms:
       gpu:
         resources:
           gpu_ids: "0"
-          gpu_style: none                  # Moore: passthrough via --privileged, MTHREADS_VISIBLE_DEVICES set by base image
+          gpu_style: none                  # Moore 设备通过 --privileged 透传，MTHREADS_VISIBLE_DEVICES 由基础镜像设置
           memory: 32GB
           shm_size: 16g
           timeout: 3600
         stages:
           - name: test
             run: pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
-
-  cambricon:
-    image:
-      dockerfile: .ci/images/cambricon/
-      build_args:
-        BASE_IMAGE: cambricon/pytorch:v1.25.3-torch2.1-anolisos8.8-py310
-        PIP_INDEX_URL: https://pypi.org/simple
-    docker_args:
-      - "--privileged"
-    setup: pip install .[dev] --no-build-isolation
-    jobs:
-      gpu:
-        resources:
-          gpu_ids: "0"
-          gpu_style: mlu                   # Cambricon: passthrough via --privileged, MLU_VISIBLE_DEVICES for device control
-          memory: 32GB
-          shm_size: 16g
-          timeout: 3600
-        stages:
-          - name: test
-            run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:                                  # TODO: Ascend image is not ready yet
     image:
