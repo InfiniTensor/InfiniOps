@@ -24,9 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python dependency
-        run: pip3 install pyyaml
-
       - name: Show stage plan
         env:
           MATRIX_JSON: ${{ inputs.matrix_json }}
