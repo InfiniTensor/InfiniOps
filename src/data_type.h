@@ -5,25 +5,9 @@
 #include <cstring>
 #include <string>
 
-#ifdef WITH_NVIDIA
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#elif defined(WITH_ILUVATAR)
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#elif defined(WITH_METAX)
-#include <common/maca_bfloat16.h>
-#include <common/maca_fp16.h>
-#elif defined(WITH_MOORE)
-#include <musa_bf16.h>
-#include <musa_fp16.h>
-#elif defined(WITH_CAMBRICON)
-#include "bang_bf16.h"
-#include "bang_fp16.h"
-#endif
-
 #include "common/constexpr_map.h"
 #include "common/traits.h"
+#include "device.h"
 
 namespace infini::ops {
 
@@ -167,27 +151,16 @@ struct BFloat16 {
   }
 };
 
-template <DataType dtype>
+template <Device::Type dev, DataType dtype>
 struct TypeMap;
 
-template <DataType dtype>
-using TypeMapType = typename TypeMap<dtype>::type;
+template <Device::Type dev, DataType dtype>
+using TypeMapType = typename TypeMap<dev, dtype>::type;
 
-template <typename T>
-struct DataTypeMap;
-
-template <typename T>
-inline constexpr DataType DataTypeMapValue = DataTypeMap<T>::value;
-
-#define DEFINE_DATA_TYPE_MAPPING(ENUM_VALUE, CPP_TYPE)      \
-  template <>                                               \
-  struct TypeMap<DataType::ENUM_VALUE> {                    \
-    using type = CPP_TYPE;                                  \
-  };                                                        \
-                                                            \
-  template <>                                               \
-  struct DataTypeMap<CPP_TYPE> {                            \
-    static constexpr DataType value = DataType::ENUM_VALUE; \
+#define DEFINE_DATA_TYPE_MAPPING(ENUM_VALUE, CPP_TYPE) \
+  template <Device::Type dev>                          \
+  struct TypeMap<dev, DataType::ENUM_VALUE> {          \
+    using type = CPP_TYPE;                             \
   };
 
 DEFINE_DATA_TYPE_MAPPING(kUInt8, std::uint8_t)
@@ -200,31 +173,18 @@ DEFINE_DATA_TYPE_MAPPING(kUInt64, std::uint64_t)
 DEFINE_DATA_TYPE_MAPPING(kInt64, std::int64_t)
 DEFINE_DATA_TYPE_MAPPING(kFloat32, float)
 DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
-
-#if defined(WITH_NVIDIA) || defined(WITH_ILUVATAR)
-DEFINE_DATA_TYPE_MAPPING(kFloat16, half)
-DEFINE_DATA_TYPE_MAPPING(kBFloat16, __nv_bfloat16)
-#elif defined(WITH_METAX)
-DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
-DEFINE_DATA_TYPE_MAPPING(kBFloat16, __maca_bfloat16)
-#elif defined(WITH_MOORE)
-DEFINE_DATA_TYPE_MAPPING(kFloat16, half)
-DEFINE_DATA_TYPE_MAPPING(kBFloat16, __mt_bfloat16)
-#elif defined(WITH_CAMBRICON)
-DEFINE_DATA_TYPE_MAPPING(kFloat16, __half)
-DEFINE_DATA_TYPE_MAPPING(kBFloat16, __bang_bfloat16)
-#else
-DEFINE_DATA_TYPE_MAPPING(kFloat16, Float16)
-DEFINE_DATA_TYPE_MAPPING(kBFloat16, BFloat16)
-#endif
 #undef DEFINE_DATA_TYPE_MAPPING
 
-// Define the traits to check whether a type is bfloat16 or float16.
-template <typename T>
-inline constexpr bool IsBFloat16 = (DataTypeMapValue<T> == DataType::kBFloat16);
+// Checks whether a C++ type is the bfloat16 or float16 type for the given
+// device. Full specializations for each device's float16/bfloat16 types are
+// provided in the corresponding platform device_.h headers.
+template <Device::Type dev, typename T>
+inline constexpr bool IsBFloat16 =
+    std::is_same_v<T, TypeMapType<dev, DataType::kBFloat16>>;
 
-template <typename T>
-inline constexpr bool IsFP16 = (DataTypeMapValue<T> == DataType::kFloat16);
+template <Device::Type dev, typename T>
+inline constexpr bool IsFP16 =
+    std::is_same_v<T, TypeMapType<dev, DataType::kFloat16>>;
 
 // Defines the common categories of data types using List.
 using FloatTypes = List<DataType::kFloat32, DataType::kFloat64>;
