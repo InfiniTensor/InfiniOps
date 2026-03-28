@@ -17,7 +17,7 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu,
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
@@ -30,7 +30,9 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu,
   template <typename T>
   void Compute(const Tensor input, const Tensor gate, Tensor out) const {
     using ComputeType =
-        std::conditional_t<IsBFloat16<T> || IsFP16<T>, float, T>;
+        std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
+                               IsFP16<Device::Type::kCpu, T>,
+                           float, T>;
 
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* gate_ptr = static_cast<const T*>(gate.data());

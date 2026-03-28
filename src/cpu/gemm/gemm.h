@@ -31,7 +31,7 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm,
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         c.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;

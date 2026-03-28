@@ -10,33 +10,78 @@ namespace py = pybind11;
 
 namespace infini::ops {
 
+namespace detail {
+
+template <Device::Type kDev>
+struct TorchDeviceName;
+
+template <>
+struct TorchDeviceName<Device::Type::kCpu> {
+  static constexpr std::string_view kValue{"cpu"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kNvidia> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kMetax> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kIluvatar> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kKunlun> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kHygon> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kQy> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kCambricon> {
+  static constexpr std::string_view kValue{"mlu"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kAscend> {
+  static constexpr std::string_view kValue{"npu"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kMoore> {
+  static constexpr std::string_view kValue{"musa"};
+};
+
+template <Device::Type... kDevs>
+std::unordered_map<std::string, Device::Type> BuildTorchNameMap(
+    List<kDevs...>) {
+  std::unordered_map<std::string, Device::Type> map;
+  (map.emplace(std::string{TorchDeviceName<kDevs>::kValue}, kDevs), ...);
+  return map;
+}
+
+}  // namespace detail
+
 inline DataType DataTypeFromString(const std::string& name) {
   return kStringToDataType.at(name);
 }
 
 inline Device::Type DeviceTypeFromString(const std::string& name) {
-  static const std::unordered_map<std::string, Device::Type> kTorchNameToTypes{
-      {"cpu", Device::Type::kCpu},
-#ifdef WITH_NVIDIA
-      {"cuda", Device::Type::kNvidia},
-#endif
-#ifdef WITH_METAX
-      {"cuda", Device::Type::kMetax},
-#endif
-#ifdef WITH_ILUVATAR
-      {"cuda", Device::Type::kIluvatar},
-#endif
-#ifdef WITH_KUNLUN
-      {"cuda", Device::Type::kKunlun},
-#endif
-#ifdef WITH_HYGON
-      {"cuda", Device::Type::kHygon},
-#endif
-#ifdef WITH_QY
-      {"cuda", Device::Type::kQy},
-#endif
-      {"mlu", Device::Type::kCambricon}, {"npu", Device::Type::kAscend},
-      {"musa", Device::Type::kMoore}};
+  static const auto kTorchNameToTypes{
+      detail::BuildTorchNameMap(ActiveDevices{})};
 
   auto it{kTorchNameToTypes.find(name)};
 

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../common.h"
+#include "../device_.h"
 #include "base/rms_norm.h"
 
 namespace infini::ops {
@@ -33,6 +34,7 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
     auto workspace{workspace_ ? workspace_ : default_workspace_};
 
     DispatchFunc<
+        Device::Type::kCambricon,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
         {input.dtype(), weight.dtype()},
