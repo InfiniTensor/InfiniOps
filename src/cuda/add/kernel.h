@@ -50,11 +50,11 @@ class CudaAdd : public Add {
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
-    int block_size = GetOptimalBlockSize();
+    int block_size = Backend::GetOptimalBlockSize();
     DispatchFunc<AllTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size},
         [&](auto list_tag) {
-          using T = TypeMapType<ListGet<0>(list_tag)>;
+          using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
           auto cuda_stream =
@@ -67,7 +67,7 @@ class CudaAdd : public Add {
           const T* d_input = reinterpret_cast<const T*>(input.data());
           const T* d_other = reinterpret_cast<const T*>(other.data());
 
-          AddKernel<T, kBlockSize><<<gridDims, blockDims, 0, cuda_stream>>>(
+          AddKernel<Backend::kDeviceType, T, kBlockSize><<<gridDims, blockDims, 0, cuda_stream>>>(
               d_out, d_input, d_other, d_out_shape_, d_input_shape_,
               d_other_shape_, d_out_strides_, d_input_strides_,
               d_other_strides_, output_size_, ndim_, is_out_contiguous_,

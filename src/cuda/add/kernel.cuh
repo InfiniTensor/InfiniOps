@@ -5,16 +5,14 @@
 
 namespace infini::ops {
 
+template <Device::Type kDev>
 struct AddOp {
   static constexpr std::size_t num_inputs = 2;
 
   template <typename T>
   __device__ __forceinline__ T operator()(const T& input,
                                           const T& other) const {
-    if constexpr (std::is_same_v<T, half2>) {
-      return __hadd2(input, other);
-    } else if constexpr (std::is_same_v<T, half> ||
-                         std::is_same_v<T, TypeMapType<DataType::kBFloat16>>) {
+    if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
       return __hadd(input, other);
     } else if constexpr (std::is_same_v<T, float>) {
       return __fadd_rn(input, other);
@@ -24,7 +22,7 @@ struct AddOp {
   }
 };
 
-template <typename T, unsigned int BLOCK_SIZE>
+template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
 __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
                           const T* __restrict__ other,
                           const size_t* __restrict__ out_shape,
@@ -47,7 +45,7 @@ __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
         other_contiguous ? idx
                          : IndexToOffset(idx, ndim, other_shape, other_strides);
 
-    out[out_idx] = AddOp{}(input[input_idx], other[other_idx]);
+    out[out_idx] = AddOp<kDev>{}(input[input_idx], other[other_idx]);
   }
 }
 

@@ -12,12 +12,13 @@ namespace infini::ops {
 
 namespace {
 
-template <unsigned int block_size, typename TData, typename TCompute>
+template <unsigned int block_size, Device::Type kDev, typename TData,
+          typename TCompute>
 __device__ __forceinline__ TCompute SumSquared(const TData* data_ptr,
                                                size_t count) {
   TCompute ss = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    TCompute value = Cast<TCompute>(data_ptr[i]);
+    TCompute value = Caster<kDev>::template Cast<TCompute>(data_ptr[i]);
     ss += value * value;
   }
   using BlockReduce = cub::BlockReduce<TCompute, block_size>;
@@ -27,8 +28,8 @@ __device__ __forceinline__ TCompute SumSquared(const TData* data_ptr,
 
 }  // namespace
 
-template <unsigned int block_size, typename TCompute, typename TData,
-          typename TWeight>
+template <unsigned int block_size, Device::Type kDev, typename TCompute,
+          typename TData, typename TWeight>
 __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
                               int64_t stride_y_nhead,
                               const TData* __restrict__ x,
@@ -42,17 +43,20 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
   auto x_ptr = x + batch_idx * stride_x_batch + head_idx * stride_x_nhead;
   auto w_ptr = w;
 
-  TCompute ss = SumSquared<block_size, TData, TCompute>(x_ptr, dim);
+  TCompute ss =
+      SumSquared<block_size, kDev, TData, TCompute>(x_ptr, dim);
 
   __shared__ TCompute rms;
   if (threadIdx.x == 0) {
-    rms = Cast<TCompute>(rsqrtf(ss / Cast<TCompute>(dim) + epsilon));
+    rms = Caster<kDev>::template Cast<TCompute>(
+        rsqrtf(ss / Caster<kDev>::template Cast<TCompute>(dim) + epsilon));
   }
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < dim; i += block_size) {
-    y_ptr[i] =
-        Cast<TData>(Cast<TCompute>(x_ptr[i]) * Cast<TCompute>(w_ptr[i]) * rms);
+    y_ptr[i] = Caster<kDev>::template Cast<TData>(
+        Caster<kDev>::template Cast<TCompute>(x_ptr[i]) *
+        Caster<kDev>::template Cast<TCompute>(w_ptr[i]) * rms);
   }
 }
 

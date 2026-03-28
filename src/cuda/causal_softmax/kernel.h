@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
 #define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
 
+#include <cassert>
 #include <cstdint>
 
 #include "base/causal_softmax.h"
@@ -28,21 +29,19 @@ class CudaCausalSoftmax : public CausalSoftmax {
     dim3 grid(static_cast<unsigned>(seq_len_),
               static_cast<unsigned>(batch_size_));
 
-    if (out.dtype() != input.dtype()) {
-      std::abort();
-    }
+    assert(out.dtype() == input.dtype());
 
-    int block_size = GetOptimalBlockSize();
+    int block_size = Backend::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(
         // TODO: Output dtype should use the one passed in during construction.
         {static_cast<int64_t>(out.dtype()), block_size},
         [&](auto list_tag) {
-          using T = TypeMapType<ListGet<0>(list_tag)>;
+          using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
-          CausalSoftmaxKernel<kBlockSize, T, float>
+          CausalSoftmaxKernel<kBlockSize, Backend::kDeviceType, T, float>
               <<<grid, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()),
                   reinterpret_cast<const T*>(input.data()), batch_size_,

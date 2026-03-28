@@ -3,9 +3,7 @@
 
 #include <type_traits>
 
-// clang-format off
 #include <musa_bf16.h>
-// clang-format on
 
 namespace infini::ops {
 

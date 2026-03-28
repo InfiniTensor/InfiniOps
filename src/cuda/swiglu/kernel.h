@@ -49,11 +49,11 @@ class CudaSwiglu : public Swiglu {
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
-    int block_size = GetOptimalBlockSize();
+    int block_size = Backend::GetOptimalBlockSize();
     DispatchFunc<AllFloatTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size},
         [&](auto list_tag) {
-          using T = TypeMapType<ListGet<0>(list_tag)>;
+          using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
           auto cuda_stream =
