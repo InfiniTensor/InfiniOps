@@ -296,3 +296,36 @@ def test_build_results_dir_under_base():
     stages = [{"name": "test", "run": "pytest"}]
     d = run.build_results_dir("/tmp/my-results", "ascend", stages, "def5678")
     assert d.parent == Path("/tmp/my-results")
+
+
+# ---------------------------------------------------------------------------
+# Tests for `apply_test_override`.
+# ---------------------------------------------------------------------------
+
+
+def test_apply_test_override_replaces_pytest_command():
+    assert run.apply_test_override("pytest tests/ -v", "pytest tests/test_add.py") == (
+        "pytest tests/test_add.py"
+    )
+
+
+def test_apply_test_override_replaces_non_pytest_command():
+    assert run.apply_test_override("ruff check .", "python docs/repro.py") == (
+        "python docs/repro.py"
+    )
+
+
+def test_apply_test_override_replaces_empty_command():
+    assert run.apply_test_override("", "bash script.sh") == "bash script.sh"
+
+
+def test_apply_test_override_preserves_user_flags():
+    cmd = "pytest tests/test_gemm.py -n 1 -v --tb=short"
+    assert run.apply_test_override("pytest tests/ -n 4", cmd) == cmd
+
+
+def test_apply_test_override_with_shell_command():
+    assert (
+        run.apply_test_override("pytest tests/", "cd /tmp && python repro.py")
+        == "cd /tmp && python repro.py"
+    )

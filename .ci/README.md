@@ -158,7 +158,7 @@ Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi`/`cnm
 | `--stage` | Run only the specified stage |
 | `--image-tag` | Override image tag |
 | `--gpu-id` | Override GPU device IDs (nvidia via `--gpus`, others via `CUDA_VISIBLE_DEVICES`) |
-| `--test` | Override pytest test path (e.g., `tests/test_gemm.py::test_gemm`) |
+| `--test` | Replace stage command entirely (e.g., `pytest tests/test_add.py -v`) |
 | `--results-dir` | Host directory mounted to `/workspace/results` inside the container |
 | `--local` | Mount current directory (read-only) instead of cloning from git |
 | `--dry-run` | Print docker command without executing |
@@ -195,7 +195,7 @@ Proxy vars are forwarded from the host. Test results are written to `--results-d
 | MetaX | `--privileged` | `none` | `maca-pytorch:3.2.1.4-...` | `mx-smi` |
 | Moore | `--privileged` | `none` | `vllm_musa:20251112_hygon` | `mthreads-gmi` |
 | Cambricon | `--privileged` | `mlu` | `cambricon/pytorch:v1.25.3` | `cnmon` |
-| Ascend | TODO | — | `ascend-pytorch:24.0.0` | — |
+| Ascend | `--privileged` + device mounts | `npu` | `ascend-pytorch:24.0.RC3-A2-2.1.0` | `npu-smi` |
 
 `gpu_style` controls the Docker device injection mechanism: `nvidia` uses `--gpus`, `none` uses `CUDA_VISIBLE_DEVICES` (or skips injection for Moore), `mlu` uses `MLU_VISIBLE_DEVICES`.
 

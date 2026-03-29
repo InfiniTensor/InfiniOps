@@ -158,7 +158,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: source /usr/local/Ascend/ascend-toolkit/set_env.sh && pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation
     jobs:
       npu:
         resources:

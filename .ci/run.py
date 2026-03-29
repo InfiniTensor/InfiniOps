@@ -19,42 +19,13 @@ from ci_resource import (
 )
 from utils import get_git_commit, load_config
 
-# Flags that consume the next token as their value (e.g. -n 4, -k expr).
-_PYTEST_VALUE_FLAGS = {"-n", "-k", "-m", "-p", "--tb", "--junitxml", "--rootdir"}
+def apply_test_override(run_cmd, test_cmd):
+    """Replace a stage command with *test_cmd*.
 
-
-def apply_test_override(run_cmd, test_path):
-    """Replace positional test path(s) in a pytest stage command.
-
-    For example: ``pytest tests/ -n 4 ...`` becomes
-    ``pytest tests/test_gemm.py -n 4 ...`` when ``test_path`` is
-    ``tests/test_gemm.py``.
+    ``--test`` always replaces the entire stage command regardless of whether
+    the original is pytest or something else.
     """
-    parts = shlex.split(run_cmd)
-
-    if not parts or parts[0] != "pytest":
-        return run_cmd
-
-    result = ["pytest", test_path]
-    skip_next = False
-
-    for p in parts[1:]:
-        if skip_next:
-            result.append(p)
-            skip_next = False
-            continue
-
-        if p.startswith("-"):
-            result.append(p)
-            if p in _PYTEST_VALUE_FLAGS:
-                skip_next = True
-            continue
-
-        # Skip existing test paths; the override is already in result[1].
-        if not ("/" in p or p.endswith(".py") or "::" in p):
-            result.append(p)
-
-    return shlex.join(result)
+    return test_cmd
 
 
 def build_results_dir(base, platform, stages, commit):
@@ -319,7 +290,7 @@ def main():
     parser.add_argument(
         "--test",
         type=str,
-        help='Override pytest test path, e.g. "tests/test_gemm.py" or "tests/test_gemm.py::test_gemm"',
+        help='Replace stage command with this (e.g. "pytest tests/test_add.py -v")',
     )
     parser.add_argument(
         "--local",
