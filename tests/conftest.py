@@ -38,6 +38,25 @@ def set_seed_per_test(request):
     _set_random_seed(_hash(_test_case_path_from_request(request)))
 
 
+_NPU_UNSUPPORTED_DTYPES = {torch.float64}
+
+# torch_npu does not implement random number generation for uint16/uint32/uint64.
+for _bits in (16, 32, 64):
+    _t = getattr(torch, f"uint{_bits}", None)
+    if _t is not None:
+        _NPU_UNSUPPORTED_DTYPES.add(_t)
+
+
+@pytest.fixture(autouse=True)
+def skip_unsupported_dtype(request):
+    if not hasattr(request.node, "callspec"):
+        return
+    params = request.node.callspec.params
+
+    if params.get("device") == "npu" and params.get("dtype") in _NPU_UNSUPPORTED_DTYPES:
+        pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
+
+
 def _set_random_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)

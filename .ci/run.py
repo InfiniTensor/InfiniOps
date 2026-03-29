@@ -13,6 +13,7 @@ from ci_resource import (
     GPU_STYLE_NVIDIA,
     GPU_STYLE_NONE,
     GPU_STYLE_MLU,
+    GPU_STYLE_NPU,
     ResourcePool,
     detect_platform,
 )
@@ -212,6 +213,9 @@ def build_docker_args(
         # For Cambricon MLU platforms that use --privileged,
         # control visible devices via MLU_VISIBLE_DEVICES.
         args.extend(["-e", f"MLU_VISIBLE_DEVICES={gpu_id}"])
+    elif gpu_style == GPU_STYLE_NPU and gpu_id and gpu_id != "all":
+        # Ascend: control visible NPU via ASCEND_VISIBLE_DEVICES.
+        args.extend(["-e", f"ASCEND_VISIBLE_DEVICES={gpu_id}"])
 
     memory = resources.get("memory")
 

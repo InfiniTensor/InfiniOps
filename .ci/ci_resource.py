@@ -14,6 +14,7 @@ from dataclasses import dataclass
 GPU_STYLE_NVIDIA = "nvidia"
 GPU_STYLE_NONE = "none"
 GPU_STYLE_MLU = "mlu"
+GPU_STYLE_NPU = "npu"
 
 
 @dataclass
@@ -44,6 +45,7 @@ class ResourcePool:
         "metax": "mx-smi",
         "moore": "mthreads-gmi",
         "cambricon": "cnmon",
+        "ascend": "npu-smi",
     }
 
     def __init__(self, platform, utilization_threshold=10):
@@ -71,6 +73,9 @@ class ResourcePool:
 
         if self._platform == "cambricon":
             return self._detect_gpus_cambricon()
+
+        if self._platform == "ascend":
+            return self._detect_gpus_ascend()
 
         tool = self.GPU_QUERY_TOOLS.get(self._platform)
 
@@ -318,6 +323,73 @@ class ResourcePool:
                     )
                 except (ValueError, AttributeError):
                     pass
+                i += 2
+                continue
+
+            i += 1
+
+        return sorted(gpus, key=operator.attrgetter("index"))
+
+    def _detect_gpus_ascend(self) -> list[GpuInfo]:
+        """Parse npu-smi info output for Huawei Ascend NPUs.
+
+        Output format (pipe-delimited table, two rows per NPU):
+            | 0     910B4               | OK            | 86.5  41  ...
+            | 0                         | 0000:C1:00.0  | 0     0 / 0   2789 / 32768   |
+        Row 1: index, name, health, power, temp, hugepages.
+        Row 2: chip_id, bus_id, aicore_util, memory_usage, hbm_usage.
+        """
+        try:
+            result = subprocess.run(
+                ["npu-smi", "info"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return []
+
+        if result.returncode != 0:
+            return []
+
+        gpus = []
+        lines = result.stdout.splitlines()
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            # Match row 1: "| {index}  {name}  ..."
+            m1 = re.match(r"^\|\s+(\d+)\s+", line)
+
+            if m1 and i + 1 < len(lines):
+                try:
+                    npu_index = int(m1.group(1))
+                    aicore_m = re.match(
+                        r"^\|\s+\d+\s+\|\s+[\da-f:.]+\s+\|\s*([\d.]+)\s", lines[i + 1]
+                    )
+
+                    util_pct = float(aicore_m.group(1)) if aicore_m else 0.0
+
+                    # Parse HBM usage from row 2: "{used} / {total}".
+                    hbm_m = re.search(r"([\d.]+)\s*/\s*([\d.]+)", lines[i + 1])
+
+                    if hbm_m:
+                        used_mb = float(hbm_m.group(1))
+                        total_mb = float(hbm_m.group(2))
+                    else:
+                        used_mb, total_mb = 0.0, 0.0
+
+                    gpus.append(
+                        GpuInfo(
+                            index=npu_index,
+                            memory_used_mb=used_mb,
+                            memory_total_mb=total_mb,
+                            utilization_pct=util_pct,
+                        )
+                    )
+                except (ValueError, AttributeError):
+                    pass
+
                 i += 2
                 continue
 

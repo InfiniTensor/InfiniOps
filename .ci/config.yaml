@@ -137,10 +137,36 @@ platforms:
           - name: test
             run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
-  ascend:                                  # TODO: Ascend image is not ready yet
+  ascend:
     image:
       dockerfile: .ci/images/ascend/
       build_args:
-        BASE_IMAGE: ascendhub.huawei.com/public-ascendhub/ascend-pytorch:24.0.0
+        BASE_IMAGE: swr.cn-south-1.myhuaweicloud.com/ascendhub/ascend-pytorch:24.0.RC3-A2-2.1.0-ubuntu20.04
+        PIP_INDEX_URL: https://pypi.org/simple
       private_sdk:
         source_env: PRIVATE_SDK_URL
+    docker_args:
+      - "--runtime=runc"
+      - "--privileged"
+      - "--device=/dev/davinci0"
+      - "--device=/dev/davinci_manager"
+      - "--device=/dev/devmm_svm"
+      - "--device=/dev/hisi_hdc"
+    volumes:
+      - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+    env:
+      ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
+    setup: source /usr/local/Ascend/ascend-toolkit/set_env.sh && pip install .[dev] --no-build-isolation
+    jobs:
+      npu:
+        resources:
+          gpu_ids: "0"
+          gpu_style: npu
+          memory: 32GB
+          shm_size: 16g
+          timeout: 3600
+        stages:
+          - name: test
+            run: pytest tests/ -n 1 -k npu -v --tb=short --junitxml=/workspace/results/test-results.xml

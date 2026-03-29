@@ -32,11 +32,17 @@ def get_available_devices():
     if hasattr(torch, "musa") and torch.musa.is_available():
         devices.append("musa")
 
+    if hasattr(torch, "npu") and torch.npu.is_available():
+        devices.append("npu")
+
     return tuple(devices)
 
 
 with contextlib.suppress(ImportError, ModuleNotFoundError):
     import torch_mlu  # noqa: F401
+
+with contextlib.suppress(ImportError, ModuleNotFoundError):
+    import torch_npu  # noqa: F401
 
 
 def empty_strided(shape, strides, *, dtype=None, device=None):
