@@ -28,8 +28,6 @@ class Operator<Swiglu, Device::Type::kAscend> : public Swiglu {
 
   ~Operator() {
     aclrtFree(temp_buf_);
-    if (silu_ws_size_ > 0) aclrtFree(silu_ws_);
-    if (mul_ws_size_ > 0) aclrtFree(mul_ws_);
   }
 
   void operator()(const Tensor input, const Tensor gate,
@@ -48,15 +46,15 @@ class Operator<Swiglu, Device::Type::kAscend> : public Swiglu {
 
     // Step 1: silu(gate) -> temp.  SwiGLU = input * silu(gate).
     aclnnSiluGetWorkspaceSize(t_gate, t_temp, &ws_needed, &exec);
-    ascend::ensureWorkspace(silu_ws_, silu_ws_size_, ws_needed, stream);
-    aclnnSilu(silu_ws_, silu_ws_size_, exec, stream);
+    auto& silu_arena = ascend::workspacePool().ensure(stream, ws_needed);
+    aclnnSilu(silu_arena.buf, ws_needed, exec, stream);
 
     // Step 2: mul(input, temp) -> out.
-    ws_needed = 0;
+    uint64_t mul_ws = 0;
     exec = nullptr;
-    aclnnMulGetWorkspaceSize(t_in, t_temp, t_out, &ws_needed, &exec);
-    ascend::ensureWorkspace(mul_ws_, mul_ws_size_, ws_needed, stream);
-    aclnnMul(mul_ws_, mul_ws_size_, exec, stream);
+    aclnnMulGetWorkspaceSize(t_in, t_temp, t_out, &mul_ws, &exec);
+    auto& mul_arena = ascend::workspacePool().ensure(stream, mul_ws);
+    aclnnMul(mul_arena.buf, mul_ws, exec, stream);
 
     aclDestroyTensor(t_in);
     aclDestroyTensor(t_gate);
@@ -66,10 +64,6 @@ class Operator<Swiglu, Device::Type::kAscend> : public Swiglu {
 
  private:
   void*            temp_buf_     = nullptr;
-  mutable void*    silu_ws_      = nullptr;
-  mutable uint64_t silu_ws_size_ = 0;
-  mutable void*    mul_ws_       = nullptr;
-  mutable uint64_t mul_ws_size_  = 0;
 };
 
 }  // namespace infini::ops

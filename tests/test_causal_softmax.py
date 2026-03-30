@@ -48,7 +48,7 @@ def _causal_softmax(input, out):
 def _torch_causal_softmax(input, out):
     mask = torch.tril(torch.ones_like(input), diagonal=-1).flip(dims=[-2, -1])
     masked = torch.where(mask == 1, -torch.inf, input.to(torch.float32))
-    result = torch.nn.functional.softmax(masked, dim=-1, dtype=input.dtype)
+    result = torch.nn.functional.softmax(masked, dim=-1)
     out.copy_(result)
 
     return out

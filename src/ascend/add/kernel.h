@@ -28,9 +28,6 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   }
 
   ~Operator() {
-    if (workspace_size_ > 0) {
-      aclrtFree(workspace_);
-    }
     aclDestroyScalar(alpha_);
   }
 
@@ -43,8 +40,8 @@ class Operator<Add, Device::Type::kAscend> : public Add {
     uint64_t ws_needed = 0;
     aclOpExecutor* executor = nullptr;
     aclnnAddGetWorkspaceSize(t_in, t_oth, alpha_, t_out, &ws_needed, &executor);
-    ascend::ensureWorkspace(workspace_, workspace_size_, ws_needed, stream);
-    aclnnAdd(workspace_, workspace_size_, executor, stream);
+    auto& arena = ascend::workspacePool().ensure(stream, ws_needed);
+    aclnnAdd(arena.buf, ws_needed, executor, stream);
     aclDestroyTensor(t_in);
     aclDestroyTensor(t_oth);
     aclDestroyTensor(t_out);
@@ -54,8 +51,6 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   float      alpha_float_storage_ = 1.0f;  // stable address for aclCreateScalar (float)
   int64_t    alpha_int_storage_   = 1;     // stable address for aclCreateScalar (int)
   aclScalar* alpha_ = nullptr;
-  mutable void*    workspace_      = nullptr;
-  mutable uint64_t workspace_size_ = 0;
 };
 
 }  // namespace infini::ops

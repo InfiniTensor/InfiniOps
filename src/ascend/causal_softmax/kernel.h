@@ -71,10 +71,6 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     aclrtFree(mask_buf_);
     aclDestroyTensor(mask_tensor_);
     aclDestroyScalar(neg_inf_);
-
-    if (copy_ws_size_ > 0) aclrtFree(copy_ws_);
-    if (fill_ws_size_ > 0) aclrtFree(fill_ws_);
-    if (softmax_ws_size_ > 0) aclrtFree(softmax_ws_);
   }
 
   void operator()(const Tensor input, Tensor out) const override {
@@ -89,22 +85,25 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
 
     // Step 1: copy input (possibly non-contiguous) into contiguous temp.
     aclnnInplaceCopyGetWorkspaceSize(t_temp, t_in, &ws_needed, &exec);
-    ascend::ensureWorkspace(copy_ws_, copy_ws_size_, ws_needed, stream);
-    aclnnInplaceCopy(copy_ws_, copy_ws_size_, exec, stream);
+    auto& copy_arena = ascend::workspacePool().ensure(stream, ws_needed);
+    uint64_t copy_ws = ws_needed;
+    aclnnInplaceCopy(copy_arena.buf, copy_ws, exec, stream);
 
     // Step 2: mask upper-triangle positions with -inf in-place.
     ws_needed = 0; exec = nullptr;
     aclnnInplaceMaskedFillScalarGetWorkspaceSize(
         t_temp, mask_tensor_, neg_inf_, &ws_needed, &exec);
-    ascend::ensureWorkspace(fill_ws_, fill_ws_size_, ws_needed, stream);
-    aclnnInplaceMaskedFillScalar(fill_ws_, fill_ws_size_, exec, stream);
+    auto& fill_arena = ascend::workspacePool().ensure(stream, ws_needed);
+    uint64_t fill_ws = ws_needed;
+    aclnnInplaceMaskedFillScalar(fill_arena.buf, fill_ws, exec, stream);
 
     // Step 3: softmax over the last dimension → out.
     ws_needed = 0; exec = nullptr;
     constexpr int64_t kLastDim = -1;
     aclnnSoftmaxGetWorkspaceSize(t_temp, kLastDim, t_out, &ws_needed, &exec);
-    ascend::ensureWorkspace(softmax_ws_, softmax_ws_size_, ws_needed, stream);
-    aclnnSoftmax(softmax_ws_, softmax_ws_size_, exec, stream);
+    auto& softmax_arena = ascend::workspacePool().ensure(stream, ws_needed);
+    uint64_t softmax_ws = ws_needed;
+    aclnnSoftmax(softmax_arena.buf, softmax_ws, exec, stream);
 
     aclDestroyTensor(t_in);
     aclDestroyTensor(t_temp);
@@ -117,12 +116,6 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
   void*      mask_buf_        = nullptr;
   aclTensor* mask_tensor_     = nullptr;
   aclScalar* neg_inf_         = nullptr;
-  mutable void*    copy_ws_       = nullptr;
-  mutable uint64_t copy_ws_size_  = 0;
-  mutable void*    fill_ws_       = nullptr;
-  mutable uint64_t fill_ws_size_  = 0;
-  mutable void*    softmax_ws_    = nullptr;
-  mutable uint64_t softmax_ws_size_ = 0;
 };
 
 }  // namespace infini::ops

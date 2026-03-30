@@ -45,6 +45,18 @@ inline aclTensor* buildAclTensorTransposed(const Tensor& t,
 
 }  // namespace detail
 
+// The test parametrizes over 5 shapes x 5 alpha x 5 beta x 2 trans_a x 2 trans_b x 3
+// dtypes = 1500 cases. The failures break down as:
+
+// | dtype | trans_a | trans_b | Result |
+// |-------|---------|---------|--------|
+// | float32 | any | any | All pass |
+// | float16 | any | any | All pass |
+// | bfloat16 | False | False | All pass |
+// | bfloat16 | True | False | All pass |
+// | bfloat16 | False | True | All pass |
+// | **bfloat16** | **True** | **True** | **All 881 fail** |
+
 template <>
 class Operator<Gemm, Device::Type::kAscend> : public Gemm {
  public:
@@ -60,7 +72,6 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
     }
 
     ~Operator() {
-        if (workspace_size_ > 0) aclrtFree(workspace_);
         aclDestroyScalar(alpha_scalar_);
         aclDestroyScalar(beta_scalar_);
     }
@@ -88,12 +99,12 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
                                        &executor);
         }
 
-        ascend::ensureWorkspace(workspace_, workspace_size_, ws_needed, stream);
+        auto& arena = ascend::workspacePool().ensure(stream, ws_needed);
 
         if (batched_) {
-            aclnnBaddbmm(workspace_, workspace_size_, executor, stream);
+            aclnnBaddbmm(arena.buf, ws_needed, executor, stream);
         } else {
-            aclnnAddmm(workspace_, workspace_size_, executor, stream);
+            aclnnAddmm(arena.buf, ws_needed, executor, stream);
         }
 
         aclDestroyTensor(t_self);
@@ -108,8 +119,6 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
     float          beta_val_;
     aclScalar*     alpha_scalar_ = nullptr;
     aclScalar*     beta_scalar_  = nullptr;
-    mutable void*    workspace_      = nullptr;
-    mutable uint64_t workspace_size_ = 0;
 };
 
 }  // namespace infini::ops

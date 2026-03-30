@@ -26,7 +26,6 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
   }
 
   ~Operator() {
-    if (workspace_size_ > 0) aclrtFree(workspace_);
     if (rstd_data_) aclrtFree(rstd_data_);
   }
 
@@ -45,8 +44,8 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     aclnnRmsNormGetWorkspaceSize(t_in, t_weight, eps, t_out, t_rstd,
                                  &ws_needed, &executor);
     auto stream = static_cast<aclrtStream>(stream_);
-    ascend::ensureWorkspace(workspace_, workspace_size_, ws_needed, stream);
-    aclnnRmsNorm(workspace_, workspace_size_, executor, stream);
+    auto& arena = ascend::workspacePool().ensure(stream, ws_needed);
+    aclnnRmsNorm(arena.buf, ws_needed, executor, stream);
     aclDestroyTensor(t_in);
     aclDestroyTensor(t_weight);
     aclDestroyTensor(t_out);
@@ -56,8 +55,6 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
  private:
   std::vector<int64_t> rstd_shape_;
   void*            rstd_data_      = nullptr;
-  mutable void*    workspace_      = nullptr;
-  mutable uint64_t workspace_size_ = 0;
 };
 
 }  // namespace infini::ops
