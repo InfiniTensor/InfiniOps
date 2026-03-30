@@ -104,13 +104,20 @@ def _generate_pybind11(operator):
         )
 
     def _generate_arguments(node):
-        return ", ".join(
-            f"TensorFromPybind11Handle({arg.spelling})"
-            if "Tensor" in arg.type.spelling
-            else arg.spelling
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
+        args = []
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+            type_spelling = arg.type.spelling
+            if "std::optional" in type_spelling and "Tensor" in type_spelling:
+                args.append(
+                    f"OptionalTensorFromPybind11Handle({arg.spelling})"
+                )
+            elif "Tensor" in type_spelling:
+                args.append(f"TensorFromPybind11Handle({arg.spelling})")
+            else:
+                args.append(arg.spelling)
+        return ", ".join(args)
 
     op_name = operator.name
 

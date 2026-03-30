@@ -70,6 +70,12 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }
 
+inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
+    const std::optional<py::object>& obj) {
+  if (!obj.has_value()) return std::nullopt;
+  return TensorFromPybind11Handle(*obj);
+}
+
 }  // namespace infini::ops
 
 #endif

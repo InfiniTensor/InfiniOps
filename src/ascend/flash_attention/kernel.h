@@ -7,6 +7,7 @@
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
+#include "aclnnop/aclnn_fused_infer_attention_score.h"
 #include "ascend/device.h"
 #include "base/flash_attention.h"
 #include "operator.h"
