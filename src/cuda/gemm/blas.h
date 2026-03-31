@@ -17,11 +17,8 @@ class Blas : public Gemm {
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
         swap_a_and_b_{c.stride(-1) == 1} {
-    Backend::blasCreate(&handle_);
     // TODO: Check constraints.
   }
-
-  ~Blas() { Backend::blasDestroy(handle_); }
 
   Blas(const Tensor a, const Tensor b, std::optional<float> alpha,
        std::optional<float> beta, Tensor c)
@@ -33,7 +30,7 @@ class Blas : public Gemm {
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
-    Backend::blasSetStream(handle_,
+    Backend::blasSetStream(GetHandle(),
                            static_cast<typename Backend::stream_t>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
@@ -47,8 +44,9 @@ class Blas : public Gemm {
     const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
 
     Backend::blasGemmStridedBatchedEx(
-        handle_, op_a, op_b, swap_a_and_b_ ? n_ : m_, swap_a_and_b_ ? m_ : n_,
-        k_, alpha_ptr, swap_a_and_b_ ? b.data() : a.data(),
+        GetHandle(), op_a, op_b, swap_a_and_b_ ? n_ : m_,
+        swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
+        swap_a_and_b_ ? b.data() : a.data(),
         Backend::GetDataType(swap_a_and_b_ ? b.dtype() : a.dtype()),
         swap_a_and_b_ ? ldb_ : lda_,
         swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
@@ -88,13 +86,20 @@ class Blas : public Gemm {
                                         : Backend::BLAS_OP_N;
   }
 
+  static typename Backend::blasHandle_t& GetHandle() {
+    static typename Backend::blasHandle_t handle = []() {
+      typename Backend::blasHandle_t h;
+      Backend::blasCreate(&h);
+      return h;
+    }();
+    return handle;
+  }
+
   bool a_is_col_major_{false};
 
   bool b_is_col_major_{false};
 
   bool swap_a_and_b_{false};
-
-  typename Backend::blasHandle_t handle_;
 };
 
 }  // namespace infini::ops
