@@ -76,15 +76,6 @@ jobs:
               git fetch --depth=1 origin main
               git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
               chmod a+x daemon.sh
-              # DOCKER_ARGS=(${{ matrix.docker_args }} ${{ matrix.volumes }} ${{ matrix.shm_size }})
               echo ${{ matrix.docker_args }}
               echo ${{ matrix.volumes }}
               echo ${{ matrix.shm_size }}
-              # ./daemon.sh \
-              #   ${{ matrix.platform^ }}  \
-              #   Smoke \
-              #   ${{ matrix.job_env.ENGINE }}  \
-              #   ${{ matrix.job_env.MODEL_LIST }} \
-              #   ${DOCKER_ARGS[*]} \
-              #   ${{ github.run_id }}  \
-              #   ${{ matrix.job_env.IMAGE }}
