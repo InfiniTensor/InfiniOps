@@ -69,13 +69,13 @@ jobs:
                 mkdir -p "${{ matrix.platform }}_test"
               fi
               cd ${{ matrix.platform }}_test
-              mkdir -p ${{ github.run_id }}
-              cd ${{ github.run_id }}
+              mkdir -p ${{ matrix.platform }}_${{ github.run_id }}_${{ matrix.id }}
+              cd ${{ matrix.platform }}_${{ github.run_id }}_${{ matrix.id }}
               git init
               git remote add origin git@github.com:Vincent777/ci_autotest.git
               git fetch --depth=1 origin main
               git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
               chmod a+x daemon.sh
-              echo ${{ matrix.docker_args }}
-              echo ${{ matrix.volumes }}
-              echo ${{ matrix.shm_size }}
+              echo '${{ toJson(matrix.docker_args) }}' | jq -r '.[]'
+              echo '${{ toJson(matrix.volumes) }}' | jq -r '.[]'
+              echo '${{ toJson(matrix.shm_size) }}' | jq -r '.[]'
