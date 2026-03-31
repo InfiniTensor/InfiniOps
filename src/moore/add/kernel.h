@@ -3,9 +3,12 @@
 
 #include <utility>
 
+// clang-format off
+#include "moore/polyfills.cuh"
+// clang-format on
+
 #include "cuda/add/kernel.h"
 #include "moore/device_.h"
-#include "moore/polyfills.cuh"
 
 namespace infini::ops {
 
