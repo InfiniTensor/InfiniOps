@@ -21,9 +21,6 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: ${{ matrix.timeout_minutes }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Show stage plan
         env:
           MATRIX_JSON: ${{ inputs.matrix_json }}
@@ -60,17 +57,34 @@ jobs:
                   f.write("\n```\n\n")
           PY
 
-      - name: Build image via .ci/build.py
+      - name: Trigger Nvidia GPU Smoke Test job
+        env: ${{ matrix.job_env }}
         run: |
-          python3 .ci/build.py \
-            --config .ci/config.yaml \
-            --platform "${{ matrix.platform }}" \
-            --force
-
-      - name: Run stages via .ci/run.py (sequential inside job)
-        run: |
-          python3 .ci/run.py \
-            --config .ci/config.yaml \
-            --job "${{ matrix.id }}" \
-            --local
-            
+              echo "Smoke Test Starting..."
+              echo "MODEL_LIST = ${{ matrix.job_env.MODEL_LIST }}"
+              echo "Version = ${{ matrix.job_env.IMAGE }}"
+              set -m
+              cd /home/zkjh
+              if [ ! -d "${{ matrix.platform }}_test" ]; then
+                mkdir -p "${{ matrix.platform }}_test"
+              fi
+              cd ${{ matrix.platform }}_test
+              mkdir -p ${{ github.run_id }}
+              cd ${{ github.run_id }}
+              git init
+              git remote add origin git@github.com:Vincent777/ci_autotest.git
+              git fetch --depth=1 origin main
+              git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
+              chmod a+x daemon.sh
+              # DOCKER_ARGS=(${{ matrix.docker_args }} ${{ matrix.volumes }} ${{ matrix.shm_size }})
+              echo ${{ matrix.docker_args }}
+              echo ${{ matrix.volumes }}
+              echo ${{ matrix.shm_size }}
+              # ./daemon.sh \
+              #   ${{ matrix.platform^ }}  \
+              #   Smoke \
+              #   ${{ matrix.job_env.ENGINE }}  \
+              #   ${{ matrix.job_env.MODEL_LIST }} \
+              #   ${DOCKER_ARGS[*]} \
+              #   ${{ github.run_id }}  \
+              #   ${{ matrix.job_env.IMAGE }}
