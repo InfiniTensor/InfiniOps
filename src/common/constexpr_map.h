@@ -14,7 +14,7 @@ struct ConstexprMap {
       : data_(data) {}
 
   constexpr Value at(Key key) const {
-    for (const auto &pr : data_) {
+    for (const auto& pr : data_) {
       if (pr.first == key) return pr.second;
     }
     // TODO(lzm): change to logging.

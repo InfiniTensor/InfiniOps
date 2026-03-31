@@ -32,10 +32,9 @@ class Operator<Add, Device::Type::kCpu> : public Add,
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor other, Tensor out) const {
-    using ComputeType =
-        std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
-                               IsFP16<Device::Type::kCpu, T>,
-                           float, T>;
+    using ComputeType = std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
+                                               IsFP16<Device::Type::kCpu, T>,
+                                           float, T>;
 
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* other_ptr = static_cast<const T*>(other.data());

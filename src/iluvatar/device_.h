@@ -1,8 +1,10 @@
 #ifndef INFINI_OPS_ILUVATAR_DEVICE_H_
 #define INFINI_OPS_ILUVATAR_DEVICE_H_
 
+// clang-format off
 #include <cassert>
 #include <vector>
+// clang-format on
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>

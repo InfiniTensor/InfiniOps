@@ -43,8 +43,7 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
   auto x_ptr = x + batch_idx * stride_x_batch + head_idx * stride_x_nhead;
   auto w_ptr = w;
 
-  TCompute ss =
-      SumSquared<block_size, kDev, TData, TCompute>(x_ptr, dim);
+  TCompute ss = SumSquared<block_size, kDev, TData, TCompute>(x_ptr, dim);
 
   __shared__ TCompute rms;
   if (threadIdx.x == 0) {

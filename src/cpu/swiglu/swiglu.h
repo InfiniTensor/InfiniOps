@@ -29,10 +29,9 @@ class Operator<Swiglu, Device::Type::kCpu> : public Swiglu,
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor gate, Tensor out) const {
-    using ComputeType =
-        std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
-                               IsFP16<Device::Type::kCpu, T>,
-                           float, T>;
+    using ComputeType = std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
+                                               IsFP16<Device::Type::kCpu, T>,
+                                           float, T>;
 
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* gate_ptr = static_cast<const T*>(gate.data());

@@ -62,12 +62,12 @@ struct CudaCasterImpl {
   }
 
 // Usage: `DEFINE_DIRECT_CAST(INTRINSIC, CONDITION)`.
-#define DEFINE_DIRECT_CAST(INTRINSIC, ...)                             \
-  template <typename Dst, typename Src>                                \
+#define DEFINE_DIRECT_CAST(INTRINSIC, ...)                            \
+  template <typename Dst, typename Src>                               \
   __host__ __device__ static auto HardwareCast(Src x, PriorityHigh)   \
-      -> std::enable_if_t<(__VA_ARGS__),                               \
-                          decltype(INTRINSIC(std::declval<Src>()))> {  \
-    return INTRINSIC(x);                                               \
+      -> std::enable_if_t<(__VA_ARGS__),                              \
+                          decltype(INTRINSIC(std::declval<Src>()))> { \
+    return INTRINSIC(x);                                              \
   }
 
   DEFINE_DIRECT_CAST(
@@ -89,8 +89,7 @@ struct CudaCasterImpl {
       __double2half,
       IsFP16<kDev, PureType<Dst>>&& std::is_same_v<PureType<Src>, double>)
   DEFINE_DIRECT_CAST(
-      __half,
-      IsFP16<kDev, PureType<Dst>>&& IsBFloat16<kDev, PureType<Src>>)
+      __half, IsFP16<kDev, PureType<Dst>>&& IsBFloat16<kDev, PureType<Src>>)
 #undef DEFINE_DIRECT_CAST
 };
 

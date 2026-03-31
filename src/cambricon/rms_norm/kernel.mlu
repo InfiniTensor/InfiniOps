@@ -5,9 +5,9 @@ __nram__ char nram_buffer[NRAM_MAX_SIZE];
 namespace infini::ops {
 
 template <typename T, typename TW>
-__mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
-                            size_t *shape, ptrdiff_t *output_strides,
-                            ptrdiff_t *input_strides, float epsilon,
+__mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
+                            size_t* shape, ptrdiff_t* output_strides,
+                            ptrdiff_t* input_strides, float epsilon,
                             int num_dims, int norm_dim_size) {
   // Calculate problem dimensions.
   int batch_volume = 1;
@@ -40,11 +40,11 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
   constexpr int reduce_buffer_size = 128 / sizeof(float);
 
   // NRAM buffer allocation with dynamic sizing.
-  float *reduction_buffer = (float *)nram_buffer;
-  T *input_cache = (T *)(reduction_buffer + reduce_buffer_size);
-  TW *weight_cache = (TW *)(input_cache + max_batch_size);
-  float *float_buffer = (float *)(weight_cache + max_batch_size);
-  float *weight_float_buffer = (float *)(float_buffer + max_batch_size);
+  float* reduction_buffer = (float*)nram_buffer;
+  T* input_cache = (T*)(reduction_buffer + reduce_buffer_size);
+  TW* weight_cache = (TW*)(input_cache + max_batch_size);
+  float* float_buffer = (float*)(weight_cache + max_batch_size);
+  float* weight_float_buffer = (float*)(float_buffer + max_batch_size);
 
   // Process vectors assigned to current core.
   for (int task_idx = 0; task_idx < actual_tasks; ++task_idx) {
@@ -69,7 +69,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
       __memcpy(input_cache, input + input_offset, vector_size * sizeof(T),
                GDRAM2NRAM);
       if constexpr (std::is_same<T, __half>::value) {
-        __bang_half2float(float_buffer, reinterpret_cast<half *>(input_cache),
+        __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                           vector_size);
       } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
         __bang_bfloat162float(float_buffer, input_cache, vector_size);
@@ -99,7 +99,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
                  current_batch * sizeof(T), GDRAM2NRAM);
 
         if constexpr (std::is_same<T, __half>::value) {
-          __bang_half2float(float_buffer, reinterpret_cast<half *>(input_cache),
+          __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                             current_batch);
         } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
           __bang_bfloat162float(float_buffer, input_cache, current_batch);
@@ -137,7 +137,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
       __memcpy(weight_cache, weight, vector_size * sizeof(TW), GDRAM2NRAM);
 
       if constexpr (std::is_same<T, __half>::value) {
-        __bang_half2float(float_buffer, reinterpret_cast<half *>(input_cache),
+        __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                           vector_size);
       } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
         __bang_bfloat162float(float_buffer, input_cache, vector_size);
@@ -148,7 +148,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
 
       if constexpr (std::is_same<TW, __half>::value) {
         __bang_half2float(weight_float_buffer,
-                          reinterpret_cast<half *>(weight_cache), vector_size);
+                          reinterpret_cast<half*>(weight_cache), vector_size);
       } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
         __bang_bfloat162float(weight_float_buffer, weight_cache, vector_size);
       } else {
@@ -161,7 +161,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
       __bang_mul_scalar(float_buffer, float_buffer, inv_rms, vector_size);
 
       if constexpr (std::is_same<T, __half>::value) {
-        __bang_float2half(reinterpret_cast<half *>(input_cache), float_buffer,
+        __bang_float2half(reinterpret_cast<half*>(input_cache), float_buffer,
                           vector_size);
       } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
         __bang_float2bfloat16(input_cache, float_buffer, vector_size);
@@ -188,7 +188,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
                  current_batch * sizeof(TW), GDRAM2NRAM);
 
         if constexpr (std::is_same<T, __half>::value) {
-          __bang_half2float(float_buffer, reinterpret_cast<half *>(input_cache),
+          __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                             current_batch);
         } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
           __bang_bfloat162float(float_buffer, input_cache, current_batch);
@@ -199,7 +199,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
 
         if constexpr (std::is_same<TW, __half>::value) {
           __bang_half2float(weight_float_buffer,
-                            reinterpret_cast<half *>(weight_cache),
+                            reinterpret_cast<half*>(weight_cache),
                             current_batch);
         } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
           __bang_bfloat162float(weight_float_buffer, weight_cache,
@@ -214,7 +214,7 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
         __bang_mul_scalar(float_buffer, float_buffer, inv_rms, current_batch);
 
         if constexpr (std::is_same<T, __half>::value) {
-          __bang_float2half(reinterpret_cast<half *>(input_cache), float_buffer,
+          __bang_float2half(reinterpret_cast<half*>(input_cache), float_buffer,
                             current_batch);
         } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
           __bang_float2bfloat16(input_cache, float_buffer, current_batch);
@@ -234,10 +234,10 @@ __mlu_global__ void RmsNorm(const T *input, const TW *weight, T *output,
 }
 
 template <typename T, typename TW>
-void RmsNormUnion(void *workspace, int core_per_cluster, int cluster_count,
-                  cnrtQueue_t queue, void *y, const void *x, const void *w,
-                  const size_t *shape, const ptrdiff_t *y_strides,
-                  const ptrdiff_t *x_strides, float eps, int ndim) {
+void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
+                  cnrtQueue_t queue, void* y, const void* x, const void* w,
+                  const size_t* shape, const ptrdiff_t* y_strides,
+                  const ptrdiff_t* x_strides, float eps, int ndim) {
   cnrtDim3_t kernel_dim;
   cnrtFunctionType_t kernel_type;
 
@@ -263,23 +263,23 @@ void RmsNormUnion(void *workspace, int core_per_cluster, int cluster_count,
   }
 
   // Prepare device pointers.
-  auto y_ = reinterpret_cast<T *>(y);
-  auto x_ = reinterpret_cast<const T *>(x);
-  auto w_ = reinterpret_cast<const TW *>(w);
-  char *tmp_device = reinterpret_cast<char *>(workspace);
-  char *tmp_stride = tmp_device + ndim * sizeof(size_t);
-  size_t *mlu_shape = (size_t *)tmp_device;
-  ptrdiff_t *mlu_x_strides = (ptrdiff_t *)tmp_stride;
-  ptrdiff_t *mlu_y_strides = mlu_x_strides + ndim;
+  auto y_ = reinterpret_cast<T*>(y);
+  auto x_ = reinterpret_cast<const T*>(x);
+  auto w_ = reinterpret_cast<const TW*>(w);
+  char* tmp_device = reinterpret_cast<char*>(workspace);
+  char* tmp_stride = tmp_device + ndim * sizeof(size_t);
+  size_t* mlu_shape = (size_t*)tmp_device;
+  ptrdiff_t* mlu_x_strides = (ptrdiff_t*)tmp_stride;
+  ptrdiff_t* mlu_y_strides = mlu_x_strides + ndim;
 
   // Copy shape and stride information to device.
-  CNRT_CHECK(cnrtMemcpyAsync(mlu_shape, const_cast<size_t *>(shape),
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_shape, const_cast<size_t*>(shape),
                              ndim * sizeof(size_t), queue,
                              cnrtMemcpyHostToDev));  // const not supported
-  CNRT_CHECK(cnrtMemcpyAsync(mlu_x_strides, const_cast<ptrdiff_t *>(x_strides),
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_x_strides, const_cast<ptrdiff_t*>(x_strides),
                              ndim * sizeof(ptrdiff_t), queue,
                              cnrtMemcpyHostToDev));
-  CNRT_CHECK(cnrtMemcpyAsync(mlu_y_strides, const_cast<ptrdiff_t *>(y_strides),
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_y_strides, const_cast<ptrdiff_t*>(y_strides),
                              ndim * sizeof(ptrdiff_t), queue,
                              cnrtMemcpyHostToDev));
 
@@ -289,44 +289,44 @@ void RmsNormUnion(void *workspace, int core_per_cluster, int cluster_count,
   cnrtQueueSync(queue);
 }
 
-template void RmsNormUnion<__half, __half>(void *, int, int, cnrtQueue_t,
-                                           void *, const void *, const void *,
-                                           const size_t *, const ptrdiff_t *,
-                                           const ptrdiff_t *, float, int);
+template void RmsNormUnion<__half, __half>(void*, int, int, cnrtQueue_t, void*,
+                                           const void*, const void*,
+                                           const size_t*, const ptrdiff_t*,
+                                           const ptrdiff_t*, float, int);
 
 template void RmsNormUnion<__half, __bang_bfloat16>(
-    void *, int, int, cnrtQueue_t, void *, const void *, const void *,
-    const size_t *, const ptrdiff_t *, const ptrdiff_t *, float, int);
+    void*, int, int, cnrtQueue_t, void*, const void*, const void*,
+    const size_t*, const ptrdiff_t*, const ptrdiff_t*, float, int);
 
-template void RmsNormUnion<__half, float>(void *, int, int, cnrtQueue_t, void *,
-                                          const void *, const void *,
-                                          const size_t *, const ptrdiff_t *,
-                                          const ptrdiff_t *, float, int);
+template void RmsNormUnion<__half, float>(void*, int, int, cnrtQueue_t, void*,
+                                          const void*, const void*,
+                                          const size_t*, const ptrdiff_t*,
+                                          const ptrdiff_t*, float, int);
 
 template void RmsNormUnion<__bang_bfloat16, __half>(
-    void *, int, int, cnrtQueue_t, void *, const void *, const void *,
-    const size_t *, const ptrdiff_t *, const ptrdiff_t *, float, int);
+    void*, int, int, cnrtQueue_t, void*, const void*, const void*,
+    const size_t*, const ptrdiff_t*, const ptrdiff_t*, float, int);
 
 template void RmsNormUnion<__bang_bfloat16, __bang_bfloat16>(
-    void *, int, int, cnrtQueue_t, void *, const void *, const void *,
-    const size_t *, const ptrdiff_t *, const ptrdiff_t *, float, int);
+    void*, int, int, cnrtQueue_t, void*, const void*, const void*,
+    const size_t*, const ptrdiff_t*, const ptrdiff_t*, float, int);
 
 template void RmsNormUnion<__bang_bfloat16, float>(
-    void *, int, int, cnrtQueue_t, void *, const void *, const void *,
-    const size_t *, const ptrdiff_t *, const ptrdiff_t *, float, int);
+    void*, int, int, cnrtQueue_t, void*, const void*, const void*,
+    const size_t*, const ptrdiff_t*, const ptrdiff_t*, float, int);
 
-template void RmsNormUnion<float, __half>(void *, int, int, cnrtQueue_t, void *,
-                                          const void *, const void *,
-                                          const size_t *, const ptrdiff_t *,
-                                          const ptrdiff_t *, float, int);
+template void RmsNormUnion<float, __half>(void*, int, int, cnrtQueue_t, void*,
+                                          const void*, const void*,
+                                          const size_t*, const ptrdiff_t*,
+                                          const ptrdiff_t*, float, int);
 
 template void RmsNormUnion<float, __bang_bfloat16>(
-    void *, int, int, cnrtQueue_t, void *, const void *, const void *,
-    const size_t *, const ptrdiff_t *, const ptrdiff_t *, float, int);
+    void*, int, int, cnrtQueue_t, void*, const void*, const void*,
+    const size_t*, const ptrdiff_t*, const ptrdiff_t*, float, int);
 
-template void RmsNormUnion<float, float>(void *, int, int, cnrtQueue_t, void *,
-                                         const void *, const void *,
-                                         const size_t *, const ptrdiff_t *,
-                                         const ptrdiff_t *, float, int);
+template void RmsNormUnion<float, float>(void*, int, int, cnrtQueue_t, void*,
+                                         const void*, const void*,
+                                         const size_t*, const ptrdiff_t*,
+                                         const ptrdiff_t*, float, int);
 
 }  // namespace infini::ops

@@ -4,9 +4,11 @@
 #include <cassert>
 #include <vector>
 
+// clang-format off
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+// clang-format on
 
 #include "cuda/caster_.h"
 #include "data_type.h"
@@ -58,8 +60,7 @@ inline int QueryMaxThreadsPerBlock() {
 }
 
 template <>
-struct Caster<Device::Type::kNvidia> : CudaCasterImpl<Device::Type::kNvidia> {
-};
+struct Caster<Device::Type::kNvidia> : CudaCasterImpl<Device::Type::kNvidia> {};
 
 }  // namespace infini::ops
 

@@ -22,12 +22,10 @@ struct Caster<Device::Type::kCpu> {
       return std::forward<Src>(x);
     }
 
-    constexpr bool src_is_custom =
-        IsBFloat16<Device::Type::kCpu, PureSrc> ||
-        IsFP16<Device::Type::kCpu, PureSrc>;
-    constexpr bool dst_is_custom =
-        IsBFloat16<Device::Type::kCpu, PureDst> ||
-        IsFP16<Device::Type::kCpu, PureDst>;
+    constexpr bool src_is_custom = IsBFloat16<Device::Type::kCpu, PureSrc> ||
+                                   IsFP16<Device::Type::kCpu, PureSrc>;
+    constexpr bool dst_is_custom = IsBFloat16<Device::Type::kCpu, PureDst> ||
+                                   IsFP16<Device::Type::kCpu, PureDst>;
 
     if constexpr (!src_is_custom && !dst_is_custom) {
       return static_cast<PureDst>(std::forward<Src>(x));
