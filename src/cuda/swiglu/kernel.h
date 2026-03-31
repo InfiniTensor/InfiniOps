@@ -66,11 +66,12 @@ class CudaSwiglu : public Swiglu {
           const T* d_input = reinterpret_cast<const T*>(input.data());
           const T* d_gate = reinterpret_cast<const T*>(gate.data());
 
-          SwigluKernel<T, kBlockSize><<<gridDims, blockDims, 0, cuda_stream>>>(
-              d_out, d_input, d_gate, d_out_shape_, d_input_shape_,
-              d_gate_shape_, d_out_strides_, d_input_strides_, d_gate_strides_,
-              output_size_, ndim_, is_out_contiguous_, is_input_contiguous_,
-              is_gate_contiguous_);
+          SwigluKernel<Backend::kDeviceType, T, kBlockSize>
+              <<<gridDims, blockDims, 0, cuda_stream>>>(
+                  d_out, d_input, d_gate, d_out_shape_, d_input_shape_,
+                  d_gate_shape_, d_out_strides_, d_input_strides_,
+                  d_gate_strides_, output_size_, ndim_, is_out_contiguous_,
+                  is_input_contiguous_, is_gate_contiguous_);
         },
         "CudaSwiglu::operator()");
   }
