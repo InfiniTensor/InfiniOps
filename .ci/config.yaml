@@ -21,6 +21,8 @@ platforms:
     jobs:
       gpu:
         resources:
+          ngpus: 2
+          gpu_style: A100
           shm_size: 80g
         env:
           MODEL_LIST: Qwen3-32B-FP8
@@ -61,6 +63,8 @@ platforms:
     jobs:
       npu:
         resources:
+          ngpus: 1
+          gpu_style: 910B3
           shm_size: 500g
         env:
           MODEL_LIST: DeepSeek-R1-Distill-Qwen-1.5B
