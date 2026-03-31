@@ -78,7 +78,9 @@ jobs:
               chmod a+x daemon.sh
               DOCKER_ARGS="${{ join(matrix.docker_args, ' ') }}"
               VOLUME_ARGS=$(printf " -v %s" ${{ join(matrix.volumes, ' ') }})
-              SHM_SIZE="${{ matrix.shm_size }}"
+              SHM_SIZE="--shm-size=${{ matrix.shm_size }}"
               echo "DOCKER_ARGS=$DOCKER_ARGS"
               echo "VOLUME_ARGS=$VOLUME_ARGS"
               echo "SHM_SIZE=$SHM_SIZE"
+              echo
+              echo "$DOCKER_ARGS $VOLUME_ARGS $SHM_SIZE"
