@@ -76,6 +76,6 @@ jobs:
               git fetch --depth=1 origin main
               git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
               chmod a+x daemon.sh
-              echo '${{ toJson(matrix.docker_args) }}' | jq -r '.[]'
-              echo '${{ toJson(matrix.volumes) }}' | jq -r '.[]'
-              echo '${{ toJson(matrix.shm_size) }}' | jq -r '.[]'
+              echo '${{ toJson(matrix.docker_args) }}'
+              echo '${{ toJson(matrix.volumes) }}'
+              echo '${{ toJson(matrix.shm_size) }}'
