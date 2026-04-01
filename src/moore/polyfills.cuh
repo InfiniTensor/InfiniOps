@@ -5,6 +5,7 @@
 
 // clang-format off
 #include <musa_bf16.h>
+#include <musa_fp16.h>
 // clang-format on
 
 namespace infini::ops {
