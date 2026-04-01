@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_NVIDIA_DEVICE_H_
-#define INFINI_OPS_NVIDIA_DEVICE_H_
+#ifndef INFINI_OPS_NVIDIA_DEVICE__H_
+#define INFINI_OPS_NVIDIA_DEVICE__H_
 
 #include <cassert>
 #include <vector>

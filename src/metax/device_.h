@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_METAX_DEVICE_H_
-#define INFINI_OPS_METAX_DEVICE_H_
+#ifndef INFINI_OPS_METAX_DEVICE__H_
+#define INFINI_OPS_METAX_DEVICE__H_
 
 #include <common/maca_bfloat16.h>
 #include <common/maca_fp16.h>

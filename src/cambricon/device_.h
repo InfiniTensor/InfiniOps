@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CAMBRICON_DEVICE_H_
-#define INFINI_OPS_CAMBRICON_DEVICE_H_
+#ifndef INFINI_OPS_CAMBRICON_DEVICE__H_
+#define INFINI_OPS_CAMBRICON_DEVICE__H_
 
 #include "bang_bf16.h"
 #include "bang_fp16.h"

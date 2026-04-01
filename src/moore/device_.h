@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_MOORE_DEVICE_H_
-#define INFINI_OPS_MOORE_DEVICE_H_
+#ifndef INFINI_OPS_MOORE_DEVICE__H_
+#define INFINI_OPS_MOORE_DEVICE__H_
 
 #include <musa_bf16.h>
 #include <musa_fp16.h>

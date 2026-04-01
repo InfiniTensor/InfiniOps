@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "../common.h"
-#include "../device_.h"
+#include "cambricon/common.h"
+#include "cambricon/device_.h"
 #include "base/rms_norm.h"
 
 namespace infini::ops {

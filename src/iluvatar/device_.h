@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_ILUVATAR_DEVICE_H_
-#define INFINI_OPS_ILUVATAR_DEVICE_H_
+#ifndef INFINI_OPS_ILUVATAR_DEVICE__H_
+#define INFINI_OPS_ILUVATAR_DEVICE__H_
 
 // clang-format off
 #include <cassert>
