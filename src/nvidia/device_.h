@@ -17,6 +17,7 @@
 namespace infini::ops {
 
 using cuda_bfloat16 = nv_bfloat16;
+
 using cuda_bfloat162 = nv_bfloat162;
 
 template <>
