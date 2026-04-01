@@ -18,6 +18,16 @@ IndexToOffset(size_t flat_index, size_t ndim, const size_t* shape,
   return res;
 }
 
+// Selects the largest block size from `AllCudaBlockSizes` that does not exceed
+// `max_threads_per_block`.
+inline int ComputeOptimalBlockSize(int max_threads_per_block) {
+  if (max_threads_per_block >= 2048) return 2048;
+  if (max_threads_per_block >= 1024) return 1024;
+  if (max_threads_per_block >= 512) return 512;
+  if (max_threads_per_block >= 256) return 256;
+  return 128;
+}
+
 }  // namespace infini::ops
 
 #endif
