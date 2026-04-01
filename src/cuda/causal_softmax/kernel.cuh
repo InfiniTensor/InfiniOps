@@ -12,9 +12,10 @@ namespace infini::ops {
 
 namespace {
 
-template <typename Data, typename Compute>
+template <Device::Type kDev, typename Data, typename Compute>
 __device__ __forceinline__ Data ExpAndCast(Compute x) {
-  return Cast<Data>(expf(Cast<float>(x)));
+  return Caster<kDev>::template Cast<Data>(
+      expf(Caster<kDev>::template Cast<float>(x)));
 }
 
 struct BlockMaxOp {
@@ -36,12 +37,13 @@ __device__ __forceinline__ Data BlockMax(const Data* data_ptr, size_t count) {
   return BlockReduce(temp_storage).Reduce(thread_max, BlockMaxOp());
 }
 
-template <unsigned int block_size, typename Data, typename Compute>
+template <unsigned int block_size, Device::Type kDev, typename Data,
+          typename Compute>
 __device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
                                             size_t count) {
   Compute thread_sum = 0;
   for (size_t i = threadIdx.x; i < count; i += block_size) {
-    thread_sum += Cast<Compute>(data_ptr[i]);
+    thread_sum += Caster<kDev>::template Cast<Compute>(data_ptr[i]);
   }
   using BlockReduce = cub::BlockReduce<Compute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
@@ -50,7 +52,8 @@ __device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
 
 }  // namespace
 
-template <unsigned int block_size, typename Data, typename Compute>
+template <unsigned int block_size, Device::Type kDev, typename Data,
+          typename Compute>
 __global__ void CausalSoftmaxKernel(
     Data* __restrict__ out_ptr, const Data* __restrict__ input_ptr,
     size_t batch_size, size_t seq_len, size_t total_seq_len,
@@ -75,25 +78,26 @@ __global__ void CausalSoftmaxKernel(
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
     if (col < valid_len) {
-      Compute diff = Cast<Compute>(input_row[col]) - Cast<Compute>(max_val);
-      out_row[col] = ExpAndCast<Data, Compute>(diff);
+      Compute diff = Caster<kDev>::template Cast<Compute>(input_row[col]) -
+                     Caster<kDev>::template Cast<Compute>(max_val);
+      out_row[col] = ExpAndCast<kDev, Data, Compute>(diff);
     } else {
-      out_row[col] = Cast<Data>(0.0f);
+      out_row[col] = Caster<kDev>::template Cast<Data>(0.0f);
     }
   }
   __syncthreads();
 
   __shared__ Compute sum_val;
   Compute block_sum =
-      BlockSum<block_size, Data, Compute>(out_row, total_seq_len);
+      BlockSum<block_size, kDev, Data, Compute>(out_row, total_seq_len);
   if (threadIdx.x == 0) {
     sum_val = block_sum;
   }
   __syncthreads();
 
   for (size_t col = threadIdx.x; col < total_seq_len; col += block_size) {
-    Compute quot = Cast<Compute>(out_row[col]) / sum_val;
-    out_row[col] = Cast<Data>(quot);
+    Compute quot = Caster<kDev>::template Cast<Compute>(out_row[col]) / sum_val;
+    out_row[col] = Caster<kDev>::template Cast<Data>(quot);
   }
 }
 

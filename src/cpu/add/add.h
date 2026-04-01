@@ -20,7 +20,7 @@ class Operator<Add, Device::Type::kCpu> : public Add,
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
-    DispatchFunc<AllTypes>(
+    DispatchFunc<Device::Type::kCpu, AllTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
@@ -32,8 +32,9 @@ class Operator<Add, Device::Type::kCpu> : public Add,
  private:
   template <typename T>
   void Compute(const Tensor input, const Tensor other, Tensor out) const {
-    using ComputeType =
-        std::conditional_t<IsBFloat16<T> || IsFP16<T>, float, T>;
+    using ComputeType = std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
+                                               IsFP16<Device::Type::kCpu, T>,
+                                           float, T>;
 
     const auto* input_ptr = static_cast<const T*>(input.data());
     const auto* other_ptr = static_cast<const T*>(other.data());

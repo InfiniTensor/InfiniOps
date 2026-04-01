@@ -7,23 +7,16 @@
 
 namespace infini::ops {
 
-// Optimized sigmoid function with support for vectorized types.
-template <typename T>
+// Optimized sigmoid function with support for FP16 and BF16 types.
+// TODO: The unified FP16/BF16 branch uses `Caster` and scalar float
+// arithmetic instead of native vectorized intrinsics (e.g. `h2rcp`,
+// `__hmul2`). Profile and restore specialized paths if needed.
+template <Device::Type kDev, typename T>
 __device__ __forceinline__ T Sigmoid(const T& x) {
-  if constexpr (std::is_same_v<T, half2>) {
-    return h2rcp(__hadd2(make_half2(1, 1), h2exp(__hneg2(x))));
-  } else if constexpr (std::is_same_v<T, half>) {
-    return hrcp(
-        __hadd(half(1.f), __float2half(__expf(__half2float(__hneg(x))))));
-  } else if constexpr (std::is_same_v<T, cuda_bfloat162>) {
-    float x0 = __bfloat162float(__low2bfloat16(x));
-    float x1 = __bfloat162float(__high2bfloat16(x));
-    float sig0 = __frcp_rn(__fadd_rn(1.0f, __expf(-x0)));
-    float sig1 = __frcp_rn(__fadd_rn(1.0f, __expf(-x1)));
-    return __floats2bfloat162_rn(sig0, sig1);
-  } else if constexpr (std::is_same_v<T, cuda_bfloat16>) {
-    float xf = __bfloat162float(x);
-    return __float2bfloat16_rn(__frcp_rn(__fadd_rn(1.0f, __expf(-xf))));
+  if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
+    float xf = Caster<kDev>::template Cast<float>(x);
+    return Caster<kDev>::template Cast<T>(
+        __frcp_rn(__fadd_rn(1.0f, __expf(-xf))));
   } else if constexpr (std::is_same_v<T, float>) {
     return __frcp_rn(__fadd_rn(1.0f, __expf(-x)));
   } else {
@@ -32,7 +25,7 @@ __device__ __forceinline__ T Sigmoid(const T& x) {
 }
 
 // SwiGLU(x, gate) = Swish(x) * gate = (x * sigmoid(x)) * gate.
-template <typename T, unsigned int BLOCK_SIZE>
+template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
 __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
                              const T* __restrict__ b,
                              const size_t* __restrict__ out_shape,
@@ -70,32 +63,16 @@ __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
     T up = a[input_idx];
     T gate = b[gate_idx];
 
-    if constexpr (std::is_same_v<T, half2>) {
-      // Vectorized `half2` computation for better performance.
-      out[out_idx] = __hmul2(__hmul2(gate, Sigmoid(gate)), up);
-    } else if constexpr (std::is_same_v<T, half>) {
-      // Optimized `half` precision computation.
-      out[out_idx] = __hmul(__hmul(gate, Sigmoid(gate)), up);
-    } else if constexpr (std::is_same_v<T, cuda_bfloat162>) {
-      float gate0 = __bfloat162float(__low2bfloat16(gate));
-      float gate1 = __bfloat162float(__high2bfloat16(gate));
-      float up0 = __bfloat162float(__low2bfloat16(up));
-      float up1 = __bfloat162float(__high2bfloat16(up));
-      float sig0 = __frcp_rn(__fadd_rn(1.0f, __expf(-gate0)));
-      float sig1 = __frcp_rn(__fadd_rn(1.0f, __expf(-gate1)));
-      out[out_idx] =
-          __floats2bfloat162_rn(__fmul_rn(__fmul_rn(gate0, sig0), up0),
-                                __fmul_rn(__fmul_rn(gate1, sig1), up1));
-    } else if constexpr (std::is_same_v<T, cuda_bfloat16>) {
-      float gatef = __bfloat162float(gate);
-      float upf = __bfloat162float(up);
+    if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
+      float gatef = Caster<kDev>::template Cast<float>(gate);
+      float upf = Caster<kDev>::template Cast<float>(up);
       float sigf = __frcp_rn(__fadd_rn(1.0f, __expf(-gatef)));
-      out[out_idx] =
-          __float2bfloat16_rn(__fmul_rn(__fmul_rn(gatef, sigf), upf));
+      out[out_idx] = Caster<kDev>::template Cast<T>(
+          __fmul_rn(__fmul_rn(gatef, sigf), upf));
     } else if constexpr (std::is_same_v<T, float>) {
-      out[out_idx] = __fmul_rn(__fmul_rn(gate, Sigmoid(gate)), up);
+      out[out_idx] = __fmul_rn(__fmul_rn(gate, Sigmoid<kDev>(gate)), up);
     } else {
-      out[out_idx] = gate * Sigmoid(gate) * up;
+      out[out_idx] = gate * Sigmoid<kDev>(gate) * up;
     }
   }
 }

@@ -3,11 +3,8 @@
 
 #include <utility>
 
-// clang-format off
-#include <cuda_runtime.h>
-// clang-format on
-
 #include "cuda/swiglu/kernel.h"
+#include "nvidia/device_.h"
 
 namespace infini::ops {
 
@@ -15,6 +12,8 @@ namespace swiglu {
 
 struct NvidiaBackend {
   using stream_t = cudaStream_t;
+
+  static constexpr Device::Type kDeviceType = Device::Type::kNvidia;
 
   static constexpr auto malloc = [](auto&&... args) {
     return cudaMalloc(std::forward<decltype(args)>(args)...);
@@ -25,6 +24,10 @@ struct NvidiaBackend {
   static constexpr auto free = cudaFree;
 
   static constexpr auto memcpyH2D = cudaMemcpyHostToDevice;
+
+  static int GetOptimalBlockSize() {
+    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
+  }
 };
 
 }  // namespace swiglu

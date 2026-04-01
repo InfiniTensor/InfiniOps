@@ -3,15 +3,8 @@
 
 #include <utility>
 
-// clang-format off
-#include <cuda_runtime.h>
-// clang-format on
-
-// clang-format off
-#include "iluvatar/device_.h"
-// clang-format on
-
 #include "cuda/rms_norm/kernel.h"
+#include "iluvatar/device_.h"
 
 namespace infini::ops {
 
@@ -19,6 +12,12 @@ namespace rms_norm {
 
 struct IluvatarBackend {
   using stream_t = cudaStream_t;
+
+  static constexpr Device::Type kDeviceType = Device::Type::kIluvatar;
+
+  static int GetOptimalBlockSize() {
+    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
+  }
 };
 
 }  // namespace rms_norm

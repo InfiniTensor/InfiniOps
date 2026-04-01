@@ -3,11 +3,8 @@
 
 #include <utility>
 
-// clang-format off
-#include <mcr/mc_runtime.h>
-// clang-format on
-
 #include "cuda/add/kernel.h"
+#include "metax/device_.h"
 
 namespace infini::ops {
 
@@ -16,6 +13,8 @@ namespace add {
 struct MetaxBackend {
   using stream_t = mcStream_t;
 
+  static constexpr Device::Type kDeviceType = Device::Type::kMetax;
+
   static constexpr auto malloc = mcMalloc;
 
   static constexpr auto memcpy = mcMemcpy;
@@ -23,6 +22,10 @@ struct MetaxBackend {
   static constexpr auto free = mcFree;
 
   static constexpr auto memcpyH2D = mcMemcpyHostToDevice;
+
+  static int GetOptimalBlockSize() {
+    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
+  }
 };
 
 }  // namespace add

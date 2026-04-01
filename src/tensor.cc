@@ -112,7 +112,8 @@ Tensor::Strides Tensor::DefaultStrides(const Shape& shape) {
 
 std::string Tensor::ToStringHelper() const {
   if (ndim() == 0) {
-    return DispatchFunc<ConcatType<FloatTypes, AllIntTypes>>(
+    return DispatchFunc<Device::Type::kCpu,
+                        ConcatType<FloatTypes, AllIntTypes>>(
         dtype_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;

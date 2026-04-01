@@ -5,17 +5,18 @@
 #include <cstdint>
 #include <vector>
 
-#include "../common.h"
+#include "cambricon/common.h"
+#include "cambricon/device_.h"
 #include "base/rms_norm.h"
 
 namespace infini::ops {
 
 // TODO: Remove forward declaration.
 template <typename T, typename Tw>
-void RmsNormUnion(void *workspace, int core_per_cluster, int cluster_count,
-                  cnrtQueue_t queue, void *y, const void *x, const void *w,
-                  const size_t *shape, const ptrdiff_t *y_strides,
-                  const ptrdiff_t *x_strides, float eps, int ndim);
+void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
+                  cnrtQueue_t queue, void* y, const void* x, const void* w,
+                  const size_t* shape, const ptrdiff_t* y_strides,
+                  const ptrdiff_t* x_strides, float eps, int ndim);
 
 template <>
 class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
@@ -33,6 +34,7 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
     auto workspace{workspace_ ? workspace_ : default_workspace_};
 
     DispatchFunc<
+        Device::Type::kCambricon,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
         {input.dtype(), weight.dtype()},
@@ -41,8 +43,8 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
           using WeightT = typename decltype(weight_tag)::type;
 
           RmsNormUnion<InputT, WeightT>(
-              workspace, core_per_cluster, cluster_count, queue,
-              out.data(), input.data(), weight.data(), out_shape_.data(),
+              workspace, core_per_cluster, cluster_count, queue, out.data(),
+              input.data(), weight.data(), out_shape_.data(),
               out_strides_.data(), input_strides_.data(), eps, ndim_);
         },
         "CambriconRmsNorm::operator() - output dispatch");
@@ -54,7 +56,7 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
     return ndim_ * (sizeof(size_t) + 2 * sizeof(ptrdiff_t));
   }
 
-  void *default_workspace_{nullptr};
+  void* default_workspace_{nullptr};
   int core_per_cluster = 0;
   int cluster_count = 0;
 };

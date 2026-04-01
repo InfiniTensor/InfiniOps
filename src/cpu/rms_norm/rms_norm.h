@@ -19,7 +19,7 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
 
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
-    DispatchFunc<AllFloatTypes>(
+    DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         out.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;

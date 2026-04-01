@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_CUDA_RMS_NORM_KERNEL_H_
 #define INFINI_OPS_CUDA_RMS_NORM_KERNEL_H_
 
+#include <cassert>
 #include <cstdint>
 
 #include "base/rms_norm.h"
@@ -30,20 +31,18 @@ class CudaRmsNorm : public RmsNorm {
 
     uint32_t num_blocks = static_cast<uint32_t>(batch_size_ * nhead_);
 
-    if (out.dtype() != input.dtype() || out.dtype() != weight.dtype()) {
-      std::abort();
-    }
+    assert(out.dtype() == input.dtype() && out.dtype() == weight.dtype());
 
-    int block_size = GetOptimalBlockSize();
+    int block_size = Backend::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(
         {static_cast<int64_t>(out.dtype()), block_size},
         [&](auto list_tag) {
-          using T = TypeMapType<ListGet<0>(list_tag)>;
+          using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
-          RmsNormKernel<kBlockSize, float, T, T>
+          RmsNormKernel<kBlockSize, Backend::kDeviceType, float, T, T>
               <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()), stride_out_batch,
                   stride_out_nhead, reinterpret_cast<const T*>(input.data()),
