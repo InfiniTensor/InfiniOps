@@ -8,44 +8,16 @@
 // clang-format on
 
 #include "cuda/add/kernel.h"
-#include "moore/caster_.h"
-#include "moore/data_type_.h"
-#include "moore/device_property.h"
+#include "moore/polyfills.cuh"
+#include "moore/runtime_.h"
 
 namespace infini::ops {
 
-namespace add {
-
-struct MooreBackend {
-  using stream_t = musaStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kMoore;
-
-  static constexpr auto malloc = [](auto&&... args) {
-    return musaMalloc(std::forward<decltype(args)>(args)...);
-  };
-
-  static constexpr auto memcpy = [](auto&&... args) {
-    return musaMemcpy(std::forward<decltype(args)>(args)...);
-  };
-
-  static constexpr auto free = [](auto&&... args) {
-    return musaFree(std::forward<decltype(args)>(args)...);
-  };
-
-  static constexpr auto memcpyH2D = musaMemcpyHostToDevice;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace add
-
 template <>
-class Operator<Add, Device::Type::kMoore> : public CudaAdd<add::MooreBackend> {
+class Operator<Add, Device::Type::kMoore>
+    : public CudaAdd<Runtime<Device::Type::kMoore>> {
  public:
-  using CudaAdd<add::MooreBackend>::CudaAdd;
+  using CudaAdd<Runtime<Device::Type::kMoore>>::CudaAdd;
 };
 
 }  // namespace infini::ops

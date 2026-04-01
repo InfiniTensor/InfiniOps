@@ -4,30 +4,15 @@
 #include <utility>
 
 #include "cuda/rms_norm/kernel.h"
-#include "metax/caster_.h"
-#include "metax/device_property.h"
+#include "metax/runtime_.h"
 
 namespace infini::ops {
 
-namespace rms_norm {
-
-struct MetaxBackend {
-  using stream_t = mcStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kMetax;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace rms_norm
-
 template <>
 class Operator<RmsNorm, Device::Type::kMetax>
-    : public CudaRmsNorm<rms_norm::MetaxBackend> {
+    : public CudaRmsNorm<Runtime<Device::Type::kMetax>> {
  public:
-  using CudaRmsNorm<rms_norm::MetaxBackend>::CudaRmsNorm;
+  using CudaRmsNorm<Runtime<Device::Type::kMetax>>::CudaRmsNorm;
 };
 
 }  // namespace infini::ops

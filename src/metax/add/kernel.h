@@ -4,38 +4,15 @@
 #include <utility>
 
 #include "cuda/add/kernel.h"
-#include "metax/caster_.h"
-#include "metax/data_type_.h"
-#include "metax/device_property.h"
+#include "metax/runtime_.h"
 
 namespace infini::ops {
 
-namespace add {
-
-struct MetaxBackend {
-  using stream_t = mcStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kMetax;
-
-  static constexpr auto malloc = mcMalloc;
-
-  static constexpr auto memcpy = mcMemcpy;
-
-  static constexpr auto free = mcFree;
-
-  static constexpr auto memcpyH2D = mcMemcpyHostToDevice;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace add
-
 template <>
-class Operator<Add, Device::Type::kMetax> : public CudaAdd<add::MetaxBackend> {
+class Operator<Add, Device::Type::kMetax>
+    : public CudaAdd<Runtime<Device::Type::kMetax>> {
  public:
-  using CudaAdd<add::MetaxBackend>::CudaAdd;
+  using CudaAdd<Runtime<Device::Type::kMetax>>::CudaAdd;
 };
 
 }  // namespace infini::ops

@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_NVIDIA_RUNTIME_H_
-#define INFINI_OPS_NVIDIA_RUNTIME_H_
+#ifndef INFINI_OPS_ILUVATAR_RUNTIME_H_
+#define INFINI_OPS_ILUVATAR_RUNTIME_H_
 
 #include <utility>
 
@@ -7,16 +7,16 @@
 #include <cuda_runtime.h>
 // clang-format on
 
-#include "nvidia/device_.h"
+#include "iluvatar/device_.h"
 #include "runtime.h"
 
 namespace infini::ops {
 
 template <>
-struct Runtime<Device::Type::kNvidia> {
+struct Runtime<Device::Type::kIluvatar> {
   using Stream = cudaStream_t;
 
-  static constexpr Device::Type kDeviceType = Device::Type::kNvidia;
+  static constexpr Device::Type kDeviceType = Device::Type::kIluvatar;
 
   static constexpr auto Malloc = [](auto&&... args) {
     return cudaMalloc(std::forward<decltype(args)>(args)...);
