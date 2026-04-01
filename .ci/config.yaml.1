@@ -1,0 +1,70 @@
+platforms:
+  nvidia:
+    image:
+      build_args:
+        BASE_IMAGE: vllm/vllm-openai:v0.10.0
+    docker_args:
+      - "--gpus all"
+      - "-u root"
+      - "--network host"
+      - "--privileged"
+      - "--cap-add=ALL"
+      - "--pid=host"
+      - "--ipc=host"
+      - "--entrypoint=''"
+      - "--workdir=/workspace"
+      - "-e CUDA_DEVICE_ORDER=PCI_BUS_ID"
+    volumes:
+      - /dev:/dev
+      - /home/zkjh/weight:/home/weight
+      - /home/zkjh/workspace:/workspace
+    jobs:
+      gpu:
+        resources:
+          ngpus: 2
+          shm_size: 80g
+        env:
+          MODEL_LIST: Qwen3-32B-FP8
+          IMAGE: v0.10.0
+          ENGINE: vLLM
+  ascend:
+    image:
+      build_args:
+        BASE_IMAGE: swr.cn-south-1.myhuaweicloud.com/ascendhub/mindie:2.1.RC1-800I-A2-py311-openeuler24.03-lts
+    docker_args:
+      - "--privileged"
+      - "--cap-add=ALL"
+      - "--pid=host"
+      - "--ipc=host"
+      - "--net=host"
+      - "--device=/dev/davinci0"
+      - "--device=/dev/davinci1"
+      - "--device=/dev/davinci2"
+      - "--device=/dev/davinci3"
+      - "--device=/dev/davinci4"
+      - "--device=/dev/davinci5"
+      - "--device=/dev/davinci6"
+      - "--device=/dev/davinci7"
+      - "--device=/dev/davinci_manager"
+      - "--device=/dev/hisi_hdc"
+      - "--device=/dev/devmm_svm"
+    volumes:
+      - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64
+      - /usr/local/Ascend/driver/include:/usr/local/Ascend/driver/include
+      - /usr/local/Ascend/driver/tools:/usr/local/Ascend/driver/tools
+      - /usr/local/Ascend/driver:/usr/local/Ascend/driver
+      - /usr/local/Ascend/firmware:/usr/local/Ascend/firmware
+      - /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi
+      - /usr/local/sbin:/usr/local/sbin
+      - /etc/hccn.conf:/etc/hccn.conf
+      - /home/zkjh/weight:/home/weight
+      - /home/zkjh:/home/zkjh
+    jobs:
+      npu:
+        resources:
+          ngpus: 1
+          shm_size: 500g
+        env:
+          MODEL_LIST: DeepSeek-R1-Distill-Qwen-1.5B
+          IMAGE: 2.1.RC1-800I-A2-py311-openeuler24.03-lts
+          ENGINE: MindIE
