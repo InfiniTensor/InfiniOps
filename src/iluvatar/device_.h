@@ -1,14 +1,14 @@
 #ifndef INFINI_OPS_ILUVATAR_DEVICE__H_
 #define INFINI_OPS_ILUVATAR_DEVICE__H_
 
-// clang-format off
 #include <cassert>
 #include <vector>
-// clang-format on
 
+// clang-format off
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+// clang-format on
 
 #include "cuda/caster_.h"
 #include "data_type.h"
