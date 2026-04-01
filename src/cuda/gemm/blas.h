@@ -86,6 +86,8 @@ class Blas : public Gemm {
                                         : Backend::BLAS_OP_N;
   }
 
+  // TODO: This static singleton is not thread-safe under concurrent access
+  // from multiple host threads. Add proper synchronization in the future.
   static typename Backend::blasHandle_t& GetHandle() {
     static typename Backend::blasHandle_t handle = []() {
       typename Backend::blasHandle_t h;
