@@ -38,10 +38,16 @@ For the `<OPTIONS>`:
 |----------------------------------------|------------------------------------|:-:
 | `-DWITH_CPU=[ON\|OFF]`                 | Compile the CPU implementation     | n
 | `-DWITH_NVIDIA=[ON\|OFF]`              | Compile the NVIDIA implementation  | n
+| `-DWITH_ILUVATAR=[ON\|OFF]`            | Compile the Iluvatar implementation| n
+| `-DWITH_HYGON=[ON\|OFF]`               | Compile the Hygon implementation   | n
 | `-DWITH_METAX=[ON\|OFF]`               | Compile the MetaX implementation   | n
 | `-DGENERATE_PYTHON_BINDINGS=[ON\|OFF]` | Generate Python bindings           | n
 
 *Note: If no accelerator options are provided, `WITH_CPU` is enabled by default.*
+
+For Hygon builds, set `DTK_ROOT` to the DTK installation root if it is not
+installed at `/opt/dtk`. You can override the default DCU arch with
+`-DHYGON_ARCH=<arch>` when configuring CMake.
 
 ## 🚀 Running Examples
 After a successful build, the executables are located in the `build/examples` directory.

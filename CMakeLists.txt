@@ -11,12 +11,15 @@ set(PYBIND11_ENABLE_EXTRAS ON)
 option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
+option(WITH_HYGON "Enable Hygon GPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
+
+set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")
 
 if(AUTO_DETECT_DEVICES)
     message(STATUS "Auto-detecting available devices...")
@@ -35,6 +38,13 @@ if(AUTO_DETECT_DEVICES)
     if(ILUVATAR_DEV_FILES)
         set(WITH_ILUVATAR ON)
         message(STATUS "Auto-detected Iluvatar environment.")
+    endif()
+
+    if(DEFINED ENV{DTK_ROOT} OR
+       EXISTS "${_DEFAULT_HYGON_DTK_ROOT}/cuda/bin/nvcc" OR
+       EXISTS "${_DEFAULT_HYGON_DTK_ROOT}/cuda/cuda/bin/nvcc")
+        set(WITH_HYGON ON)
+        message(STATUS "Auto-detected Hygon environment.")
     endif()
 
     if(DEFINED ENV{MACA_PATH})
@@ -77,14 +87,14 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_METAX WITH_MOORE)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MOORE)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
 endforeach()
 
 if(_gpu_backend_count GREATER 1)
-    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_METAX`, and `WITH_MOORE` are mutually exclusive. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_METAX`, and `WITH_MOORE` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NVIDIA)
@@ -107,6 +117,64 @@ if(WITH_ILUVATAR)
     set(CMAKE_CUDA_FLAGS "-x ivcore -std=c++17 --cuda-gpu-arch=${ILUVATAR_ARCH} -fPIC -Wno-error=unused-variable -Wno-error=unused-private-field -Wno-unused-variable" CACHE STRING "Iluvatar CUDA flags")
     set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Iluvatar")
     message(STATUS "Iluvatar: CUDA compiler ${CMAKE_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+endif()
+
+if(WITH_HYGON)
+    add_compile_definitions(WITH_HYGON=1)
+    set(DTK_ROOT $ENV{DTK_ROOT})
+    if(NOT DTK_ROOT)
+        set(DTK_ROOT "${_DEFAULT_HYGON_DTK_ROOT}")
+    endif()
+    if(NOT EXISTS "${DTK_ROOT}")
+        message(FATAL_ERROR "`WITH_HYGON` is `ON` but `DTK_ROOT` (`${DTK_ROOT}`) does not exist.")
+    endif()
+
+    set(_HYGON_ARCH_DEFAULT "gfx906")
+    if(DEFINED ENV{HYGON_ARCH} AND NOT "$ENV{HYGON_ARCH}" STREQUAL "")
+        set(_HYGON_ARCH_DEFAULT "$ENV{HYGON_ARCH}")
+    else()
+        find_program(HYGON_ROCMINFO_EXECUTABLE NAMES rocminfo HINTS "${DTK_ROOT}/bin")
+        if(HYGON_ROCMINFO_EXECUTABLE)
+            execute_process(
+                COMMAND ${HYGON_ROCMINFO_EXECUTABLE}
+                OUTPUT_VARIABLE _HYGON_ROCMINFO_OUTPUT
+                ERROR_QUIET
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            string(REGEX MATCH "gfx[0-9]+" _HYGON_ARCH_AUTO "${_HYGON_ROCMINFO_OUTPUT}")
+            if(_HYGON_ARCH_AUTO)
+                set(_HYGON_ARCH_DEFAULT "${_HYGON_ARCH_AUTO}")
+            endif()
+        endif()
+    endif()
+
+    set(HYGON_ARCH "${_HYGON_ARCH_DEFAULT}" CACHE STRING "Hygon GPU architecture")
+    set(HYGON_CUDA_ROOT "${DTK_ROOT}/cuda")
+    if(EXISTS "${DTK_ROOT}/cuda/cuda/bin/nvcc")
+        set(HYGON_CUDA_ROOT "${DTK_ROOT}/cuda/cuda")
+    endif()
+
+    if(NOT EXISTS "${HYGON_CUDA_ROOT}/bin/nvcc")
+        message(FATAL_ERROR "`WITH_HYGON` is `ON` but `${HYGON_CUDA_ROOT}/bin/nvcc` was not found. Checked `${DTK_ROOT}/cuda/bin/nvcc` and `${DTK_ROOT}/cuda/cuda/bin/nvcc`.")
+    endif()
+
+    set(CMAKE_CUDA_COMPILER "${HYGON_CUDA_ROOT}/bin/nvcc" CACHE FILEPATH "Hygon CUDA compiler (DTK nvcc)")
+    set(CUDAToolkit_ROOT "${HYGON_CUDA_ROOT}" CACHE PATH "Hygon CUDA toolkit root")
+    set(CMAKE_CUDA_ARCHITECTURES OFF CACHE STRING "Disable default CUDA arch flags for Hygon" FORCE)
+    set(CMAKE_CUDA_FLAGS "-std=c++17 -fPIC -arch=${HYGON_ARCH} -Wno-return-type -Wno-error=unused-private-field" CACHE STRING "Hygon CUDA flags")
+    set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Hygon")
+
+    # DTK's nvcc wrapper may invoke `nvcc` by name during compiler checks.
+    set(ENV{PATH} "${HYGON_CUDA_ROOT}/bin:$ENV{PATH}")
+
+    include_directories("${DTK_ROOT}/include")
+    include_directories("${HYGON_CUDA_ROOT}/include")
+    link_directories("${DTK_ROOT}/lib")
+    link_directories("${HYGON_CUDA_ROOT}/lib64")
+
+    message(STATUS "Hygon: CUDA compiler ${CMAKE_CUDA_COMPILER}, arch ${HYGON_ARCH}, DTK root ${DTK_ROOT}")
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
@@ -179,7 +247,7 @@ if(WITH_CAMBRICON)
 endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON)
     add_compile_definitions(WITH_CPU=1)
 endif()
 
