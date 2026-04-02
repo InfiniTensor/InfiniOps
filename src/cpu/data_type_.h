@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CPU_DEVICE__H_
-#define INFINI_OPS_CPU_DEVICE__H_
+#ifndef INFINI_OPS_CPU_DATA_TYPE__H_
+#define INFINI_OPS_CPU_DATA_TYPE__H_
 
 #include "data_type.h"
 #include "device.h"

@@ -177,7 +177,7 @@ DEFINE_DATA_TYPE_MAPPING(kFloat64, double)
 
 // Checks whether a C++ type is the bfloat16 or float16 type for the given
 // device. Full specializations for each device's float16/bfloat16 types are
-// provided in the corresponding platform `device_.h` headers.
+// provided in the corresponding platform-specific device type headers.
 template <Device::Type dev, typename T>
 inline constexpr bool IsBFloat16 =
     std::is_same_v<T, TypeMapType<dev, DataType::kBFloat16>>;

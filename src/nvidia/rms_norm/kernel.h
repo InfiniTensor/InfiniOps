@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "cuda/rms_norm/kernel.h"
-#include "nvidia/device_.h"
+#include "nvidia/device_property.h"
 
 namespace infini::ops {
 

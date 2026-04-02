@@ -49,11 +49,12 @@ int main() {
   std::iota(a_vec.begin(), a_vec.end(), 0);
   std::iota(b_vec.begin(), b_vec.end(), 0);
 
-  Device dev{DEFAULT_DEVICE_TYPE};
+  Device host_dev{Device::Type::kCpu};
+  Device device_dev{DEFAULT_DEVICE_TYPE};
 
-  Tensor a_host{a_vec.data(), a_shape, dev};
-  Tensor b_host{b_vec.data(), b_shape, dev};
-  Tensor c_host{c_vec.data(), c_shape, dev};
+  Tensor a_host{a_vec.data(), a_shape, host_dev};
+  Tensor b_host{b_vec.data(), b_shape, host_dev};
+  Tensor c_host{c_vec.data(), c_shape, host_dev};
 
   const auto a_size{a_num_elements * kDataTypeToSize.at(a_host.dtype())};
   const auto b_size{b_num_elements * kDataTypeToSize.at(b_host.dtype())};
@@ -69,11 +70,11 @@ int main() {
   DEVICE_MEMCPY(b_ptr, b_vec.data(), b_size, DEVICE_MEMCPY_HOST_TO_DEVICE);
   DEVICE_MEMSET(c_ptr, 0, c_size);
 
-  Tensor a_device{a_ptr, a_host.shape(), a_host.dtype(), a_host.device(),
+  Tensor a_device{a_ptr, a_host.shape(), a_host.dtype(), device_dev,
                   a_host.strides()};
-  Tensor b_device{b_ptr, b_host.shape(), b_host.dtype(), a_host.device(),
+  Tensor b_device{b_ptr, b_host.shape(), b_host.dtype(), device_dev,
                   b_host.strides()};
-  Tensor c_device{c_ptr, c_host.shape(), c_host.dtype(), a_host.device(),
+  Tensor c_device{c_ptr, c_host.shape(), c_host.dtype(), device_dev,
                   c_host.strides()};
 
   Gemm::call(a_device, b_device, c_device);

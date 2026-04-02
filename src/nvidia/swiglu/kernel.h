@@ -4,7 +4,8 @@
 #include <utility>
 
 #include "cuda/swiglu/kernel.h"
-#include "nvidia/device_.h"
+#include "nvidia/data_type_.h"
+#include "nvidia/device_property.h"
 
 namespace infini::ops {
 

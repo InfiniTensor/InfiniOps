@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "cuda/causal_softmax/kernel.h"
-#include "nvidia/device_.h"
+#include "nvidia/device_property.h"
 
 namespace infini::ops {
 

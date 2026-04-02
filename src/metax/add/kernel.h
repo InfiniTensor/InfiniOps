@@ -4,7 +4,8 @@
 #include <utility>
 
 #include "cuda/add/kernel.h"
-#include "metax/device_.h"
+#include "metax/data_type_.h"
+#include "metax/device_property.h"
 
 namespace infini::ops {
 

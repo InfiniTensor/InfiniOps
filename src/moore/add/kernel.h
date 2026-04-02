@@ -8,7 +8,8 @@
 // clang-format on
 
 #include "cuda/add/kernel.h"
-#include "moore/device_.h"
+#include "moore/data_type_.h"
+#include "moore/device_property.h"
 
 namespace infini::ops {
 

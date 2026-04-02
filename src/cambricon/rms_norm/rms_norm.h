@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "cambricon/common.h"
-#include "cambricon/device_.h"
 #include "base/rms_norm.h"
+#include "cambricon/common.h"
+#include "cambricon/data_type_.h"
 
 namespace infini::ops {
 

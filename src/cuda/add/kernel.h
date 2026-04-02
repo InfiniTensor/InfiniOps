@@ -1,12 +1,15 @@
 #ifndef INFINI_OPS_CUDA_ADD_KERNEL_H_
 #define INFINI_OPS_CUDA_ADD_KERNEL_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <vector>
 
 #include "base/add.h"
 #include "common/generic_utils.h"
 #include "cuda/add/kernel.cuh"
-#include "cuda/kernel_commons.h"
+#include "cuda/kernel_commons.cuh"
 
 namespace infini::ops {
 
@@ -17,36 +20,40 @@ class CudaAdd : public Add {
       : Add{input, other, out} {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
+    const size_t metadata_size = 3 * (shape_size + strides_size);
+    std::vector<std::byte> metadata(metadata_size);
 
-    Backend::malloc((void**)&d_input_shape_, shape_size);
-    Backend::malloc((void**)&d_other_shape_, shape_size);
-    Backend::malloc((void**)&d_out_shape_, shape_size);
-    Backend::malloc((void**)&d_input_strides_, strides_size);
-    Backend::malloc((void**)&d_other_strides_, strides_size);
-    Backend::malloc((void**)&d_out_strides_, strides_size);
+    Backend::malloc((void**)&d_metadata_, metadata_size);
 
-    Backend::memcpy(d_input_shape_, input_shape_.data(), shape_size,
-                    Backend::memcpyH2D);
-    Backend::memcpy(d_other_shape_, other_shape_.data(), shape_size,
-                    Backend::memcpyH2D);
-    Backend::memcpy(d_out_shape_, out_shape_.data(), shape_size,
-                    Backend::memcpyH2D);
-    Backend::memcpy(d_input_strides_, input_strides_.data(), strides_size,
-                    Backend::memcpyH2D);
-    Backend::memcpy(d_other_strides_, other_strides_.data(), strides_size,
-                    Backend::memcpyH2D);
-    Backend::memcpy(d_out_strides_, out_strides_.data(), strides_size,
+    size_t offset = 0;
+    d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, input_shape_.data(), shape_size);
+    offset += shape_size;
+
+    d_other_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, other_shape_.data(), shape_size);
+    offset += shape_size;
+
+    d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
+    offset += shape_size;
+
+    d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+    offset += strides_size;
+
+    d_other_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, other_strides_.data(), strides_size);
+    offset += strides_size;
+
+    d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
+
+    Backend::memcpy(d_metadata_, metadata.data(), metadata_size,
                     Backend::memcpyH2D);
   }
 
-  ~CudaAdd() {
-    Backend::free(d_input_shape_);
-    Backend::free(d_other_shape_);
-    Backend::free(d_out_shape_);
-    Backend::free(d_input_strides_);
-    Backend::free(d_other_strides_);
-    Backend::free(d_out_strides_);
-  }
+  ~CudaAdd() { Backend::free(d_metadata_); }
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
@@ -78,6 +85,8 @@ class CudaAdd : public Add {
   }
 
  private:
+  std::byte* d_metadata_{nullptr};
+
   Tensor::Size* d_input_shape_{nullptr};
 
   Tensor::Size* d_other_shape_{nullptr};
