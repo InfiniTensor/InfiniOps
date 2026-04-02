@@ -11,7 +11,8 @@
 namespace infini::ops {
 
 template <>
-struct Runtime<Device::Type::kMoore> {
+struct Runtime<Device::Type::kMoore>
+    : CudaLikeRuntime<Runtime<Device::Type::kMoore>> {
   using Stream = musaStream_t;
 
   static constexpr Device::Type kDeviceType = Device::Type::kMoore;
@@ -39,6 +40,8 @@ struct Runtime<Device::Type::kMoore> {
     return 128;
   }
 };
+
+static_assert(Runtime<Device::Type::kMoore>::Validate());
 
 }  // namespace infini::ops
 

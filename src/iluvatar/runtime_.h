@@ -13,7 +13,8 @@
 namespace infini::ops {
 
 template <>
-struct Runtime<Device::Type::kIluvatar> {
+struct Runtime<Device::Type::kIluvatar>
+    : CudaLikeRuntime<Runtime<Device::Type::kIluvatar>> {
   using Stream = cudaStream_t;
 
   static constexpr Device::Type kDeviceType = Device::Type::kIluvatar;
@@ -37,6 +38,8 @@ struct Runtime<Device::Type::kIluvatar> {
     return 128;
   }
 };
+
+static_assert(Runtime<Device::Type::kIluvatar>::Validate());
 
 }  // namespace infini::ops
 

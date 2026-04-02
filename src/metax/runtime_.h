@@ -9,7 +9,8 @@
 namespace infini::ops {
 
 template <>
-struct Runtime<Device::Type::kMetax> {
+struct Runtime<Device::Type::kMetax>
+    : CudaLikeRuntime<Runtime<Device::Type::kMetax>> {
   using Stream = mcStream_t;
 
   static constexpr Device::Type kDeviceType = Device::Type::kMetax;
@@ -31,6 +32,8 @@ struct Runtime<Device::Type::kMetax> {
     return 128;
   }
 };
+
+static_assert(Runtime<Device::Type::kMetax>::Validate());
 
 }  // namespace infini::ops
 
