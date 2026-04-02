@@ -49,7 +49,7 @@ def test_flash_attention_prefill_single(
         lambda q, k, v, o: _flash_attention(
             q, k, v, None, None, None,
             num_heads, num_kv_heads, head_size,
-            scale, 3, 0, o,
+            scale, True, -1, 0, 0, o,
         ),
         lambda q, k, v, o: _ref_flash_attention(
             q, k, v,
@@ -110,9 +110,9 @@ def test_flash_attention_prefill_multi(
 
     return Payload(
         lambda q, k, v, o: _flash_attention(
-            q, k, v, None, cu_seqlens_q, cu_seqlens_kv,
+            q, k, v, cu_seqlens_q, cu_seqlens_kv, None,
             num_heads, num_kv_heads, head_size,
-            scale, 3, 0, o,
+            scale, True, -1, 0, 0, o,
         ),
         lambda q, k, v, o: _ref_flash_attention_multi(
             q, k, v,
@@ -160,9 +160,9 @@ def test_flash_attention_decode(
     query = randn_strided(
         (num_reqs, num_heads, head_size), None, dtype=dtype, device=device
     )
-    # Paged KV cache: [num_blocks, KV_N, block_size, D]
+    # Paged KV cache: vLLM standard layout [num_blocks, block_size, KV_N, D].
     kv_cache = randn_strided(
-        (num_blocks, num_kv_heads, block_size, head_size),
+        (num_blocks, block_size, num_kv_heads, head_size),
         None, dtype=dtype, device=device,
     )
     output = torch.empty(
@@ -186,9 +186,9 @@ def test_flash_attention_decode(
 
     return Payload(
         lambda q, k, v, o: _flash_attention(
-            q, k, v, block_table, cu_seqlens_q, cu_seqlens_kv,
+            q, k, v, cu_seqlens_q, cu_seqlens_kv, block_table,
             num_heads, num_kv_heads, head_size,
-            scale, 3, block_size, o,
+            scale, True, -1, 0, block_size, o,
         ),
         lambda q, k, v, o: _ref_flash_attention_paged(
             q, k, block_table,
@@ -205,23 +205,24 @@ def test_flash_attention_decode(
 
 def _flash_attention(
     query, key, value,
-    block_table, cu_seqlens_q, cu_seqlens_kv,
+    cu_seqlens_q, cu_seqlens_kv, block_table,
     num_heads, num_kv_heads, head_size,
-    scale, sparse_mode, block_size, output,
+    scale, causal, window_left, window_right, block_size, output,
 ):
     if query.device.type == "npu":
         infini.ops.flash_attention(
             query, key, value,
-            block_table, cu_seqlens_q, cu_seqlens_kv,
+            cu_seqlens_q, cu_seqlens_kv, block_table,
             num_heads, num_kv_heads, head_size,
-            scale, sparse_mode, block_size, output, stream=get_npu_stream(query),
+            scale, causal, window_left, window_right, block_size, output,
+            stream=get_npu_stream(query),
         )
     else:
         infini.ops.flash_attention(
             query, key, value,
-            block_table, cu_seqlens_q, cu_seqlens_kv,
+            cu_seqlens_q, cu_seqlens_kv, block_table,
             num_heads, num_kv_heads, head_size,
-            scale, sparse_mode, block_size, output,
+            scale, causal, window_left, window_right, block_size, output,
         )
 
     return output
@@ -302,8 +303,10 @@ def _ref_flash_attention_paged(query, kv_cache_arg, block_table,
             if remaining <= 0:
                 break
             take = min(remaining, block_size)
-            k_pages.append(cache[int(b.item()), :, :take, :])
-            v_pages.append(cache[int(b.item()), :, :take, :])
+            # cache layout: [num_blocks, block_size, KV_N, D]
+            # Slice [take, KV_N, D], transpose to [KV_N, take, D] for cat.
+            k_pages.append(cache[int(b.item()), :take, :, :].transpose(0, 1))
+            v_pages.append(cache[int(b.item()), :take, :, :].transpose(0, 1))
             remaining -= take
         k = torch.cat(k_pages, dim=1)  # [KV_N, kv_len, D]
         v = torch.cat(v_pages, dim=1)

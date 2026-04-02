@@ -91,29 +91,52 @@ class _Operator:
         self.calls = calls
 
 
+def _find_optional_tensor_params(op_name):
+    """Return a set of parameter names declared as `std::optional<Tensor>` in
+    the base header.  libclang resolves the type to ``int`` when the STL
+    headers are not fully available, so we fall back to a regex scan of the
+    source text.
+    """
+    import re
+
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
+
+
 def _generate_pybind11(operator):
+    optional_tensor_params = _find_optional_tensor_params(operator.name)
+
+    def _is_optional_tensor(arg):
+        if arg.spelling in optional_tensor_params:
+            return True
+        return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+
     def _generate_params(node):
-        return (
-            ", ".join(
-                f"{arg.type.spelling} {arg.spelling}"
-                for arg in node.get_arguments()
-                if arg.spelling != "stream"
-            )
-            .replace("const Tensor", "py::object")
-            .replace("Tensor", "py::object")
-        )
+        parts = []
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+            if _is_optional_tensor(arg):
+                parts.append(f"std::optional<py::object> {arg.spelling}")
+            else:
+                param = (
+                    arg.type.spelling
+                    .replace("const Tensor", "py::object")
+                    .replace("Tensor", "py::object")
+                )
+                parts.append(f"{param} {arg.spelling}")
+        return ", ".join(parts)
 
     def _generate_arguments(node):
         args = []
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
-            type_spelling = arg.type.spelling
-            if "std::optional" in type_spelling and "Tensor" in type_spelling:
+            if _is_optional_tensor(arg):
                 args.append(
                     f"OptionalTensorFromPybind11Handle({arg.spelling})"
                 )
-            elif "Tensor" in type_spelling:
+            elif "Tensor" in arg.type.spelling:
                 args.append(f"TensorFromPybind11Handle({arg.spelling})")
             else:
                 args.append(arg.spelling)

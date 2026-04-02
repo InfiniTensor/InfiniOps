@@ -13,18 +13,24 @@ class FlashAttention : public Operator<FlashAttention> {
  public:
   FlashAttention(
       const Tensor query, const Tensor key, const Tensor value,
-      std::optional<Tensor> block_table,
       std::optional<Tensor> cu_seqlens_q,
       std::optional<Tensor> cu_seqlens_kv,
+      std::optional<Tensor> block_table,
       int64_t num_heads, int64_t num_kv_heads, int64_t head_size,
-      double scale, int64_t sparse_mode, int64_t block_size,
+      double scale,
+      bool causal,
+      int64_t window_left,
+      int64_t window_right,
+      int64_t block_size,
       Tensor output)
       : num_tokens_{query.size(0)},
         num_heads_{num_heads},
         num_kv_heads_{num_kv_heads},
         head_size_{head_size},
         scale_{scale},
-        sparse_mode_{sparse_mode},
+        causal_{causal},
+        window_left_{window_left},
+        window_right_{window_right},
         block_size_{block_size},
         dtype_{query.dtype()},
         query_shape_{query.shape()},
@@ -35,9 +41,9 @@ class FlashAttention : public Operator<FlashAttention> {
         key_strides_{key.strides()},
         value_strides_{value.strides()},
         output_strides_{output.strides()},
-        has_block_table_{block_table.has_value()},
         has_cu_seqlens_q_{cu_seqlens_q.has_value()},
-        has_cu_seqlens_kv_{cu_seqlens_kv.has_value()} {
+        has_cu_seqlens_kv_{cu_seqlens_kv.has_value()},
+        has_block_table_{block_table.has_value()} {
     assert(num_heads % num_kv_heads == 0 &&
            "`FlashAttention` requires num_heads divisible by num_kv_heads");
     assert(query.ndim() == 3 &&
@@ -46,11 +52,15 @@ class FlashAttention : public Operator<FlashAttention> {
 
   virtual void operator()(
       const Tensor query, const Tensor key, const Tensor value,
-      std::optional<Tensor> block_table,
       std::optional<Tensor> cu_seqlens_q,
       std::optional<Tensor> cu_seqlens_kv,
+      std::optional<Tensor> block_table,
       int64_t num_heads, int64_t num_kv_heads, int64_t head_size,
-      double scale, int64_t sparse_mode, int64_t block_size,
+      double scale,
+      bool causal,
+      int64_t window_left,
+      int64_t window_right,
+      int64_t block_size,
       Tensor output) const = 0;
 
  protected:
@@ -64,7 +74,11 @@ class FlashAttention : public Operator<FlashAttention> {
 
   double scale_{0.0};
 
-  int64_t sparse_mode_{0};
+  bool causal_{false};
+
+  int64_t window_left_{-1};
+
+  int64_t window_right_{-1};
 
   int64_t block_size_{0};
 
@@ -86,11 +100,11 @@ class FlashAttention : public Operator<FlashAttention> {
 
   Tensor::Strides output_strides_;
 
-  bool has_block_table_{false};
-
   bool has_cu_seqlens_q_{false};
 
   bool has_cu_seqlens_kv_{false};
+
+  bool has_block_table_{false};
 };
 
 }  // namespace infini::ops
