@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, randn_strided
+from tests.utils import Payload, get_npu_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -74,7 +74,10 @@ def test_gemm(
 
 
 def _gemm(a, b, alpha, beta, trans_a, trans_b, c):
-    infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c)
+    if a.device.type == "npu":
+        infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c, get_npu_stream(a))
+    else:
+        infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c)
 
     return c
 

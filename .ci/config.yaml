@@ -141,10 +141,8 @@ platforms:
     image:
       dockerfile: .ci/images/ascend/
       build_args:
-        BASE_IMAGE: swr.cn-south-1.myhuaweicloud.com/ascendhub/ascend-pytorch:24.0.RC3-A2-2.1.0-ubuntu20.04
+        BASE_IMAGE: swr.cn-south-1.myhuaweicloud.com/ascendhub/mindie:2.3.0-800I-A2-py311-openeuler24.03-lts
         PIP_INDEX_URL: https://pypi.org/simple
-      private_sdk:
-        source_env: PRIVATE_SDK_URL
     docker_args:
       - "--runtime=runc"
       - "--privileged"

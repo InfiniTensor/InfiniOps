@@ -130,12 +130,20 @@ def _generate_pybind11(operator):
 
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
+        call_args = _generate_arguments(call)
 
         if not method:
-            return f"""  m.def("{op_name}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
+            return (
+                f'  m.def("{op_name}", []({call_params}, std::uintptr_t stream = 0) {{\n'
+                f"    if (stream) {{\n"
+                f"      return Self::call({{}}, reinterpret_cast<void*>(stream), nullptr, 0, {call_args});\n"
+                f"    }}\n"
+                f"    return Self::call({call_args});\n"
+                f"  }});"
+            )
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return static_cast<const Operator<Self>&>(self)({_generate_arguments(call)});
+        return static_cast<const Operator<Self>&>(self)({call_args});
       }})"""
 
     inits = "\n".join(
@@ -155,6 +163,7 @@ def _generate_pybind11(operator):
 #include <pybind11/stl.h>
 
 #include "base/{op_name}.h"
+#include "operator.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;

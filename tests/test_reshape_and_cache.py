@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, randint_strided, randn_strided
+from tests.utils import Payload, get_npu_stream, randn_strided
 
 # ReshapeAndCache only works on NPU (aclrtMemcpy-based), so tests only
 # parametrize on float16/bfloat16 and use explicit device parametrization.
@@ -105,7 +105,11 @@ def test_reshape_and_cache_noncontiguous_slots(
 
 
 def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
-    infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out)
+    if key.device.type == "npu":
+        infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out, get_npu_stream(key))
+    else:
+        infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out)
+
     return kv_cache_out
 
 

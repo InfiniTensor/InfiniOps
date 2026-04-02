@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, randn_strided
+from tests.utils import Payload, empty_strided, get_npu_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -209,19 +209,20 @@ def _flash_attention(
     num_heads, num_kv_heads, head_size,
     scale, sparse_mode, block_size, output,
 ):
-    infini.ops.flash_attention(
-        query, key, value,
-        block_table=block_table,
-        cu_seqlens_q=cu_seqlens_q,
-        cu_seqlens_kv=cu_seqlens_kv,
-        num_heads=num_heads,
-        num_kv_heads=num_kv_heads,
-        head_size=head_size,
-        scale=scale,
-        sparse_mode=sparse_mode,
-        block_size=block_size,
-        output=output,
-    )
+    if query.device.type == "npu":
+        infini.ops.flash_attention(
+            query, key, value,
+            block_table, cu_seqlens_q, cu_seqlens_kv,
+            num_heads, num_kv_heads, head_size,
+            scale, sparse_mode, block_size, output, get_npu_stream(query),
+        )
+    else:
+        infini.ops.flash_attention(
+            query, key, value,
+            block_table, cu_seqlens_q, cu_seqlens_kv,
+            num_heads, num_kv_heads, head_size,
+            scale, sparse_mode, block_size, output,
+        )
 
     return output
 

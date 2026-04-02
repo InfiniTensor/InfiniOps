@@ -45,17 +45,6 @@ inline aclTensor* buildAclTensorTransposed(const Tensor& t,
 
 }  // namespace detail
 
-// The test parametrizes over 5 shapes x 5 alpha x 5 beta x 2 trans_a x 2 trans_b x 3
-// dtypes = 1500 cases. The failures break down as:
-
-// | dtype | trans_a | trans_b | Result |
-// |-------|---------|---------|--------|
-// | float32 | any | any | All pass |
-// | float16 | any | any | All pass |
-// | bfloat16 | False | False | All pass |
-// | bfloat16 | True | False | All pass |
-// | bfloat16 | False | True | All pass |
-// | **bfloat16** | **True** | **True** | **All 881 fail** |
 
 template <>
 class Operator<Gemm, Device::Type::kAscend> : public Gemm {
@@ -117,8 +106,8 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
     bool           batched_;
     float          alpha_val_;
     float          beta_val_;
-    aclScalar*     alpha_scalar_ = nullptr;
-    aclScalar*     beta_scalar_  = nullptr;
+    aclScalar*     alpha_scalar_  = nullptr;
+    aclScalar*     beta_scalar_   = nullptr;
 };
 
 }  // namespace infini::ops

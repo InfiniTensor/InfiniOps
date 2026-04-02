@@ -82,6 +82,14 @@ def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     return output
 
 
+def get_npu_stream(tensor):
+    """Return the current NPU stream handle for `tensor`, or 0 on other devices."""
+    if tensor.device.type != "npu":
+        return 0
+
+    return torch.npu.current_stream().npu_stream
+
+
 def clone_strided(input):
     output = empty_strided(
         input.size(), input.stride(), dtype=input.dtype, device=input.device
