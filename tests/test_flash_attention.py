@@ -181,7 +181,7 @@ def test_flash_attention_decode(
         0, num_reqs + 1, dtype=torch.int64, device=device
     )
     cu_seqlens_kv = torch.tensor(
-        [0] + [kv_len] * num_reqs, dtype=torch.int64, device=device
+        [i * kv_len for i in range(num_reqs + 1)], dtype=torch.int64, device=device
     )
 
     return Payload(
@@ -284,11 +284,12 @@ def _ref_flash_attention_paged(query, kv_cache_arg, block_table,
     cu_kv = cu_seqlens_kv.cpu()
     bt = block_table.cpu()
     cache = kv_cache_arg.cpu()
+    q_cpu = query.cpu()
     num_reqs = bt.size(0)
     outputs = []
 
     for i in range(num_reqs):
-        q = query[i:i+1]  # [1, N, D]
+        q = q_cpu[i:i+1]  # [1, N, D]
         kv_len = int(cu_kv[i + 1] - cu_kv[i])
 
         # Gather KV from paged cache.
@@ -307,12 +308,14 @@ def _ref_flash_attention_paged(query, kv_cache_arg, block_table,
         k = torch.cat(k_pages, dim=1)  # [KV_N, kv_len, D]
         v = torch.cat(v_pages, dim=1)
 
+        # Decode: Q_S=1 attends to all past KV positions; causal masking is
+        # not applicable here (it would mask everything beyond position 0).
         out = _ref_flash_attention(
-            q.transpose(0, 1),  # [1, N, D] -> [N, 1, D]
+            q,                   # [1, N, D] - already TND format
             k.transpose(0, 1),  # [KV_N, kv_len, D] -> [kv_len, KV_N, D]
             v.transpose(0, 1),
-            num_heads, num_kv_heads, head_size, scale, causal
+            num_heads, num_kv_heads, head_size, scale, causal=False
         )
         outputs.append(out)
 
-    return torch.cat(outputs, dim=0)
+    return torch.cat(outputs, dim=0).to(query.device)
