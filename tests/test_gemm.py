@@ -75,7 +75,7 @@ def test_gemm(
 
 def _gemm(a, b, alpha, beta, trans_a, trans_b, c):
     if a.device.type == "npu":
-        infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c, get_npu_stream(a))
+        infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c, stream=get_npu_stream(a))
     else:
         infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c)
 

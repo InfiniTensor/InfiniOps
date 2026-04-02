@@ -128,18 +128,28 @@ def _generate_pybind11(operator):
         return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_arguments(constructor)}).release())}};
       }}))"""
 
+    def _generate_py_args(call):
+        names = [
+            arg.spelling
+            for arg in call.get_arguments()
+            if arg.spelling != "stream"
+        ]
+        positional = ", ".join(f'py::arg("{name}")' for name in names)
+        return f'{positional}, py::kw_only(), py::arg("stream") = 0'
+
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
         call_args = _generate_arguments(call)
 
         if not method:
+            py_args = _generate_py_args(call)
             return (
-                f'  m.def("{op_name}", []({call_params}, std::uintptr_t stream = 0) {{\n'
+                f'  m.def("{op_name}", []({call_params}, std::uintptr_t stream) {{\n'
                 f"    if (stream) {{\n"
                 f"      return Self::call({{}}, reinterpret_cast<void*>(stream), nullptr, 0, {call_args});\n"
                 f"    }}\n"
                 f"    return Self::call({call_args});\n"
-                f"  }});"
+                f"  }}, {py_args});"
             )
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{

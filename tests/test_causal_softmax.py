@@ -41,7 +41,7 @@ def test_causal_softmax(shape, input_strides, out_strides, dtype, device, rtol, 
 
 def _causal_softmax(input, out):
     if input.device.type == "npu":
-        infini.ops.causal_softmax(input, out, get_npu_stream(input))
+        infini.ops.causal_softmax(input, out, stream=get_npu_stream(input))
     else:
         infini.ops.causal_softmax(input, out)
 

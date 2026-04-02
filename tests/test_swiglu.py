@@ -39,7 +39,7 @@ def test_swiglu(
 
 def _swiglu(input, gate, out):
     if input.device.type == "npu":
-        infini.ops.swiglu(input, gate, out, get_npu_stream(input))
+        infini.ops.swiglu(input, gate, out, stream=get_npu_stream(input))
     else:
         infini.ops.swiglu(input, gate, out)
 

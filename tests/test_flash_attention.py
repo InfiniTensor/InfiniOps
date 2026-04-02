@@ -214,7 +214,7 @@ def _flash_attention(
             query, key, value,
             block_table, cu_seqlens_q, cu_seqlens_kv,
             num_heads, num_kv_heads, head_size,
-            scale, sparse_mode, block_size, output, get_npu_stream(query),
+            scale, sparse_mode, block_size, output, stream=get_npu_stream(query),
         )
     else:
         infini.ops.flash_attention(

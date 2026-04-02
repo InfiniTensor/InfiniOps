@@ -54,7 +54,7 @@ def test_rms_norm(
 
 def _rms_norm(input, weight, *, eps=1e-6, out=None):
     if input.device.type == "npu":
-        infini.ops.rms_norm(input, weight, eps, out, get_npu_stream(input))
+        infini.ops.rms_norm(input, weight, eps, out, stream=get_npu_stream(input))
     else:
         infini.ops.rms_norm(input, weight, eps, out)
 

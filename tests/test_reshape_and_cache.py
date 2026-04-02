@@ -106,7 +106,7 @@ def test_reshape_and_cache_noncontiguous_slots(
 
 def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
     if key.device.type == "npu":
-        infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out, get_npu_stream(key))
+        infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out, stream=get_npu_stream(key))
     else:
         infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out)
 

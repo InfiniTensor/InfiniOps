@@ -64,7 +64,7 @@ def test_add(
 
 def _add(input, other, out):
     if input.device.type == "npu":
-        infini.ops.add(input, other, out, get_npu_stream(input))
+        infini.ops.add(input, other, out, stream=get_npu_stream(input))
     else:
         infini.ops.add(input, other, out)
 
