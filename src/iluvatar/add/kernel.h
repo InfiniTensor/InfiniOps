@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/add/kernel.h"
+#include "iluvatar/caster_.h"
 #include "iluvatar/data_type_.h"
 #include "iluvatar/device_property.h"
 

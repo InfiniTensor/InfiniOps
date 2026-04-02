@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/add/kernel.h"
+#include "nvidia/caster_.h"
 #include "nvidia/data_type_.h"
 #include "nvidia/device_property.h"
 

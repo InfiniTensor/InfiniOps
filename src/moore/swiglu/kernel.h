@@ -8,6 +8,7 @@
 // clang-format on
 
 #include "cuda/swiglu/kernel.h"
+#include "moore/caster_.h"
 #include "moore/data_type_.h"
 #include "moore/device_property.h"
 

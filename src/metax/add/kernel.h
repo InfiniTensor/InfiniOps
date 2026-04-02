@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/add/kernel.h"
+#include "metax/caster_.h"
 #include "metax/data_type_.h"
 #include "metax/device_property.h"
 
