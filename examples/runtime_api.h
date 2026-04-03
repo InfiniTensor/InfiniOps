@@ -5,6 +5,7 @@
 
 #ifdef WITH_NVIDIA
 #include "nvidia/gemm/cublas.h"
+#include "nvidia/gemm/cublaslt.h"
 #include "nvidia/runtime_.h"
 #elif WITH_ILUVATAR
 #include "iluvatar/gemm/cublas.h"
