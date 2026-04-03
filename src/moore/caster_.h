@@ -33,30 +33,6 @@ struct FromFloat<Device::Type::kMoore, __mt_bfloat16> {
 };
 
 template <>
-struct HardwareCast<Device::Type::kMoore, int, __mt_bfloat16> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ int operator()(__mt_bfloat16 x) {
-    return __bfloat162int_rn(x);
-  }
-};
-
-template <>
-struct HardwareCast<Device::Type::kMoore, short, __mt_bfloat16> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ short operator()(__mt_bfloat16 x) {
-    return __bfloat162short_rn(x);
-  }
-};
-
-template <>
-struct HardwareCast<Device::Type::kMoore, __mt_bfloat16, int> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ __mt_bfloat16 operator()(int x) {
-    return __int2bfloat16_rn(x);
-  }
-};
-
-template <>
 struct HardwareCast<Device::Type::kMoore, half, int> {
   inline static constexpr bool kSupported = true;
   __host__ __device__ half operator()(int x) { return __int2half_rn(x); }
@@ -79,7 +55,9 @@ struct HardwareCast<Device::Type::kMoore, half, double> {
 template <>
 struct HardwareCast<Device::Type::kMoore, half, __mt_bfloat16> {
   inline static constexpr bool kSupported = true;
-  __host__ __device__ half operator()(__mt_bfloat16 x) { return __half(x); }
+  __host__ __device__ half operator()(__mt_bfloat16 x) {
+    return __float2half_rn(__bfloat162float(x));
+  }
 };
 
 }  // namespace detail

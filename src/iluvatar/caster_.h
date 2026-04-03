@@ -70,18 +70,6 @@ struct HardwareCast<Device::Type::kIluvatar, __nv_bfloat16, double> {
   }
 };
 
-template <>
-struct HardwareCast<Device::Type::kIluvatar, half, double> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ half operator()(double x) { return __double2half(x); }
-};
-
-template <>
-struct HardwareCast<Device::Type::kIluvatar, half, __nv_bfloat16> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ half operator()(__nv_bfloat16 x) { return __half(x); }
-};
-
 }  // namespace detail
 
 template <>
