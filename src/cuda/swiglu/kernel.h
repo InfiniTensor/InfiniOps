@@ -8,6 +8,7 @@
 
 #include "base/swiglu.h"
 #include "common/generic_utils.h"
+#include "cuda/runtime_utils.h"
 #include "cuda/swiglu/kernel.cuh"
 
 namespace infini::ops {
@@ -23,7 +24,7 @@ class CudaSwiglu : public Swiglu {
     const size_t metadata_size = 3 * (shape_size + strides_size);
     std::vector<std::byte> metadata(metadata_size);
 
-    Backend::malloc((void**)&d_metadata_, metadata_size);
+    Backend::Malloc((void**)&d_metadata_, metadata_size);
 
     size_t offset = 0;
     d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -49,15 +50,15 @@ class CudaSwiglu : public Swiglu {
     d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
     std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-    Backend::memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::memcpyH2D);
+    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                    Backend::MemcpyHostToDevice);
   }
 
-  ~CudaSwiglu() { Backend::free(d_metadata_); }
+  ~CudaSwiglu() { Backend::Free(d_metadata_); }
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
-    int block_size = Backend::GetOptimalBlockSize();
+    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllFloatTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size},
         [&](auto list_tag) {
@@ -65,7 +66,7 @@ class CudaSwiglu : public Swiglu {
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
           auto cuda_stream =
-              static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
+              static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
           dim3 blockDims(
               std::min(static_cast<Tensor::Size>(block_size), output_size_));
           dim3 gridDims(utils::CeilDiv(output_size_, blockDims.x));

@@ -4,30 +4,16 @@
 #include <utility>
 
 #include "cuda/rms_norm/kernel.h"
-#include "nvidia/caster_.h"
-#include "nvidia/device_property.h"
+#include "nvidia/caster.cuh"
+#include "nvidia/runtime_.h"
 
 namespace infini::ops {
 
-namespace rms_norm {
-
-struct NvidiaBackend {
-  using stream_t = cudaStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kNvidia;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace rms_norm
-
 template <>
 class Operator<RmsNorm, Device::Type::kNvidia>
-    : public CudaRmsNorm<rms_norm::NvidiaBackend> {
+    : public CudaRmsNorm<Runtime<Device::Type::kNvidia>> {
  public:
-  using CudaRmsNorm<rms_norm::NvidiaBackend>::CudaRmsNorm;
+  using CudaRmsNorm<Runtime<Device::Type::kNvidia>>::CudaRmsNorm;
 };
 
 }  // namespace infini::ops

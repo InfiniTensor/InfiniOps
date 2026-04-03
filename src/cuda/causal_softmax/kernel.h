@@ -19,7 +19,7 @@ class CudaCausalSoftmax : public CausalSoftmax {
 
   void operator()(const Tensor input, Tensor out) const override {
     auto cuda_stream =
-        static_cast<typename Backend::stream_t>(stream_ ? stream_ : 0);
+        static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
 
     auto stride_input_batch = ndim_ == 3 ? input_strides_[0] : 0;
     auto stride_input_row = input_strides_[ndim_ - 2];
@@ -31,7 +31,7 @@ class CudaCausalSoftmax : public CausalSoftmax {
 
     assert(out.dtype() == input.dtype());
 
-    int block_size = Backend::GetOptimalBlockSize();
+    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(

@@ -4,30 +4,16 @@
 #include <utility>
 
 #include "cuda/rms_norm/kernel.h"
-#include "iluvatar/caster_.h"
-#include "iluvatar/device_property.h"
+#include "iluvatar/caster.cuh"
+#include "iluvatar/runtime_.h"
 
 namespace infini::ops {
 
-namespace rms_norm {
-
-struct IluvatarBackend {
-  using stream_t = cudaStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kIluvatar;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace rms_norm
-
 template <>
 class Operator<RmsNorm, Device::Type::kIluvatar>
-    : public CudaRmsNorm<rms_norm::IluvatarBackend> {
+    : public CudaRmsNorm<Runtime<Device::Type::kIluvatar>> {
  public:
-  using CudaRmsNorm<rms_norm::IluvatarBackend>::CudaRmsNorm;
+  using CudaRmsNorm<Runtime<Device::Type::kIluvatar>>::CudaRmsNorm;
 };
 
 }  // namespace infini::ops

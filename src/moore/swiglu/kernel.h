@@ -8,45 +8,17 @@
 // clang-format on
 
 #include "cuda/swiglu/kernel.h"
-#include "moore/caster_.h"
-#include "moore/data_type_.h"
-#include "moore/device_property.h"
+#include "moore/caster.cuh"
+#include "moore/polyfills.cuh"
+#include "moore/runtime_.h"
 
 namespace infini::ops {
 
-namespace swiglu {
-
-struct MooreBackend {
-  using stream_t = musaStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kMoore;
-
-  static constexpr auto malloc = [](auto&&... args) {
-    return musaMalloc(std::forward<decltype(args)>(args)...);
-  };
-
-  static constexpr auto memcpy = [](auto&&... args) {
-    return musaMemcpy(std::forward<decltype(args)>(args)...);
-  };
-
-  static constexpr auto free = [](auto&&... args) {
-    return musaFree(std::forward<decltype(args)>(args)...);
-  };
-
-  static constexpr auto memcpyH2D = musaMemcpyHostToDevice;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace swiglu
-
 template <>
 class Operator<Swiglu, Device::Type::kMoore>
-    : public CudaSwiglu<swiglu::MooreBackend> {
+    : public CudaSwiglu<Runtime<Device::Type::kMoore>> {
  public:
-  using CudaSwiglu<swiglu::MooreBackend>::CudaSwiglu;
+  using CudaSwiglu<Runtime<Device::Type::kMoore>>::CudaSwiglu;
 };
 
 }  // namespace infini::ops

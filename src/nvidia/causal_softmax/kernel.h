@@ -4,30 +4,16 @@
 #include <utility>
 
 #include "cuda/causal_softmax/kernel.h"
-#include "nvidia/caster_.h"
-#include "nvidia/device_property.h"
+#include "nvidia/caster.cuh"
+#include "nvidia/runtime_.h"
 
 namespace infini::ops {
 
-namespace causal_softmax {
-
-struct NvidiaBackend {
-  using stream_t = cudaStream_t;
-
-  static constexpr Device::Type kDeviceType = Device::Type::kNvidia;
-
-  static int GetOptimalBlockSize() {
-    return ComputeOptimalBlockSize(QueryMaxThreadsPerBlock());
-  }
-};
-
-}  // namespace causal_softmax
-
 template <>
 class Operator<CausalSoftmax, Device::Type::kNvidia>
-    : public CudaCausalSoftmax<causal_softmax::NvidiaBackend> {
+    : public CudaCausalSoftmax<Runtime<Device::Type::kNvidia>> {
  public:
-  using CudaCausalSoftmax<causal_softmax::NvidiaBackend>::CudaCausalSoftmax;
+  using CudaCausalSoftmax<Runtime<Device::Type::kNvidia>>::CudaCausalSoftmax;
 };
 
 }  // namespace infini::ops

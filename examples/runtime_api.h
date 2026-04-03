@@ -1,61 +1,46 @@
 #ifndef INFINI_OPS_EXAMPLES_RUNTIME_API_H_
 #define INFINI_OPS_EXAMPLES_RUNTIME_API_H_
 
+#include "device.h"
+
 #ifdef WITH_NVIDIA
-#include <cuda_runtime.h>
-#define DEVICE_MALLOC cudaMalloc
-#define DEVICE_FREE cudaFree
-#define DEVICE_MEMCPY cudaMemcpy
-#define DEVICE_MEMSET cudaMemset
-#define DEVICE_MEMCPY_HOST_TO_DEVICE cudaMemcpyHostToDevice
-#define DEVICE_MEMCPY_DEVICE_TO_HOST cudaMemcpyDeviceToHost
-#define DEFAULT_DEVICE_TYPE Device::Type::kNvidia
+#include "nvidia/gemm/cublas.h"
+#include "nvidia/runtime_.h"
 #elif WITH_ILUVATAR
-#include <cuda_runtime.h>
-#define DEVICE_MALLOC cudaMalloc
-#define DEVICE_FREE cudaFree
-#define DEVICE_MEMCPY cudaMemcpy
-#define DEVICE_MEMSET cudaMemset
-#define DEVICE_MEMCPY_HOST_TO_DEVICE cudaMemcpyHostToDevice
-#define DEVICE_MEMCPY_DEVICE_TO_HOST cudaMemcpyDeviceToHost
-#define DEFAULT_DEVICE_TYPE Device::Type::kIluvatar
+#include "iluvatar/gemm/cublas.h"
+#include "iluvatar/runtime_.h"
 #elif WITH_METAX
-#include <mcr/mc_runtime.h>
-#define DEVICE_MALLOC mcMalloc
-#define DEVICE_FREE mcFree
-#define DEVICE_MEMCPY mcMemcpy
-#define DEVICE_MEMSET mcMemset
-#define DEVICE_MEMCPY_HOST_TO_DEVICE mcMemcpyHostToDevice
-#define DEVICE_MEMCPY_DEVICE_TO_HOST mcMemcpyDeviceToHost
-#define DEFAULT_DEVICE_TYPE Device::Type::kMetax
+#include "metax/gemm/mcblas.h"
+#include "metax/runtime_.h"
 #elif WITH_CAMBRICON
-#include <cnrt.h>
-#define DEVICE_MALLOC cnrtMalloc
-#define DEVICE_FREE cnrtFree
-#define DEVICE_MEMCPY cnrtMemcpy
-#define DEVICE_MEMSET cnrtMemset
-#define DEVICE_MEMCPY_HOST_TO_DEVICE cnrtMemcpyHostToDev
-#define DEVICE_MEMCPY_DEVICE_TO_HOST cnrtMemcpyDevToHost
-#define DEFAULT_DEVICE_TYPE Device::Type::kCambricon
+#include "cambricon/gemm/cnblas.h"
+#include "cambricon/runtime_.h"
 #elif WITH_MOORE
-#include <musa_runtime_api.h>
-#define DEVICE_MALLOC musaMalloc
-#define DEVICE_FREE musaFree
-#define DEVICE_MEMCPY musaMemcpy
-#define DEVICE_MEMSET musaMemset
-#define DEVICE_MEMCPY_HOST_TO_DEVICE musaMemcpyHostToDevice
-#define DEVICE_MEMCPY_DEVICE_TO_HOST musaMemcpyDeviceToHost
-#define DEFAULT_DEVICE_TYPE Device::Type::kMoore
+#include "moore/gemm/mublas.h"
+#include "moore/runtime_.h"
 #elif WITH_CPU
-#include <cstdlib>
-#include <cstring>
-#define DEVICE_MALLOC(ptr, size) (*(ptr) = std::malloc(size))
-#define DEVICE_FREE std::free
-#define DEVICE_MEMCPY(dst, src, size, kind) std::memcpy(dst, src, size)
-#define DEVICE_MEMSET std::memset
-#define DEVICE_MEMCPY_HOST_TO_DEVICE 0
-#define DEVICE_MEMCPY_DEVICE_TO_HOST 1
-#define DEFAULT_DEVICE_TYPE Device::Type::kCpu
+#include "cpu/gemm/gemm.h"
+#include "cpu/runtime_.h"
+#else
+#error "One `WITH_*` backend must be enabled for the examples."
 #endif
+
+namespace infini::ops {
+
+#ifdef WITH_NVIDIA
+using DefaultRuntimeUtils = Runtime<Device::Type::kNvidia>;
+#elif WITH_ILUVATAR
+using DefaultRuntimeUtils = Runtime<Device::Type::kIluvatar>;
+#elif WITH_METAX
+using DefaultRuntimeUtils = Runtime<Device::Type::kMetax>;
+#elif WITH_CAMBRICON
+using DefaultRuntimeUtils = Runtime<Device::Type::kCambricon>;
+#elif WITH_MOORE
+using DefaultRuntimeUtils = Runtime<Device::Type::kMoore>;
+#elif WITH_CPU
+using DefaultRuntimeUtils = Runtime<Device::Type::kCpu>;
+#endif
+
+}  // namespace infini::ops
 
 #endif

@@ -33,22 +33,6 @@ struct FromFloat<Device::Type::kMetax, __maca_bfloat16> {
 };
 
 template <>
-struct HardwareCast<Device::Type::kMetax, int, __maca_bfloat16> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ int operator()(__maca_bfloat16 x) {
-    return __bfloat162int_rn(x);
-  }
-};
-
-template <>
-struct HardwareCast<Device::Type::kMetax, short, __maca_bfloat16> {
-  inline static constexpr bool kSupported = true;
-  __host__ __device__ short operator()(__maca_bfloat16 x) {
-    return __bfloat162short_rn(x);
-  }
-};
-
-template <>
 struct HardwareCast<Device::Type::kMetax, __maca_bfloat16, int> {
   inline static constexpr bool kSupported = true;
   __host__ __device__ __maca_bfloat16 operator()(int x) {
