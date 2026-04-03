@@ -9,6 +9,7 @@
 
 #include "cuda/blas.h"
 #include "data_type.h"
+#include "nvidia/blas_utils.h"
 #include "nvidia/runtime_.h"
 
 namespace infini::ops {
@@ -43,18 +44,6 @@ struct Blas<Device::Type::kNvidia> : public Runtime<Device::Type::kNvidia> {
   static constexpr auto BlasGemmStridedBatchedEx = [](auto&&... args) {
     return cublasGemmStridedBatchedEx(std::forward<decltype(args)>(args)...);
   };
-
-  static auto GetDataType(DataType dtype) {
-    if (dtype == DataType::kFloat16) return R_16F;
-    if (dtype == DataType::kBFloat16) return R_16BF;
-    return R_32F;
-  }
-
-  static auto GetComputeType(DataType dtype) {
-    if (dtype == DataType::kFloat16 || dtype == DataType::kBFloat16)
-      return BLAS_COMPUTE_32F;
-    return BLAS_COMPUTE_32F_FAST_TF32;
-  }
 };
 
 }  // namespace infini::ops

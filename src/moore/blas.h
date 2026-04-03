@@ -7,6 +7,7 @@
 
 #include "cuda/blas.h"
 #include "data_type.h"
+#include "moore/blas_utils.h"
 #include "moore/runtime_.h"
 
 namespace infini::ops {
@@ -36,18 +37,6 @@ struct Blas<Device::Type::kMoore> : public Runtime<Device::Type::kMoore> {
   static constexpr auto BlasGemmStridedBatchedEx = [](auto&&... args) {
     return mublasGemmStridedBatchedEx(std::forward<decltype(args)>(args)...);
   };
-
-  static musaDataType_t GetDataType(DataType dtype) {
-    if (dtype == DataType::kFloat16) return R_16F;
-    if (dtype == DataType::kBFloat16) return R_16BF;
-    return R_32F;
-  }
-
-  static mublasComputeType_t GetComputeType(DataType dtype) {
-    if (dtype == DataType::kFloat16) return MUBLAS_COMPUTE_16F;
-    if (dtype == DataType::kBFloat16) return MUBLAS_COMPUTE_32F;
-    return MUBLAS_COMPUTE_32F;
-  }
 };
 
 }  // namespace infini::ops

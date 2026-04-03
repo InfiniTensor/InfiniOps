@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "base/gemm.h"
+#include "cuda/blas_utils.h"
 
 namespace infini::ops {
 
@@ -17,11 +18,8 @@ class BlasGemm : public Gemm {
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
         swap_a_and_b_{c.stride(-1) == 1} {
-    Backend::BlasCreate(&handle_);
     // TODO: Check constraints.
   }
-
-  ~BlasGemm() { Backend::BlasDestroy(handle_); }
 
   BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
            std::optional<float> beta, Tensor c)
@@ -34,7 +32,7 @@ class BlasGemm : public Gemm {
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
-    Backend::BlasSetStream(handle_,
+    Backend::BlasSetStream(GetHandle(),
                            static_cast<typename Backend::Stream>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
@@ -48,17 +46,22 @@ class BlasGemm : public Gemm {
     const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
 
     Backend::BlasGemmStridedBatchedEx(
-        handle_, op_a, op_b, swap_a_and_b_ ? n_ : m_, swap_a_and_b_ ? m_ : n_,
-        k_, alpha_ptr, swap_a_and_b_ ? b.data() : a.data(),
-        Backend::GetDataType(swap_a_and_b_ ? b.dtype() : a.dtype()),
+        GetHandle(), op_a, op_b, swap_a_and_b_ ? n_ : m_,
+        swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
+        swap_a_and_b_ ? b.data() : a.data(),
+        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? b.dtype()
+                                                                   : a.dtype()),
         swap_a_and_b_ ? ldb_ : lda_,
         swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
         swap_a_and_b_ ? a.data() : b.data(),
-        Backend::GetDataType(swap_a_and_b_ ? a.dtype() : b.dtype()),
+        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? a.dtype()
+                                                                   : b.dtype()),
         swap_a_and_b_ ? lda_ : ldb_,
         swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr, c.data(),
-        Backend::GetDataType(c.dtype()), ldc_, batch_stride_c_, batch_count_,
-        Backend::GetComputeType(c.dtype()), Backend::BLAS_GEMM_DEFAULT);
+        BlasUtils<Backend::kDeviceType>::GetDataType(c.dtype()), ldc_,
+        batch_stride_c_, batch_count_,
+        BlasUtils<Backend::kDeviceType>::GetComputeType(c.dtype()),
+        Backend::BLAS_GEMM_DEFAULT);
   }
 
  protected:
@@ -89,13 +92,22 @@ class BlasGemm : public Gemm {
                                         : Backend::BLAS_OP_N;
   }
 
+  // TODO: This static singleton is not thread-safe under concurrent access
+  // from multiple host threads. Add proper synchronization in the future.
+  static typename Backend::BlasHandle& GetHandle() {
+    static typename Backend::BlasHandle handle = []() {
+      typename Backend::BlasHandle h;
+      Backend::BlasCreate(&h);
+      return h;
+    }();
+    return handle;
+  }
+
   bool a_is_col_major_{false};
 
   bool b_is_col_major_{false};
 
   bool swap_a_and_b_{false};
-
-  typename Backend::BlasHandle handle_;
 };
 
 }  // namespace infini::ops

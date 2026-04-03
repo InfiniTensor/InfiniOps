@@ -9,6 +9,7 @@
 
 #include "cuda/blas.h"
 #include "data_type.h"
+#include "iluvatar/blas_utils.h"
 #include "iluvatar/runtime_.h"
 
 namespace infini::ops {
@@ -27,8 +28,8 @@ struct Blas<Device::Type::kIluvatar> : public Runtime<Device::Type::kIluvatar> {
 
   static constexpr auto R_32F = CUDA_R_32F;
 
-  // Iluvatar uses `cudaDataType` for `computeType`, so we need to use
-  // `CUDA_R_32F` instead of `CUBLAS_COMPUTE_32F_FAST_TF32`.
+  // Iluvatar uses `cudaDataType` for `computeType`, so we use `CUDA_R_32F`
+  // instead of `CUBLAS_COMPUTE_32F_FAST_TF32`.
   static constexpr auto BLAS_COMPUTE_32F = CUDA_R_32F;
 
   static constexpr auto BLAS_COMPUTE_32F_FAST_TF32 = CUDA_R_32F;
@@ -46,18 +47,6 @@ struct Blas<Device::Type::kIluvatar> : public Runtime<Device::Type::kIluvatar> {
   static constexpr auto BlasGemmStridedBatchedEx = [](auto&&... args) {
     return cublasGemmStridedBatchedEx(std::forward<decltype(args)>(args)...);
   };
-
-  static auto GetDataType(DataType dtype) {
-    if (dtype == DataType::kFloat16) return R_16F;
-    if (dtype == DataType::kBFloat16) return R_16BF;
-    return R_32F;
-  }
-
-  static auto GetComputeType(DataType dtype) {
-    if (dtype == DataType::kFloat16 || dtype == DataType::kBFloat16)
-      return BLAS_COMPUTE_32F;
-    return BLAS_COMPUTE_32F_FAST_TF32;
-  }
 };
 
 }  // namespace infini::ops

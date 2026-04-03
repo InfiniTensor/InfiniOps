@@ -31,7 +31,7 @@ class CudaCausalSoftmax : public CausalSoftmax {
 
     assert(out.dtype() == input.dtype());
 
-    int block_size = Backend::GetOptimalBlockSize();
+    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(

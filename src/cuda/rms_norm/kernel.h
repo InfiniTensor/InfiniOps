@@ -7,6 +7,7 @@
 #include "base/rms_norm.h"
 #include "cuda/kernel_commons.cuh"
 #include "cuda/rms_norm/kernel.cuh"
+#include "cuda/runtime_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
 
@@ -33,7 +34,7 @@ class CudaRmsNorm : public RmsNorm {
 
     assert(out.dtype() == input.dtype() && out.dtype() == weight.dtype());
 
-    int block_size = Backend::GetOptimalBlockSize();
+    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(

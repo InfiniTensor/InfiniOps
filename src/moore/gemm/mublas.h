@@ -14,7 +14,7 @@ class Operator<Gemm, Device::Type::kMoore>
 
  protected:
   const void* GetAlphaPtr(const float& alpha, DataType dtype) const override {
-    if (Blas<Device::Type::kMoore>::GetComputeType(dtype) ==
+    if (BlasUtils<Device::Type::kMoore>::GetComputeType(dtype) ==
         MUBLAS_COMPUTE_16F) {
       alpha_fp16_ = Float16::FromFloat(alpha);
       return &alpha_fp16_;
@@ -24,7 +24,7 @@ class Operator<Gemm, Device::Type::kMoore>
   }
 
   const void* GetBetaPtr(const float& beta, DataType dtype) const override {
-    if (Blas<Device::Type::kMoore>::GetComputeType(dtype) ==
+    if (BlasUtils<Device::Type::kMoore>::GetComputeType(dtype) ==
         MUBLAS_COMPUTE_16F) {
       beta_fp16_ = Float16::FromFloat(beta);
       return &beta_fp16_;
