@@ -40,7 +40,7 @@ if(WITH_NVIDIA)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
 
     list(APPEND DEVICE_LIST "nvidia")
     set_target_properties(infiniops PROPERTIES
