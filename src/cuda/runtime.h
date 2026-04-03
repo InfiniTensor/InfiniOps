@@ -9,10 +9,10 @@ namespace infini::ops {
 
 /// ## CUDA-like runtime interface enforcement via CRTP.
 ///
-/// `CudaLikeRuntime` extends `DeviceRuntime` for backends that mirror
+/// `CudaRuntime` extends `DeviceRuntime` for backends that mirror
 /// `cuda_runtime.h`-style memory copy APIs.
 template <typename Derived>
-struct CudaLikeRuntime : DeviceRuntime<Derived> {
+struct CudaRuntime : DeviceRuntime<Derived> {
   static constexpr bool Validate() {
     DeviceRuntime<Derived>::Validate();
     static_assert(

@@ -15,7 +15,7 @@ namespace infini::ops {
 
 template <>
 struct Runtime<Device::Type::kNvidia>
-    : CudaLikeRuntime<Runtime<Device::Type::kNvidia>> {
+    : CudaRuntime<Runtime<Device::Type::kNvidia>> {
   using Stream = cudaStream_t;
 
   static constexpr Device::Type kDeviceType = Device::Type::kNvidia;

@@ -15,7 +15,7 @@ namespace infini::ops {
 
 template <>
 struct Runtime<Device::Type::kIluvatar>
-    : CudaLikeRuntime<Runtime<Device::Type::kIluvatar>> {
+    : CudaRuntime<Runtime<Device::Type::kIluvatar>> {
   using Stream = cudaStream_t;
 
   static constexpr Device::Type kDeviceType = Device::Type::kIluvatar;
