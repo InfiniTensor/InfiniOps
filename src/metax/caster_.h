@@ -79,7 +79,9 @@ struct HardwareCast<Device::Type::kMetax, __half, double> {
 template <>
 struct HardwareCast<Device::Type::kMetax, __half, __maca_bfloat16> {
   inline static constexpr bool kSupported = true;
-  __host__ __device__ __half operator()(__maca_bfloat16 x) { return __half(x); }
+  __host__ __device__ __half operator()(__maca_bfloat16 x) {
+    return __float2half_rn(__bfloat162float(x));
+  }
 };
 
 }  // namespace detail
