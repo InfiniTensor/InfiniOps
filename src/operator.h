@@ -100,7 +100,7 @@ class Operator : public OperatorBase {
   static auto make(const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
 
-    DispatchFunc<ActiveDevices>(
+    DispatchFunc<ActiveDevices<Key>>(
         tensor.device().type(),
         [&](auto tag) {
           constexpr Device::Type kDev = decltype(tag)::value;

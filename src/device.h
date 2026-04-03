@@ -85,51 +85,10 @@ class Device {
   int index_{0};
 };
 
-struct EnabledDeviceFilter {
-  // Each block defines a template operator() specialized for a specific
-  // Device. If the macro is NOT defined, the specialization is not compiled,
-  // and FilterList will exclude it from ActiveDevices.
-
-#ifdef WITH_CPU
-  void operator()(ValueTag<Device::Type::kCpu>) const {}
-#endif
-
-#ifdef WITH_NVIDIA
-  void operator()(ValueTag<Device::Type::kNvidia>) const {}
-#endif
-
-#ifdef WITH_CAMBRICON
-  void operator()(ValueTag<Device::Type::kCambricon>) const {}
-#endif
-
-#ifdef WITH_ASCEND
-  void operator()(ValueTag<Device::Type::kAscend>) const {}
-#endif
-
-#ifdef WITH_METAX
-  void operator()(ValueTag<Device::Type::kMetax>) const {}
-#endif
-
-#ifdef WITH_MOORE
-  void operator()(ValueTag<Device::Type::kMoore>) const {}
-#endif
-
-#ifdef WITH_ILUVATAR
-  void operator()(ValueTag<Device::Type::kIluvatar>) const {}
-#endif
-
-#ifdef WITH_KUNLUN
-  void operator()(ValueTag<Device::Type::kKunlun>) const {}
-#endif
-
-#ifdef WITH_HYGON
-  void operator()(ValueTag<Device::Type::kHygon>) const {}
-#endif
-
-#ifdef WITH_QY
-  void operator()(ValueTag<Device::Type::kQy>) const {}
-#endif
-};
+// Primary template: Devices are disabled by default. Platform-specific
+// headers (e.g. `cpu/device_.h`) specialize this to `std::true_type`.
+template <Device::Type>
+struct DeviceEnabled : std::false_type {};
 
 // Defines the common categories of devices using List.
 using AllDeviceTypes =
@@ -138,9 +97,24 @@ using AllDeviceTypes =
          Device::Type::kIluvatar, Device::Type::kKunlun, Device::Type::kHygon,
          Device::Type::kQy>;
 
-using ActiveDevices =
-    typename infini::ops::FilterList<EnabledDeviceFilter, std::tuple<>,
-                                     AllDeviceTypes>::type;
+// Deferred computation of active devices. The `Filter` and `FilterList`
+// evaluation are nested inside a class template so that `DeviceEnabled`
+// specializations from platform `device_.h` headers are visible at
+// instantiation time. Use with a dependent type parameter
+// (e.g. `ActiveDevices<Key>`) to ensure deferred instantiation.
+template <typename>
+struct ActiveDevicesImpl {
+  struct Filter {
+    template <Device::Type kDev>
+    std::enable_if_t<DeviceEnabled<kDev>::value> operator()(
+        ValueTag<kDev>) const {}
+  };
+
+  using type = typename FilterList<Filter, std::tuple<>, AllDeviceTypes>::type;
+};
+
+template <typename T>
+using ActiveDevices = typename ActiveDevicesImpl<T>::type;
 
 }  // namespace infini::ops
 
