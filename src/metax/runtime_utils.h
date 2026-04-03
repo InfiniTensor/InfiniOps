@@ -2,7 +2,7 @@
 #define INFINI_OPS_METAX_RUNTIME_UTILS_H_
 
 #include "cuda/runtime_utils.h"
-#include "metax/device_.h"
+#include "metax/device_property.h"
 
 namespace infini::ops {
 

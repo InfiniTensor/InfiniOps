@@ -35,14 +35,14 @@ struct FromFloat<Device::Type::kNvidia, __nv_bfloat16> {
 template <>
 struct HardwareCast<Device::Type::kNvidia, int, __nv_bfloat16> {
   inline static constexpr bool kSupported = true;
-  __device__ int operator()(__nv_bfloat16 x) { return __bfloat162int_rn(x); }
+  __device__ int operator()(__nv_bfloat16 x) { return __bfloat162int_rz(x); }
 };
 
 template <>
 struct HardwareCast<Device::Type::kNvidia, short, __nv_bfloat16> {
   inline static constexpr bool kSupported = true;
   __device__ short operator()(__nv_bfloat16 x) {
-    return __bfloat162short_rn(x);
+    return __bfloat162short_rz(x);
   }
 };
 

@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "cuda/runtime.h"
+#include "moore/caster_.h"
 #include "moore/device_.h"
 #include "moore/runtime_utils.h"
 

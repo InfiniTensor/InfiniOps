@@ -8,6 +8,7 @@
 // clang-format on
 
 #include "cuda/runtime.h"
+#include "iluvatar/caster_.h"
 #include "iluvatar/device_.h"
 #include "iluvatar/runtime_utils.h"
 

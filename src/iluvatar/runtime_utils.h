@@ -2,7 +2,7 @@
 #define INFINI_OPS_ILUVATAR_RUNTIME_UTILS_H_
 
 #include "cuda/runtime_utils.h"
-#include "iluvatar/device_.h"
+#include "iluvatar/device_property.h"
 
 namespace infini::ops {
 

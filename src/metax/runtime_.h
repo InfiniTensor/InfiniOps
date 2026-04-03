@@ -4,6 +4,7 @@
 #include <mcr/mc_runtime.h>
 
 #include "cuda/runtime.h"
+#include "metax/caster_.h"
 #include "metax/device_.h"
 #include "metax/runtime_utils.h"
 
