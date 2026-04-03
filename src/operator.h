@@ -149,7 +149,9 @@ class Operator : public OperatorBase {
               "Operator::make(implementation_index)",
               ActiveImplementations<Key, kDev>{});
         },
-        "Operator::make(device)");
+        "Operator::make");
+
+    op_ptr->set_config(config);
 
     return op_ptr;
   }
@@ -177,18 +179,22 @@ class Operator : public OperatorBase {
 
     auto& op{it->second};
 
-    op->set_handle(handle);
-    op->set_config(config);
-    op->set_stream(handle.stream());
-    op->set_workspace(handle.workspace());
-    op->set_workspace_size_in_bytes(handle.workspace_size_in_bytes());
-
-    return (*op)(std::forward<Args>(args)...);
+    return (*op)(handle, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   static auto call(const Tensor tensor, Args&&... args) {
     return call({}, {}, tensor, std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  auto operator()(const Handle& handle, Args&&... args) {
+    set_handle(handle);
+    set_stream(handle.stream());
+    set_workspace(handle.workspace());
+    set_workspace_size_in_bytes(handle.workspace_size_in_bytes());
+
+    return operator()(std::forward<Args>(args)...);
   }
 
   template <typename... Args>
