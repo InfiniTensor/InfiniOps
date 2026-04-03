@@ -31,14 +31,14 @@ struct CacheKey {
 
  private:
   void Absorb(const Tensor& t) {
-    hash_combine(hash, t);
+    HashCombine(hash, t);
     tensors.push_back(t);
   }
 
   template <typename T>
   void Absorb(const T& v) {
-    hash_combine(hash, v);
-    hash_combine(scalar_hash, v);
+    HashCombine(hash, v);
+    HashCombine(scalar_hash, v);
   }
 };
 
@@ -100,7 +100,7 @@ class Operator : public OperatorBase {
   static auto make(const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
 
-    DispatchFunc<ActiveDevices>(
+    DispatchFunc<ActiveDevices<Key>>(
         tensor.device().type(),
         [&](auto tag) {
           constexpr Device::Type kDev = decltype(tag)::value;

@@ -4,7 +4,8 @@
 #include <utility>
 
 #include "cuda/causal_softmax/kernel.h"
-#include "iluvatar/device_.h"
+#include "iluvatar/caster_.h"
+#include "iluvatar/device_property.h"
 
 namespace infini::ops {
 

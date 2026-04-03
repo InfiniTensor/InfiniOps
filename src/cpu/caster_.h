@@ -4,7 +4,7 @@
 #include <type_traits>
 
 #include "caster.h"
-#include "cpu/device_.h"
+#include "cpu/data_type_.h"
 
 namespace infini::ops {
 

@@ -1,7 +1,7 @@
 #ifndef INFINI_OPS_CUDA_ADD_KERNEL_CUH_
 #define INFINI_OPS_CUDA_ADD_KERNEL_CUH_
 
-#include "cuda/kernel_commons.h"
+#include "cuda/kernel_commons.cuh"
 
 namespace infini::ops {
 

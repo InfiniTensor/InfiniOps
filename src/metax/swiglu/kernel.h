@@ -4,7 +4,9 @@
 #include <utility>
 
 #include "cuda/swiglu/kernel.h"
-#include "metax/device_.h"
+#include "metax/caster_.h"
+#include "metax/data_type_.h"
+#include "metax/device_property.h"
 
 namespace infini::ops {
 

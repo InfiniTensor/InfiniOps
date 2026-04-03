@@ -79,9 +79,10 @@ inline DataType DataTypeFromString(const std::string& name) {
   return kStringToDataType.at(name);
 }
 
+template <typename T = void>
 inline Device::Type DeviceTypeFromString(const std::string& name) {
   static const auto kTorchNameToTypes{
-      detail::BuildTorchNameMap(ActiveDevices{})};
+      detail::BuildTorchNameMap(ActiveDevices<T>{})};
 
   auto it{kTorchNameToTypes.find(name)};
 

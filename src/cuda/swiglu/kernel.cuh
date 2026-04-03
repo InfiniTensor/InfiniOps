@@ -3,7 +3,7 @@
 
 #include <cmath>
 
-#include "cuda/kernel_commons.h"
+#include "cuda/kernel_commons.cuh"
 
 namespace infini::ops {
 

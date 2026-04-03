@@ -4,7 +4,9 @@
 #include <utility>
 
 #include "cuda/swiglu/kernel.h"
-#include "iluvatar/device_.h"
+#include "iluvatar/caster_.h"
+#include "iluvatar/data_type_.h"
+#include "iluvatar/device_property.h"
 
 namespace infini::ops {
 

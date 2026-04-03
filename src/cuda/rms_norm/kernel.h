@@ -5,7 +5,7 @@
 #include <cstdint>
 
 #include "base/rms_norm.h"
-#include "cuda/kernel_commons.h"
+#include "cuda/kernel_commons.cuh"
 #include "cuda/rms_norm/kernel.cuh"
 #include "data_type.h"
 #include "dispatcher.h"

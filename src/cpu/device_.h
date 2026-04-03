@@ -1,20 +1,12 @@
 #ifndef INFINI_OPS_CPU_DEVICE__H_
 #define INFINI_OPS_CPU_DEVICE__H_
 
-#include "data_type.h"
 #include "device.h"
 
 namespace infini::ops {
 
 template <>
-struct TypeMap<Device::Type::kCpu, DataType::kFloat16> {
-  using type = Float16;
-};
-
-template <>
-struct TypeMap<Device::Type::kCpu, DataType::kBFloat16> {
-  using type = BFloat16;
-};
+struct DeviceEnabled<Device::Type::kCpu> : std::true_type {};
 
 }  // namespace infini::ops
 
