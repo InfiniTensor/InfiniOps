@@ -2,25 +2,6 @@
 #include <numeric>
 #include <variant>
 
-#ifdef WITH_CPU
-#include "cpu/gemm/gemm.h"
-#endif
-#if WITH_NVIDIA
-#include "nvidia/gemm/cublas.h"
-#endif
-#if WITH_ILUVATAR
-#include "iluvatar/gemm/cublas.h"
-#endif
-#if WITH_METAX
-#include "metax/gemm/mcblas.h"
-#endif
-#if WITH_CAMBRICON
-#include "cambricon/gemm/cnblas.h"
-#endif
-#if WITH_MOORE
-#include "moore/gemm/mublas.h"
-#endif
-
 #include "runtime_api.h"
 #include "tensor.h"
 
@@ -50,7 +31,7 @@ int main() {
   std::iota(b_vec.begin(), b_vec.end(), 0);
 
   Device host_dev{Device::Type::kCpu};
-  Device device_dev{DEFAULT_DEVICE_TYPE};
+  Device device_dev{DefaultRuntimeUtils::kDeviceType};
 
   Tensor a_host{a_vec.data(), a_shape, host_dev};
   Tensor b_host{b_vec.data(), b_shape, host_dev};
@@ -62,13 +43,15 @@ int main() {
 
   void *a_ptr, *b_ptr, *c_ptr;
 
-  DEVICE_MALLOC(&a_ptr, a_size);
-  DEVICE_MALLOC(&b_ptr, b_size);
-  DEVICE_MALLOC(&c_ptr, c_size);
+  DefaultRuntimeUtils::Malloc(&a_ptr, a_size);
+  DefaultRuntimeUtils::Malloc(&b_ptr, b_size);
+  DefaultRuntimeUtils::Malloc(&c_ptr, c_size);
 
-  DEVICE_MEMCPY(a_ptr, a_vec.data(), a_size, DEVICE_MEMCPY_HOST_TO_DEVICE);
-  DEVICE_MEMCPY(b_ptr, b_vec.data(), b_size, DEVICE_MEMCPY_HOST_TO_DEVICE);
-  DEVICE_MEMSET(c_ptr, 0, c_size);
+  DefaultRuntimeUtils::Memcpy(a_ptr, a_vec.data(), a_size,
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
+  DefaultRuntimeUtils::Memcpy(b_ptr, b_vec.data(), b_size,
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
+  DefaultRuntimeUtils::Memset(c_ptr, 0, c_size);
 
   Tensor a_device{a_ptr, a_host.shape(), a_host.dtype(), device_dev,
                   a_host.strides()};
@@ -79,10 +62,11 @@ int main() {
 
   Gemm::call(a_device, b_device, c_device);
 
-  DEVICE_MEMCPY(c_vec.data(), c_ptr, c_size, DEVICE_MEMCPY_DEVICE_TO_HOST);
-  DEVICE_FREE(a_ptr);
-  DEVICE_FREE(b_ptr);
-  DEVICE_FREE(c_ptr);
+  DefaultRuntimeUtils::Memcpy(c_vec.data(), c_ptr, c_size,
+                              DefaultRuntimeUtils::kMemcpyDeviceToHost);
+  DefaultRuntimeUtils::Free(a_ptr);
+  DefaultRuntimeUtils::Free(b_ptr);
+  DefaultRuntimeUtils::Free(c_ptr);
 
   std::cout << "A: " << a_host.ToString() << "\n";
   std::cout << "B: " << b_host.ToString() << "\n";
