@@ -149,9 +149,9 @@ struct std::hash<infini::ops::Device> {
   std::size_t operator()(const infini::ops::Device& device) const {
     std::size_t seed{0};
 
-    hash_combine(seed, device.type());
+    HashCombine(seed, device.type());
 
-    hash_combine(seed, device.index());
+    HashCombine(seed, device.index());
 
     return seed;
   }

@@ -130,15 +130,15 @@ struct std::hash<infini::ops::Tensor> {
     std::size_t seed{0};
 
     for (const auto& size : tensor.shape()) {
-      hash_combine(seed, size);
+      HashCombine(seed, size);
     }
 
-    hash_combine(seed, tensor.dtype());
+    HashCombine(seed, tensor.dtype());
 
-    hash_combine(seed, tensor.device());
+    HashCombine(seed, tensor.device());
 
     for (const auto& stride : tensor.strides()) {
-      hash_combine(seed, stride);
+      HashCombine(seed, stride);
     }
 
     return seed;
