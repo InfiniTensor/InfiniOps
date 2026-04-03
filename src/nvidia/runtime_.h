@@ -8,7 +8,6 @@
 // clang-format on
 
 #include "cuda/runtime.h"
-#include "nvidia/caster_.h"
 #include "nvidia/device_.h"
 #include "nvidia/runtime_utils.h"
 

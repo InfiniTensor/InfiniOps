@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/causal_softmax/kernel.h"
+#include "nvidia/caster.cuh"
 #include "nvidia/runtime_.h"
 
 namespace infini::ops {

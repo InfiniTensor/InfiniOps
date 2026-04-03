@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/rms_norm/kernel.h"
+#include "iluvatar/caster.cuh"
 #include "iluvatar/runtime_.h"
 
 namespace infini::ops {

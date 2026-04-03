@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/swiglu/kernel.h"
+#include "nvidia/caster.cuh"
 #include "nvidia/runtime_.h"
 
 namespace infini::ops {

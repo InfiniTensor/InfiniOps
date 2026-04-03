@@ -8,6 +8,7 @@
 // clang-format on
 
 #include "cuda/add/kernel.h"
+#include "moore/caster.cuh"
 #include "moore/polyfills.cuh"
 #include "moore/runtime_.h"
 
