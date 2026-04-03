@@ -23,6 +23,10 @@ struct Runtime<Device::Type::kMetax>
   static constexpr auto Free = mcFree;
 
   static constexpr auto MemcpyHostToDevice = mcMemcpyHostToDevice;
+
+  static constexpr auto MemcpyDeviceToHost = mcMemcpyDeviceToHost;
+
+  static constexpr auto Memset = mcMemset;
 };
 
 static_assert(Runtime<Device::Type::kMetax>::Validate());

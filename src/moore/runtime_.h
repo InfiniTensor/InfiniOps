@@ -31,6 +31,10 @@ struct Runtime<Device::Type::kMoore>
   };
 
   static constexpr auto MemcpyHostToDevice = musaMemcpyHostToDevice;
+
+  static constexpr auto MemcpyDeviceToHost = musaMemcpyDeviceToHost;
+
+  static constexpr auto Memset = musaMemset;
 };
 
 static_assert(Runtime<Device::Type::kMoore>::Validate());

@@ -18,6 +18,14 @@ struct Runtime<Device::Type::kCambricon>
   static constexpr auto Malloc = cnrtMalloc;
 
   static constexpr auto Free = cnrtFree;
+
+  static constexpr auto Memcpy = cnrtMemcpy;
+
+  static constexpr auto MemcpyHostToDevice = cnrtMemcpyHostToDev;
+
+  static constexpr auto MemcpyDeviceToHost = cnrtMemcpyDevToHost;
+
+  static constexpr auto Memset = cnrtMemset;
 };
 
 static_assert(Runtime<Device::Type::kCambricon>::Validate());
