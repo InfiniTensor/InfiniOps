@@ -85,6 +85,7 @@ jobs:
           import os
           import shlex
           import sys
+          import uuid
           from pathlib import Path
 
           from run import (
@@ -187,8 +188,15 @@ jobs:
               env_opt("IMAGE_TAG") or job.get("image", "latest"),
           )
 
+          docker_args_text = shlex.join(docker_args)
+          delimiter = f"EOF_{uuid.uuid4().hex}"
+
           with open(github_env, "a", encoding="utf-8") as f:
-              f.write(f"DOCKER_ARGS={shlex.join(docker_args)}\n")
+              # DOCKER_ARGS contains an embedded multiline bash script argument;
+              # write it using the multiline GITHUB_ENV syntax.
+              f.write(f"DOCKER_ARGS<<{delimiter}\n")
+              f.write(docker_args_text + "\n")
+              f.write(f"{delimiter}\n")
               f.write(f"RESULT_DIR={results_dir}\n")
               f.write(f"IMAGE_TAG={image_ref}\n")
           PY
