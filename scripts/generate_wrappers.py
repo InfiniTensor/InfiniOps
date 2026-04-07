@@ -121,14 +121,34 @@ def _generate_pybind11(operator):
         return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_arguments(constructor)}).release())}};
       }}))"""
 
+    def _generate_py_args(node):
+        return ", ".join(
+            f'py::arg("{arg.spelling}")'
+            for arg in node.get_arguments()
+            if arg.spelling != "stream"
+        )
+
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
+        call_args = _generate_arguments(call)
 
         if not method:
-            return f"""  m.def("{op_name}", []({call_params}) {{ return Self::call({_generate_arguments(call)}); }});"""
+            params = (
+                f"{call_params}, std::size_t implementation_index"
+                if call_params
+                else "std::size_t implementation_index"
+            )
+            py_args = _generate_py_args(call)
+            py_args_str = f"{py_args}, " if py_args else ""
+
+            return f"""  m.def("{op_name}", []({params}) {{
+    Config config;
+    config.set_implementation_index(implementation_index);
+    return Self::call({{}}, config, {call_args});
+  }}, {py_args_str}py::kw_only(), py::arg("implementation_index") = 0);"""
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return static_cast<const Operator<Self>&>(self)({_generate_arguments(call)});
+        return static_cast<const Operator<Self>&>(self)({call_args});
       }})"""
 
     inits = "\n".join(
@@ -148,6 +168,7 @@ def _generate_pybind11(operator):
 #include <pybind11/stl.h>
 
 #include "base/{op_name}.h"
+#include "config.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;
