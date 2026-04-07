@@ -69,10 +69,196 @@ jobs:
             --platform "${{ matrix.platform }}" \
             --force
 
-      - name: Run stages via .ci/run.py (sequential inside job)
+      - name: Build docker args (same helpers as .ci/run.py) and write GITHUB_ENV
+        env:
+          CONFIG: .ci/config.yaml
+          BRANCH: None
+          STAGE: None
+          IMAGE_TAG: None
+          GPU_ID: all
+          RESULT_DIR: None
+          TEST: None
+          LOCAL: None
+          DRY_RUN: None
         run: |
-          python3 .ci/run.py \
-            --config .ci/config.yaml \
-            --job "${{ matrix.id }}" \
-            --local
-            
+          PYTHONPATH=.ci python3 - <<'PY'
+          import os
+          import shlex
+          import sys
+          from pathlib import Path
+
+          from run import (
+              apply_test_override,
+              build_docker_args,
+              build_results_dir,
+              resolve_image,
+          )
+          from utils import get_git_commit, load_config
+
+
+          def env_opt(key):
+              v = os.environ.get(key, "")
+              return None if not v or v == "None" else v
+
+
+          config = load_config(Path(os.environ["CONFIG"]))
+          repo = config.get("repo", {})
+          repo_url = repo.get("url", "https://github.com/InfiniTensor/InfiniOps.git")
+          branch = env_opt("BRANCH") or repo.get("branch", "master")
+
+          platform = "${{ matrix.platform }}"
+          job_key = "${{ matrix.id }}"
+
+          if not platform:
+              print("error: matrix.platform is empty", file=sys.stderr)
+              sys.exit(1)
+
+          jobs = config.get("jobs", {})
+          if not jobs:
+              print("error: no jobs in config", file=sys.stderr)
+              sys.exit(1)
+
+          if job_key not in jobs:
+              print(f"error: job {job_key!r} not in config", file=sys.stderr)
+              sys.exit(1)
+
+          job = jobs[job_key]
+          all_stages = job.get("stages", [])
+          stage_filter = env_opt("STAGE")
+
+          if stage_filter:
+              stages = [s for s in all_stages if s["name"] == stage_filter]
+              if not stages:
+                  print(
+                      f"error: stage {stage_filter!r} not found in {job_key}",
+                      file=sys.stderr,
+                  )
+                  sys.exit(1)
+          else:
+              stages = all_stages
+
+          test_override = env_opt("TEST")
+          if test_override:
+              stages = [
+                  {
+                      **s,
+                      "run": apply_test_override(s.get("run", ""), test_override),
+                  }
+                  for s in stages
+              ]
+
+          commit = get_git_commit()
+          results_base = env_opt("RESULT_DIR")
+          if results_base is None:
+              results_base = Path("ci-results")
+          else:
+              results_base = Path(results_base)
+
+          results_dir = build_results_dir(results_base, platform, stages, commit)
+
+          local_path = Path.cwd().resolve() if env_opt("LOCAL") else None
+
+          docker_args = build_docker_args(
+              config,
+              job_key,
+              repo_url,
+              branch,
+              stages,
+              "/workspace",
+              env_opt("IMAGE_TAG"),
+              gpu_id_override=os.environ.get("GPU_ID") or None,
+              results_dir=results_dir,
+              local_path=local_path,
+          )
+
+          dry = os.environ.get("DRY_RUN", "")
+          if dry and dry != "None":
+              print(shlex.join(docker_args))
+              raise SystemExit(0)
+
+          github_env = os.environ.get("GITHUB_ENV")
+          if not github_env:
+              print("error: GITHUB_ENV is not set", file=sys.stderr)
+              sys.exit(1)
+
+          image_ref = resolve_image(
+              config,
+              job.get("platform", platform),
+              env_opt("IMAGE_TAG") or job.get("image", "latest"),
+          )
+
+          with open(github_env, "a", encoding="utf-8") as f:
+              f.write(f"DOCKER_ARGS={shlex.join(docker_args)}\n")
+              f.write(f"RESULT_DIR={results_dir}\n")
+              f.write(f"IMAGE_TAG={image_ref}\n")
+          PY
+          
+      - name: Trigger ${{ matrix.platform }} XPU Smoke Test job
+        env:
+          ${{ matrix.job_env }}
+        run: |
+          set -e
+          echo "==> running job: ${{ matrix.job_name }}"
+
+          if [ -n "${RESULT_DIR:-}" ] && [ "${RESULT_DIR}" != "None" ]; then
+            mkdir -p "${RESULT_DIR}"
+          fi
+
+          if [ -n "${ENGINE:-}" ] && [ "${ENGINE}" != "None" ]; then
+            ENGINE_ARGS="${ENGINE}"
+          else
+            ENGINE_ARGS="InfiniTensor"
+          fi
+          
+          if [ -n "${MODEL_LIST:-}" ] && [ "${MODEL_LIST}" != "None" ]; then
+            MODEL_LIST_ARGS="${MODEL_LIST}"
+          else
+            MODEL_LIST_ARGS="None"
+          fi
+
+          if [ -n "${IMAGE:-}" ] && [ "${IMAGE}" != "None" ]; then
+            IMAGE_TAG_ARGS="${IMAGE}"
+          else
+            IMAGE_TAG_ARGS="${IMAGE_TAG}"
+          fi
+          
+          set -m
+          cd /home/zkjh
+          if [ ! -d "${{ matrix.platform }}_test" ]; then
+            mkdir -p "${{ matrix.platform }}_test"
+          fi
+          cd ${{ matrix.platform }}_test
+          mkdir -p ${{ matrix.platform }}_${{ github.run_id }}_${{ matrix.id }}
+          cd ${{ matrix.platform }}_${{ github.run_id }}_${{ matrix.id }}
+          
+          git init
+          git remote add origin git@github.com:Vincent777/ci_autotest.git
+          git fetch --depth=1 origin main
+          git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
+          chmod a+x daemon.sh
+
+          DOCKER_ARGS_MATRIX="${{ join(matrix.docker_args, ' ') }}"
+          if [ -z "${DOCKER_ARGS:-}" ]; then
+            DOCKER_ARGS="${DOCKER_ARGS_MATRIX}"
+          fi
+
+          VOLUME_ARGS=""
+          if [ -n "${{ join(matrix.volumes, ' ') }}" ]; then
+            VOLUME_ARGS=$(printf ' -v %s' ${{ join(matrix.volumes, ' ') }})
+          fi
+          
+          SHM_SIZE="--shm-size=${{ matrix.shm_size }}"
+          
+          echo "DOCKER_ARGS=$DOCKER_ARGS"
+          echo "VOLUME_ARGS=$VOLUME_ARGS"
+          echo "SHM_SIZE=$SHM_SIZE"
+
+          PLATFORM=${{ matrix.platform }}
+          
+          echo "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          echo "${PLATFORM}"
+          echo "${ENGINE_ARGS}"
+          echo "${MODEL_LIST_ARGS}"
+          echo "${DOCKER_ARGS}"
+          echo "${{ github.run_id }}"
+          echo "${IMAGE_TAG_ARGS}"
