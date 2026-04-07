@@ -20,6 +20,7 @@ from tests.utils import Payload, randn_strided
 @pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
+@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -39,6 +40,7 @@ def test_gemm(
     beta,
     trans_a,
     trans_b,
+    implementation_index,
     dtype,
     device,
     rtol,
@@ -52,6 +54,12 @@ def test_gemm(
     if device == "mlu" and dtype == torch.bfloat16:
         pytest.skip("`bfloat16` is not supported by `cnnlBatchMatMulEx`")
 
+    if implementation_index == 1 and device != "cuda":
+        pytest.skip("`implementation_index=1` is only available on NVIDIA")
+
+    if implementation_index == 1 and dtype in (torch.float16, torch.bfloat16):
+        pytest.skip("cuBLASLt half-precision exceeds current tolerances")
+
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
@@ -64,7 +72,7 @@ def test_gemm(
     c = randn_strided(c_shape, c_strides, dtype=dtype, device=device)
 
     return Payload(
-        _gemm,
+        lambda *args: _gemm(*args, implementation_index=implementation_index),
         _torch_gemm,
         (a, b, alpha, beta, trans_a, trans_b, c),
         {},
@@ -73,8 +81,17 @@ def test_gemm(
     )
 
 
-def _gemm(a, b, alpha, beta, trans_a, trans_b, c):
-    infini.ops.gemm(a, b, alpha, beta, trans_a, trans_b, c)
+def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
+    infini.ops.gemm(
+        a,
+        b,
+        alpha,
+        beta,
+        trans_a,
+        trans_b,
+        c,
+        implementation_index=implementation_index,
+    )
 
     return c
 
