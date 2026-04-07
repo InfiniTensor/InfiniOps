@@ -1,0 +1,20 @@
+[build-system]
+requires = ["scikit-build-core", "pybind11", "libclang"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "InfiniOps"
+version = "0.1.0"
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff", "torch", "pyyaml"]
+
+[tool.scikit-build.wheel]
+install-dir = "infini"
+
+[tool.scikit-build.cmake.define]
+AUTO_DETECT_DEVICES = "ON"
+GENERATE_PYTHON_BINDINGS = "ON"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
