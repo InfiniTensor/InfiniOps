@@ -263,10 +263,12 @@ jobs:
 
           PLATFORM=${{ matrix.platform }}
           
-          echo "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          echo "**************************************************************************************"
           echo "${PLATFORM}"
           echo "${ENGINE_ARGS}"
           echo "${MODEL_LIST_ARGS}"
           echo "${DOCKER_ARGS}"
           echo "${{ github.run_id }}"
           echo "${IMAGE_TAG_ARGS}"
+          echo "**************************************************************************************"
+          
