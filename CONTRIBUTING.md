@@ -104,7 +104,7 @@ pytest
 
 Since `DataType` is an enum used to represent data types generically, we often need to map between `DataType` and native C++ types (e.g. `float`, `int32_t`).
 
-- **`TypeMap`**: maps `DataType` to native types. Use the alias `TypeMapType` to get the type directly, e.g. `TypeMapType<dev, DataType::kFloat32>` is `float`.
+- **`TypeMap`**: maps `DataType` to native types. Use the alias `TypeMapType` to get the type directly, e.g. `TypeMapType<dev, DataType::kFloat32>` is `float`. Note, the first template argument is a `Device::Type` since data types like float16 and bfloat16 are not the same across the platforms. Thus, a `Device::Type` is required to specify which native type a `DataType` maps to. 
 - **`DataTypeMap`**: maps native types back to `DataType`. Use the alias `DataTypeMapValue`, e.g. `DataTypeMapValue<float>` is `DataType::kFloat32`.
 
 ### `DispatchFunc`
@@ -122,25 +122,6 @@ DispatchFunc</* supported types */>(
 );
 ```
 
-#### Single-Type Dispatch (`DataType`)
-
-```cpp
-DataType dtype = DataType::kFloat32;
-DispatchFunc<DataType::kFloat32, DataType::kFloat64>(
-    dtype,
-    [](auto tag) {
-      using T = typename decltype(tag)::type;
-      // Use T as the resolved native type.
-    },
-    "MyContext");
-```
-
-The supported type list can use predefined shorthands from `data_type.h` (e.g. `FloatTypes` = `List<DataType::kFloat32, DataType::kFloat64>`). To combine shorthands, use `ConcatType` from `common/traits.h`:
-
-```cpp
-DispatchFunc<ConcatType<List<DataType::kFloat16>, FloatTypes>>(...);
-```
-
 #### Single-Type Dispatch (`Device::Type`)
 
 ```cpp
@@ -150,6 +131,29 @@ DispatchFunc<Device::Type::kCpu, Device::Type::kNvidia>(
       constexpr Device::Type Dev = decltype(tag)::value;
     },
     "DeviceTest");
+```
+
+#### Single-Type Dispatch (`DataType`)
+
+```cpp
+DataType dtype = DataType::kFloat32;
+DispatchFunc<Device::Type::Cpu, FloatTypes>(
+    dtype,
+    [](auto tag) {
+      using T = typename decltype(tag)::type;
+      // Use T as the resolved native type.
+    },
+    "DataType Dispatch");
+```
+
+Dispatching `DataType` is a little bit special. 
+
+1. Due to the previously mentioned `TypeMap` reason, a `Device::Type` is needed as the first template argument;
+
+2. Since `DataType` is frequently used, the supported type list can use predefined shorthands from `data_type.h` (e.g. `FloatTypes` = `List<DataType::kFloat32, DataType::kFloat64>`). To combine shorthands, use `ConcatType` from `common/traits.h`:
+
+```cpp
+DispatchFunc<ConcatType<List<DataType::kFloat16>, FloatTypes>>(...);
 ```
 
 #### Single-Type Dispatch (Custom Types)
@@ -181,7 +185,20 @@ DispatchFunc<int, 128, 256, 512, 1024>(
 Use `List` boundaries to separate supported sets for each dispatched value. Pass runtime values in an initializer list:
 
 ```cpp
-DispatchFunc<FloatTypes, List<DataType::kInt32, DataType::kInt64>>(
+DispatchFunc<List<Device::Type::kCpu, Device::Type::kNvidia>,
+             List<Device::Type::kAscend, Device::Type::kMetax>>(
+      {Device::Type::kNvidia, Device::Type::kMetax},
+      [](auto tag1, auto tag2) {
+        constexpr Device::Type D1 = decltype(tag1)::value;
+        constexpr Device::Type D2 = decltype(tag2)::value;
+      },
+      "MultiDeviceTest");
+```
+
+Similarly, `DataType` requires a `Device::Type` at the front: 
+
+```cpp
+DispatchFunc<Device::Type::kCpu, FloatTypes, List<DataType::kInt32, DataType::kInt64>>(
     {DataType::kFloat64, DataType::kInt32},
     [](auto tag1, auto tag2) {
       using T1 = typename decltype(tag1)::type;
@@ -201,9 +218,17 @@ DispatchFunc<FloatTypes, List<Device::Type::kCpu, Device::Type::kNvidia>>(
     [](auto list_tag) {
       constexpr DataType DT = static_cast<DataType>(ListGet<0>(list_tag));
       constexpr Device::Type Dev = static_cast<Device::Type>(ListGet<1>(list_tag));
-      using T = TypeMapType<DT>;
+      using T = TypeMapType<Device::Type::kCpu, DT>;
     },
     "MixedDispatch");
+```
+
+Note that in mixed multi-type dispatch, `DataType` is not treated specially. Therefore, we neither should nor can place `Device::Type` at the front of the `DataType` list. Inside the lambda, we obtain it as a `DataType` and then convert it to the native type if needed. 
+
+If `DT` is not used within the lambda, you can inline its definition directly into the `using T = ...` statement, like this: 
+
+```cpp
+using T = TypeMapType<Device::Type::kCpu, ListGet<0>(list_tag)>;
 ```
 
 ## Troubleshooting
