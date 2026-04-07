@@ -54,8 +54,10 @@ def test_gemm(
     if device == "mlu" and dtype == torch.bfloat16:
         pytest.skip("`bfloat16` is not supported by `cnnlBatchMatMulEx`")
 
-    if implementation_index == 1 and device != "cuda":
-        pytest.skip("`implementation_index=1` is only available on NVIDIA")
+    active_indices = infini.ops.Gemm.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     if implementation_index == 1 and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("cuBLASLt half-precision exceeds current tolerances")
