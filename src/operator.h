@@ -53,6 +53,11 @@ auto DispatchImplementation(std::size_t implementation_index, Functor&& func,
       std::forward<Args>(args)...);
 }
 
+template <auto... values>
+std::vector<std::size_t> ListToVector(List<values...>) {
+  return {static_cast<std::size_t>(values)...};
+}
+
 }  // namespace infini::ops::detail
 
 template <>
@@ -185,6 +190,19 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static auto call(const Tensor tensor, Args&&... args) {
     return call({}, {}, tensor, std::forward<Args>(args)...);
+  }
+
+  static std::vector<std::size_t> active_implementation_indices(
+      Device::Type dev_type) {
+    std::vector<std::size_t> result;
+    DispatchFunc<ActiveDevices<Key>>(
+        dev_type,
+        [&](auto device_tag) {
+          constexpr Device::Type kDev = decltype(device_tag)::value;
+          result = detail::ListToVector(ActiveImplementations<Key, kDev>{});
+        },
+        "Operator::active_implementation_indices");
+    return result;
   }
 
   template <typename... Args>
