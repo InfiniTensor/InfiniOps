@@ -13,6 +13,7 @@ ARG no_proxy
 ARG PIP_INDEX_URL
 RUN pip install --no-cache-dir --progress-bar off \
     ${PIP_INDEX_URL:+--index-url "$PIP_INDEX_URL"} \
+    libclang \
     ninja \
     scikit-build-core \
     pybind11 \

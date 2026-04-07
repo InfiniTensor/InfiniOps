@@ -17,7 +17,7 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
       : num_tokens_{key.size(0)},
         num_kv_heads_{key.size(1)},
         head_size_{key.size(2)},
-        block_size_{kv_cache.size(1)},
+        block_size_{kv_cache.size(2)},
         key_shape_{key.shape()},
         value_shape_{value.shape()},
         kv_cache_shape_{kv_cache.shape()},
@@ -29,8 +29,8 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
         kv_cache_out_strides_{kv_cache_out.strides()} {
     assert(key.shape() == value.shape() &&
            "`ReshapeAndCache` requires key and value same shape");
-    assert(kv_cache.ndim() == 4 &&
-           "`ReshapeAndCache` requires kv_cache to be 4D [num_blocks, block_size, num_kv_heads, head_size]");
+    assert(kv_cache.ndim() == 5 &&
+           "`ReshapeAndCache` requires kv_cache to be 5D [2, num_blocks, block_size, num_kv_heads, head_size]");
     assert(slot_mapping.ndim() == 1 &&
            "`ReshapeAndCache` requires slot_mapping to be 1D");
   }

@@ -35,23 +35,32 @@ class Operator<ReshapeAndCache, Device::Type::kAscend> : public ReshapeAndCache 
     auto row_bytes = static_cast<size_t>(num_kv_heads_ * head_size_) *
                      kDataTypeToSize.at(key.dtype());
 
+    // kv_cache layout: [2, num_blocks, block_size, num_kv_heads, head_size]
+    // kv_cache[0] = key cache, kv_cache[1] = value cache.
+    // Stride for the first dim (K vs V): kv_cache.stride(0).
+    auto kv_stride0 = static_cast<int64_t>(kv_cache_out.stride(0));
+
     for (int64_t i = 0; i < num_tokens; ++i) {
       auto slot = slots[i];
       if (slot < 0) continue;  // Padding token — skip.
       auto block_idx = slot / bs;
       auto offset = slot % bs;
 
-      // key[i, :, :] -> kv_cache_out[block_idx, offset, :, :]
-      // Note: `value` is accepted for interface compatibility but is not
-      // written here. In practice, this operator is called once for key_cache
-      // and once for value_cache (see vLLM's reshape_and_cache pattern).
-      auto* src = static_cast<const char*>(key.data()) +
-                  i * key.stride(0) * key.element_size();
-      auto* dst = static_cast<char*>(kv_cache_out.data()) +
-                  (block_idx * kv_cache_out.stride(0) +
-                   offset * kv_cache_out.stride(1)) *
-                      kv_cache_out.element_size();
-      aclrtMemcpyAsync(dst, row_bytes, src, row_bytes,
+      auto cache_offset = (block_idx * kv_cache_out.stride(1) +
+                           offset * kv_cache_out.stride(2)) *
+                          kv_cache_out.element_size();
+
+      auto* k_src = static_cast<const char*>(key.data()) +
+                    i * key.stride(0) * key.element_size();
+      auto* k_dst = static_cast<char*>(kv_cache_out.data()) + cache_offset;
+      aclrtMemcpyAsync(k_dst, row_bytes, k_src, row_bytes,
+                       ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
+
+      auto* v_src = static_cast<const char*>(value.data()) +
+                    i * value.stride(0) * value.element_size();
+      auto* v_dst = static_cast<char*>(kv_cache_out.data()) +
+                    kv_stride0 * kv_cache_out.element_size() + cache_offset;
+      aclrtMemcpyAsync(v_dst, row_bytes, v_src, row_bytes,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
   }

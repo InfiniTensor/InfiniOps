@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "acl/acl.h"
+#include "aclnn/acl_meta.h"
 #include "data_type.h"
 #include "device.h"
 #include "tensor.h"

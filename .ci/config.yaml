@@ -141,7 +141,7 @@ platforms:
     image:
       dockerfile: .ci/images/ascend/
       build_args:
-        BASE_IMAGE: swr.cn-south-1.myhuaweicloud.com/ascendhub/mindie:2.3.0-800I-A2-py311-openeuler24.03-lts
+        BASE_IMAGE: quay.io/ascend/vllm-ascend:v0.18.0rc1-openeuler
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--runtime=runc"

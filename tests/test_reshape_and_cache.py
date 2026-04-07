@@ -39,8 +39,10 @@ def test_reshape_and_cache_contiguous(
     value = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
     )
+    # Layout: [2, num_blocks, block_size, num_kv_heads, head_size]
+    # Index 0 = key cache, index 1 = value cache.
     kv_cache = torch.zeros(
-        (num_blocks, block_size, num_kv_heads, head_size),
+        (2, num_blocks, block_size, num_kv_heads, head_size),
         dtype=dtype, device=device,
     )
     # Contiguous slot mapping: token i -> slot i.
@@ -86,7 +88,7 @@ def test_reshape_and_cache_noncontiguous_slots(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
     )
     kv_cache = torch.zeros(
-        (num_blocks, block_size, num_kv_heads, head_size),
+        (2, num_blocks, block_size, num_kv_heads, head_size),
         dtype=dtype, device=device,
     )
     # Non-contiguous slots: skip every other slot.
@@ -116,12 +118,17 @@ def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
 def _ref_reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
     kv_cache_out = kv_cache_out.clone()
     slots = slot_mapping.cpu()
-    block_size = kv_cache_out.size(1)
+    block_size = kv_cache_out.size(2)
+
     for i in range(key.size(0)):
         slot = int(slots[i].item())
+
         if slot < 0:
             continue
+
         block_idx = slot // block_size
         offset = slot % block_size
-        kv_cache_out[block_idx, offset, :, :] = key[i, :, :]
+        kv_cache_out[0, block_idx, offset, :, :] = key[i, :, :]
+        kv_cache_out[1, block_idx, offset, :, :] = value[i, :, :]
+
     return kv_cache_out

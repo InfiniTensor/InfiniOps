@@ -189,15 +189,20 @@ if(WITH_ASCEND)
 
     # Prefer the real driver HAL; fall back to the toolkit stub for build-only
     # environments (e.g., Docker CI images without hardware drivers installed).
-    set(ASCEND_HAL_REAL  "${ASCEND_ROOT}/driver/lib64/driver/libascend_hal.so")
-    set(ASCEND_HAL_STUB  "${ASCEND_HOME}/runtime/lib64/stub/libascend_hal.so")
+    # CANN <= 8.0: stub at runtime/lib64/stub/; CANN >= 8.5: devlib/<arch>-linux/devlib/.
+    set(ASCEND_HAL_REAL   "${ASCEND_ROOT}/driver/lib64/driver/libascend_hal.so")
+    set(ASCEND_HAL_STUB   "${ASCEND_HOME}/runtime/lib64/stub/libascend_hal.so")
+    set(ASCEND_HAL_DEVLIB "${ASCEND_HOME}/${CMAKE_SYSTEM_PROCESSOR}-linux/devlib/libascend_hal.so")
     if(EXISTS "${ASCEND_HAL_REAL}")
         set(ASCEND_HAL_LIB "${ASCEND_HAL_REAL}")
     elseif(EXISTS "${ASCEND_HAL_STUB}")
         set(ASCEND_HAL_LIB "${ASCEND_HAL_STUB}")
         message(STATUS "ascend_hal: driver not found, using stub for linking")
+    elseif(EXISTS "${ASCEND_HAL_DEVLIB}")
+        set(ASCEND_HAL_LIB "${ASCEND_HAL_DEVLIB}")
+        message(STATUS "ascend_hal: driver not found, using devlib for linking")
     else()
-        message(FATAL_ERROR "libascend_hal.so not found (tried ${ASCEND_HAL_REAL} and ${ASCEND_HAL_STUB})")
+        message(FATAL_ERROR "libascend_hal.so not found (tried ${ASCEND_HAL_REAL}, ${ASCEND_HAL_STUB}, and ${ASCEND_HAL_DEVLIB})")
     endif()
 
     target_include_directories(infiniops PUBLIC

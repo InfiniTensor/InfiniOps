@@ -1,6 +1,7 @@
 # Generated files
 build/
 generated/
+models/
 
 # Prerequisites
 *.d
