@@ -178,7 +178,7 @@ namespace infini::ops {{
 void Bind{pascal_case_op_name}(py::module& m) {{
   using Self = {pascal_case_op_name};
 
-  py::class_<Self>(m, "{pascal_case_op_name}") 
+  py::class_<Self>(m, "{pascal_case_op_name}")
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
