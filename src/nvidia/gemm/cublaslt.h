@@ -34,6 +34,11 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
       : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
                  c} {}
 
+  // TODO: Refactor to move initialization/setup logic to the constructor
+  // and cleanup/teardown logic to the destructor, rather than executing
+  // everything within the computation step.
+  // TODO: Replace the current return value checks with utility functions
+  // (e.g., `CheckCublasLt`).
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
