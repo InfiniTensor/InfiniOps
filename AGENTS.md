@@ -11,10 +11,16 @@ python -m pip install .[dev]
 python -m pytest -n 1
 ```
 
-To run CI across all supported platforms:
+To run CI across all supported platforms on remote machines:
 
 ```bash
 python .ci/agent.py run --branch <branch-name>
+```
+
+To run local code on the current machine:
+
+```bash
+python .ci/run.py --local
 ```
 
 CI must pass on **all** platforms. Build failures are blockers; test failures may be pre-existing.
