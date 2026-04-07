@@ -3,11 +3,12 @@
 
 #include "cuda/gemm/blas.h"
 #include "nvidia/blas.h"
+#include "nvidia/gemm/registry.h"
 
 namespace infini::ops {
 
 template <>
-class Operator<Gemm, Device::Type::kNvidia>
+class Operator<Gemm, Device::Type::kNvidia, 0>
     : public BlasGemm<Blas<Device::Type::kNvidia>> {
  public:
   using BlasGemm<Blas<Device::Type::kNvidia>>::BlasGemm;
