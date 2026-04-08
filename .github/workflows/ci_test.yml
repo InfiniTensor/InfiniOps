@@ -34,6 +34,7 @@ jobs:
       - name: Show generated job types
         run: |
           echo "job_types_with_jobs=${{ steps.generate.outputs.job_types_with_jobs }}"
+          echo "matrix_json_for_unittest=${{ steps.generate.outputs.matrix_json_for_unittest }}"
 
   run-child-unittest:
     name: Execute unittest child pipeline
