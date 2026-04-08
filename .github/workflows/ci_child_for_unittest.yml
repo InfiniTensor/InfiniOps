@@ -234,6 +234,6 @@ jobs:
             "Unit" \
             "InfiniTensor" \
             "None" \
-            "${docker_args_b64}" \
+            "${DOCKER_ARGS}" \
             ${{ github.run_id }} \
             "${IMAGE_TAG_ARGS}"
