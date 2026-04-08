@@ -12,6 +12,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--benchmark", action="store_true", help="Run performance benchmarks."
     )
+    parser.addoption(
+        "--devices",
+        nargs="+",
+        default=None,
+        help="Device(s) to test on (e.g., --devices ascend cpu). Accepts platform names (ascend, nvidia, cambricon, metax, moore, iluvatar) or PyTorch device types (npu, cuda, mlu, musa). Defaults to all available devices.",
+    )
 
 
 def pytest_configure(config):
@@ -62,6 +68,21 @@ def _set_random_seed(seed):
     torch.manual_seed(seed)
 
 
+_PLATFORM_TO_TORCH_DEVICE = {
+    "nvidia": "cuda",
+    "iluvatar": "cuda",
+    "metax": "cuda",
+    "cambricon": "mlu",
+    "moore": "musa",
+    "ascend": "npu",
+}
+
+
+def _resolve_device(name):
+    """Map a platform name (e.g., ``ascend``) to a PyTorch device type (e.g., ``npu``)."""
+    return _PLATFORM_TO_TORCH_DEVICE.get(name, name)
+
+
 def pytest_generate_tests(metafunc):
     already_parametrized = _get_parametrized_args(metafunc)
 
@@ -76,7 +97,17 @@ def pytest_generate_tests(metafunc):
         )
 
     if "device" in metafunc.fixturenames and "device" not in already_parametrized:
-        metafunc.parametrize("device", get_available_devices())
+        cli_devices = metafunc.config.getoption("--devices")
+        available = get_available_devices()
+
+        if cli_devices:
+            devices = tuple(
+                d for d in (_resolve_device(x) for x in cli_devices) if d in available
+            )
+        else:
+            devices = ()
+
+        metafunc.parametrize("device", devices or available)
 
 
 @pytest.hookimpl(tryfirst=True)
