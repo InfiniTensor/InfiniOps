@@ -11,18 +11,13 @@ namespace infini::ops {
 
 class FlashAttention : public Operator<FlashAttention> {
  public:
-  FlashAttention(
-      const Tensor query, const Tensor key, const Tensor value,
-      std::optional<Tensor> cu_seqlens_q,
-      std::optional<Tensor> cu_seqlens_kv,
-      std::optional<Tensor> block_table,
-      int64_t num_heads, int64_t num_kv_heads, int64_t head_size,
-      double scale,
-      bool causal,
-      int64_t window_left,
-      int64_t window_right,
-      int64_t block_size,
-      Tensor output)
+  FlashAttention(const Tensor query, const Tensor key, const Tensor value,
+                 std::optional<Tensor> cu_seqlens_q,
+                 std::optional<Tensor> cu_seqlens_kv,
+                 std::optional<Tensor> block_table, int64_t num_heads,
+                 int64_t num_kv_heads, int64_t head_size, double scale,
+                 bool causal, int64_t window_left, int64_t window_right,
+                 int64_t block_size, Tensor output)
       : num_tokens_{query.size(0)},
         num_heads_{num_heads},
         num_kv_heads_{num_kv_heads},
@@ -50,18 +45,15 @@ class FlashAttention : public Operator<FlashAttention> {
            "`FlashAttention` requires query to be 3D [T, N, D]");
   }
 
-  virtual void operator()(
-      const Tensor query, const Tensor key, const Tensor value,
-      std::optional<Tensor> cu_seqlens_q,
-      std::optional<Tensor> cu_seqlens_kv,
-      std::optional<Tensor> block_table,
-      int64_t num_heads, int64_t num_kv_heads, int64_t head_size,
-      double scale,
-      bool causal,
-      int64_t window_left,
-      int64_t window_right,
-      int64_t block_size,
-      Tensor output) const = 0;
+  virtual void operator()(const Tensor query, const Tensor key,
+                          const Tensor value,
+                          std::optional<Tensor> cu_seqlens_q,
+                          std::optional<Tensor> cu_seqlens_kv,
+                          std::optional<Tensor> block_table, int64_t num_heads,
+                          int64_t num_kv_heads, int64_t head_size, double scale,
+                          bool causal, int64_t window_left,
+                          int64_t window_right, int64_t block_size,
+                          Tensor output) const = 0;
 
  protected:
   Tensor::Size num_tokens_{0};

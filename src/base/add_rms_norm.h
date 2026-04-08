@@ -26,9 +26,8 @@ class AddRmsNorm : public Operator<AddRmsNorm> {
     assert(x1.dtype() == x_out.dtype());
   }
 
-  virtual void operator()(const Tensor x1, const Tensor x2,
-                          const Tensor gamma, float eps, Tensor y_out,
-                          Tensor x_out) const = 0;
+  virtual void operator()(const Tensor x1, const Tensor x2, const Tensor gamma,
+                          float eps, Tensor y_out, Tensor x_out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

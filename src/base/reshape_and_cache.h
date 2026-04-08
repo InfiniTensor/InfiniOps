@@ -10,10 +10,8 @@ namespace infini::ops {
 
 class ReshapeAndCache : public Operator<ReshapeAndCache> {
  public:
-  ReshapeAndCache(
-      const Tensor key, const Tensor value,
-      const Tensor kv_cache, const Tensor slot_mapping,
-      Tensor kv_cache_out)
+  ReshapeAndCache(const Tensor key, const Tensor value, const Tensor kv_cache,
+                  const Tensor slot_mapping, Tensor kv_cache_out)
       : num_tokens_{key.size(0)},
         num_kv_heads_{key.size(1)},
         head_size_{key.size(2)},
@@ -30,15 +28,15 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
     assert(key.shape() == value.shape() &&
            "`ReshapeAndCache` requires key and value same shape");
     assert(kv_cache.ndim() == 5 &&
-           "`ReshapeAndCache` requires kv_cache to be 5D [2, num_blocks, block_size, num_kv_heads, head_size]");
+           "`ReshapeAndCache` requires kv_cache to be 5D [2, num_blocks, "
+           "block_size, num_kv_heads, head_size]");
     assert(slot_mapping.ndim() == 1 &&
            "`ReshapeAndCache` requires slot_mapping to be 1D");
   }
 
-  virtual void operator()(
-      const Tensor key, const Tensor value,
-      const Tensor kv_cache, const Tensor slot_mapping,
-      Tensor kv_cache_out) const = 0;
+  virtual void operator()(const Tensor key, const Tensor value,
+                          const Tensor kv_cache, const Tensor slot_mapping,
+                          Tensor kv_cache_out) const = 0;
 
  protected:
   Tensor::Size num_tokens_{0};
