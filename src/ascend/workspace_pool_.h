@@ -26,9 +26,8 @@ class WorkspacePool {
       aclrtFree(arena.buf);
     }
     if (needed > 0) {
-      assert(aclrtMalloc(&arena.buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY) ==
-                 ACL_SUCCESS &&
-             "`WorkspacePool`: `aclrtMalloc` failed");
+      auto ret = aclrtMalloc(&arena.buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY);
+      assert(ret == ACL_SUCCESS && "`WorkspacePool`: `aclrtMalloc` failed");
     }
     arena.capacity = needed;
     return arena;
