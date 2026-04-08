@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -176,10 +177,10 @@ class Operator : public OperatorBase {
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      it = cache
-               .emplace(std::move(key),
-                        make(config, std::forward<Args>(args)...))
-               .first;
+      // Pass args as lvalue refs so they remain valid for the operator() call
+      // below. Forwarding rvalue temporaries into make() would leave the args
+      // in a moved-from (empty) state before operator() can use them.
+      it = cache.emplace(std::move(key), make(config, args...)).first;
     }
 
     auto& op{it->second};
