@@ -11,8 +11,7 @@ class Matmul : public Operator<Matmul> {
   // trans_a / trans_b: if true, transpose the last two dims of a / b before
   // multiplying.  These are constructor parameters so the CacheKey encodes
   // the transposition and distinct descriptors are cached for each combination.
-  Matmul(const Tensor a, const Tensor b, Tensor c,
-         bool trans_a, bool trans_b)
+  Matmul(const Tensor a, const Tensor b, Tensor c, bool trans_a, bool trans_b)
       : a_shape_{a.shape()},
         b_shape_{b.shape()},
         c_shape_{c.shape()},
