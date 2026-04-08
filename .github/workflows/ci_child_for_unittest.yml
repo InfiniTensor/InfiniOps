@@ -237,3 +237,4 @@ jobs:
             "${DOCKER_ARGS}" \
             ${{ github.run_id }} \
             "${IMAGE_TAG}"
+  
