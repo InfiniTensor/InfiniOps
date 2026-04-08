@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_ASCEND_WORKSPACE_POOL__H_
 #define INFINI_OPS_ASCEND_WORKSPACE_POOL__H_
 
+#include <cassert>
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
@@ -25,7 +26,9 @@ class WorkspacePool {
       aclrtFree(arena.buf);
     }
     if (needed > 0) {
-      aclrtMalloc(&arena.buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY);
+      assert(aclrtMalloc(&arena.buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY) ==
+                 ACL_SUCCESS &&
+             "`WorkspacePool`: `aclrtMalloc` failed");
     }
     arena.capacity = needed;
     return arena;

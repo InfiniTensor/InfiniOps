@@ -23,13 +23,18 @@ struct Runtime<Device::Type::kAscend>
 
   static constexpr auto Free = aclrtFree;
 
-  static constexpr auto Memcpy = aclrtMemcpy;
+  static constexpr auto Memcpy = [](void* dst, const void* src, size_t count,
+                                    aclrtMemcpyKind kind) {
+    return aclrtMemcpy(dst, count, src, count, kind);
+  };
 
   static constexpr auto MemcpyHostToDevice = ACL_MEMCPY_HOST_TO_DEVICE;
 
   static constexpr auto MemcpyDeviceToHost = ACL_MEMCPY_DEVICE_TO_HOST;
 
-  static constexpr auto Memset = aclrtMemset;
+  static constexpr auto Memset = [](void* ptr, int value, size_t count) {
+    return aclrtMemset(ptr, count, value, count);
+  };
 };
 
 static_assert(Runtime<Device::Type::kAscend>::Validate());
