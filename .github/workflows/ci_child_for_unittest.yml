@@ -228,12 +228,12 @@ jobs:
           echo "${{ github.run_id }}"
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
-          
+
           ./daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \
-            "${DOCKER_ARGS}" \
+            "None" \
+            "${docker_args_b64}" \
             ${{ github.run_id }} \
             "${IMAGE_TAG_ARGS}"
-  
