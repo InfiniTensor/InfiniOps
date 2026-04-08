@@ -1,22 +1,26 @@
-name: CI Parent Pipeline
+name: CI Smoketest Dispatch
 
 on:
-  push:
-    branches: ["ci_test"]
-  pull_request:
-    branches: ["ci_test"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to run smoketest from"
+        required: false
+        default: "ci_test"
+        type: string
 
 jobs:
   prepare:
-    name: Generate matrix from config
+    name: Generate smoketest matrix from config
     runs-on: ubuntu-latest
     outputs:
-      matrix_json_for_unittest: ${{ steps.generate.outputs.matrix_json_for_unittest }}
+      matrix_json_for_smoketest: ${{ steps.generate.outputs.matrix_json_for_smoketest }}
       job_types_with_jobs: ${{ steps.generate.outputs.job_types_with_jobs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           submodules: recursive
 
       - name: Setup Python
@@ -35,10 +39,10 @@ jobs:
         run: |
           echo "job_types_with_jobs=${{ steps.generate.outputs.job_types_with_jobs }}"
 
-  run-child-unittest:
-    name: Execute unittest child pipeline
+  run-child-smoketest:
+    name: Execute smoketest child pipeline
     needs: prepare
-    if: contains(fromJSON(needs.prepare.outputs.job_types_with_jobs), 'unittest')
-    uses: ./.github/workflows/ci_child_for_unittest.yml
+    if: contains(fromJSON(needs.prepare.outputs.job_types_with_jobs), 'smoketest')
+    uses: ./.github/workflows/ci_child_for_smoketest.yml
     with:
-      matrix_json: ${{ needs.prepare.outputs.matrix_json_for_unittest }}
+      matrix_json: ${{ needs.prepare.outputs.matrix_json_for_smoketest }}
