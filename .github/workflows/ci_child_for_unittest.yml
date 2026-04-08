@@ -79,7 +79,6 @@ jobs:
           RESULT_DIR: None
           TEST: None
           LOCAL: None
-          DRY_RUN: None
         run: |
           PYTHONPATH=.ci python3 - <<'PY'
           import os
@@ -96,11 +95,9 @@ jobs:
           )
           from utils import get_git_commit, load_config
 
-
           def env_opt(key):
               v = os.environ.get(key, "")
               return None if not v or v == "None" else v
-
 
           config = load_config(Path(os.environ["CONFIG"]))
           repo = config.get("repo", {})
@@ -172,11 +169,6 @@ jobs:
               local_path=local_path,
           )
 
-          dry = os.environ.get("DRY_RUN", "")
-          if dry and dry != "None":
-              print(shlex.join(docker_args))
-              raise SystemExit(0)
-
           github_env = os.environ.get("GITHUB_ENV")
           if not github_env:
               print("error: GITHUB_ENV is not set", file=sys.stderr)
@@ -201,7 +193,7 @@ jobs:
               f.write(f"IMAGE_TAG={image_ref}\n")
           PY
           
-      - name: Trigger ${{ matrix.platform }} XPU Smoke Test job
+      - name: Trigger ${{ matrix.platform }} XPU Unit Test Task
         env:
           ${{ matrix.job_env }}
         run: |
@@ -212,32 +204,14 @@ jobs:
             mkdir -p "${RESULT_DIR}"
           fi
 
-          if [ -n "${ENGINE:-}" ] && [ "${ENGINE}" != "None" ]; then
-            ENGINE_ARGS="${ENGINE}"
-          else
-            ENGINE_ARGS="InfiniTensor"
-          fi
-          
-          if [ -n "${MODEL_LIST:-}" ] && [ "${MODEL_LIST}" != "None" ]; then
-            MODEL_LIST_ARGS="${MODEL_LIST}"
-          else
-            MODEL_LIST_ARGS="None"
-          fi
-
-          if [ -n "${IMAGE:-}" ] && [ "${IMAGE}" != "None" ]; then
-            IMAGE_TAG_ARGS="${IMAGE}"
-          else
-            IMAGE_TAG_ARGS="${IMAGE_TAG}"
-          fi
-          
           set -m
           cd /home/zkjh
-          if [ ! -d "${{ matrix.platform }}_test" ]; then
-            mkdir -p "${{ matrix.platform }}_test"
+          if [ ! -d "CI_${{ matrix.platform }}_test" ]; then
+            mkdir -p "CI_${{ matrix.platform }}_test"
           fi
-          cd ${{ matrix.platform }}_test
-          mkdir -p ${{ matrix.platform }}_${{ github.run_id }}_${{ matrix.id }}
-          cd ${{ matrix.platform }}_${{ github.run_id }}_${{ matrix.id }}
+          cd CI_${{ matrix.platform }}_test
+          mkdir -p ${{ github.run_id }}_${{ matrix.id }}
+          cd ${{ github.run_id }}_${{ matrix.id }}
           
           git init
           git remote add origin git@github.com:Vincent777/ci_autotest.git
@@ -245,30 +219,11 @@ jobs:
           git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
           chmod a+x daemon.sh
 
-          DOCKER_ARGS_MATRIX="${{ join(matrix.docker_args, ' ') }}"
-          if [ -z "${DOCKER_ARGS:-}" ]; then
-            DOCKER_ARGS="${DOCKER_ARGS_MATRIX}"
-          fi
-
-          VOLUME_ARGS=""
-          if [ -n "${{ join(matrix.volumes, ' ') }}" ]; then
-            VOLUME_ARGS=$(printf ' -v %s' ${{ join(matrix.volumes, ' ') }})
-          fi
-          
-          SHM_SIZE="--shm-size=${{ matrix.shm_size }}"
-          
-          echo "DOCKER_ARGS=$DOCKER_ARGS"
-          echo "VOLUME_ARGS=$VOLUME_ARGS"
-          echo "SHM_SIZE=$SHM_SIZE"
-
-          PLATFORM=${{ matrix.platform }}
-          
           echo "**************************************************************************************"
-          echo "${PLATFORM}"
-          echo "${ENGINE_ARGS}"
-          echo "${MODEL_LIST_ARGS}"
+          echo "Unit"
+          echo "InfiniTensor"
           echo "${DOCKER_ARGS}"
           echo "${{ github.run_id }}"
-          echo "${IMAGE_TAG_ARGS}"
+          echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
           
