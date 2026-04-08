@@ -219,7 +219,9 @@ jobs:
           git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
           chmod a+x daemon.sh
 
+          PLATFORM=${{ matrix.platform }}
           echo "**************************************************************************************"
+          echo "${PLATFORM^}"
           echo "Unit"
           echo "InfiniTensor"
           echo "${DOCKER_ARGS}"
@@ -227,3 +229,10 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
           
+          ./daemon.sh \
+            "${PLATFORM^}" \
+            "Unit" \
+            "InfiniTensor" \
+            "${DOCKER_ARGS}" \
+            ${{ github.run_id }} \
+            "${IMAGE_TAG_ARGS}"
