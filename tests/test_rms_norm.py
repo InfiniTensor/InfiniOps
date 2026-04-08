@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, randn_strided
+from tests.utils import Payload, empty_strided, get_npu_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -53,7 +53,10 @@ def test_rms_norm(
 
 
 def _rms_norm(input, weight, *, eps=1e-6, out=None):
-    infini.ops.rms_norm(input, weight, eps, out)
+    if input.device.type == "npu":
+        infini.ops.rms_norm(input, weight, eps, out, stream=get_npu_stream(input))
+    else:
+        infini.ops.rms_norm(input, weight, eps, out)
 
     return out
 

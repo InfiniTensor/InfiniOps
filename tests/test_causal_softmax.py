@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, randn_strided
+from tests.utils import Payload, empty_strided, get_npu_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -40,7 +40,10 @@ def test_causal_softmax(shape, input_strides, out_strides, dtype, device, rtol, 
 
 
 def _causal_softmax(input, out):
-    infini.ops.causal_softmax(input, out)
+    if input.device.type == "npu":
+        infini.ops.causal_softmax(input, out, stream=get_npu_stream(input))
+    else:
+        infini.ops.causal_softmax(input, out)
 
     return out
 
@@ -48,7 +51,7 @@ def _causal_softmax(input, out):
 def _torch_causal_softmax(input, out):
     mask = torch.tril(torch.ones_like(input), diagonal=-1).flip(dims=[-2, -1])
     masked = torch.where(mask == 1, -torch.inf, input.to(torch.float32))
-    result = torch.nn.functional.softmax(masked, dim=-1, dtype=input.dtype)
+    result = torch.nn.functional.softmax(masked, dim=-1)
     out.copy_(result)
 
     return out
