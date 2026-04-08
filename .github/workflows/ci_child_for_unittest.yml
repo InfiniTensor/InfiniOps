@@ -236,4 +236,4 @@ jobs:
             "None" \
             "${DOCKER_ARGS}" \
             ${{ github.run_id }} \
-            "${IMAGE_TAG_ARGS}"
+            "${IMAGE_TAG}"
