@@ -7,6 +7,7 @@
 #include "base/causal_softmax.h"
 #include "cuda/causal_softmax/kernel.cuh"
 #include "cuda/kernel_commons.cuh"
+#include "cuda/runtime_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
 
