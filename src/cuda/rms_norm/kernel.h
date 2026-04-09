@@ -32,13 +32,11 @@ class CudaRmsNorm : public RmsNorm {
 
     uint32_t num_blocks = static_cast<uint32_t>(batch_size_ * nhead_);
 
-    assert(out.dtype() == input.dtype() && out.dtype() == weight.dtype());
-
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(
-        {static_cast<int64_t>(out.dtype()), block_size},
+        {static_cast<int64_t>(dtype_), block_size},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);

@@ -19,7 +19,7 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax,
 
   void operator()(const Tensor input, Tensor out) const override {
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
-        out.dtype(),
+        dtype_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
           Compute<T>(input, out);

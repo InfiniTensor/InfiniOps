@@ -30,14 +30,11 @@ class CudaCausalSoftmax : public CausalSoftmax {
     dim3 grid(static_cast<unsigned>(seq_len_),
               static_cast<unsigned>(batch_size_));
 
-    assert(out.dtype() == input.dtype());
-
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(
-        // TODO: Output dtype should use the one passed in during construction.
-        {static_cast<int64_t>(out.dtype()), block_size},
+        {static_cast<int64_t>(dtype_), block_size},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
