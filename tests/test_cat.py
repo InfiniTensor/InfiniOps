@@ -13,6 +13,8 @@ from tests.utils import Payload, empty_strided, get_npu_stream, randn_strided
         (((4, 64), (4, 64)), 0, (8, 64)),
         # 2 inputs, dim=1
         (((4, 32), (4, 64)), 1, (4, 96)),
+        # 2 inputs, dim=-1 (negative dim)
+        (((4, 32), (4, 64)), -1, (4, 96)),
         # 3 inputs, dim=1
         (((4, 16), (4, 32), (4, 16)), 1, (4, 64)),
         # 2 inputs, dim=0, 3D

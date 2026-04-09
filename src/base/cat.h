@@ -11,12 +11,13 @@ class Cat : public Operator<Cat> {
  public:
   Cat(const Tensor first_input, std::vector<Tensor> rest_inputs, int64_t dim,
       Tensor out)
-      : dim_{dim}, input_count_{1 + rest_inputs.size()} {
+      : input_count_{1 + rest_inputs.size()} {
     assert(input_count_ >= 2 && "Cat requires at least 2 input tensors");
 
-    auto ndim = out.ndim();
-    assert(dim >= 0 && dim < static_cast<int64_t>(ndim) &&
-           "Cat dim out of range");
+    auto ndim = static_cast<int64_t>(out.ndim());
+    // Normalize negative dim (e.g. -1 means last dimension).
+    dim_ = dim < 0 ? dim + ndim : dim;
+    assert(dim_ >= 0 && dim_ < ndim && "Cat dim out of range");
   }
 
   virtual void operator()(const Tensor first_input,

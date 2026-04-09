@@ -17,7 +17,7 @@ class Operator<Cat, Device::Type::kCpu> : public Cat {
       : Cat{first_input, rest_inputs, dim, out} {}
 
   void operator()(const Tensor first_input, std::vector<Tensor> rest_inputs,
-                  int64_t dim, Tensor out) const override {
+                  int64_t /*dim*/, Tensor out) const override {
     // Collect all input tensors.
     std::vector<const Tensor*> inputs;
     inputs.reserve(input_count_);
@@ -26,6 +26,8 @@ class Operator<Cat, Device::Type::kCpu> : public Cat {
       inputs.push_back(&t);
     }
 
+    // Use normalized `dim_` from base class (handles negative dim).
+    auto dim = dim_;
     auto elem_size = kDataTypeToSize.at(out.dtype());
     auto ndim = out.ndim();
     auto out_shape = out.shape();

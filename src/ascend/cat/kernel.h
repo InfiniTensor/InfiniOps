@@ -34,7 +34,7 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
   }
 
   void operator()(const Tensor first_input, std::vector<Tensor> rest_inputs,
-                  int64_t dim, Tensor out) const override {
+                  int64_t /*dim*/, Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Collect all input tensors in order.
@@ -63,7 +63,10 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
                                &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
-      // Subsequent calls: update data pointers on cached descriptors.
+      // Subsequent calls: update data pointers on cached descriptors via
+      // `aclSetRawTensorAddr`.  The executor holds references to the same
+      // `aclTensor*` objects inside `tensor_list_`, so updating their data
+      // pointers is sufficient — no `aclSetInputTensorAddr` needed.
       for (size_t i = 0; i < input_count_; ++i) {
         in_caches_[i].get(const_cast<void*>(inputs[i]->data()));
       }
