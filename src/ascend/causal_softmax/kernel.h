@@ -28,7 +28,10 @@ namespace infini::ops {
 template <>
 class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
  public:
-  Operator(const Tensor input, Tensor out) : CausalSoftmax(input, out) {
+  Operator(const Tensor input, Tensor out)
+      : CausalSoftmax(input, out),
+        in_cache_(input),
+        out_cache_(out) {
     // Contiguous temp buffer with the same element count as input.
     size_t n_elems = input.numel();
     size_t elem_bytes = kDataTypeToSize.at(dtype_);
@@ -36,6 +39,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
 
     // Build a contiguous Tensor descriptor pointing to temp_buf_.
     Tensor temp_t{temp_buf_, input.shape(), input.dtype(), input.device()};
+    temp_cache_ = ascend::AclTensorCache(temp_t);
 
     // Causal mask: mask[i][j] = 1 when position j must be masked for query i.
     // Shape (seq_len, total_seq_len) – broadcasts over the batch dimension.
@@ -69,6 +73,9 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
   }
 
   ~Operator() {
+    if (copy_exec_) aclDestroyAclOpExecutor(copy_exec_);
+    if (fill_exec_) aclDestroyAclOpExecutor(fill_exec_);
+    if (softmax_exec_) aclDestroyAclOpExecutor(softmax_exec_);
     aclrtFree(temp_buf_);
     aclrtFree(mask_buf_);
     aclDestroyTensor(mask_tensor_);
@@ -76,50 +83,74 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
   }
 
   void operator()(const Tensor input, Tensor out) const override {
-    Tensor temp_t{temp_buf_, input.shape(), input.dtype(), input.device()};
-    auto t_in = ascend::buildAclTensor(input);
-    auto t_temp = ascend::buildAclTensor(temp_t);
-    auto t_out = ascend::buildAclTensor(out);
+    auto t_in = in_cache_.get(const_cast<void*>(input.data()));
+    auto t_temp = temp_cache_.get(temp_buf_);
+    auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    uint64_t ws_needed = 0;
-    aclOpExecutor* exec = nullptr;
-
     // Step 1: copy input (possibly non-contiguous) into contiguous temp.
-    aclnnInplaceCopyGetWorkspaceSize(t_temp, t_in, &ws_needed, &exec);
-    auto& copy_arena = ascend::workspacePool().ensure(stream, ws_needed);
-    uint64_t copy_ws = ws_needed;
-    aclnnInplaceCopy(copy_arena.buf, copy_ws, exec, stream);
+    if (!copy_exec_) {
+      aclnnInplaceCopyGetWorkspaceSize(t_temp, t_in, &copy_ws_, &copy_exec_);
+      aclSetAclOpExecutorRepeatable(copy_exec_);
+    } else {
+      aclSetInputTensorAddr(copy_exec_, 0, t_temp, temp_buf_);
+      aclSetInputTensorAddr(copy_exec_, 1, t_in,
+                            const_cast<void*>(input.data()));
+    }
+    auto& copy_arena = ascend::workspacePool().ensure(stream, copy_ws_);
+    aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream);
 
     // Step 2: mask upper-triangle positions with -inf in-place.
-    ws_needed = 0;
-    exec = nullptr;
-    aclnnInplaceMaskedFillScalarGetWorkspaceSize(t_temp, mask_tensor_, neg_inf_,
-                                                 &ws_needed, &exec);
-    auto& fill_arena = ascend::workspacePool().ensure(stream, ws_needed);
-    uint64_t fill_ws = ws_needed;
-    aclnnInplaceMaskedFillScalar(fill_arena.buf, fill_ws, exec, stream);
+    // mask_tensor_ and neg_inf_ have stable addresses — first-call only.
+    if (!fill_exec_) {
+      aclnnInplaceMaskedFillScalarGetWorkspaceSize(
+          t_temp, mask_tensor_, neg_inf_, &fill_ws_, &fill_exec_);
+      aclSetAclOpExecutorRepeatable(fill_exec_);
+    }
+    auto& fill_arena = ascend::workspacePool().ensure(stream, fill_ws_);
+    aclnnInplaceMaskedFillScalar(fill_arena.buf, fill_ws_, fill_exec_, stream);
 
     // Step 3: softmax over the last dimension → out.
-    ws_needed = 0;
-    exec = nullptr;
-    constexpr int64_t kLastDim = -1;
-    aclnnSoftmaxGetWorkspaceSize(t_temp, kLastDim, t_out, &ws_needed, &exec);
-    auto& softmax_arena = ascend::workspacePool().ensure(stream, ws_needed);
-    uint64_t softmax_ws = ws_needed;
-    aclnnSoftmax(softmax_arena.buf, softmax_ws, exec, stream);
-
-    aclDestroyTensor(t_in);
-    aclDestroyTensor(t_temp);
-    aclDestroyTensor(t_out);
+    if (!softmax_exec_) {
+      constexpr int64_t kLastDim = -1;
+      aclnnSoftmaxGetWorkspaceSize(t_temp, kLastDim, t_out, &softmax_ws_,
+                                   &softmax_exec_);
+      aclSetAclOpExecutorRepeatable(softmax_exec_);
+    } else {
+      aclSetOutputTensorAddr(softmax_exec_, 0, t_out, out.data());
+    }
+    auto& softmax_arena = ascend::workspacePool().ensure(stream, softmax_ws_);
+    aclnnSoftmax(softmax_arena.buf, softmax_ws_, softmax_exec_, stream);
   }
 
  private:
+  mutable ascend::AclTensorCache in_cache_;
+
+  mutable ascend::AclTensorCache out_cache_;
+
+  mutable ascend::AclTensorCache temp_cache_;
+
   float neg_inf_storage_ = -std::numeric_limits<float>::infinity();
+
   void* temp_buf_ = nullptr;
+
   void* mask_buf_ = nullptr;
+
   aclTensor* mask_tensor_ = nullptr;
+
   aclScalar* neg_inf_ = nullptr;
+
+  mutable aclOpExecutor* copy_exec_ = nullptr;
+
+  mutable uint64_t copy_ws_ = 0;
+
+  mutable aclOpExecutor* fill_exec_ = nullptr;
+
+  mutable uint64_t fill_ws_ = 0;
+
+  mutable aclOpExecutor* softmax_exec_ = nullptr;
+
+  mutable uint64_t softmax_ws_ = 0;
 };
 
 }  // namespace infini::ops

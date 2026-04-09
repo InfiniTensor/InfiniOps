@@ -43,18 +43,32 @@ inline aclTensor* reshapeView(const Tensor& t,
 // Extract cu_seqlens differences to a host aclIntArray.
 // cu_seqlens = [0, s1, s1+s2, ...] -> per_seq_lens = [s1, s2, ...].
 // Used by paged decode (actualSeqLengthsKv = per-sequence KV lengths).
+//
+// When cu_seqlens is a CPU tensor (device type kCpu), the data pointer is
+// already on the host and can be read directly — no D2H sync needed.
 inline aclIntArray* extractSeqLengths(const Tensor& cu_seqlens,
                                       aclrtStream stream) {
   auto n = cu_seqlens.numel();
-  std::vector<int64_t> cu_host(n);
-  aclrtMemcpyAsync(cu_host.data(), n * sizeof(int64_t), cu_seqlens.data(),
-                   n * sizeof(int64_t), ACL_MEMCPY_DEVICE_TO_HOST, stream);
-  aclrtSynchronizeStream(stream);
+
+  const int64_t* cu_host_ptr = nullptr;
+  std::vector<int64_t> cu_host_buf;
+
+  if (cu_seqlens.device().type() == Device::Type::kCpu) {
+    cu_host_ptr = static_cast<const int64_t*>(cu_seqlens.data());
+  } else {
+    cu_host_buf.resize(n);
+    aclrtMemcpyAsync(cu_host_buf.data(), n * sizeof(int64_t),
+                     cu_seqlens.data(), n * sizeof(int64_t),
+                     ACL_MEMCPY_DEVICE_TO_HOST, stream);
+    aclrtSynchronizeStream(stream);
+    cu_host_ptr = cu_host_buf.data();
+  }
 
   std::vector<int64_t> lengths(n - 1);
   for (size_t i = 0; i < lengths.size(); ++i) {
-    lengths[i] = cu_host[i + 1] - cu_host[i];
+    lengths[i] = cu_host_ptr[i + 1] - cu_host_ptr[i];
   }
+
   return aclCreateIntArray(lengths.data(),
                            static_cast<int64_t>(lengths.size()));
 }
@@ -63,16 +77,28 @@ inline aclIntArray* extractSeqLengths(const Tensor& cu_seqlens,
 // cu_seqlens = [0, s1, s1+s2, ...] -> cum_lens = [s1, s1+s2, ...].
 // FIA V4 TND varlen uses cumulative end positions, matching the vllm-ascend
 // convention for npu_fused_infer_attention_score actual_seq_lengths.
+//
+// When cu_seqlens is a CPU tensor, reads directly from host memory.
 inline aclIntArray* cumSeqLengths(const Tensor& cu_seqlens,
                                   aclrtStream stream) {
   auto n = cu_seqlens.numel();
-  std::vector<int64_t> cu_host(n);
-  aclrtMemcpyAsync(cu_host.data(), n * sizeof(int64_t), cu_seqlens.data(),
-                   n * sizeof(int64_t), ACL_MEMCPY_DEVICE_TO_HOST, stream);
-  aclrtSynchronizeStream(stream);
+
+  const int64_t* cu_host_ptr = nullptr;
+  std::vector<int64_t> cu_host_buf;
+
+  if (cu_seqlens.device().type() == Device::Type::kCpu) {
+    cu_host_ptr = static_cast<const int64_t*>(cu_seqlens.data());
+  } else {
+    cu_host_buf.resize(n);
+    aclrtMemcpyAsync(cu_host_buf.data(), n * sizeof(int64_t),
+                     cu_seqlens.data(), n * sizeof(int64_t),
+                     ACL_MEMCPY_DEVICE_TO_HOST, stream);
+    aclrtSynchronizeStream(stream);
+    cu_host_ptr = cu_host_buf.data();
+  }
 
   // Skip the leading 0; return [s1, s1+s2, ...].
-  return aclCreateIntArray(cu_host.data() + 1, static_cast<int64_t>(n - 1));
+  return aclCreateIntArray(cu_host_ptr + 1, static_cast<int64_t>(n - 1));
 }
 
 // Allocate a 2048x2048 lower-triangular UINT8 causal mask on device.
@@ -107,7 +133,58 @@ inline aclTensor* makeCausalMask(void** mask_buf, aclrtStream stream) {
 template <>
 class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
  public:
-  using FlashAttention::FlashAttention;
+  Operator(const Tensor query, const Tensor key, const Tensor value,
+           std::optional<Tensor> cu_seqlens_q,
+           std::optional<Tensor> cu_seqlens_kv,
+           std::optional<Tensor> block_table, int64_t num_heads,
+           int64_t num_kv_heads, int64_t head_size, double scale, bool causal,
+           int64_t window_left, int64_t window_right, int64_t block_size,
+           Tensor output)
+      : FlashAttention(query, key, value, cu_seqlens_q, cu_seqlens_kv,
+                       block_table, num_heads, num_kv_heads, head_size, scale,
+                       causal, window_left, window_right, block_size, output) {
+    paged_ = block_table.has_value() && block_size > 0;
+    aclDataType acl_dt = ascend::toAclDtype(query.dtype());
+
+    if (!paged_) {
+      // Prefill: cache Q and output (TND layout).
+      prefill_q_cache_ = ascend::AclTensorCache(query);
+      prefill_out_cache_ = ascend::AclTensorCache(output);
+
+      // Pre-compute causal mask once (sparse_mode >= 2).
+      if (causal) {
+        int64_t sm = (window_left >= 0) ? 4 : 3;
+        if (sm >= 2) {
+          causal_mask_ = detail::makeCausalMask(&causal_mask_buf_, nullptr);
+        }
+      }
+    } else {
+      // Decode: cache Q/output (BNSD), block_table.
+      const int64_t N = query.size(1);
+      const int64_t D = query.size(2);
+      const int64_t B = query.size(0);
+
+      decode_q_cache_ = ascend::AclTensorCache(
+          {B, N, 1, D}, acl_dt, const_cast<void*>(query.data()));
+      decode_out_cache_ = ascend::AclTensorCache(
+          {B, N, 1, D}, acl_dt, output.data());
+      block_table_cache_ = ascend::AclTensorCache(block_table.value());
+
+      // Pre-compute KV reshape metadata.
+      const int64_t nb = key.size(0);
+      const int64_t bsz = key.size(1);
+      const int64_t NkvD = key.size(2) * key.size(3);
+      kv_shape_ = {nb, bsz, NkvD};
+      kv_strides_ = {bsz * NkvD, NkvD, 1};
+      kv_storage_shape_ = {nb * bsz * NkvD};
+      kv_acl_dt_ = acl_dt;
+    }
+  }
+
+  ~Operator() {
+    if (causal_mask_) aclDestroyTensor(causal_mask_);
+    if (causal_mask_buf_) aclrtFree(causal_mask_buf_);
+  }
 
   void operator()(const Tensor query, const Tensor key, const Tensor value,
                   std::optional<Tensor> cu_seqlens_q,
@@ -117,28 +194,18 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
                   bool causal, int64_t window_left, int64_t window_right,
                   int64_t block_size, Tensor output) const override {
     auto stream = static_cast<aclrtStream>(stream_);
-    const bool paged = block_table.has_value() && block_size > 0;
+    const bool paged = paged_;
 
-    // Map causal + window_left/right to FIA sparse_mode / preTokens /
-    // nextTokens.
-    //
-    //   causal=true, window_left<0              -> sparse_mode=3 (full causal)
-    //   causal=true, window_left>=0             -> sparse_mode=4 (sliding
-    //   window causal) causal=false                            -> sparse_mode=0
-    //   (no mask)
-    //
-    // sparse_mode is ignored by FIA when Q_S=1 (paged decode); effective_sparse
-    // is set to 0 in that path to avoid allocating the unnecessary causal mask.
     int64_t sparse_mode;
     int64_t pre_tokens = 2147483647;
     int64_t next_tokens = 2147483647;
     if (causal) {
       if (window_left >= 0) {
-        sparse_mode = 4;  // band: sliding window causal
+        sparse_mode = 4;
         pre_tokens = window_left;
         next_tokens = 0;
       } else {
-        sparse_mode = 3;  // rightDownCausal: full causal, pre/next ignored
+        sparse_mode = 3;
         next_tokens = 0;
       }
     } else {
@@ -148,14 +215,11 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
     }
 
     if (!paged) {
-      // --- Prefill (single- or multi-sequence) ---
-      // V4 TND: query/key/value passed as token-packed [T, N, D]; per-sequence
-      // lengths are derived from cu_seqlens. Single fused call for all
-      // sequences, equivalent to flash_attn_varlen_func on CUDA.
+      // --- Prefill ---
       int64_t T = query.size(0);
 
-      // V4 TND varlen uses cumulative end positions [s1, s1+s2, ...].
-      // For single-seq (no cu_seqlens), [T] is both per-seq and cumulative.
+      // cumSeqLengths / extractSeqLengths automatically skip D2H when
+      // cu_seqlens is a CPU tensor (see detail:: helpers above).
       aclIntArray* seq_q =
           cu_seqlens_q.has_value()
               ? detail::cumSeqLengths(cu_seqlens_q.value(), stream)
@@ -165,44 +229,24 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
               ? detail::cumSeqLengths(cu_seqlens_kv.value(), stream)
               : aclCreateIntArray(&T, 1);
 
-      aclTensor* t_q = ascend::buildAclTensor(query);
+      aclTensor* t_q = prefill_q_cache_.get(const_cast<void*>(query.data()));
+      // K/V descriptors go into TensorList which takes ownership — must be
+      // per-call (cannot cache).
       aclTensor* t_k = ascend::buildAclTensor(key);
       aclTensor* t_v = ascend::buildAclTensor(value);
-      aclTensor* t_out = ascend::buildAclTensor(output);
+      aclTensor* t_out = prefill_out_cache_.get(output.data());
 
       const aclTensor* k_arr[] = {t_k};
       const aclTensor* v_arr[] = {t_v};
       aclTensorList* key_list = aclCreateTensorList(k_arr, 1);
       aclTensorList* val_list = aclCreateTensorList(v_arr, 1);
 
-      // sparseMode 2/3/4 require a 2048x2048 lower-triangular causal mask.
-      aclTensor* atten_mask = nullptr;
-      void* mask_buf = nullptr;
-      if (sparse_mode >= 2) {
-        atten_mask = detail::makeCausalMask(&mask_buf, stream);
-      }
-
       uint64_t ws_needed = 0;
       aclOpExecutor* executor = nullptr;
-      // Parameter order: query, key, value,
-      //   pseShift, attenMask, actualSeqLengths, actualSeqLengthsKv,
-      //   deqScale1, quantScale1, deqScale2, quantScale2, quantOffset2,
-      //   antiquantScale, antiquantOffset,
-      //   blockTable, queryPaddingSize, kvPaddingSize,
-      //   keyAntiquantScale, keyAntiquantOffset,
-      //   valueAntiquantScale, valueAntiquantOffset,
-      //   keySharedPrefix, valueSharedPrefix, actualSharedPrefixLen,
-      //   queryRope, keyRope, keyRopeAntiquantScale,
-      //   dequantScaleQuery, learnableSink,
-      //   numHeads, scaleValue, preTokens, nextTokens, inputLayout,
-      //   numKeyValueHeads, sparseMode, innerPrecise, blockSize,
-      //   antiquantMode, softmaxLseFlag,
-      //   keyAntiquantMode, valueAntiquantMode, queryQuantMode,
-      //   attentionOut, softmaxLse, workspaceSize, executor
       aclError gws = aclnnFusedInferAttentionScoreV4GetWorkspaceSize(
           t_q, key_list, val_list,
-          nullptr,     // pseShift
-          atten_mask,  // attenMask
+          nullptr,       // pseShift
+          causal_mask_,  // attenMask (pre-computed, or nullptr)
           seq_q,       // actualSeqLengths
           seq_kv,      // actualSeqLengthsKv
           nullptr, nullptr, nullptr, nullptr,
@@ -234,44 +278,40 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
       assert(ret == ACL_SUCCESS &&
              "aclnnFusedInferAttentionScoreV4 failed (prefill)");
 
-      aclDestroyTensor(t_q);
-      aclDestroyTensor(t_out);
+      // t_q and t_out are owned by caches — do NOT destroy.
+      // t_k and t_v are owned by TensorLists.
       aclDestroyTensorList(key_list);
       aclDestroyTensorList(val_list);
       aclDestroyIntArray(seq_q);
       aclDestroyIntArray(seq_kv);
-      if (atten_mask) aclDestroyTensor(atten_mask);
-      if (mask_buf) aclrtFree(mask_buf);
       return;
     }
 
     // --- Paged decode ---
-    // V4 BNSD: reshape query/output [B, N, D] -> [B, N, 1, D].
-    // KV cache [num_blocks, block_size, N_kv, D] flattened to
-    // [num_blocks, block_size, N_kv*D] (zero-copy, FIA BSH kv format).
     assert(cu_seqlens_kv.has_value() &&
            "`FlashAttention` paged decode requires `cu_seqlens_kv`");
 
-    const int64_t N = query.size(1);
-    const int64_t D = query.size(2);
-    const int64_t B = query.size(0);
-    const int64_t nb = key.size(0);
-    const int64_t bsz = key.size(1);
-    const int64_t NkvD = key.size(2) * key.size(3);
+    aclTensor* t_query = decode_q_cache_.get(const_cast<void*>(query.data()));
+    aclTensor* t_output = decode_out_cache_.get(output.data());
 
-    std::vector<int64_t> bnsd_sh = {B, N, 1, D};
-    std::vector<int64_t> bnsd_st = {N * D, D, D, 1};
-    aclTensor* t_query = detail::reshapeView(query, bnsd_sh, bnsd_st);
-    aclTensor* t_output = detail::reshapeView(output, bnsd_sh, bnsd_st);
+    // K/V descriptors go into TensorList which takes ownership — must be
+    // per-call.  Use pre-computed metadata to avoid heap allocs.
+    aclTensor* t_key = aclCreateTensor(
+        kv_shape_.data(), static_cast<int64_t>(kv_shape_.size()), kv_acl_dt_,
+        kv_strides_.data(), 0, ACL_FORMAT_ND, kv_storage_shape_.data(),
+        static_cast<int64_t>(kv_storage_shape_.size()),
+        const_cast<void*>(key.data()));
+    aclTensor* t_value = aclCreateTensor(
+        kv_shape_.data(), static_cast<int64_t>(kv_shape_.size()), kv_acl_dt_,
+        kv_strides_.data(), 0, ACL_FORMAT_ND, kv_storage_shape_.data(),
+        static_cast<int64_t>(kv_storage_shape_.size()),
+        const_cast<void*>(value.data()));
 
-    std::vector<int64_t> kv_sh = {nb, bsz, NkvD};
-    std::vector<int64_t> kv_st = {bsz * NkvD, NkvD, 1};
-    aclTensor* t_key = detail::reshapeView(key, kv_sh, kv_st);
-    aclTensor* t_value = detail::reshapeView(value, kv_sh, kv_st);
-
+    // extractSeqLengths skips D2H when cu_seqlens_kv is a CPU tensor.
     aclIntArray* seq_kv =
         detail::extractSeqLengths(cu_seqlens_kv.value(), stream);
-    aclTensor* t_block_table = ascend::buildAclTensor(block_table.value());
+    aclTensor* t_block_table =
+        block_table_cache_.get(const_cast<void*>(block_table.value().data()));
 
     const aclTensor* k_arr[] = {t_key};
     const aclTensor* v_arr[] = {t_value};
@@ -307,13 +347,37 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
     assert(ret == ACL_SUCCESS &&
            "aclnnFusedInferAttentionScoreV4 failed (decode)");
 
-    aclDestroyTensor(t_query);
-    aclDestroyTensor(t_output);
+    // t_query, t_output, t_block_table owned by caches — do NOT destroy.
+    // t_key, t_value owned by TensorLists.
     aclDestroyTensorList(key_list);
     aclDestroyTensorList(val_list);
-    aclDestroyTensor(t_block_table);
     aclDestroyIntArray(seq_kv);
   }
+
+ private:
+  bool paged_ = false;
+
+  mutable ascend::AclTensorCache prefill_q_cache_;
+
+  mutable ascend::AclTensorCache prefill_out_cache_;
+
+  mutable ascend::AclTensorCache decode_q_cache_;
+
+  mutable ascend::AclTensorCache decode_out_cache_;
+
+  mutable ascend::AclTensorCache block_table_cache_;
+
+  aclTensor* causal_mask_ = nullptr;
+
+  void* causal_mask_buf_ = nullptr;
+
+  std::vector<int64_t> kv_shape_;
+
+  std::vector<int64_t> kv_strides_;
+
+  std::vector<int64_t> kv_storage_shape_;
+
+  aclDataType kv_acl_dt_ = ACL_DT_UNDEFINED;
 };
 
 }  // namespace infini::ops

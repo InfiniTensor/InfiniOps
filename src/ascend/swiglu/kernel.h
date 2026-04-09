@@ -22,47 +22,76 @@ template <>
 class Operator<Swiglu, Device::Type::kAscend> : public Swiglu {
  public:
   Operator(const Tensor input, const Tensor gate, Tensor out)
-      : Swiglu(input, gate, out) {
+      : Swiglu(input, gate, out),
+        in_cache_(input),
+        gate_cache_(gate),
+        out_cache_(out) {
     size_t nbytes = input.numel() * kDataTypeToSize.at(input.dtype());
     aclrtMalloc(&temp_buf_, nbytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+
+    // Build temp cache from gate geometry (contiguous, same shape/dtype).
+    Tensor temp_t{temp_buf_, gate.shape(), gate.dtype(), gate.device()};
+    temp_cache_ = ascend::AclTensorCache(temp_t);
   }
 
-  ~Operator() { aclrtFree(temp_buf_); }
+  ~Operator() {
+    if (silu_exec_) aclDestroyAclOpExecutor(silu_exec_);
+    if (mul_exec_) aclDestroyAclOpExecutor(mul_exec_);
+    aclrtFree(temp_buf_);
+  }
 
   void operator()(const Tensor input, const Tensor gate,
                   Tensor out) const override {
-    // temp_buf_ is a contiguous scratch buffer; give it contiguous strides.
-    Tensor temp_t{temp_buf_, gate.shape(), gate.dtype(), gate.device()};
-
-    auto t_in = ascend::buildAclTensor(input);
-    auto t_gate = ascend::buildAclTensor(gate);
-    auto t_out = ascend::buildAclTensor(out);
-    auto t_temp = ascend::buildAclTensor(temp_t);
-
-    uint64_t ws_needed = 0;
-    aclOpExecutor* exec = nullptr;
+    auto t_in = in_cache_.get(const_cast<void*>(input.data()));
+    auto t_gate = gate_cache_.get(const_cast<void*>(gate.data()));
+    auto t_out = out_cache_.get(out.data());
+    auto t_temp = temp_cache_.get(temp_buf_);
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Step 1: silu(gate) -> temp.  SwiGLU = input * silu(gate).
-    aclnnSiluGetWorkspaceSize(t_gate, t_temp, &ws_needed, &exec);
-    auto& silu_arena = ascend::workspacePool().ensure(stream, ws_needed);
-    aclnnSilu(silu_arena.buf, ws_needed, exec, stream);
+    // Step 1: silu(gate) -> temp.
+    if (!silu_exec_) {
+      aclnnSiluGetWorkspaceSize(t_gate, t_temp, &silu_ws_, &silu_exec_);
+      aclSetAclOpExecutorRepeatable(silu_exec_);
+    } else {
+      aclSetInputTensorAddr(silu_exec_, 0, t_gate,
+                            const_cast<void*>(gate.data()));
+      aclSetOutputTensorAddr(silu_exec_, 0, t_temp, temp_buf_);
+    }
+    auto& silu_arena = ascend::workspacePool().ensure(stream, silu_ws_);
+    aclnnSilu(silu_arena.buf, silu_ws_, silu_exec_, stream);
 
     // Step 2: mul(input, temp) -> out.
-    uint64_t mul_ws = 0;
-    exec = nullptr;
-    aclnnMulGetWorkspaceSize(t_in, t_temp, t_out, &mul_ws, &exec);
-    auto& mul_arena = ascend::workspacePool().ensure(stream, mul_ws);
-    aclnnMul(mul_arena.buf, mul_ws, exec, stream);
-
-    aclDestroyTensor(t_in);
-    aclDestroyTensor(t_gate);
-    aclDestroyTensor(t_out);
-    aclDestroyTensor(t_temp);
+    if (!mul_exec_) {
+      aclnnMulGetWorkspaceSize(t_in, t_temp, t_out, &mul_ws_, &mul_exec_);
+      aclSetAclOpExecutorRepeatable(mul_exec_);
+    } else {
+      aclSetInputTensorAddr(mul_exec_, 0, t_in,
+                            const_cast<void*>(input.data()));
+      aclSetInputTensorAddr(mul_exec_, 1, t_temp, temp_buf_);
+      aclSetOutputTensorAddr(mul_exec_, 0, t_out, out.data());
+    }
+    auto& mul_arena = ascend::workspacePool().ensure(stream, mul_ws_);
+    aclnnMul(mul_arena.buf, mul_ws_, mul_exec_, stream);
   }
 
  private:
+  mutable ascend::AclTensorCache in_cache_;
+
+  mutable ascend::AclTensorCache gate_cache_;
+
+  mutable ascend::AclTensorCache out_cache_;
+
+  mutable ascend::AclTensorCache temp_cache_;
+
   void* temp_buf_ = nullptr;
+
+  mutable aclOpExecutor* silu_exec_ = nullptr;
+
+  mutable uint64_t silu_ws_ = 0;
+
+  mutable aclOpExecutor* mul_exec_ = nullptr;
+
+  mutable uint64_t mul_ws_ = 0;
 };
 
 }  // namespace infini::ops

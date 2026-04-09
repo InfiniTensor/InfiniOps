@@ -115,6 +115,16 @@ def test_rotary_embedding_full(
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
+    if device == "npu" and not is_neox_style:
+        pytest.skip(
+            "Ascend aclnnApplyRotaryPosEmbV2 only supports neox style "
+            "(rotaryMode='half')"
+        )
+
+    # aclnnApplyRotaryPosEmbV2 accumulates with ~4 ULP error for float16.
+    if device == "npu" and dtype == torch.float16:
+        atol = 0.01
+
     num_kv_heads = num_heads
     rotary_dim = head_size
     num_tokens = 16
@@ -206,6 +216,11 @@ def test_rotary_embedding_partial(
     """Partial rotary: ``rotary_dim < head_size``."""
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
+
+    if device == "npu":
+        pytest.skip(
+            "Ascend aclnnApplyRotaryPosEmbV2 requires rotary_dim == head_size"
+        )
 
     num_tokens = 16
     max_seq_len = 64

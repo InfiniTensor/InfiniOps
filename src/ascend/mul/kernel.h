@@ -1,39 +1,27 @@
-#ifndef INFINI_OPS_ASCEND_ADD_KERNEL_H_
-#define INFINI_OPS_ASCEND_ADD_KERNEL_H_
+#ifndef INFINI_OPS_ASCEND_MUL_KERNEL_H_
+#define INFINI_OPS_ASCEND_MUL_KERNEL_H_
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
-#include "aclnn_add.h"
+#include "aclnn_mul.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
-#include "base/add.h"
-#include "data_type.h"
+#include "base/mul.h"
 #include "operator.h"
 
 namespace infini::ops {
 
 template <>
-class Operator<Add, Device::Type::kAscend> : public Add {
+class Operator<Mul, Device::Type::kAscend> : public Mul {
  public:
   Operator(const Tensor input, const Tensor other, Tensor out)
-      : Add(input, other, out),
+      : Mul(input, other, out),
         in_cache_(input),
         oth_cache_(other),
-        out_cache_(out) {
-    // aclCreateScalar stores the pointer rather than copying the value, so
-    // alpha_storage_* must remain alive for the lifetime of alpha_.
-    // The alpha scalar type must match the tensor dtype: use int64 for integer
-    // dtypes and float for floating-point dtypes.
-    if (ascend::isIntegerDtype(input.dtype())) {
-      alpha_ = aclCreateScalar(&alpha_int_storage_, ACL_INT64);
-    } else {
-      alpha_ = aclCreateScalar(&alpha_float_storage_, ACL_FLOAT);
-    }
-  }
+        out_cache_(out) {}
 
   ~Operator() {
     if (executor_) aclDestroyAclOpExecutor(executor_);
-    aclDestroyScalar(alpha_);
   }
 
   void operator()(const Tensor input, const Tensor other,
@@ -44,8 +32,7 @@ class Operator<Add, Device::Type::kAscend> : public Add {
     auto t_out = out_cache_.get(out.data());
 
     if (!executor_) {
-      aclnnAddGetWorkspaceSize(t_in, t_oth, alpha_, t_out, &ws_size_,
-                               &executor_);
+      aclnnMulGetWorkspaceSize(t_in, t_oth, t_out, &ws_size_, &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
       aclSetInputTensorAddr(executor_, 0, t_in,
@@ -56,7 +43,7 @@ class Operator<Add, Device::Type::kAscend> : public Add {
     }
 
     auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
-    aclnnAdd(arena.buf, ws_size_, executor_, stream);
+    aclnnMul(arena.buf, ws_size_, executor_, stream);
   }
 
  private:
@@ -69,11 +56,6 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   mutable aclOpExecutor* executor_ = nullptr;
 
   mutable uint64_t ws_size_ = 0;
-
-  float alpha_float_storage_ =
-      1.0f;                        // stable address for aclCreateScalar (float)
-  int64_t alpha_int_storage_ = 1;  // stable address for aclCreateScalar (int)
-  aclScalar* alpha_ = nullptr;
 };
 
 }  // namespace infini::ops
