@@ -1,8 +1,17 @@
 from _operator_utils import snake_to_pascal
 
+# Override PascalCase names to match InfiniCore's existing C API conventions.
+_C_API_NAME_OVERRIDES = {
+    "rms_norm": "RMSNorm",
+    "swiglu": "SwiGLU",
+}
+
 
 def generate_legacy_c(operator, paths):
-    pascal_name = snake_to_pascal(operator.name)
+    # The C++ class name from InfiniOps (e.g. `RmsNorm`, `Swiglu`).
+    cpp_name = snake_to_pascal(operator.name)
+    # The C API name, which may differ from the C++ class name.
+    pascal_name = _C_API_NAME_OVERRIDES.get(operator.name, cpp_name)
 
     # Map InfiniOps device directory names to InfiniCore preprocessor guards.
     _DEVICE_GUARDS = {
@@ -116,7 +125,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
         constructor = operator.constructors[-1]
 
         return f"""{_generate_create_func_decl(operator)} {{
-    *desc_ptr = reinterpret_cast<infiniop{pascal_name}Descriptor_t>(infini::ops::Operator<infini::ops::{pascal_name}>::make({_generate_arguments(constructor)}).release());
+    *desc_ptr = reinterpret_cast<infiniop{pascal_name}Descriptor_t>(infini::ops::Operator<infini::ops::{cpp_name}>::make({_generate_arguments(constructor)}).release());
 
     return INFINI_STATUS_SUCCESS;
 }}"""
@@ -132,7 +141,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
         call = operator.calls[-1]
 
         return f"""{_generate_call_func_decl(operator)} {{
-    auto *op = reinterpret_cast<infini::ops::Operator<infini::ops::{pascal_name}> *>(desc);
+    auto *op = reinterpret_cast<infini::ops::Operator<infini::ops::{cpp_name}> *>(desc);
     op->set_stream(stream);
     op->set_workspace(workspace);
     op->set_workspace_size_in_bytes(workspace_size);
@@ -144,7 +153,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
 
     def _generate_destroy_func_def(operator):
         return f"""{_generate_destroy_func_decl(operator)} {{
-    delete reinterpret_cast<infini::ops::Operator<infini::ops::{pascal_name}> *>(desc);
+    delete reinterpret_cast<infini::ops::Operator<infini::ops::{cpp_name}> *>(desc);
 
     return INFINI_STATUS_SUCCESS;
 }}"""
