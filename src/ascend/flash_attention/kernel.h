@@ -17,29 +17,6 @@ namespace infini::ops {
 
 namespace detail {
 
-// Build an aclTensor with a different view shape/stride but the same data
-// pointer.
-inline aclTensor* reshapeView(const Tensor& t,
-                              const std::vector<int64_t>& new_shape,
-                              const std::vector<int64_t>& new_strides) {
-  int64_t storage_elems = 1;
-  for (size_t i = 0; i < new_shape.size(); ++i) {
-    if (new_shape[i] == 0) {
-      storage_elems = 0;
-      break;
-    }
-    if (new_strides[i] > 0 && new_shape[i] > 1) {
-      storage_elems += static_cast<int64_t>(new_shape[i] - 1) * new_strides[i];
-    }
-  }
-  std::vector<int64_t> storage_shape = {storage_elems};
-  return aclCreateTensor(
-      new_shape.data(), static_cast<int64_t>(new_shape.size()),
-      ascend::toAclDtype(t.dtype()), new_strides.data(), 0, ACL_FORMAT_ND,
-      storage_shape.data(), static_cast<int64_t>(storage_shape.size()),
-      const_cast<void*>(t.data()));
-}
-
 // Extract cu_seqlens differences to a host aclIntArray.
 // cu_seqlens = [0, s1, s1+s2, ...] -> per_seq_lens = [s1, s2, ...].
 // Used by paged decode (actualSeqLengthsKv = per-sequence KV lengths).

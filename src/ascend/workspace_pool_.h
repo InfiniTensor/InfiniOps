@@ -5,6 +5,7 @@
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -38,45 +39,52 @@ class WorkspacePool {
     }
 
     // Slow path: look up arena in the map under lock.
+    // Arenas are heap-allocated via `unique_ptr` so that pointers remain stable
+    // across `unordered_map` rehashes (which invalidate value references).
     std::lock_guard<std::mutex> lock(mutex_);
-    auto& arena = arenas_[stream];
-    if (needed > arena.capacity) {
-      if (arena.capacity > 0) {
+    auto& slot = arenas_[stream];
+    if (!slot) {
+      slot = std::make_unique<WorkspaceArena>();
+    }
+    auto* arena = slot.get();
+    if (needed > arena->capacity) {
+      if (arena->capacity > 0) {
         aclrtSynchronizeStream(stream);
-        aclrtFree(arena.buf);
+        aclrtFree(arena->buf);
       }
       if (needed > 0) {
-        auto ret = aclrtMalloc(&arena.buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY);
+        auto ret =
+            aclrtMalloc(&arena->buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY);
         assert(ret == ACL_SUCCESS && "`WorkspacePool`: `aclrtMalloc` failed");
       }
-      arena.capacity = needed;
+      arena->capacity = needed;
     }
     last_stream = stream;
-    last_arena = &arena;
-    return arena;
+    last_arena = arena;
+    return *arena;
   }
 
   ~WorkspacePool() {
     for (auto& [stream, arena] : arenas_) {
-      if (arena.capacity > 0) {
+      if (arena && arena->capacity > 0) {
         // The CANN runtime may already be torn down when this static
         // destructor runs.  aclrtGetDevice fails in that case — skip the
         // free to avoid glibc "double free" abort.
         int32_t dev_id = -1;
         if (aclrtGetDevice(&dev_id) == ACL_SUCCESS) {
-          aclrtFree(arena.buf);
+          aclrtFree(arena->buf);
         } else {
           fprintf(stderr,
                   "[InfiniOps] `WorkspacePool`: CANN runtime already finalized, "
                   "skipping `aclrtFree` (%" PRIu64 " bytes leaked).\n",
-                  arena.capacity);
+                  arena->capacity);
         }
       }
     }
   }
 
  private:
-  std::unordered_map<aclrtStream, WorkspaceArena> arenas_;
+  std::unordered_map<aclrtStream, std::unique_ptr<WorkspaceArena>> arenas_;
 
   std::mutex mutex_;
 };
