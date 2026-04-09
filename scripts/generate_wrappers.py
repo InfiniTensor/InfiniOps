@@ -1,16 +1,9 @@
 import argparse
 import json
 import pathlib
-import shutil
-import subprocess
 import textwrap
 
-import clang.cindex
-from clang.cindex import CursorKind
-
-_SRC_DIR = pathlib.Path("src")
-
-_BASE_DIR = _SRC_DIR / "base"
+from _operator_utils import OperatorExtractor, get_all_ops, snake_to_pascal
 
 _GENERATION_DIR = pathlib.Path("generated")
 
@@ -21,74 +14,6 @@ _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 _INCLUDE_DIR = _GENERATION_DIR / "include"
 
 _INDENTATION = "  "
-
-
-class _OperatorExtractor:
-    def __call__(self, op_name):
-        def _get_system_include_flags():
-            def _get_compilers():
-                compilers = []
-
-                for compiler in ("clang++", "g++"):
-                    if shutil.which(compiler) is not None:
-                        compilers.append(compiler)
-
-                return compilers
-
-            system_include_flags = []
-
-            for compiler in _get_compilers():
-                for line in subprocess.getoutput(
-                    f"{compiler} -E -x c++ -v /dev/null"
-                ).splitlines():
-                    if not line.startswith(" "):
-                        continue
-
-                    system_include_flags.append("-isystem")
-                    system_include_flags.append(line.strip())
-
-            return system_include_flags
-
-        system_include_flags = _get_system_include_flags()
-
-        index = clang.cindex.Index.create()
-        args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
-
-        nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
-
-        constructors = []
-        calls = []
-
-        for node in nodes:
-            if node.kind == CursorKind.CONSTRUCTOR:
-                constructors.append(node)
-            elif node.kind == CursorKind.CXX_METHOD and node.spelling == "operator()":
-                calls.append(node)
-
-        return _Operator(op_name, constructors, calls)
-
-    @staticmethod
-    def _find(node, op_name):
-        pascal_case_op_name = _snake_to_pascal(op_name)
-
-        if (
-            node.semantic_parent
-            and node.semantic_parent.spelling == pascal_case_op_name
-        ):
-            yield node
-
-        for child in node.get_children():
-            yield from _OperatorExtractor._find(child, op_name)
-
-
-class _Operator:
-    def __init__(self, name, constructors, calls):
-        self.name = name
-
-        self.constructors = constructors
-
-        self.calls = calls
 
 
 def _generate_pybind11(operator):
@@ -159,7 +84,7 @@ def _generate_pybind11(operator):
         _generate_call(operator.name, call, method=False) for call in operator.calls
     )
 
-    pascal_case_op_name = _snake_to_pascal(op_name)
+    pascal_case_op_name = snake_to_pascal(op_name)
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -368,31 +293,6 @@ __C __export {_generate_destroy_func_decl(operator)};
     return _generate_source(operator), _generate_header(operator)
 
 
-def _snake_to_pascal(snake_str):
-    return "".join(word.capitalize() for word in snake_str.split("_"))
-
-
-def _get_all_ops(devices):
-    ops = {}
-
-    for file_path in _BASE_DIR.iterdir():
-        if not file_path.is_file():
-            continue
-
-        op_name = file_path.stem
-
-        ops[op_name] = []
-
-        for file_path in _SRC_DIR.rglob("*"):
-            if not file_path.is_file() or file_path.parent.parent.name not in devices:
-                continue
-
-            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
-                ops[op_name].append(file_path)
-
-    return ops
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="An automatic wrapper generator.")
 
@@ -415,18 +315,18 @@ if __name__ == "__main__":
     if ops_json.exists():
         ops = json.loads(ops_json.read_text())
     else:
-        ops = _get_all_ops(args.devices)
+        ops = get_all_ops(args.devices)
 
     header_paths = []
     bind_func_names = []
 
     for op_name, impl_paths in ops.items():
-        extractor = _OperatorExtractor()
+        extractor = OperatorExtractor()
         operator = extractor(op_name)
 
         source_path = _GENERATED_SRC_DIR / op_name
         header_name = f"{op_name}.h"
-        bind_func_name = f"Bind{_snake_to_pascal(op_name)}"
+        bind_func_name = f"Bind{snake_to_pascal(op_name)}"
 
         (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
 
