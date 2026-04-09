@@ -6,12 +6,22 @@ _C_API_NAME_OVERRIDES = {
     "swiglu": "SwiGLU",
 }
 
+# Override which constructor/call overload index to use per operator.
+# Default is -1 (the last one, typically the simplest).
+_CONSTRUCTOR_INDEX_OVERRIDES = {
+    "rms_norm": 0,
+}
+
+_CALL_INDEX_OVERRIDES = {}
+
 
 def generate_legacy_c(operator, paths):
     # The C++ class name from InfiniOps (e.g. `RmsNorm`, `Swiglu`).
     cpp_name = snake_to_pascal(operator.name)
     # The C API name, which may differ from the C++ class name.
     pascal_name = _C_API_NAME_OVERRIDES.get(operator.name, cpp_name)
+    constructor_index = _CONSTRUCTOR_INDEX_OVERRIDES.get(operator.name, -1)
+    call_index = _CALL_INDEX_OVERRIDES.get(operator.name, -1)
 
     # Map InfiniOps device directory names to InfiniCore preprocessor guards.
     _DEVICE_GUARDS = {
@@ -122,7 +132,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
 """
 
     def _generate_create_func_def(operator):
-        constructor = operator.constructors[-1]
+        constructor = operator.constructors[constructor_index]
 
         return f"""{_generate_create_func_decl(operator)} {{
     *desc_ptr = reinterpret_cast<infiniop{pascal_name}Descriptor_t>(infini::ops::Operator<infini::ops::{cpp_name}>::make({_generate_arguments(constructor)}).release());
@@ -138,7 +148,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
 }}"""
 
     def _generate_call_func_def(operator):
-        call = operator.calls[-1]
+        call = operator.calls[call_index]
 
         return f"""{_generate_call_func_decl(operator)} {{
     auto *op = reinterpret_cast<infini::ops::Operator<infini::ops::{cpp_name}> *>(desc);
@@ -159,7 +169,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
 }}"""
 
     def _generate_create_func_decl(operator):
-        constructor = operator.constructors[-1]
+        constructor = operator.constructors[constructor_index]
         params = _generate_params(constructor)
 
         return f"infiniStatus_t infiniopCreate{pascal_name}Descriptor(infiniopHandle_t handle, infiniop{pascal_name}Descriptor_t *desc_ptr, {params})"
@@ -168,7 +178,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
         return f"infiniStatus_t infiniopGet{pascal_name}WorkspaceSize(infiniop{pascal_name}Descriptor_t desc, size_t *size)"
 
     def _generate_call_func_decl(operator):
-        call = operator.calls[-1]
+        call = operator.calls[call_index]
         params = _generate_params(call, call=True)
         params = params.replace("void * stream, ", "")
 
