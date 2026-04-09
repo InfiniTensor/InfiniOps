@@ -4,10 +4,39 @@ from _operator_utils import snake_to_pascal
 def generate_legacy_c(operator, paths):
     pascal_name = snake_to_pascal(operator.name)
 
+    # Map InfiniOps device directory names to InfiniCore preprocessor guards.
+    _DEVICE_GUARDS = {
+        "cpu": "ENABLE_CPU_API",
+        "nvidia": "ENABLE_NVIDIA_API",
+        "cambricon": "ENABLE_CAMBRICON_API",
+        "ascend": "ENABLE_ASCEND_API",
+        "metax": "ENABLE_METAX_API",
+        "moore": "ENABLE_MOORE_API",
+        "iluvatar": "ENABLE_ILUVATAR_API",
+        "kunlun": "ENABLE_KUNLUN_API",
+        "hygon": "ENABLE_HYGON_API",
+        "qy": "ENABLE_QY_API",
+    }
+
+    def _generate_guarded_includes():
+        lines = []
+
+        for path in paths:
+            rel = str(path).removeprefix("src/")
+            device = rel.split("/")[0]
+            guard = _DEVICE_GUARDS.get(device)
+
+            if guard:
+                lines.append(f"#ifdef {guard}")
+                lines.append(f'#include "{rel}"')
+                lines.append("#endif")
+            else:
+                lines.append(f'#include "{rel}"')
+
+        return "\n".join(lines)
+
     def _generate_source(operator):
-        impl_includes = "\n".join(
-            f'#include "{str(path).removeprefix("src/")}"' for path in paths
-        )
+        impl_includes = _generate_guarded_includes()
 
         return f"""#include "../../handle.h"
 #include "../../tensor.h"
