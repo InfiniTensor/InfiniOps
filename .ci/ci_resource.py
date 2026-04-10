@@ -7,13 +7,19 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 
-# GPU passthrough styles
-GPU_STYLE_NVIDIA = "nvidia"
-GPU_STYLE_NONE = "none"
-GPU_STYLE_MLU = "mlu"
+# Platform-to-device-env mapping for non-NVIDIA platforms.
+# NVIDIA uses Docker's --gpus flag instead of an environment variable.
+PLATFORM_DEVICE_ENV = {
+    "iluvatar": "CUDA_VISIBLE_DEVICES",
+    "metax": "CUDA_VISIBLE_DEVICES",
+    "moore": "MTHREADS_VISIBLE_DEVICES",
+    "cambricon": "MLU_VISIBLE_DEVICES",
+    "ascend": "ASCEND_VISIBLE_DEVICES",
+}
 
 
 @dataclass
@@ -44,6 +50,7 @@ class ResourcePool:
         "metax": "mx-smi",
         "moore": "mthreads-gmi",
         "cambricon": "cnmon",
+        "ascend": "npu-smi",
     }
 
     def __init__(self, platform, utilization_threshold=10):
@@ -71,6 +78,9 @@ class ResourcePool:
 
         if self._platform == "cambricon":
             return self._detect_gpus_cambricon()
+
+        if self._platform == "ascend":
+            return self._detect_gpus_ascend()
 
         tool = self.GPU_QUERY_TOOLS.get(self._platform)
 
@@ -325,6 +335,76 @@ class ResourcePool:
 
         return sorted(gpus, key=operator.attrgetter("index"))
 
+    def _detect_gpus_ascend(self) -> list[GpuInfo]:
+        """Parse npu-smi info output for Huawei Ascend NPUs.
+
+        Output format (pipe-delimited table, two rows per NPU):
+            | 0     910B4               | OK            | 86.5  41  ...
+            | 0                         | 0000:C1:00.0  | 0     0 / 0   2789 / 32768   |
+        Row 1: index, name, health, power, temp, hugepages.
+        Row 2: chip_id, bus_id, aicore_util, memory_usage, hbm_usage.
+        """
+        try:
+            result = subprocess.run(
+                ["npu-smi", "info"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return []
+
+        if result.returncode != 0:
+            return []
+
+        gpus = []
+        lines = result.stdout.splitlines()
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            # Match row 1: "| {index}  {name}  ..."
+            m1 = re.match(r"^\|\s+(\d+)\s+", line)
+
+            if m1 and i + 1 < len(lines):
+                try:
+                    npu_index = int(m1.group(1))
+                    aicore_m = re.match(
+                        r"^\|\s+\d+\s+\|\s+[\da-f:.]+\s+\|\s*([\d.]+)\s", lines[i + 1]
+                    )
+
+                    util_pct = float(aicore_m.group(1)) if aicore_m else 0.0
+
+                    # Parse HBM usage from row 2.  Row contains both DDR
+                    # ("0 / 0") and HBM ("2789 / 32768"); HBM is always last.
+                    hbm_matches = re.findall(
+                        r"([\d.]+)\s*/\s*([\d.]+)", lines[i + 1]
+                    )
+
+                    if hbm_matches:
+                        used_mb = float(hbm_matches[-1][0])
+                        total_mb = float(hbm_matches[-1][1])
+                    else:
+                        used_mb, total_mb = 0.0, 0.0
+
+                    gpus.append(
+                        GpuInfo(
+                            index=npu_index,
+                            memory_used_mb=used_mb,
+                            memory_total_mb=total_mb,
+                            utilization_pct=util_pct,
+                        )
+                    )
+                except (ValueError, AttributeError):
+                    pass
+
+                i += 2
+                continue
+
+            i += 1
+
+        return sorted(gpus, key=operator.attrgetter("index"))
+
     def detect_system_resources(self) -> SystemResources:
         """Read system memory from /proc/meminfo and CPU count."""
         total_mb = 0.0
@@ -346,19 +426,12 @@ class ResourcePool:
             cpu_count=os.cpu_count() or 1,
         )
 
-    def get_free_gpus(self) -> list[int]:
-        """Return GPU indices with utilization below threshold."""
-        gpus = self.detect_gpus()
-        return [
-            g.index for g in gpus if g.utilization_pct < self._utilization_threshold
-        ]
-
     def allocate(self, gpu_count, memory_mb=0) -> tuple[list[int], bool]:
         """Try to allocate GPUs and check memory.
 
         Returns (allocated_gpu_ids, success). On failure returns ([], False).
-        GPU detection and memory checks run outside the lock to avoid blocking
-        other threads while subprocess.run (nvidia-smi) executes.
+        GPUs are selected by ascending utilization (least loaded first).
+        Detection runs outside the lock to avoid blocking other threads.
         """
         if gpu_count <= 0:
             if memory_mb > 0:
@@ -369,12 +442,17 @@ class ResourcePool:
 
             return ([], True)
 
-        # Detect GPUs and memory outside the lock (subprocess.run can block)
-        free_gpus = set(self.get_free_gpus())
+        # Detect GPUs and memory outside the lock (subprocess.run can block).
+        gpus = self.detect_gpus()
         sys_res = self.detect_system_resources() if memory_mb > 0 else None
 
         with self._lock:
-            available = free_gpus - self._allocated
+            available = [
+                g
+                for g in gpus
+                if g.index not in self._allocated
+                and g.utilization_pct < self._utilization_threshold
+            ]
 
             if len(available) < gpu_count:
                 return ([], False)
@@ -382,7 +460,9 @@ class ResourcePool:
             if sys_res is not None and sys_res.available_memory_mb < memory_mb:
                 return ([], False)
 
-            selected = sorted(available)[:gpu_count]
+            # Pick least loaded GPUs.
+            available.sort(key=lambda g: g.utilization_pct)
+            selected = [g.index for g in available[:gpu_count]]
             self._allocated.update(selected)
             return (selected, True)
 
@@ -422,26 +502,40 @@ class ResourcePool:
 
 
 def parse_gpu_requirement(job_config) -> int:
-    """Extract GPU count requirement from a job config."""
+    """Extract GPU count required by a job.
+
+    Resolution rules:
+
+    - ``gpu_ids: "auto"`` (or omitted) — dynamic allocation; returns ``ngpus``
+      (default 1).
+    - ``gpu_ids: "all"`` — use every available GPU; returns 0 (no reservation).
+    - ``gpu_ids: "0,2"`` — static pinning; returns the count of listed IDs.
+      When ``ngpus`` is also present the two must agree.
+
+    The platform name determines how GPUs are exposed to Docker (see
+    ``PLATFORM_DEVICE_ENV``) but does **not** affect GPU counting here.
+    """
     resources = job_config.get("resources", {})
-    gpu_style = resources.get("gpu_style", GPU_STYLE_NVIDIA)
-
-    if gpu_style == GPU_STYLE_NONE:
-        return 0
-
+    gpu_ids = str(resources.get("gpu_ids", "auto")).strip()
     ngpus = resources.get("ngpus")
-    if ngpus is not None:
-        return int(ngpus)
-
-    gpu_ids = str(resources.get("gpu_ids", ""))
-
-    if not gpu_ids:
-        return resources.get("gpu_count", 0)
 
     if gpu_ids == "all":
-        return 0  # "all" means use all available, don't reserve specific count
+        return 0
 
-    return len(gpu_ids.split(","))
+    if gpu_ids == "auto" or not gpu_ids:
+        return int(ngpus) if ngpus is not None else 1
+
+    # Static pinning — count explicit IDs.
+    count = len(gpu_ids.split(","))
+
+    if ngpus is not None and int(ngpus) != count:
+        print(
+            f"warning: gpu_ids has {count} device(s) but ngpus={ngpus}; "
+            f"using gpu_ids count ({count})",
+            file=sys.stderr,
+        )
+
+    return count
 
 
 def parse_memory_requirement(job_config) -> float:
@@ -466,6 +560,11 @@ def parse_memory_requirement(job_config) -> float:
     try:
         return float(memory) * 1024  # Default: GB
     except ValueError:
+        print(
+            f"warning: unrecognized memory format {memory!r}, treating as 0",
+            file=sys.stderr,
+        )
+
         return 0
 
 

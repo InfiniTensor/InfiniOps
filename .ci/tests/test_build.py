@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import build
 
 
@@ -28,27 +30,27 @@ def test_build_image_tag_commit_hash():
 # ---------------------------------------------------------------------------
 
 
-def test_has_dockerfile_changed_true_when_stdout_nonempty(mocker):
-    mocker.patch(
+def test_has_dockerfile_changed_true_when_stdout_nonempty(monkeypatch):
+    monkeypatch.setattr(
         "subprocess.run",
-        return_value=mocker.Mock(returncode=0, stdout="Dockerfile\n"),
+        lambda *a, **kw: MagicMock(returncode=0, stdout="Dockerfile\n"),
     )
     assert build.has_dockerfile_changed(".ci/images/nvidia/") is True
 
 
-def test_has_dockerfile_changed_false_when_stdout_empty(mocker):
-    mocker.patch(
+def test_has_dockerfile_changed_false_when_stdout_empty(monkeypatch):
+    monkeypatch.setattr(
         "subprocess.run",
-        return_value=mocker.Mock(returncode=0, stdout=""),
+        lambda *a, **kw: MagicMock(returncode=0, stdout=""),
     )
     assert build.has_dockerfile_changed(".ci/images/nvidia/") is False
 
 
-def test_has_dockerfile_changed_true_on_git_error(mocker):
+def test_has_dockerfile_changed_true_on_git_error(monkeypatch):
     # Shallow clone or initial commit: `git diff` returns non-zero.
-    mocker.patch(
+    monkeypatch.setattr(
         "subprocess.run",
-        return_value=mocker.Mock(returncode=128, stdout=""),
+        lambda *a, **kw: MagicMock(returncode=128, stdout=""),
     )
     assert build.has_dockerfile_changed(".ci/images/nvidia/") is True
 
@@ -58,44 +60,48 @@ def test_has_dockerfile_changed_true_on_git_error(mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_docker_login_no_credentials_env(mocker):
-    run_mock = mocker.patch("subprocess.run")
+def test_docker_login_no_credentials_env(monkeypatch):
+    called = []
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: called.append(1))
     result = build.docker_login({"url": "localhost:5000"}, dry_run=False)
     assert result is True
-    run_mock.assert_not_called()
+    assert not called
 
 
-def test_docker_login_token_not_set(mocker, monkeypatch, capsys):
+def test_docker_login_token_not_set(monkeypatch):
     monkeypatch.delenv("REGISTRY_TOKEN", raising=False)
-    run_mock = mocker.patch("subprocess.run")
+    called = []
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: called.append(1))
     cfg = {"url": "localhost:5000", "credentials_env": "REGISTRY_TOKEN"}
     result = build.docker_login(cfg, dry_run=False)
     assert result is False
-    run_mock.assert_not_called()
+    assert not called
 
 
-def test_docker_login_dry_run_does_not_call_subprocess(mocker, monkeypatch):
+def test_docker_login_dry_run_does_not_call_subprocess(monkeypatch):
     monkeypatch.setenv("REGISTRY_TOKEN", "mytoken")
-    run_mock = mocker.patch("subprocess.run")
+    called = []
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: called.append(1))
     cfg = {"url": "localhost:5000", "credentials_env": "REGISTRY_TOKEN"}
     result = build.docker_login(cfg, dry_run=True)
     assert result is True
-    run_mock.assert_not_called()
+    assert not called
 
 
-def test_docker_login_success(mocker, monkeypatch):
+def test_docker_login_success(monkeypatch):
     monkeypatch.setenv("REGISTRY_TOKEN", "mytoken")
-    run_mock = mocker.patch(
-        "subprocess.run",
-        return_value=mocker.Mock(returncode=0),
-    )
+    captured = {}
+
+    def mock_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("subprocess.run", mock_run)
     cfg = {"url": "localhost:5000", "credentials_env": "REGISTRY_TOKEN"}
     result = build.docker_login(cfg, dry_run=False)
     assert result is True
-    run_mock.assert_called_once()
-    cmd = run_mock.call_args[0][0]
-    assert "docker" in cmd
-    assert "login" in cmd
+    assert "docker" in captured["cmd"]
+    assert "login" in captured["cmd"]
 
 
 # ---------------------------------------------------------------------------
@@ -114,9 +120,15 @@ def _registry_cfg():
     return {"url": "localhost:5000", "project": "infiniops"}
 
 
-def test_build_image_dry_run_no_subprocess(mocker, monkeypatch, capsys):
+def test_build_image_dry_run_no_subprocess(monkeypatch, capsys):
     monkeypatch.delenv("HTTP_PROXY", raising=False)
-    run_mock = mocker.patch("subprocess.run")
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    called = []
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: called.append(1))
     build.build_image(
         "nvidia",
         _platform_cfg(),
@@ -126,14 +138,19 @@ def test_build_image_dry_run_no_subprocess(mocker, monkeypatch, capsys):
         dry_run=True,
         logged_in=True,
     )
-    run_mock.assert_not_called()
+    assert not called
     captured = capsys.readouterr()
     assert "[dry-run]" in captured.out
 
 
-def test_build_image_dry_run_output_contains_image_tag(mocker, monkeypatch, capsys):
+def test_build_image_dry_run_output_contains_image_tag(monkeypatch, capsys):
     monkeypatch.delenv("HTTP_PROXY", raising=False)
-    mocker.patch("subprocess.run")
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: MagicMock(returncode=0))
     build.build_image(
         "nvidia",
         _platform_cfg(),
@@ -147,12 +164,15 @@ def test_build_image_dry_run_output_contains_image_tag(mocker, monkeypatch, caps
     assert "abc1234" in captured.out
 
 
-def test_build_image_proxy_in_build_args(mocker, monkeypatch):
+def test_build_image_proxy_in_build_args(monkeypatch):
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.test:3128")
-    run_mock = mocker.patch(
-        "subprocess.run",
-        return_value=mocker.Mock(returncode=0),
-    )
+    captured = {}
+
+    def mock_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("subprocess.run", mock_run)
     build.build_image(
         "nvidia",
         _platform_cfg(),
@@ -162,18 +182,19 @@ def test_build_image_proxy_in_build_args(mocker, monkeypatch):
         dry_run=False,
         logged_in=True,
     )
-    called_cmd = run_mock.call_args[0][0]
-    joined = " ".join(called_cmd)
+    joined = " ".join(captured["cmd"])
     assert "HTTP_PROXY=http://proxy.test:3128" in joined
     assert "http_proxy=http://proxy.test:3128" in joined
 
 
-def test_build_image_returns_false_on_docker_error(mocker, monkeypatch):
+def test_build_image_returns_false_on_docker_error(monkeypatch):
     monkeypatch.delenv("HTTP_PROXY", raising=False)
-    mocker.patch(
-        "subprocess.run",
-        return_value=mocker.Mock(returncode=1),
-    )
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.setattr("subprocess.run", lambda *a, **kw: MagicMock(returncode=1))
     result = build.build_image(
         "nvidia",
         _platform_cfg(),
