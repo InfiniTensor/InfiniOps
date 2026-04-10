@@ -34,9 +34,7 @@ def generate_shared_lib(operator, paths):
 
     impl_includes = _generate_impl_includes()
 
-    make_defs = "\n\n".join(
-        _generate_make_def(c) for c in operator.constructors
-    )
+    make_defs = "\n\n".join(_generate_make_def(c) for c in operator.constructors)
 
     source = f"""#include "base/{operator.name}.h"
 {impl_includes}
