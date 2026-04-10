@@ -46,7 +46,7 @@ def set_seed_per_test(request):
 
 _NPU_UNSUPPORTED_DTYPES = {torch.float64}
 
-# torch_npu does not implement random number generation for uint16/uint32/uint64.
+# `torch_npu` does not implement random number generation for `uint16`/`uint32`/`uint64`.
 for _bits in (16, 32, 64):
     _t = getattr(torch, f"uint{_bits}", None)
     if _t is not None:
@@ -57,6 +57,7 @@ for _bits in (16, 32, 64):
 def skip_unsupported_dtype(request):
     if not hasattr(request.node, "callspec"):
         return
+
     params = request.node.callspec.params
 
     if params.get("device") == "npu" and params.get("dtype") in _NPU_UNSUPPORTED_DTYPES:

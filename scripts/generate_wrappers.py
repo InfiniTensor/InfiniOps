@@ -1,11 +1,10 @@
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import textwrap
-
-import re
 
 import clang.cindex
 from clang.cindex import CursorKind
@@ -120,10 +119,8 @@ def _generate_pybind11(operator):
             if _is_optional_tensor(arg):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
             else:
-                param = (
-                    arg.type.spelling
-                    .replace("const Tensor", "py::object")
-                    .replace("Tensor", "py::object")
+                param = arg.type.spelling.replace("const Tensor", "py::object").replace(
+                    "Tensor", "py::object"
                 )
                 parts.append(f"{param} {arg.spelling}")
 
@@ -136,9 +133,7 @@ def _generate_pybind11(operator):
             if arg.spelling == "stream":
                 continue
             if _is_optional_tensor(arg):
-                args.append(
-                    f"OptionalTensorFromPybind11Handle({arg.spelling})"
-                )
+                args.append(f"OptionalTensorFromPybind11Handle({arg.spelling})")
             elif "Tensor" in arg.type.spelling:
                 args.append(f"TensorFromPybind11Handle({arg.spelling})")
             else:
@@ -184,7 +179,7 @@ def _generate_pybind11(operator):
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
                 f"    }}\n"
                 f"    return Self::call(handle, config, {call_args});\n"
-                f"  }}, {py_args_str}py::kw_only(), py::arg(\"implementation_index\") = 0, py::arg(\"stream\") = 0);"
+                f'  }}, {py_args_str}py::kw_only(), py::arg("implementation_index") = 0, py::arg("stream") = 0);'
             )
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{

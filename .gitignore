@@ -1,7 +1,6 @@
 # Generated files
 build/
 generated/
-.worktrees/
 
 # Prerequisites
 *.d
