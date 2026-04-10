@@ -963,9 +963,7 @@ def cmd_serve(args):
         sys.exit(1)
 
     try:
-        platform_jobs = run.resolve_job_names(
-            config.get("jobs", {}), platform=platform
-        )
+        run.resolve_job_names(config.get("jobs", {}), platform=platform)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
