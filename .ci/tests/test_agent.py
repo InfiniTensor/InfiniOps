@@ -584,7 +584,9 @@ def test_poll_remote_job_logs_errors(monkeypatch, capsys):
     monkeypatch.setattr(agent, "urllib_urlopen", fake_urlopen)
     monkeypatch.setattr(agent, "urllib_request", lambda url: url)
 
-    result = agent.poll_remote_job("http://fake:8080", "job1", interval=0.01, timeout=0.05)
+    result = agent.poll_remote_job(
+        "http://fake:8080", "job1", interval=0.01, timeout=0.05
+    )
     assert result is None
 
     captured = capsys.readouterr()
@@ -599,8 +601,14 @@ def test_poll_remote_job_logs_errors(monkeypatch, capsys):
 
 def test_job_result_includes_log_file():
     r = agent.JobResult(
-        "id1", "nvidia_gpu", "abc", 1, Path("/tmp/res"), 10.0,
-        error_tail=["error"], log_file=Path("/tmp/res/job.log"),
+        "id1",
+        "nvidia_gpu",
+        "abc",
+        1,
+        Path("/tmp/res"),
+        10.0,
+        error_tail=["error"],
+        log_file=Path("/tmp/res/job.log"),
     )
     d = r.to_dict()
     assert d["log_file"] == "/tmp/res/job.log"
@@ -635,7 +643,12 @@ def test_job_log_endpoint(agent_config, mock_resource_pool, monkeypatch, tmp_pat
 
     req = agent.JobRequest("nvidia_gpu", "master", "abc123", agent_config)
     result = agent.JobResult(
-        req.job_id, "nvidia_gpu", "abc123", 0, tmp_path, 1.0,
+        req.job_id,
+        "nvidia_gpu",
+        "abc123",
+        0,
+        tmp_path,
+        1.0,
         log_file=log_file,
     )
 
@@ -648,7 +661,11 @@ def test_job_log_endpoint(agent_config, mock_resource_pool, monkeypatch, tmp_pat
         }
 
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
     )
     port = server.server_address[1]
 
@@ -674,11 +691,18 @@ def test_job_log_endpoint(agent_config, mock_resource_pool, monkeypatch, tmp_pat
 def test_job_log_endpoint_not_found(agent_config, mock_resource_pool):
     """GET /api/job/{id}/log returns 404 for unknown job."""
     scheduler = agent.Scheduler(
-        agent_config, "nvidia", mock_resource_pool, no_status=True,
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
     )
 
     server = agent.AgentServer(
-        "127.0.0.1", 0, agent_config, scheduler, "nvidia",
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
     )
     port = server.server_address[1]
 

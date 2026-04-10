@@ -208,9 +208,7 @@ def build_docker_args(
 
     if gpu_id:
         if platform == "nvidia":
-            args.extend(
-                ["--gpus", "all" if gpu_id == "all" else f"device={gpu_id}"]
-            )
+            args.extend(["--gpus", "all" if gpu_id == "all" else f"device={gpu_id}"])
         elif gpu_id != "all":
             device_env = PLATFORM_DEVICE_ENV.get(platform)
 

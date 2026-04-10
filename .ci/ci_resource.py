@@ -377,9 +377,7 @@ class ResourcePool:
 
                     # Parse HBM usage from row 2.  Row contains both DDR
                     # ("0 / 0") and HBM ("2789 / 32768"); HBM is always last.
-                    hbm_matches = re.findall(
-                        r"([\d.]+)\s*/\s*([\d.]+)", lines[i + 1]
-                    )
+                    hbm_matches = re.findall(r"([\d.]+)\s*/\s*([\d.]+)", lines[i + 1])
 
                     if hbm_matches:
                         used_mb = float(hbm_matches[-1][0])

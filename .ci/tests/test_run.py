@@ -385,7 +385,6 @@ def test_build_results_dir_under_base():
     assert d.parent == Path("/tmp/my-results")
 
 
-
 # ---------------------------------------------------------------------------
 # Tests for `apply_test_override`.
 # ---------------------------------------------------------------------------
