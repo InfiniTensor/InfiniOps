@@ -15,8 +15,8 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
                   int64_t rotary_dim, bool is_neox_style, Tensor query_out,
                   Tensor key_out)
       : num_tokens_{query.size(0)},
-        num_heads_{query.size(1)},
-        num_kv_heads_{key.size(1)},
+        num_heads_{static_cast<int64_t>(query.size(1))},
+        num_kv_heads_{static_cast<int64_t>(key.size(1))},
         head_size_{head_size},
         rotary_dim_{rotary_dim},
         is_neox_style_{is_neox_style},
