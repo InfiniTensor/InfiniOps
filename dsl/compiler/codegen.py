@@ -6,7 +6,7 @@ import pathlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from dsl.decorators import ManualOpDef
+    from dsl.decorators import InfiniOpDef, ManualOpDef
 
 # Backend identifiers used in Device::Type enum.
 CUDA_LIKE_BACKENDS = ("nvidia", "metax", "iluvatar", "moore")
@@ -50,13 +50,20 @@ def _include_guard(backend: str, op_snake: str, filename: str) -> str:
 
 
 def _resolve_cuda_template_info(
-    op: ManualOpDef,
+    op: ManualOpDef | InfiniOpDef,
 ) -> tuple[str, str] | None:
     """Derive the shared CUDA template class name and include path.
 
     Returns ``(CudaClassName, include_path)`` or ``None`` if the operator
     does not use a shared CUDA template.
     """
+    from dsl.decorators import InfiniOpDef, ManualOpDef
+
+    if isinstance(op, InfiniOpDef):
+        op_snake = _to_snake(op.name)
+
+        return f"Cuda{op.name}", f"cuda/{op_snake}/kernel.h"
+
     cuda_entry = op.backends.get("cuda")
 
     if cuda_entry is None:
@@ -71,7 +78,7 @@ def _resolve_cuda_template_info(
 
 
 def generate_cuda_wrapper(
-    op: ManualOpDef,
+    op: ManualOpDef | InfiniOpDef,
     backend: str,
     impl_index: int | None = None,
 ) -> str:
@@ -186,29 +193,41 @@ def generate_blas_wrapper(
 
 
 def generate_wrappers_for_op(
-    op: ManualOpDef,
+    op: ManualOpDef | InfiniOpDef,
     devices: list[str],
     output_dir: pathlib.Path,
 ) -> list[pathlib.Path]:
-    """Generate all wrapper files for a ``@manual_op`` operator.
+    """Generate backend wrapper files for an operator.
+
+    Works for both ``@manual_op`` and ``@infini_op`` operators.
+    For ``@infini_op``, the shared CUDA template is the generated
+    ``cuda/<op>/kernel.h`` file.
 
     Returns a list of generated file paths.
     """
+    from dsl.decorators import InfiniOpDef, ManualOpDef
+
     op_snake = _to_snake(op.name)
     generated: list[pathlib.Path] = []
+
+    # Build an effective backends dict.
+    if isinstance(op, ManualOpDef):
+        backends = op.backends
+    else:
+        # For @infini_op, the CUDA kernel is auto-generated.
+        backends = dict(op.manual_backends)
+        backends["cuda"] = f"cuda/{op_snake}/kernel.h"
 
     for backend in devices:
 
         if backend not in CUDA_LIKE_BACKENDS:
-            # Non-CUDA backends keep their hand-written implementations.
             continue
 
-        if backend not in op.backends and "cuda" not in op.backends:
-            # No shared CUDA template and no explicit backend entry.
+        if backend not in backends and "cuda" not in backends:
             continue
 
         # Check for an explicit backend entry (overrides shared CUDA path).
-        explicit = op.backends.get(backend)
+        explicit = backends.get(backend)
 
         if explicit is not None and isinstance(explicit, str):
             # Explicit hand-written file — do not generate a wrapper.

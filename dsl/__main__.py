@@ -8,8 +8,46 @@ import pathlib
 import sys
 
 from dsl.compiler.codegen import CUDA_LIKE_BACKENDS, generate_wrappers_for_op
+from dsl.compiler.infini_codegen import generate_cpu_kernel, generate_cuda_kernel
+from dsl.compiler.parser import parse_infini_op
+from dsl.compiler.patterns import match_dag
 from dsl.compiler.registry import REGISTRY
+from dsl.decorators import InfiniOpDef
 from dsl.ops import discover
+
+
+def _to_snake(pascal: str) -> str:
+    """Convert PascalCase to snake_case."""
+    import re
+
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", pascal).lower()
+
+
+def _generate_infini_op(
+    op: InfiniOpDef,
+    output_dir: pathlib.Path,
+) -> list[pathlib.Path]:
+    """Generate CUDA + CPU files for an `@infini_op` operator."""
+    dag = parse_infini_op(op)
+    match = match_dag(dag)
+    op_snake = _to_snake(op.name)
+    generated: list[pathlib.Path] = []
+
+    # Generate shared CUDA kernel.
+    cuda_content = generate_cuda_kernel(op, dag, match)
+    cuda_path = output_dir / "cuda" / op_snake / "kernel.h"
+    cuda_path.parent.mkdir(parents=True, exist_ok=True)
+    cuda_path.write_text(cuda_content)
+    generated.append(cuda_path)
+
+    # Generate CPU implementation.
+    cpu_content = generate_cpu_kernel(op, dag, match)
+    cpu_path = output_dir / "cpu" / op_snake / f"{op_snake}.h"
+    cpu_path.parent.mkdir(parents=True, exist_ok=True)
+    cpu_path.write_text(cpu_content)
+    generated.append(cpu_path)
+
+    return generated
 
 
 def _diff_file(expected: str, actual: str, label: str) -> list[str]:
@@ -71,7 +109,14 @@ def main() -> None:
     total_diffs = 0
 
     for name, op in sorted(ops.items()):
-        generated = generate_wrappers_for_op(op, args.devices, args.output)
+
+        if isinstance(op, InfiniOpDef):
+            generated = _generate_infini_op(op, args.output)
+            # Also generate CUDA-like backend wrappers for @infini_op.
+            generated += generate_wrappers_for_op(op, args.devices, args.output)
+        else:
+            generated = generate_wrappers_for_op(op, args.devices, args.output)
+
         total_generated += len(generated)
 
         if args.verify:
