@@ -23,44 +23,12 @@ def generate_legacy_c(operator, paths):
     constructor_index = _CONSTRUCTOR_INDEX_OVERRIDES.get(operator.name, -1)
     call_index = _CALL_INDEX_OVERRIDES.get(operator.name, -1)
 
-    # Map InfiniOps device directory names to InfiniCore preprocessor guards.
-    _DEVICE_GUARDS = {
-        "cpu": "ENABLE_CPU_API",
-        "nvidia": "ENABLE_NVIDIA_API",
-        "cambricon": "ENABLE_CAMBRICON_API",
-        "ascend": "ENABLE_ASCEND_API",
-        "metax": "ENABLE_METAX_API",
-        "moore": "ENABLE_MOORE_API",
-        "iluvatar": "ENABLE_ILUVATAR_API",
-        "kunlun": "ENABLE_KUNLUN_API",
-        "hygon": "ENABLE_HYGON_API",
-        "qy": "ENABLE_QY_API",
-    }
-
-    def _generate_guarded_includes():
-        lines = []
-
-        for path in paths:
-            rel = str(path).removeprefix("src/")
-            device = rel.split("/")[0]
-            guard = _DEVICE_GUARDS.get(device)
-
-            if guard:
-                lines.append(f"#ifdef {guard}")
-                lines.append(f'#include "{rel}"')
-                lines.append("#endif")
-            else:
-                lines.append(f'#include "{rel}"')
-
-        return "\n".join(lines)
-
     def _generate_source(operator):
-        impl_includes = _generate_guarded_includes()
-
         return f"""#include "../../handle.h"
 #include "../../tensor.h"
 #include "infiniop/ops/{operator.name}.h"
-{impl_includes}
+#include "base/{operator.name}.h"
+#include "make.h"
 
 static infini::ops::DataType DataTypeFromInfiniDType(
     const infiniDtype_t& dtype) {{
@@ -135,7 +103,7 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
         constructor = operator.constructors[constructor_index]
 
         return f"""{_generate_create_func_decl(operator)} {{
-    *desc_ptr = reinterpret_cast<infiniop{pascal_name}Descriptor_t>(infini::ops::Operator<infini::ops::{cpp_name}>::make({_generate_arguments(constructor)}).release());
+    *desc_ptr = reinterpret_cast<infiniop{pascal_name}Descriptor_t>(infini::ops::Make{cpp_name}({{}}, {_generate_arguments(constructor)}).release());
 
     return INFINI_STATUS_SUCCESS;
 }}"""
@@ -151,19 +119,18 @@ __INFINI_C __export {_generate_destroy_func_decl(operator)};
         call = operator.calls[call_index]
 
         return f"""{_generate_call_func_decl(operator)} {{
-    auto *op = reinterpret_cast<infini::ops::Operator<infini::ops::{cpp_name}> *>(desc);
+    auto *op = reinterpret_cast<infini::ops::OperatorBase *>(desc);
     op->set_stream(stream);
     op->set_workspace(workspace);
     op->set_workspace_size_in_bytes(workspace_size);
-    const auto &op_ref = *op;
-    op_ref({_generate_arguments(call, is_data=True)});
+    static_cast<const infini::ops::{cpp_name} &>(*op)({_generate_arguments(call, is_data=True)});
 
     return INFINI_STATUS_SUCCESS;
 }}"""
 
     def _generate_destroy_func_def(operator):
         return f"""{_generate_destroy_func_decl(operator)} {{
-    delete reinterpret_cast<infini::ops::Operator<infini::ops::{cpp_name}> *>(desc);
+    delete reinterpret_cast<infini::ops::OperatorBase *>(desc);
 
     return INFINI_STATUS_SUCCESS;
 }}"""
