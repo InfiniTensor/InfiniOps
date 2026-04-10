@@ -28,7 +28,7 @@ inline aclTensor* buildAclTensor(const Tensor& t,
   }
 
   // Compute the minimum physical storage needed for this strided view.
-  // For contiguous tensors this equals numel(); for non-contiguous (gapped)
+  // For contiguous tensors this equals `numel()`; for non-contiguous (gapped)
   // tensors it may be larger; for broadcast (stride-0) tensors it may be
   // smaller.  Passing the view shape as the storage shape causes
   // "ViewShape overlap" errors in ACLNN for non-contiguous inputs.
