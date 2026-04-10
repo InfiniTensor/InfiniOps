@@ -6,6 +6,7 @@ import textwrap
 from _operator_utils import OperatorExtractor, get_all_ops, snake_to_pascal
 from _generate_pybind11 import generate_pybind11
 from _generate_legacy_c import generate_legacy_c
+from _generate_shared_lib import generate_shared_lib, generate_shared_lib_header
 
 _GENERATION_DIR = pathlib.Path("generated")
 
@@ -43,6 +44,7 @@ if __name__ == "__main__":
 
     header_paths = []
     bind_func_names = []
+    shared_lib_decls = []
 
     for op_name, impl_paths in ops.items():
         extractor = OperatorExtractor()
@@ -59,8 +61,14 @@ if __name__ == "__main__":
         (_GENERATED_SRC_DIR / op_name / "operator.cc").write_text(legacy_c_source)
         (_INCLUDE_DIR / header_name).write_text(legacy_c_header)
 
+        sl_source, sl_decls = generate_shared_lib(operator, impl_paths)
+        (_GENERATED_SRC_DIR / op_name / "make.cc").write_text(sl_source)
+        shared_lib_decls.append(sl_decls)
+
         header_paths.append(header_name)
         bind_func_names.append(bind_func_name)
+
+    (_INCLUDE_DIR / "make.h").write_text(generate_shared_lib_header(shared_lib_decls))
 
     impl_includes = "\n".join(
         f'#include "{impl_path}"'
