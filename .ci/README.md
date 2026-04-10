@@ -54,7 +54,7 @@ platforms:
     image:                              # Image definition
       dockerfile: .ci/images/nvidia/
       build_args:
-        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:                              # Flattened as nvidia_gpu
@@ -186,7 +186,7 @@ Proxy vars are forwarded from the host. Test results are written to `--results-d
 
 | Platform | GPU passthrough | Device env var | Base image | Detection tool |
 |---|---|---|---|---|
-| NVIDIA | `--gpus` (NVIDIA Container Toolkit) | — (uses Docker flag) | `nvcr.io/nvidia/pytorch:24.10-py3` | `nvidia-smi` |
+| NVIDIA | `--gpus` (NVIDIA Container Toolkit) | — (uses Docker flag) | `nvcr.io/nvidia/pytorch:25.12-py3` | `nvidia-smi` |
 | Iluvatar | `--privileged` + `/dev` mount | `CUDA_VISIBLE_DEVICES` | `corex:qs_pj20250825` | `ixsmi` |
 | MetaX | `--privileged` | `CUDA_VISIBLE_DEVICES` | `maca-pytorch:3.2.1.4-...` | `mx-smi` |
 | Moore | `--privileged` | `MTHREADS_VISIBLE_DEVICES` | `vllm_musa:20251112_hygon` | `mthreads-gmi` |
@@ -302,7 +302,7 @@ Each machine needs Docker installed, the platform runtime, and the base CI image
 
 | Platform | Runtime check | Base image | Build command |
 |---|---|---|---|
-| NVIDIA | `nvidia-smi` (+ [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)) | `nvcr.io/nvidia/pytorch:24.10-py3` (public) | `python .ci/build.py --platform nvidia` |
+| NVIDIA | `nvidia-smi` (+ [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)) | `nvcr.io/nvidia/pytorch:25.12-py3` (public) | `python .ci/build.py --platform nvidia` |
 | Iluvatar | `ixsmi` | `corex:qs_pj20250825` (import in advance) | `python .ci/build.py --platform iluvatar` |
 | MetaX | `mx-smi` | `maca-pytorch:3.2.1.4-...` (import in advance) | `python .ci/build.py --platform metax` |
 | Moore | `mthreads-gmi` | `vllm_musa:20251112_hygon` (import in advance) | `python .ci/build.py --platform moore` |
