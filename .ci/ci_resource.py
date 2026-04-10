@@ -363,7 +363,7 @@ class ResourcePool:
 
         while i < len(lines):
             line = lines[i]
-            # Match row 1: "| {index}  {name}  ..."
+            # Match row 1: `| {index}  {name}  ...`.
             m1 = re.match(r"^\|\s+(\d+)\s+", line)
 
             if m1 and i + 1 < len(lines):

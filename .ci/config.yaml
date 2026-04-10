@@ -30,10 +30,10 @@ platforms:
     jobs:
       gpu:
         resources:
-          ngpus: 1                         # Scheduler auto-picks this many free GPUs
-          gpu_ids: auto                    # auto: dynamic allocation; or pin with "0", "0,2", "all"
+          ngpus: 1                         # Scheduler auto-picks this many free GPUs.
+          gpu_ids: auto                    # `auto`: dynamic allocation; or pin with `"0"`, `"0,2"`, `"all"`.
           memory: 32GB
-          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit
+          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
@@ -138,7 +138,7 @@ platforms:
           - name: test
             run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
-  ascend:                                  # TODO: Ascend image is not ready yet
+  ascend:                                  # TODO: Ascend image is not ready yet.
     image:
       dockerfile: .ci/images/ascend/
       build_args:

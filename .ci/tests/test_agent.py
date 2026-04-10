@@ -543,7 +543,7 @@ def test_api_run_accepts_valid_token(agent_config, mock_resource_pool, monkeypat
 def test_scheduler_rejects_when_queue_full(agent_config, monkeypatch):
     """Scheduler raises QueueFullError when queue is at capacity."""
     pool = MagicMock(spec=res.ResourcePool)
-    pool.allocate.return_value = ([], False)  # Never allocate → jobs stay queued
+    pool.allocate.return_value = ([], False)  # Never allocate → jobs stay queued.
 
     scheduler = agent.Scheduler(
         agent_config,
@@ -568,12 +568,12 @@ def test_scheduler_rejects_when_queue_full(agent_config, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Tests for poll_remote_job error logging.
+# Tests for `poll_remote_job` error logging.
 # ---------------------------------------------------------------------------
 
 
 def test_poll_remote_job_logs_errors(monkeypatch, capsys):
-    """poll_remote_job warns on first failure instead of silently swallowing."""
+    """`poll_remote_job` warns on first failure instead of silently swallowing."""
     call_count = 0
 
     def fake_urlopen(req, **kwargs):
@@ -595,7 +595,7 @@ def test_poll_remote_job_logs_errors(monkeypatch, capsys):
 
 
 # ---------------------------------------------------------------------------
-# Tests for JobResult log_file field.
+# Tests for `JobResult` `log_file` field.
 # ---------------------------------------------------------------------------
 
 
@@ -621,12 +621,12 @@ def test_job_result_omits_log_file_when_none():
 
 
 # ---------------------------------------------------------------------------
-# Tests for /api/job/{id}/log endpoint.
+# Tests for `/api/job/{id}/log` endpoint.
 # ---------------------------------------------------------------------------
 
 
 def test_job_log_endpoint(agent_config, mock_resource_pool, monkeypatch, tmp_path):
-    """GET /api/job/{id}/log returns the full log file content."""
+    """`GET /api/job/{id}/log` returns the full log file content."""
     monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
 
     scheduler = agent.Scheduler(
@@ -689,7 +689,7 @@ def test_job_log_endpoint(agent_config, mock_resource_pool, monkeypatch, tmp_pat
 
 
 def test_job_log_endpoint_not_found(agent_config, mock_resource_pool):
-    """GET /api/job/{id}/log returns 404 for unknown job."""
+    """`GET /api/job/{id}/log` returns 404 for unknown job."""
     scheduler = agent.Scheduler(
         agent_config,
         "nvidia",

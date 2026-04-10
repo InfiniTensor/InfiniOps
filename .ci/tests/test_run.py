@@ -174,20 +174,20 @@ def _make_args(config, gpu_id_override=None):
 
 
 def test_docker_args_gpu_auto_no_override(minimal_config):
-    """gpu_ids=auto (default) without override produces no --gpus flag."""
+    """`gpu_ids=auto` (default) without override produces no `--gpus` flag."""
     args = _make_args(minimal_config)
     assert "--gpus" not in args
 
 
 def test_docker_args_gpu_auto_with_override(minimal_config):
-    """gpu_ids=auto with allocator override sets --gpus device=..."""
+    """`gpu_ids=auto` with allocator override sets `--gpus device=...`."""
     args = _make_args(minimal_config, gpu_id_override="2")
     idx = args.index("--gpus")
     assert args[idx + 1] == "device=2"
 
 
 def test_docker_args_gpu_static(minimal_config):
-    """Static gpu_ids pins to specific devices."""
+    """Static `gpu_ids` pins to specific devices."""
     minimal_config["jobs"]["nvidia_gpu"]["resources"]["gpu_ids"] = "0"
     args = _make_args(minimal_config)
     idx = args.index("--gpus")
@@ -202,7 +202,7 @@ def test_docker_args_gpu_all(minimal_config):
 
 
 def test_docker_args_gpu_override_trumps_static(minimal_config):
-    """CLI gpu_id_override takes precedence over static gpu_ids."""
+    """CLI `gpu_id_override` takes precedence over static `gpu_ids`."""
     minimal_config["jobs"]["nvidia_gpu"]["resources"]["gpu_ids"] = "0"
     args = _make_args(minimal_config, gpu_id_override="2,3")
     idx = args.index("--gpus")
@@ -253,7 +253,7 @@ def _make_platform_args(platform, job_suffix="gpu", gpu_id_override=None):
 
 
 def test_docker_args_moore_mthreads_visible_devices():
-    """Moore uses MTHREADS_VISIBLE_DEVICES, not CUDA_VISIBLE_DEVICES."""
+    """Moore uses `MTHREADS_VISIBLE_DEVICES`, not `CUDA_VISIBLE_DEVICES`."""
     args = _make_platform_args("moore", gpu_id_override="0")
     assert "MTHREADS_VISIBLE_DEVICES=0" in args
     assert all("CUDA_VISIBLE_DEVICES" not in a for a in args)
@@ -280,7 +280,7 @@ def test_docker_args_metax_cuda_visible_devices():
 
 
 def test_docker_args_non_nvidia_no_gpus_flag():
-    """Non-NVIDIA platforms should never use --gpus Docker flag."""
+    """Non-NVIDIA platforms should never use `--gpus` Docker flag."""
     for platform in ("iluvatar", "metax", "moore", "cambricon"):
         args = _make_platform_args(platform, gpu_id_override="0")
         assert "--gpus" not in args

@@ -57,9 +57,9 @@ platforms:
         BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
     setup: pip install .[dev] --no-build-isolation
     jobs:
-      gpu:                              # Flattened as nvidia_gpu
+      gpu:                              # Flattened as `nvidia_gpu`.
         resources:
-          ngpus: 1                      # Scheduler auto-picks this many free GPUs
+          ngpus: 1                      # Scheduler auto-picks this many free GPUs.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -86,7 +86,7 @@ platforms:
       - /lib/modules:/lib/modules
     setup: pip install .[dev] --no-build-isolation
     jobs:
-      gpu:                              # Flattened as iluvatar_gpu
+      gpu:                              # Flattened as `iluvatar_gpu`.
         resources:
           ngpus: 1
           gpu_ids: auto

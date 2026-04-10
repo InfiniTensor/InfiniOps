@@ -452,7 +452,7 @@ class Scheduler:
                 )
 
             self._done_event.set()
-            # Safe outside lock: _try_schedule acquires self._lock internally.
+            # Safe outside lock: `_try_schedule` acquires `self._lock` internally.
             self._try_schedule()
 
         return result
@@ -597,7 +597,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         self._respond_json(200, {"accepted": True, "job_ids": job_ids})
 
     def _handle_api_job(self):
-        """Handle GET /api/job/{id} and GET /api/job/{id}/log."""
+        """Handle `GET /api/job/{id}` and `GET /api/job/{id}/log`."""
         parts = self.path.rstrip("/").split("/")
 
         if len(parts) < 4:
@@ -606,7 +606,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
         job_id = parts[3]
 
-        # GET /api/job/{id}/log — return full log file.
+        # `GET /api/job/{id}/log` — return full log file.
         if len(parts) >= 5 and parts[4] == "log":
             self._handle_job_log(job_id)
             return
@@ -908,7 +908,7 @@ def cmd_run(args):
                                 print(full_log, file=sys.stderr)
                                 print("---", file=sys.stderr)
                             else:
-                                # Fall back to error_tail if full log unavailable.
+                                # Fall back to `error_tail` if full log unavailable.
                                 error_tail = result.get("error_tail", [])
 
                                 if error_tail:
