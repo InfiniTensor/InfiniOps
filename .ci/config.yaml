@@ -25,14 +25,15 @@ platforms:
     image:
       dockerfile: .ci/images/nvidia/
       build_args:
-        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
         resources:
-          ngpus: 1                         # Scheduler auto-picks this many free GPUs
+          ngpus: 1                         # Scheduler auto-picks this many free GPUs.
+          gpu_ids: auto                    # `auto`: dynamic allocation; or pin with `"0"`, `"0,2"`, `"all"`.
           memory: 32GB
-          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit
+          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
@@ -61,8 +62,8 @@ platforms:
     jobs:
       gpu:
         resources:
-          gpu_ids: "0"                     # GPU visibility via CUDA_VISIBLE_DEVICES
-          gpu_style: none                  # CoreX: passthrough via --privileged + /dev mount
+          ngpus: 1
+          gpu_ids: auto
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -85,8 +86,8 @@ platforms:
     jobs:
       gpu:
         resources:
-          gpu_ids: "0"
-          gpu_style: none                  # MetaX: passthrough via --privileged, no CUDA_VISIBLE_DEVICES
+          ngpus: 1
+          gpu_ids: auto
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -107,8 +108,8 @@ platforms:
     jobs:
       gpu:
         resources:
-          gpu_ids: "0"
-          gpu_style: none                  # Moore: passthrough via --privileged, MTHREADS_VISIBLE_DEVICES set by base image
+          ngpus: 1
+          gpu_ids: auto
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -128,8 +129,8 @@ platforms:
     jobs:
       gpu:
         resources:
-          gpu_ids: "0"
-          gpu_style: mlu                   # Cambricon: passthrough via --privileged, MLU_VISIBLE_DEVICES for device control
+          ngpus: 1
+          gpu_ids: auto
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -137,10 +138,34 @@ platforms:
           - name: test
             run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
-  ascend:                                  # TODO: Ascend image is not ready yet
+  ascend:                                  # TODO: Ascend image is not ready yet.
     image:
       dockerfile: .ci/images/ascend/
       build_args:
-        BASE_IMAGE: ascendhub.huawei.com/public-ascendhub/ascend-pytorch:24.0.0
-      private_sdk:
-        source_env: PRIVATE_SDK_URL
+        BASE_IMAGE: quay.io/ascend/vllm-ascend:v0.18.0rc1-openeuler
+        PIP_INDEX_URL: https://pypi.org/simple
+    docker_args:
+      - "--runtime=runc"
+      - "--privileged"
+      - "--device=/dev/davinci0"
+      - "--device=/dev/davinci_manager"
+      - "--device=/dev/devmm_svm"
+      - "--device=/dev/hisi_hdc"
+    volumes:
+      - /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+    env:
+      ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
+    setup: pip install .[dev] --no-build-isolation
+    jobs:
+      npu:
+        resources:
+          ngpus: 1
+          gpu_ids: auto
+          memory: 32GB
+          shm_size: 16g
+          timeout: 3600
+        stages:
+          - name: test
+            run: pytest tests/ -n 1 --devices ascend -v --tb=short --junitxml=/workspace/results/test-results.xml

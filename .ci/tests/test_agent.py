@@ -9,6 +9,7 @@ import pytest
 
 import agent
 import ci_resource as res
+import run
 from utils import normalize_config
 
 
@@ -41,7 +42,7 @@ def agent_config():
                 "jobs": {
                     "gpu": {
                         "resources": {
-                            "gpu_ids": "0",
+                            "ngpus": 1,
                             "memory": "32GB",
                             "shm_size": "16g",
                             "timeout": 3600,
@@ -59,8 +60,7 @@ def agent_config():
                 "jobs": {
                     "gpu": {
                         "resources": {
-                            "gpu_ids": "0",
-                            "gpu_style": "none",
+                            "ngpus": 1,
                             "memory": "32GB",
                             "shm_size": "16g",
                             "timeout": 3600,
@@ -90,33 +90,33 @@ def mock_resource_pool():
 
 
 # ---------------------------------------------------------------------------
-# Tests for `select_jobs`.
+# Tests for `resolve_job_names`.
 # ---------------------------------------------------------------------------
 
 
-def test_select_jobs_by_name(agent_config):
-    jobs = agent.select_jobs(agent_config, job_name="nvidia_gpu")
+def test_resolve_job_names_by_name(agent_config):
+    jobs = run.resolve_job_names(agent_config["jobs"], job="nvidia_gpu")
     assert jobs == ["nvidia_gpu"]
 
 
-def test_select_jobs_by_platform(agent_config):
-    jobs = agent.select_jobs(agent_config, platform="nvidia")
+def test_resolve_job_names_by_platform(agent_config):
+    jobs = run.resolve_job_names(agent_config["jobs"], platform="nvidia")
     assert jobs == ["nvidia_gpu"]
 
 
-def test_select_jobs_by_platform_iluvatar(agent_config):
-    jobs = agent.select_jobs(agent_config, platform="iluvatar")
+def test_resolve_job_names_by_platform_iluvatar(agent_config):
+    jobs = run.resolve_job_names(agent_config["jobs"], platform="iluvatar")
     assert jobs == ["iluvatar_gpu"]
 
 
-def test_select_jobs_all(agent_config):
-    jobs = agent.select_jobs(agent_config)
+def test_resolve_job_names_all(agent_config):
+    jobs = run.resolve_job_names(agent_config["jobs"])
     assert set(jobs) == {"nvidia_gpu", "iluvatar_gpu"}
 
 
-def test_select_jobs_invalid_name(agent_config):
+def test_resolve_job_names_invalid(agent_config):
     with pytest.raises(ValueError, match="not_exist"):
-        agent.select_jobs(agent_config, job_name="not_exist")
+        run.resolve_job_names(agent_config["jobs"], job="not_exist")
 
 
 # ---------------------------------------------------------------------------
@@ -531,5 +531,194 @@ def test_api_run_accepts_valid_token(agent_config, mock_resource_pool, monkeypat
         resp = _urlopen_no_proxy(req, timeout=5)
         data = json.loads(resp.read())
         assert data["accepted"] is True
+    finally:
+        server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Tests for queue backpressure.
+# ---------------------------------------------------------------------------
+
+
+def test_scheduler_rejects_when_queue_full(agent_config, monkeypatch):
+    """Scheduler raises QueueFullError when queue is at capacity."""
+    pool = MagicMock(spec=res.ResourcePool)
+    pool.allocate.return_value = ([], False)  # Never allocate → jobs stay queued.
+
+    scheduler = agent.Scheduler(
+        agent_config,
+        "nvidia",
+        pool,
+        no_status=True,
+        dry_run=False,
+    )
+
+    # Fill queue to capacity.
+    monkeypatch.setattr(agent, "MAX_QUEUE_SIZE", 3)
+
+    for _ in range(3):
+        req = agent.JobRequest("nvidia_gpu", "master", "abc123", agent_config)
+        scheduler.submit(req)
+
+    # Next submit should fail.
+    req = agent.JobRequest("nvidia_gpu", "master", "abc123", agent_config)
+
+    with pytest.raises(agent.QueueFullError):
+        scheduler.submit(req)
+
+
+# ---------------------------------------------------------------------------
+# Tests for `poll_remote_job` error logging.
+# ---------------------------------------------------------------------------
+
+
+def test_poll_remote_job_logs_errors(monkeypatch, capsys):
+    """`poll_remote_job` warns on first failure instead of silently swallowing."""
+    call_count = 0
+
+    def fake_urlopen(req, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setattr(agent, "urllib_urlopen", fake_urlopen)
+    monkeypatch.setattr(agent, "urllib_request", lambda url: url)
+
+    result = agent.poll_remote_job(
+        "http://fake:8080", "job1", interval=0.01, timeout=0.05
+    )
+    assert result is None
+
+    captured = capsys.readouterr()
+    assert "connection refused" in captured.err
+    assert "warning:" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Tests for `JobResult` `log_file` field.
+# ---------------------------------------------------------------------------
+
+
+def test_job_result_includes_log_file():
+    r = agent.JobResult(
+        "id1",
+        "nvidia_gpu",
+        "abc",
+        1,
+        Path("/tmp/res"),
+        10.0,
+        error_tail=["error"],
+        log_file=Path("/tmp/res/job.log"),
+    )
+    d = r.to_dict()
+    assert d["log_file"] == "/tmp/res/job.log"
+
+
+def test_job_result_omits_log_file_when_none():
+    r = agent.JobResult("id1", "nvidia_gpu", "abc", 0, Path("/tmp/res"), 5.0)
+    d = r.to_dict()
+    assert "log_file" not in d
+
+
+# ---------------------------------------------------------------------------
+# Tests for `/api/job/{id}/log` endpoint.
+# ---------------------------------------------------------------------------
+
+
+def test_job_log_endpoint(agent_config, mock_resource_pool, monkeypatch, tmp_path):
+    """`GET /api/job/{id}/log` returns the full log file content."""
+    monkeypatch.setattr("agent.gh.post_commit_status", lambda *a, **kw: True)
+
+    scheduler = agent.Scheduler(
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+        dry_run=True,
+    )
+
+    # Manually inject a completed job with a log file.
+    log_file = tmp_path / "job.log"
+    log_file.write_text("line 1\nline 2\nline 3\n")
+
+    req = agent.JobRequest("nvidia_gpu", "master", "abc123", agent_config)
+    result = agent.JobResult(
+        req.job_id,
+        "nvidia_gpu",
+        "abc123",
+        0,
+        tmp_path,
+        1.0,
+        log_file=log_file,
+    )
+
+    with scheduler._lock:
+        scheduler._jobs[req.job_id] = {
+            "request": req,
+            "result": result,
+            "state": "success",
+            "gpu_ids": [],
+        }
+
+    server = agent.AgentServer(
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
+    )
+    port = server.server_address[1]
+
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/api/job/{req.job_id}/log"
+    req_http = urllib.request.Request(url)
+
+    try:
+        resp = _urlopen_no_proxy(req_http, timeout=5)
+        body = resp.read().decode("utf-8")
+        assert "line 1" in body
+        assert "line 2" in body
+        assert "line 3" in body
+        assert resp.headers["Content-Type"] == "text/plain; charset=utf-8"
+    finally:
+        server.server_close()
+
+
+def test_job_log_endpoint_not_found(agent_config, mock_resource_pool):
+    """`GET /api/job/{id}/log` returns 404 for unknown job."""
+    scheduler = agent.Scheduler(
+        agent_config,
+        "nvidia",
+        mock_resource_pool,
+        no_status=True,
+    )
+
+    server = agent.AgentServer(
+        "127.0.0.1",
+        0,
+        agent_config,
+        scheduler,
+        "nvidia",
+    )
+    port = server.server_address[1]
+
+    t = threading.Thread(target=server.handle_request, daemon=True)
+    t.start()
+
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/api/job/nonexist/log"
+    req_http = urllib.request.Request(url)
+
+    try:
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            _urlopen_no_proxy(req_http, timeout=5)
+
+        assert exc_info.value.code == 404
     finally:
         server.server_close()

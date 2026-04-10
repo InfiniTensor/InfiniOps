@@ -61,7 +61,6 @@ def normalize_config(raw):
             full_name = f"{platform}_{job_name}"
             flat = {
                 "platform": platform,
-                "short_name": job_name,
                 "image": defaults.get("image_tag", "latest"),
             }
 
@@ -107,6 +106,11 @@ def get_git_commit(ref="HEAD", short=True):
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
+        print(
+            f"warning: git rev-parse failed for {ref!r}, using 'unknown'",
+            file=sys.stderr,
+        )
+
         return "unknown"
 
     return result.stdout.strip()

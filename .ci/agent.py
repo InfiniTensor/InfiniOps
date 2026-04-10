@@ -45,10 +45,15 @@ STATE_FAILURE = "failure"
 STATE_ERROR = "error"
 
 TAIL_LINES = 50
+MAX_QUEUE_SIZE = 100
 
 # urllib helpers (module-level for easier mocking in tests)
 urllib_request = urllib.request.Request
 urllib_urlopen = urllib.request.urlopen
+
+
+class QueueFullError(Exception):
+    """Raised when the job queue has reached its maximum size."""
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +102,7 @@ class JobResult:
         results_dir,
         duration,
         error_tail=None,
+        log_file=None,
     ):
         self.job_id = job_id
         self.job_name = job_name
@@ -105,6 +111,7 @@ class JobResult:
         self.results_dir = results_dir
         self.duration = duration
         self.error_tail = error_tail or []
+        self.log_file = log_file
 
         self.state = STATE_SUCCESS if returncode == 0 else STATE_FAILURE
 
@@ -122,28 +129,10 @@ class JobResult:
         if self.error_tail:
             d["error_tail"] = self.error_tail
 
+        if self.log_file:
+            d["log_file"] = str(self.log_file)
+
         return d
-
-
-# ---------------------------------------------------------------------------
-# Job selection and routing
-# ---------------------------------------------------------------------------
-
-
-def select_jobs(config, platform=None, job_name=None):
-    """Return list of job names to run."""
-    jobs = config.get("jobs", {})
-
-    if job_name:
-        if job_name not in jobs:
-            raise ValueError(f"job {job_name!r} not in config")
-
-        return [job_name]
-
-    if platform:
-        return [name for name, job in jobs.items() if job.get("platform") == platform]
-
-    return list(jobs.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -186,9 +175,15 @@ class Scheduler:
     def submit(self, job_request):
         """Add a job to the queue and attempt to schedule it.
 
-        Returns the job_id.
+        Returns the job_id. Raises ``QueueFullError`` if the queue is at
+        capacity.
         """
         with self._lock:
+            if len(self._queue) >= MAX_QUEUE_SIZE:
+                raise QueueFullError(
+                    f"queue full ({MAX_QUEUE_SIZE} jobs), try again later"
+                )
+
             self._jobs[job_request.job_id] = {
                 "request": job_request,
                 "result": None,
@@ -215,6 +210,16 @@ class Scheduler:
                 info.update(entry["result"].to_dict())
 
             return info
+
+    def get_job_log_file(self, job_id):
+        """Return the log file path for a completed job, or None."""
+        with self._lock:
+            entry = self._jobs.get(job_id)
+
+            if not entry or not entry["result"]:
+                return None
+
+            return entry["result"].log_file
 
     def get_status(self):
         """Return scheduler status for the /status endpoint."""
@@ -345,8 +350,10 @@ class Scheduler:
                 print(f"[dry-run] {req.job_name}: {shlex.join(docker_args)}")
                 returncode = 0
                 error_tail = []
+                log_file = None
             else:
                 results_dir.mkdir(parents=True, exist_ok=True)
+                log_file = results_dir / "job.log"
                 proc = subprocess.Popen(
                     docker_args,
                     stdout=subprocess.PIPE,
@@ -354,12 +361,29 @@ class Scheduler:
                 )
                 tail_buf = collections.deque(maxlen=TAIL_LINES)
 
-                for line in proc.stdout:
-                    sys.stdout.buffer.write(line)
-                    tail_buf.append(line)
+                with open(log_file, "wb") as lf:
+                    for line in proc.stdout:
+                        sys.stdout.buffer.write(line)
+                        lf.write(line)
+                        tail_buf.append(line)
 
                 proc.stdout.close()
-                returncode = proc.wait()
+
+                # Python-level timeout as fallback for the in-container timeout.
+                job_timeout = job_cfg.get("resources", {}).get("timeout")
+                fallback_timeout = (job_timeout + 120) if job_timeout else 7200
+
+                try:
+                    returncode = proc.wait(timeout=fallback_timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    returncode = -9
+                    timeout_msg = f"Job killed: exceeded {fallback_timeout}s timeout\n"
+                    tail_buf.append(timeout_msg.encode())
+
+                    with open(log_file, "ab") as lf:
+                        lf.write(timeout_msg.encode())
 
                 if returncode != 0:
                     error_tail = [
@@ -379,6 +403,7 @@ class Scheduler:
                 results_dir=results_dir,
                 duration=duration,
                 error_tail=error_tail,
+                log_file=log_file,
             )
 
             # Post final status
@@ -427,6 +452,7 @@ class Scheduler:
                 )
 
             self._done_event.set()
+            # Safe outside lock: `_try_schedule` acquires `self._lock` internally.
             self._try_schedule()
 
         return result
@@ -472,7 +498,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
     """HTTP handler for GitHub webhooks and API endpoints."""
 
     def log_message(self, format, *args):
-        print(f"[agent] {args[0]}", file=sys.stderr)
+        msg = format % args if args else format
+        print(f"[agent] {msg}", file=sys.stderr)
 
     def do_GET(self):
         if self.path == "/health":
@@ -570,20 +597,46 @@ class WebhookHandler(BaseHTTPRequestHandler):
         self._respond_json(200, {"accepted": True, "job_ids": job_ids})
 
     def _handle_api_job(self):
-        """Handle GET /api/job/{id}."""
-        parts = self.path.split("/")
+        """Handle `GET /api/job/{id}` and `GET /api/job/{id}/log`."""
+        parts = self.path.rstrip("/").split("/")
 
         if len(parts) < 4:
             self._respond_json(400, {"error": "missing job_id"})
             return
 
         job_id = parts[3]
+
+        # `GET /api/job/{id}/log` — return full log file.
+        if len(parts) >= 5 and parts[4] == "log":
+            self._handle_job_log(job_id)
+            return
+
         info = self.server.scheduler.get_job(job_id)
 
         if info is None:
             self._respond_json(404, {"error": f"job {job_id} not found"})
         else:
             self._respond_json(200, info)
+
+    def _handle_job_log(self, job_id):
+        """Return the full log file for a completed job."""
+        log_file = self.server.scheduler.get_job_log_file(job_id)
+
+        if log_file is None or not Path(log_file).is_file():
+            self._respond_json(404, {"error": f"log not available for job {job_id}"})
+            return
+
+        try:
+            data = Path(log_file).read_bytes()
+        except OSError as e:
+            self._respond_json(500, {"error": f"failed to read log: {e}"})
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _parse_push(self, payload):
         branch = payload.get("ref", "").removeprefix("refs/heads/")
@@ -599,9 +652,17 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
     def _submit_jobs(self, branch, sha, job_name=None, image_tag=None):
         config = self.server.config
-        job_names = select_jobs(
-            config, platform=self.server.platform, job_name=job_name
-        )
+
+        try:
+            job_names = run.resolve_job_names(
+                config.get("jobs", {}),
+                platform=self.server.platform,
+                job=job_name,
+            )
+        except ValueError as e:
+            self._respond_json(400, {"error": str(e)})
+            return []
+
         job_ids = []
 
         for name in job_names:
@@ -613,7 +674,13 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 image_tag=image_tag,
                 results_dir=self.server.results_dir,
             )
-            jid = self.server.scheduler.submit(req)
+
+            try:
+                jid = self.server.scheduler.submit(req)
+            except QueueFullError as e:
+                self._respond_json(503, {"error": str(e)})
+                return job_ids
+
             job_ids.append(jid)
 
         return job_ids
@@ -691,6 +758,7 @@ def poll_remote_job(agent_url, job_id, interval=5.0, timeout=7200):
     """Poll a remote agent for job completion. Returns final state dict or None."""
     url = f"{agent_url.rstrip('/')}/api/job/{job_id}"
     deadline = time.monotonic() + timeout
+    consecutive_failures = 0
 
     while time.monotonic() < deadline:
         try:
@@ -699,16 +767,36 @@ def poll_remote_job(agent_url, job_id, interval=5.0, timeout=7200):
             with urllib_urlopen(req, timeout=10) as resp:
                 info = json.loads(resp.read())
 
+            consecutive_failures = 0
             state = info.get("state", "")
 
             if state in (STATE_SUCCESS, STATE_FAILURE):
                 return info
-        except Exception:
-            pass
+        except Exception as e:
+            consecutive_failures += 1
+
+            if consecutive_failures == 1 or consecutive_failures % 20 == 0:
+                print(
+                    f"warning: polling {url} failed ({consecutive_failures}x): {e}",
+                    file=sys.stderr,
+                )
 
         time.sleep(interval)
 
     return None
+
+
+def fetch_remote_log(agent_url, job_id):
+    """Fetch the full log for a completed remote job. Returns text or None."""
+    url = f"{agent_url.rstrip('/')}/api/job/{job_id}/log"
+
+    try:
+        req = urllib_request(url)
+
+        with urllib_urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -725,7 +813,9 @@ def cmd_run(args):
 
     # Determine which jobs to run
     try:
-        job_names = select_jobs(config, platform=args.platform, job_name=args.job)
+        job_names = run.resolve_job_names(
+            config.get("jobs", {}), platform=args.platform, job=args.job
+        )
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -795,7 +885,7 @@ def cmd_run(args):
                 name_width = max(len(n) for n, _, _ in dispatched)
 
                 for future in as_completed(futures):
-                    name, _, _ = futures[future]
+                    name, agent_url, job_id = futures[future]
                     result = future.result()
 
                     if result:
@@ -807,18 +897,30 @@ def cmd_run(args):
                             file=sys.stderr,
                         )
 
-                        error_tail = result.get("error_tail", [])
+                        if state != STATE_SUCCESS:
+                            full_log = fetch_remote_log(agent_url, job_id)
 
-                        if error_tail:
-                            print(
-                                f"--- error output (last {len(error_tail)} lines) ---",
-                                file=sys.stderr,
-                            )
+                            if full_log:
+                                print(
+                                    f"--- full log ({name}) ---",
+                                    file=sys.stderr,
+                                )
+                                print(full_log, file=sys.stderr)
+                                print("---", file=sys.stderr)
+                            else:
+                                # Fall back to `error_tail` if full log unavailable.
+                                error_tail = result.get("error_tail", [])
 
-                            for line in error_tail:
-                                print(f"    {line}", file=sys.stderr)
+                                if error_tail:
+                                    print(
+                                        f"--- error output (last {len(error_tail)} lines) ---",
+                                        file=sys.stderr,
+                                    )
 
-                            print("---", file=sys.stderr)
+                                    for line in error_tail:
+                                        print(f"    {line}", file=sys.stderr)
+
+                                    print("---", file=sys.stderr)
 
                         results.append(result)
                     else:
@@ -860,13 +962,10 @@ def cmd_serve(args):
         )
         sys.exit(1)
 
-    platform_jobs = select_jobs(config, platform=platform)
-
-    if not platform_jobs:
-        print(
-            f"error: platform {platform!r} detected but no jobs defined in config",
-            file=sys.stderr,
-        )
+    try:
+        run.resolve_job_names(config.get("jobs", {}), platform=platform)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
     pool = res.ResourcePool(
@@ -917,6 +1016,7 @@ def cmd_serve(args):
     print("  GET  /health   — health check", file=sys.stderr)
     print("  GET  /status   — queue & resource status", file=sys.stderr)
     print("  GET  /api/job/{id} — job status", file=sys.stderr)
+    print("  GET  /api/job/{id}/log — full job log", file=sys.stderr)
 
     try:
         server.serve_forever()

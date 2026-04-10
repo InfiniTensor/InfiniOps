@@ -27,7 +27,7 @@ def minimal_config():
                 "jobs": {
                     "gpu": {
                         "resources": {
-                            "gpu_ids": "0",
+                            "ngpus": 1,
                             "memory": "32GB",
                             "shm_size": "16g",
                             "timeout": 3600,

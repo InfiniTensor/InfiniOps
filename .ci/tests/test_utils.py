@@ -1,4 +1,4 @@
-from utils import normalize_config
+from utils import get_git_commit, normalize_config
 
 
 def test_normalize_creates_flat_jobs():
@@ -88,3 +88,21 @@ def test_normalize_passthrough_flat_config():
         "jobs": {"nvidia_gpu": {"platform": "nvidia"}},
     }
     assert normalize_config(flat) is flat
+
+
+# ---------------------------------------------------------------------------
+# Tests for `get_git_commit`.
+# ---------------------------------------------------------------------------
+
+
+def test_get_git_commit_warns_on_failure(monkeypatch, capsys):
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(
+        "subprocess.run", lambda *a, **kw: MagicMock(returncode=128, stdout="")
+    )
+    result = get_git_commit()
+    assert result == "unknown"
+
+    captured = capsys.readouterr()
+    assert "warning:" in captured.err

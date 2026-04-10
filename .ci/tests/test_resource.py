@@ -110,11 +110,47 @@ def test_detect_system_resources(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Tests for `get_free_gpus`.
+# Tests for `allocate` picking least-loaded GPUs.
 # ---------------------------------------------------------------------------
 
 
-def test_get_free_gpus_filters_by_utilization(monkeypatch):
+def test_allocate_picks_least_loaded(monkeypatch):
+    csv_output = "0, 100, 8192, 8\n1, 200, 8192, 2\n2, 300, 8192, 5\n"
+
+    def mock_run(cmd, **kwargs):
+        class R:
+            returncode = 0
+            stdout = csv_output
+
+        return R()
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+
+    pool = res.ResourcePool("nvidia", utilization_threshold=10)
+    gpu_ids, ok = pool.allocate(1)
+    assert ok is True
+    assert gpu_ids == [1]  # GPU 1 has lowest utilization (2%).
+
+
+def test_allocate_picks_two_least_loaded(monkeypatch):
+    csv_output = "0, 100, 8192, 8\n1, 200, 8192, 2\n2, 300, 8192, 5\n"
+
+    def mock_run(cmd, **kwargs):
+        class R:
+            returncode = 0
+            stdout = csv_output
+
+        return R()
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+
+    pool = res.ResourcePool("nvidia", utilization_threshold=10)
+    gpu_ids, ok = pool.allocate(2)
+    assert ok is True
+    assert gpu_ids == [1, 2]  # Sorted by utilization: 2% then 5%.
+
+
+def test_allocate_skips_busy_gpus(monkeypatch):
     csv_output = "0, 100, 8192, 5\n1, 4000, 8192, 95\n2, 200, 8192, 8\n"
 
     def mock_run(cmd, **kwargs):
@@ -127,10 +163,10 @@ def test_get_free_gpus_filters_by_utilization(monkeypatch):
     monkeypatch.setattr("subprocess.run", mock_run)
 
     pool = res.ResourcePool("nvidia", utilization_threshold=10)
-    free = pool.get_free_gpus()
-    assert 0 in free
-    assert 2 in free
-    assert 1 not in free
+    gpu_ids, ok = pool.allocate(2)
+    assert ok is True
+    assert set(gpu_ids) == {0, 2}
+    assert 1 not in gpu_ids  # GPU 1 at 95% is above threshold
 
 
 # ---------------------------------------------------------------------------
@@ -294,14 +330,39 @@ def test_get_status(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_parse_gpu_requirement_nvidia():
-    job = {"resources": {"gpu_ids": "0,1", "gpu_style": "nvidia"}}
+def test_parse_gpu_requirement_auto_default():
+    """`gpu_ids` omitted (defaults to `auto`) with `ngpus=1`."""
+    job = {"resources": {"ngpus": 1}}
+    assert res.parse_gpu_requirement(job) == 1
+
+
+def test_parse_gpu_requirement_auto_explicit():
+    """`gpu_ids=auto` with `ngpus=2`."""
+    job = {"resources": {"gpu_ids": "auto", "ngpus": 2}}
     assert res.parse_gpu_requirement(job) == 2
 
 
-def test_parse_gpu_requirement_none():
-    job = {"resources": {"gpu_style": "none"}}
-    assert res.parse_gpu_requirement(job) == 0
+def test_parse_gpu_requirement_auto_no_ngpus():
+    """`gpu_ids=auto` without `ngpus` defaults to 1."""
+    job = {"resources": {"gpu_ids": "auto"}}
+    assert res.parse_gpu_requirement(job) == 1
+
+
+def test_parse_gpu_requirement_auto_implicit_no_ngpus():
+    """No `gpu_ids` and no `ngpus` defaults to 1."""
+    job = {"resources": {}}
+    assert res.parse_gpu_requirement(job) == 1
+
+
+def test_parse_gpu_requirement_static_pinning():
+    """Static `gpu_ids` counts explicit device IDs."""
+    job = {"resources": {"gpu_ids": "0,1"}}
+    assert res.parse_gpu_requirement(job) == 2
+
+
+def test_parse_gpu_requirement_static_single():
+    job = {"resources": {"gpu_ids": "0"}}
+    assert res.parse_gpu_requirement(job) == 1
 
 
 def test_parse_gpu_requirement_all():
@@ -309,9 +370,47 @@ def test_parse_gpu_requirement_all():
     assert res.parse_gpu_requirement(job) == 0
 
 
-def test_parse_gpu_requirement_default():
-    job = {"resources": {"gpu_ids": "0"}}
+def test_parse_gpu_requirement_ngpus_mismatch_warns(capsys):
+    """Warn when static `gpu_ids` count differs from `ngpus`."""
+    job = {"resources": {"gpu_ids": "0,1", "ngpus": 3}}
+    assert res.parse_gpu_requirement(job) == 2
+
+    captured = capsys.readouterr()
+    assert "warning:" in captured.err
+    assert "ngpus=3" in captured.err
+
+
+def test_parse_gpu_requirement_ignores_unknown_keys():
+    """Unknown keys in resources do not affect GPU counting."""
+    job = {"resources": {"gpu_ids": "0", "extra_key": "value"}}
     assert res.parse_gpu_requirement(job) == 1
+
+
+def test_detect_gpus_ascend_hbm_parsing(monkeypatch):
+    """`npu-smi` row 2 has DDR (0/0) and HBM (2789/32768); we want HBM."""
+    npu_output = (
+        "+---------------------------+---------------+-------------------------------+\n"
+        "| 0     910B4               | OK            | 86.5  41                      |\n"
+        "| 0                         | 0000:c1:00.0  | 5     0 / 0   2789 / 32768    |\n"
+        "+---------------------------+---------------+-------------------------------+\n"
+    )
+
+    def mock_run(cmd, **kwargs):
+        class R:
+            returncode = 0
+            stdout = npu_output
+
+        return R()
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+
+    pool = res.ResourcePool("ascend")
+    gpus = pool.detect_gpus()
+    assert len(gpus) == 1
+    assert gpus[0].index == 0
+    assert gpus[0].utilization_pct == 5.0
+    assert gpus[0].memory_used_mb == 2789.0
+    assert gpus[0].memory_total_mb == 32768.0
 
 
 def test_parse_memory_requirement_gb():
@@ -324,3 +423,12 @@ def test_parse_memory_requirement_mb():
 
 def test_parse_memory_requirement_empty():
     assert res.parse_memory_requirement({"resources": {}}) == 0
+
+
+def test_parse_memory_requirement_invalid_warns(capsys):
+    result = res.parse_memory_requirement({"resources": {"memory": "abc xyz"}})
+    assert result == 0
+
+    captured = capsys.readouterr()
+    assert "warning:" in captured.err
+    assert "abc xyz" in captured.err

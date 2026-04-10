@@ -54,12 +54,12 @@ platforms:
     image:                              # Image definition
       dockerfile: .ci/images/nvidia/
       build_args:
-        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
     setup: pip install .[dev] --no-build-isolation
     jobs:
-      gpu:                              # Flattened as nvidia_gpu
+      gpu:                              # Flattened as `nvidia_gpu`.
         resources:
-          ngpus: 1                      # Scheduler auto-picks this many free GPUs
+          ngpus: 1                      # Scheduler auto-picks this many free GPUs.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -86,10 +86,10 @@ platforms:
       - /lib/modules:/lib/modules
     setup: pip install .[dev] --no-build-isolation
     jobs:
-      gpu:                              # Flattened as iluvatar_gpu
+      gpu:                              # Flattened as `iluvatar_gpu`.
         resources:
-          gpu_ids: "0"
-          gpu_style: none               # CoreX: passthrough via --privileged + /dev mount
+          ngpus: 1
+          gpu_ids: auto
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -108,9 +108,8 @@ platforms:
 | | `volumes` | Extra volume mounts |
 | | `setup` | In-container setup command |
 | | `env` | Injected container env vars |
-| **Job** | `resources.ngpus` | Number of GPUs — scheduler auto-picks free ones (NVIDIA only) |
-| | `resources.gpu_ids` | Static GPU device IDs (e.g., `"0"`, `"0,2"`) |
-| | `resources.gpu_style` | GPU passthrough: `nvidia` (default), `none`, or `mlu` |
+| **Job** | `resources.ngpus` | Number of GPUs to allocate (default: 1). Used with `gpu_ids: auto` for dynamic allocation |
+| | `resources.gpu_ids` | `auto`: scheduler picks `ngpus` least-loaded GPUs. Static: pin to specific IDs (e.g., `"0"`, `"0,2"`). `all`: use all GPUs |
 | | `resources.memory` | Container memory limit |
 | | `resources.shm_size` | Shared memory size |
 | | `resources.timeout` | Max run time in seconds |
@@ -148,16 +147,16 @@ Proxy and `no_proxy` env vars are forwarded from the host to `docker build` auto
 
 ## Pipeline runner `run.py`
 
-Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi`/`cnmon` on PATH), no manual specification needed.
+Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi`/`cnmon`/`npu-smi` on PATH), no manual specification needed.
 
 | Flag | Description |
 |---|---|
 | `--config` | Config file path (default: `.ci/config.yaml`) |
-| `--job` | Job name: short (`gpu`) or full (`nvidia_gpu`). Defaults to all jobs for the current platform |
+| `--job` | Job name (e.g., `nvidia_gpu`, `ascend_npu`). Defaults to all jobs for the current platform |
 | `--branch` | Override clone branch (default: config `repo.branch`) |
 | `--stage` | Run only the specified stage |
 | `--image-tag` | Override image tag |
-| `--gpu-id` | Override GPU device IDs (nvidia via `--gpus`, others via `CUDA_VISIBLE_DEVICES`) |
+| `--gpu-id` | Override GPU device IDs (nvidia via `--gpus`, others via platform-specific env var) |
 | `--test` | Override pytest test path (e.g., `tests/test_gemm.py::test_gemm`) |
 | `--results-dir` | Host directory mounted to `/workspace/results` inside the container |
 | `--local` | Mount current directory (read-only) instead of cloning from git |
@@ -167,37 +166,34 @@ Platform is auto-detected (via `nvidia-smi`/`ixsmi`/`mx-smi`/`mthreads-gmi`/`cnm
 # Simplest usage: auto-detect platform, run all jobs, use config default branch
 python .ci/run.py
 
-# Specify short job name
-python .ci/run.py --job gpu
-
-# Full job name (backward compatible)
+# Run a specific job
 python .ci/run.py --job nvidia_gpu
 
 # Run only the test stage, preview mode
-python .ci/run.py --job gpu --stage test --dry-run
+python .ci/run.py --job nvidia_gpu --stage test --dry-run
 
 # Test local uncommitted changes without pushing
 python .ci/run.py --local
 ```
 
-Container execution flow: `git clone` → `checkout` → `setup` → stages.
+Container execution flow: `git clone` → `checkout` → `setup` → stages (fail-fast: first failure breaks the loop and preserves the real exit code).
 With `--local`, the current directory is mounted read-only at `/workspace/repo` and copied to a writable temp directory inside the container before setup runs — host files are never modified.
-Proxy vars are forwarded from the host. Test results are written to `--results-dir`. Each run uses a clean environment (no host pip cache mounted).
+Proxy vars are forwarded from the host. Test results are written to `--results-dir` (each run gets a unique directory with timestamp + UUID suffix). Each run uses a clean environment (no host pip cache mounted).
 
 ---
 
 ## Platform differences
 
-| Platform | GPU passthrough | `gpu_style` | Base image | Detection tool |
+| Platform | GPU passthrough | Device env var | Base image | Detection tool |
 |---|---|---|---|---|
-| NVIDIA | `--gpus` (NVIDIA Container Toolkit) | `nvidia` (default) | `nvcr.io/nvidia/pytorch:24.10-py3` | `nvidia-smi` |
-| Iluvatar | `--privileged` + `/dev` mount | `none` | `corex:qs_pj20250825` | `ixsmi` |
-| MetaX | `--privileged` | `none` | `maca-pytorch:3.2.1.4-...` | `mx-smi` |
-| Moore | `--privileged` | `none` | `vllm_musa:20251112_hygon` | `mthreads-gmi` |
-| Cambricon | `--privileged` | `mlu` | `cambricon/pytorch:v1.25.3` | `cnmon` |
-| Ascend | TODO | — | `ascend-pytorch:24.0.0` | — |
+| NVIDIA | `--gpus` (NVIDIA Container Toolkit) | — (uses Docker flag) | `nvcr.io/nvidia/pytorch:25.12-py3` | `nvidia-smi` |
+| Iluvatar | `--privileged` + `/dev` mount | `CUDA_VISIBLE_DEVICES` | `corex:qs_pj20250825` | `ixsmi` |
+| MetaX | `--privileged` | `CUDA_VISIBLE_DEVICES` | `maca-pytorch:3.2.1.4-...` | `mx-smi` |
+| Moore | `--privileged` | `MTHREADS_VISIBLE_DEVICES` | `vllm_musa:20251112_hygon` | `mthreads-gmi` |
+| Cambricon | `--privileged` | `MLU_VISIBLE_DEVICES` | `cambricon/pytorch:v1.25.3` | `cnmon` |
+| Ascend | `--privileged` + device mounts | `ASCEND_VISIBLE_DEVICES` | `vllm-ascend:v0.18.0rc1-openeuler` | `npu-smi` |
 
-`gpu_style` controls the Docker device injection mechanism: `nvidia` uses `--gpus`, `none` uses `CUDA_VISIBLE_DEVICES` (or skips injection for Moore), `mlu` uses `MLU_VISIBLE_DEVICES`.
+Device visibility is derived from the platform name (see `PLATFORM_DEVICE_ENV` in `ci_resource.py`). NVIDIA uses Docker's `--gpus` flag; all other platforms use `--privileged` and control visibility via a platform-specific environment variable.
 
 ---
 
@@ -257,6 +253,7 @@ Additional `serve` flags:
 | `/webhook` | POST | GitHub webhook (push/pull_request) |
 | `/api/run` | POST | Remote job trigger |
 | `/api/job/{id}` | GET | Query job status |
+| `/api/job/{id}/log` | GET | Full job log (text/plain) |
 | `/health` | GET | Health check |
 | `/status` | GET | Queue + resource status |
 
@@ -281,8 +278,11 @@ agents:
 ### Resource scheduling
 
 The Agent auto-detects GPU utilization and system memory to dynamically determine parallelism:
-- GPU utilization < threshold (default 10%) and not allocated by Agent → available
-- When resources are insufficient, jobs are queued automatically; completed jobs release resources and trigger scheduling of queued tasks
+- GPUs with utilization < threshold (default 10%) and not already allocated → available
+- Allocation picks the **least-loaded** GPUs first (sorted by utilization ascending)
+- When `gpu_ids: auto` (default), the scheduler allocates `ngpus` GPUs per job
+- When resources are insufficient, jobs are queued automatically (max 100 pending); completed jobs release resources and trigger scheduling of queued tasks
+- Docker execution has a Python-level timeout fallback (job timeout + 120s) to prevent stuck containers
 
 ### GitHub Status
 
@@ -302,10 +302,12 @@ Each machine needs Docker installed, the platform runtime, and the base CI image
 
 | Platform | Runtime check | Base image | Build command |
 |---|---|---|---|
-| NVIDIA | `nvidia-smi` (+ [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)) | `nvcr.io/nvidia/pytorch:24.10-py3` (public) | `python .ci/build.py --platform nvidia` |
+| NVIDIA | `nvidia-smi` (+ [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)) | `nvcr.io/nvidia/pytorch:25.12-py3` (public) | `python .ci/build.py --platform nvidia` |
 | Iluvatar | `ixsmi` | `corex:qs_pj20250825` (import in advance) | `python .ci/build.py --platform iluvatar` |
 | MetaX | `mx-smi` | `maca-pytorch:3.2.1.4-...` (import in advance) | `python .ci/build.py --platform metax` |
 | Moore | `mthreads-gmi` | `vllm_musa:20251112_hygon` (import in advance) | `python .ci/build.py --platform moore` |
+| Cambricon | `cnmon` | `cambricon/pytorch:v1.25.3` (import in advance) | `python .ci/build.py --platform cambricon` |
+| Ascend | `npu-smi` (+ Ascend driver + CANN toolkit) | `vllm-ascend:v0.18.0rc1-openeuler` (import in advance) | `python .ci/build.py --platform ascend` |
 
 ### Start Agent services
 
@@ -371,12 +373,12 @@ python .ci/agent.py serve --port 8080 --webhook-secret <github-secret>
 
 ```bash
 # 1. Dry-run each machine individually
-for platform in nvidia iluvatar metax moore; do
+for platform in nvidia iluvatar metax moore cambricon ascend; do
   python .ci/agent.py run --platform $platform --dry-run
 done
 
 # 2. Health and resource checks
-for ip in <nvidia-ip> <iluvatar-ip> <metax-ip> <moore-ip>; do
+for ip in <nvidia-ip> <iluvatar-ip> <metax-ip> <moore-ip> <cambricon-ip> <ascend-ip>; do
   curl http://$ip:8080/health
   curl http://$ip:8080/status
 done
