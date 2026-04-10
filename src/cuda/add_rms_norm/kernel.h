@@ -17,8 +17,8 @@ namespace infini::ops {
 template <typename Backend>
 class CudaAddRmsNorm : public AddRmsNorm {
  public:
-  CudaAddRmsNorm(const Tensor x1, const Tensor x2, const Tensor gamma, float eps,
-                 Tensor y_out, Tensor x_out)
+  CudaAddRmsNorm(const Tensor x1, const Tensor x2, const Tensor gamma,
+                 float eps, Tensor y_out, Tensor x_out)
       : AddRmsNorm(x1, x2, gamma, eps, y_out, x_out),
         add_(x1, x2, x_out),
         rms_norm_(x_out, gamma, eps, y_out) {}

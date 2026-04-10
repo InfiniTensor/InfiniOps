@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cstdint>
-
 #include <cub/block/block_reduce.cuh>
 
 #include "cuda/add/kernel.cuh"
