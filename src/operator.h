@@ -145,7 +145,7 @@ class Operator : public OperatorBase {
                                   const Tensor&, Args...>) {
                   op_ptr = std::make_unique<
                       Operator<Key, kDev, kImplementationIndex>>(
-                      tensor, args...);
+                      tensor, std::forward<Args>(args)...);
                 } else {
                   assert(false &&
                          "operator is not implemented for this device and "
