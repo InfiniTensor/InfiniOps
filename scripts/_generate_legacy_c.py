@@ -1,13 +1,13 @@
 from _operator_utils import snake_to_pascal
 
-# Override PascalCase names to match InfiniCore's existing C API conventions.
+# Override `PascalCase` names to match InfiniCore's existing C API conventions.
 _C_API_NAME_OVERRIDES = {
     "rms_norm": "RMSNorm",
     "swiglu": "SwiGLU",
 }
 
 # Override which constructor/call overload index to use per operator.
-# Default is -1 (the last one, typically the simplest).
+# Default is `-1` (the last one, typically the simplest).
 _CONSTRUCTOR_INDEX_OVERRIDES = {
     "rms_norm": 0,
 }
