@@ -12,6 +12,7 @@ namespace infini::ops::ascend {
 
 struct WorkspaceArena {
   void* buf = nullptr;
+
   uint64_t capacity = 0;
 };
 
