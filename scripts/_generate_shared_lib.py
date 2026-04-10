@@ -19,15 +19,18 @@ def generate_shared_lib(operator, paths):
 
     def _generate_make_decl(constructor):
         params = _generate_params(constructor)
+
         if params:
             params = f"const Config& config, {params}"
         else:
             params = "const Config& config"
+
         return f"std::unique_ptr<OperatorBase> Make{cpp_name}({params})"
 
     def _generate_make_def(constructor):
         args = _generate_arguments(constructor)
         make_args = f"config, {args}" if args else "config"
+
         return f"""{_generate_make_decl(constructor)} {{
   return Operator<{cpp_name}>::make({make_args});
 }}"""
@@ -55,6 +58,7 @@ namespace infini::ops {{
 
 def generate_shared_lib_header(all_decls):
     combined = "\n\n".join(all_decls)
+
     return f"""#ifndef INFINI_OPS_MAKE_H_
 #define INFINI_OPS_MAKE_H_
 
