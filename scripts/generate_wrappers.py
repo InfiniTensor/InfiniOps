@@ -5,6 +5,8 @@ import shutil
 import subprocess
 import textwrap
 
+import re
+
 import clang.cindex
 from clang.cindex import CursorKind
 
@@ -97,8 +99,6 @@ def _find_optional_tensor_params(op_name):
     headers are not fully available, so we fall back to a regex scan of the
     source text.
     """
-    import re
-
     source = (_BASE_DIR / f"{op_name}.h").read_text()
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
@@ -113,6 +113,7 @@ def _generate_pybind11(operator):
 
     def _generate_params(node):
         parts = []
+
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
@@ -125,10 +126,12 @@ def _generate_pybind11(operator):
                     .replace("Tensor", "py::object")
                 )
                 parts.append(f"{param} {arg.spelling}")
+
         return ", ".join(parts)
 
     def _generate_arguments(node):
         args = []
+
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
@@ -140,6 +143,7 @@ def _generate_pybind11(operator):
                 args.append(f"TensorFromPybind11Handle({arg.spelling})")
             else:
                 args.append(arg.spelling)
+
         return ", ".join(args)
 
     op_name = operator.name

@@ -69,9 +69,13 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
 
  private:
   bool batched_;
+
   float alpha_val_;
+
   float beta_val_;
+
   aclScalar* alpha_scalar_ = nullptr;
+
   aclScalar* beta_scalar_ = nullptr;
 };
 
