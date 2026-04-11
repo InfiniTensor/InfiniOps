@@ -354,7 +354,9 @@ def _generate_unary_functor_cpu(
         expr = _expr_for_node(dag, node, var_map, is_cuda=False)
 
         if nid == dag.output_id:
-            body_lines.append(f"    return static_cast<TOut>({expr});")
+            body_lines.append(
+                f"    return Caster<Device::Type::kCpu>::Cast<TOut>({expr});"
+            )
         else:
             vname = f"t{nid}"
             body_lines.append(f"    auto {vname} = {expr};")
@@ -368,7 +370,7 @@ def _generate_unary_functor_cpu(
 struct {functor_name} {{
   template <typename TIn, typename TOut>
   TOut operator()(const TIn& x) const {{
-    auto va = static_cast<float>(x);
+    auto va = Caster<Device::Type::kCpu>::Cast<float>(x);
 {body}
   }}
 }};"""

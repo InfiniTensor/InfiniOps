@@ -33,7 +33,7 @@ __global__ void UnaryElementwiseKernel(
     size_t in_idx =
         in_contig ? idx : IndexToOffset(idx, ndim, in_shape, in_strides);
 
-    out[out_idx] = Op{}(in[in_idx]);
+    out[out_idx] = Op{}.template operator()<TIn, TOut>(in[in_idx]);
   }
 }
 
