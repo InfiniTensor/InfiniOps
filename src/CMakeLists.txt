@@ -42,6 +42,11 @@ if(WITH_NVIDIA)
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
 
+    target_include_directories(infiniops PUBLIC
+        "${PROJECT_SOURCE_DIR}/third_party/flashinfer/include"
+        "${PROJECT_SOURCE_DIR}/third_party/flashinfer/3rdparty/cutlass/include"
+    )
+
     list(APPEND DEVICE_LIST "nvidia")
     set_target_properties(infiniops PROPERTIES
         CUDA_STANDARD 17

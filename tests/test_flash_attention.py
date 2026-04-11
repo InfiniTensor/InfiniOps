@@ -21,7 +21,7 @@ from tests.utils import Payload, get_npu_stream, randn_strided
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
+@pytest.mark.parametrize("device", ("cuda", "npu"))
 def test_flash_attention_prefill_single(
     num_heads,
     num_kv_heads,
@@ -32,6 +32,9 @@ def test_flash_attention_prefill_single(
     device,
 ):
     """Single sequence prefill (no block table)."""
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
@@ -76,6 +79,87 @@ def test_flash_attention_prefill_single(
             head_size,
             scale,
             causal=True,
+        ),
+        (query, key, value, output),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "num_heads, num_kv_heads, head_size",
+    (
+        (32, 32, 128),  # MHA
+        (32, 8, 128),  # GQA (4x)
+        (16, 4, 64),  # GQA (4x), smaller
+    ),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+@pytest.mark.parametrize("device", ("cuda",))
+def test_flash_attention_prefill_single_noncausal(
+    num_heads,
+    num_kv_heads,
+    head_size,
+    dtype,
+    rtol,
+    atol,
+    device,
+):
+    """Single sequence prefill, non-causal."""
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
+    num_tokens = 16
+    scale = 1.0 / head_size**0.5
+
+    query = randn_strided(
+        (num_tokens, num_heads, head_size), None, dtype=dtype, device=device
+    )
+    key = randn_strided(
+        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
+    )
+    value = randn_strided(
+        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
+    )
+    output = torch.empty(
+        (num_tokens, num_heads, head_size), dtype=dtype, device=device
+    )
+
+    return Payload(
+        lambda q, k, v, o: _flash_attention(
+            q,
+            k,
+            v,
+            None,
+            None,
+            None,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            False,
+            -1,
+            0,
+            0,
+            o,
+        ),
+        lambda q, k, v, o: _ref_flash_attention(
+            q,
+            k,
+            v,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            causal=False,
         ),
         (query, key, value, output),
         {},
