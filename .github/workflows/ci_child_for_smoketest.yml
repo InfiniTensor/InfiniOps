@@ -85,15 +85,11 @@ jobs:
               SHM_SIZE="--shm-size=${{ matrix.shm_size }}"
               PLATFORM=${{ matrix.platform }}
 
-              # echo "DOCKER_ARGS=$DOCKER_ARGS"
-              # echo "VOLUME_ARGS=$VOLUME_ARGS"
-              # echo "SHM_SIZE=$SHM_SIZE"
-              
               echo "************************************************************************"
               echo "PLATFORM=${PLATFORM^}"
               echo "Smoke"
               echo "${{ matrix.job_env.ENGINE }}"
-              echo "${{ matrix.job_env.MODEL_LIST }}:${{ matrix.ngpus }}"
+              echo "${{ matrix.job_env.MODEL_LIST }}:${{ matrix.ngpus }}:"A100"
               echo "${DOCKER_ARGS} ${VOLUME_ARGS} ${SHM_SIZE}"
               echo "${{ github.run_id }}"
               echo "${{ matrix.job_env.IMAGE }}"
