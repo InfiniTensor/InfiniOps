@@ -2,7 +2,7 @@
 #define INFINI_OPS_CPU_CAT_CAT_H_
 
 #include <cstring>
-#include <vector>
+#include <utility>
 
 #include "base/cat.h"
 #include "cpu/caster_.h"
@@ -10,56 +10,43 @@
 namespace infini::ops {
 
 template <>
-class Operator<Cat, Device::Type::kCpu> : public Cat {
+class Operator<Cat, Device::Type::kCpu> : public Cat,
+                                          Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor first_input, std::vector<Tensor> rest_inputs,
            int64_t dim, Tensor out)
-      : Cat{first_input, rest_inputs, dim, out} {}
+      : Cat{first_input, std::move(rest_inputs), dim, out} {}
 
   void operator()(const Tensor first_input, std::vector<Tensor> rest_inputs,
-                  int64_t /*dim*/, Tensor out) const override {
-    // Collect all input tensors.
-    std::vector<const Tensor*> inputs;
-    inputs.reserve(input_count_);
-    inputs.push_back(&first_input);
-    for (const auto& t : rest_inputs) {
-      inputs.push_back(&t);
-    }
+                  int64_t dim, Tensor out) const override {
+    DispatchFunc<Device::Type::kCpu, AllTypes>(
+        dtype_,
+        [&](auto tag) {
+          using T = typename decltype(tag)::type;
+          Compute<T>(out);
+        },
+        "`Operator<Cat, Device::Type::kCpu>::operator()`");
+  }
 
-    // Use normalized `dim_` from base class (handles negative dim).
-    auto dim = dim_;
-    auto elem_size = kDataTypeToSize.at(out.dtype());
-    auto ndim = out.ndim();
-    auto out_shape = out.shape();
+ private:
+  template <typename T>
+  void Compute(Tensor out) const {
+    auto* out_ptr = static_cast<T*>(out.data());
 
-    // Compute outer and inner sizes relative to the cat dimension.
-    Tensor::Size outer = 1;
-    for (int64_t i = 0; i < dim; ++i) {
-      outer *= out_shape[i];
-    }
+    for (size_t outer = 0; outer < outer_size_; ++outer) {
+      size_t out_offset = 0;
 
-    Tensor::Size inner = 1;
-    for (size_t i = static_cast<size_t>(dim) + 1; i < ndim; ++i) {
-      inner *= out_shape[i];
-    }
+      for (size_t i = 0; i < input_count_; ++i) {
+        const auto* in_ptr = static_cast<const T*>(inputs_[i].data());
+        size_t dim_size = inputs_[i].size(dim_);
+        size_t copy_count = dim_size * inner_size_;
 
-    auto* out_ptr = static_cast<char*>(out.data());
-    Tensor::Size out_dim_size = out_shape[dim];
+        std::memcpy(
+            out_ptr + outer * cum_dim_sizes_.back() * inner_size_ + out_offset,
+            in_ptr + outer * dim_size * inner_size_,
+            copy_count * sizeof(T));
 
-    // For each outer index, copy slices from each input along the cat dim.
-    for (Tensor::Size o = 0; o < outer; ++o) {
-      Tensor::Size offset_in_dim = 0;
-
-      for (size_t t = 0; t < input_count_; ++t) {
-        auto in_dim = inputs[t]->shape()[dim];
-        auto in_ptr = static_cast<const char*>(inputs[t]->data());
-
-        auto src_offset = (o * in_dim) * inner * elem_size;
-        auto dst_offset = (o * out_dim_size + offset_in_dim) * inner * elem_size;
-        auto copy_size = in_dim * inner * elem_size;
-
-        std::memcpy(out_ptr + dst_offset, in_ptr + src_offset, copy_size);
-        offset_in_dim += in_dim;
+        out_offset += copy_count;
       }
     }
   }
