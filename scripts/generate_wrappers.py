@@ -20,6 +20,8 @@ _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 
 _INCLUDE_DIR = _GENERATION_DIR / "include"
 
+_BINDINGS_OVERRIDES_DIR = pathlib.Path("scripts") / "bindings_overrides"
+
 _INDENTATION = "  "
 
 
@@ -428,7 +430,15 @@ if __name__ == "__main__":
         header_name = f"{op_name}.h"
         bind_func_name = f"Bind{_snake_to_pascal(op_name)}"
 
-        (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
+        binding_path = _BINDINGS_DIR / header_name
+        override_path = _BINDINGS_OVERRIDES_DIR / header_name
+
+        # Use a hand-written binding if one exists in the overrides directory;
+        # otherwise auto-generate.
+        if override_path.exists():
+            binding_path.write_text(override_path.read_text())
+        else:
+            binding_path.write_text(_generate_pybind11(operator))
 
         legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
         source_path.mkdir(exist_ok=True)
