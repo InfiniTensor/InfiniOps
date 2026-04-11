@@ -68,7 +68,7 @@ class CudaCat : public Cat {
           T* d_out = reinterpret_cast<T*>(out.data());
           size_t total_dim_size = cum_dim_sizes_.back();
 
-          CatKernel<T, kBlockSize>
+          CatKernel<T>
               <<<gridDims, blockDims, 0, cuda_stream>>>(
                   d_out, d_inputs_, d_cum_sizes_, input_count_, outer_size_,
                   inner_size_, total_dim_size, output_size_);

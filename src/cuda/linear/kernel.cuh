@@ -5,7 +5,7 @@
 
 namespace infini::ops {
 
-template <typename T, unsigned int BLOCK_SIZE>
+template <typename T>
 __global__ void BiasAddKernel(T* out, const T* bias, size_t rows, size_t cols) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 

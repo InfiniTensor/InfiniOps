@@ -5,7 +5,7 @@
 
 namespace infini::ops {
 
-template <typename T, unsigned int BLOCK_SIZE>
+template <typename T>
 __global__ void CatKernel(T* __restrict__ out,
                           const void* const* __restrict__ inputs,
                           const size_t* __restrict__ cum_sizes,

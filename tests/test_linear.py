@@ -77,10 +77,7 @@ def _torch_linear(a, b, bias, trans_a, trans_b, out):
     a_mat = a.transpose(-2, -1) if trans_a else a
     b_mat = b.transpose(-2, -1) if trans_b else b
 
-    try:
-        result = torch.matmul(a_mat.float(), b_mat.float()).to(out.dtype)
-    except RuntimeError:
-        result = torch.matmul(a_mat.float(), b_mat.float()).to(out.dtype)
+    result = torch.matmul(a_mat.float(), b_mat.float()).to(out.dtype)
 
     if bias is not None:
         result = result + bias

@@ -5,7 +5,6 @@
 
 #include "cuda/rotary_embedding/kernel.h"
 #include "nvidia/caster.cuh"
-#include "nvidia/rotary_embedding/registry.h"
 #include "nvidia/runtime_.h"
 
 namespace infini::ops {

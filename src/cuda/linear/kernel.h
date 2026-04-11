@@ -72,7 +72,7 @@ class CudaLinear : public Linear {
           dim3 blockDims(block_size);
           dim3 gridDims((total + block_size - 1) / block_size);
 
-          BiasAddKernel<T, 0><<<gridDims, blockDims, 0, cuda_stream>>>(
+          BiasAddKernel<T><<<gridDims, blockDims, 0, cuda_stream>>>(
               reinterpret_cast<T*>(out.data()),
               reinterpret_cast<const T*>(bias.data()), rows, cols);
         },
