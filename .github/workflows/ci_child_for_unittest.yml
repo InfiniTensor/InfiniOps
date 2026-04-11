@@ -78,7 +78,7 @@ jobs:
           GPU_ID: all
           RESULT_DIR: None
           TEST: None
-          LOCAL: None
+          LOCAL: True
         run: |
           PYTHONPATH=.ci python3 - <<'PY'
           import os
