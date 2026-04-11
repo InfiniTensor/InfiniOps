@@ -16,6 +16,7 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
         num_kv_heads_{key.size(1)},
         head_size_{key.size(2)},
         block_size_{kv_cache.size(2)},
+        key_dtype_{key.dtype()},
         key_shape_{key.shape()},
         value_shape_{value.shape()},
         kv_cache_shape_{kv_cache.shape()},
@@ -46,6 +47,8 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
   Tensor::Size head_size_{0};
 
   Tensor::Size block_size_{0};
+
+  const DataType key_dtype_;
 
   Tensor::Shape key_shape_;
 

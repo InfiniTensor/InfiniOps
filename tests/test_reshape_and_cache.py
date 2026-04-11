@@ -2,151 +2,89 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, get_npu_stream, randn_strided
-
-# ReshapeAndCache only works on NPU (aclrtMemcpy-based), so tests only
-# parametrize on float16/bfloat16 and use explicit device parametrization.
+from tests.utils import Payload
 
 
-@pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    "num_tokens, num_kv_heads, head_size, num_blocks, block_size",
-    (
-        (1, 8, 128, 4, 16),
-        (4, 8, 128, 4, 16),
-        (8, 4, 64, 8, 32),
-        (16, 2, 128, 8, 64),
-    ),
-)
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float16, 1e-3, 1e-3),
-        (torch.bfloat16, 1e-2, 5e-3),
-    ),
-)
-@pytest.mark.parametrize("device", ("npu",))
-def test_reshape_and_cache_contiguous(
-    num_tokens,
-    num_kv_heads,
-    head_size,
-    num_blocks,
-    block_size,
-    dtype,
-    rtol,
-    atol,
-    device,
-):
-    if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
-        pytest.skip("NPU not available")
+def _reshape_and_cache_ref(key, value, kv_cache, slot_mapping, kv_cache_out):
+    """Reference implementation: scatter key/value into paged KV cache."""
+    kv_cache_out.copy_(kv_cache)
+    num_tokens = key.size(0)
 
-    key = randn_strided(
-        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
-    )
-    value = randn_strided(
-        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
-    )
-    # Layout: [2, num_blocks, block_size, num_kv_heads, head_size]
-    # Index 0 = key cache, index 1 = value cache.
-    kv_cache = torch.zeros(
-        (2, num_blocks, block_size, num_kv_heads, head_size),
-        dtype=dtype,
-        device=device,
-    )
-    # Contiguous slot mapping: token i -> slot i.
-    slot_mapping = torch.arange(num_tokens, dtype=torch.int64, device=device)
-
-    return Payload(
-        _reshape_and_cache,
-        _ref_reshape_and_cache,
-        (key, value, kv_cache, slot_mapping, kv_cache),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )
-
-
-@pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    "num_tokens, num_kv_heads, head_size, num_blocks, block_size",
-    (
-        (4, 8, 128, 4, 16),
-        (8, 4, 64, 8, 32),
-    ),
-)
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float16, 1e-3, 1e-3),
-        (torch.bfloat16, 1e-2, 5e-3),
-    ),
-)
-@pytest.mark.parametrize("device", ("npu",))
-def test_reshape_and_cache_noncontiguous_slots(
-    num_tokens,
-    num_kv_heads,
-    head_size,
-    num_blocks,
-    block_size,
-    dtype,
-    rtol,
-    atol,
-    device,
-):
-    if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
-        pytest.skip("NPU not available")
-
-    key = randn_strided(
-        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
-    )
-    value = randn_strided(
-        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
-    )
-    kv_cache = torch.zeros(
-        (2, num_blocks, block_size, num_kv_heads, head_size),
-        dtype=dtype,
-        device=device,
-    )
-    # Non-contiguous slots: skip every other slot.
-    slot_mapping = torch.tensor(
-        [i * 2 for i in range(num_tokens)], dtype=torch.int64, device=device
-    )
-
-    return Payload(
-        _reshape_and_cache,
-        _ref_reshape_and_cache,
-        (key, value, kv_cache, slot_mapping, kv_cache),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )
-
-
-def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
-    if key.device.type == "npu":
-        infini.ops.reshape_and_cache(
-            key, value, kv_cache, slot_mapping, kv_cache_out, stream=get_npu_stream(key)
-        )
-    else:
-        infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out)
-
-    return kv_cache_out
-
-
-def _ref_reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
-    kv_cache_out = kv_cache_out.clone()
-    slots = slot_mapping.cpu()
-    block_size = kv_cache_out.size(2)
-
-    for i in range(key.size(0)):
-        slot = int(slots[i].item())
+    for i in range(num_tokens):
+        slot = slot_mapping[i].item()
 
         if slot < 0:
             continue
 
+        block_size = kv_cache_out.size(2)
         block_idx = slot // block_size
-        offset = slot % block_size
-        kv_cache_out[0, block_idx, offset, :, :] = key[i, :, :]
-        kv_cache_out[1, block_idx, offset, :, :] = value[i, :, :]
+        block_offset = slot % block_size
+
+        # kv_cache_out shape: [2, num_blocks, block_size, num_kv_heads, head_size]
+        kv_cache_out[0, block_idx, block_offset, :, :] = key[i]
+        kv_cache_out[1, block_idx, block_offset, :, :] = value[i]
 
     return kv_cache_out
+
+
+def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
+    infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out)
+
+    return kv_cache_out
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "num_tokens, num_kv_heads, head_size, num_blocks, block_size",
+    (
+        (1, 1, 64, 1, 1),
+        (4, 8, 64, 4, 16),
+        (7, 4, 128, 8, 32),
+        (16, 32, 128, 16, 16),
+        (3, 2, 64, 2, 8),
+    ),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 0, 0),
+        (torch.float16, 0, 0),
+        (torch.bfloat16, 0, 0),
+    ),
+)
+def test_reshape_and_cache(
+    num_tokens, num_kv_heads, head_size, num_blocks, block_size, dtype, device,
+    rtol, atol
+):
+    total_slots = num_blocks * block_size
+
+    if num_tokens > total_slots:
+        pytest.skip("more tokens than available slots")
+
+    key = torch.randn(
+        num_tokens, num_kv_heads, head_size, dtype=dtype, device=device
+    )
+    value = torch.randn(
+        num_tokens, num_kv_heads, head_size, dtype=dtype, device=device
+    )
+
+    kv_cache = torch.zeros(
+        2, num_blocks, block_size, num_kv_heads, head_size,
+        dtype=dtype, device=device,
+    )
+
+    # Build a slot mapping: assign each token a unique random slot.
+    slots = torch.randperm(total_slots)[:num_tokens].to(
+        dtype=torch.int64, device=device
+    )
+
+    kv_cache_out = kv_cache.clone()
+
+    return Payload(
+        _reshape_and_cache,
+        _reshape_and_cache_ref,
+        (key, value, kv_cache, slots, kv_cache_out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
