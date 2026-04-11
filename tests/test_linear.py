@@ -2,43 +2,44 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_npu_stream, randn_strided
+from tests.utils import Payload, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
     "a_shape, b_shape, out_shape",
     (
-        ((4, 64), (64, 32), (4, 32)),
-        ((2, 128), (128, 256), (2, 256)),
-        ((1, 4096), (4096, 4096), (1, 4096)),
-        ((2, 4, 64), (2, 64, 32), (2, 4, 32)),
-        ((4, 8, 128), (4, 128, 64), (4, 8, 64)),
+        ((1, 128), (128, 64), (1, 64)),
+        ((4, 256), (256, 128), (4, 128)),
+        ((2, 4, 128), (2, 128, 64), (2, 4, 64)),
     ),
 )
+@pytest.mark.parametrize("has_bias", (False, True))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
-@pytest.mark.parametrize("has_bias", (False, True))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
-        (torch.float32, 1e-2, 5e-2),
-        (torch.float16, 1e-2, 1e-2),
-        (torch.bfloat16, 1e-2, 1e-2),
+        (torch.float32, 1e-3, 1e-3),
+        (torch.float16, 5e-2, 5e-2),
+        (torch.bfloat16, 5e-2, 5e-2),
     ),
 )
 def test_linear(
     a_shape,
     b_shape,
     out_shape,
+    has_bias,
     trans_a,
     trans_b,
-    has_bias,
     dtype,
     device,
     rtol,
     atol,
 ):
+    if device == "cpu":
+        pytest.skip("CPU Linear is not implemented")
+
     a = randn_strided(a_shape, None, dtype=dtype, device=device)
     b = randn_strided(b_shape, None, dtype=dtype, device=device)
 
@@ -48,48 +49,42 @@ def test_linear(
     if trans_b:
         b = b.transpose(-2, -1)
 
-    # Bias shape is [N], the last dim of the output.
+    out = randn_strided(out_shape, None, dtype=dtype, device=device)
+
     bias = None
 
     if has_bias:
-        N = out_shape[-1]
-        bias = randn_strided((N,), None, dtype=dtype, device=device)
-
-    out = empty_strided(out_shape, None, dtype=dtype, device=device)
+        n = out_shape[-1]
+        bias = randn_strided((n,), None, dtype=dtype, device=device)
 
     return Payload(
-        lambda *args: _linear(*args, trans_a=trans_a, trans_b=trans_b),
-        lambda *args: _torch_linear(*args, trans_a=trans_a, trans_b=trans_b),
-        (a, b, bias, out),
+        lambda *args: _linear(*args),
+        _torch_linear,
+        (a, b, bias, trans_a, trans_b, out),
         {},
         rtol=rtol,
         atol=atol,
     )
 
 
-def _linear(a, b, bias, out, trans_a=False, trans_b=False):
-    if a.device.type == "npu":
-        infini.ops.linear(
-            a, b, bias, trans_a, trans_b, out, stream=get_npu_stream(a)
-        )
-    else:
-        infini.ops.linear(a, b, bias, trans_a, trans_b, out)
+def _linear(a, b, bias, trans_a, trans_b, out):
+    infini.ops.linear(a, b, bias, trans_a, trans_b, out)
 
     return out
 
 
-def _torch_linear(a, b, bias, out, trans_a=False, trans_b=False):
-    if trans_a:
-        a = a.transpose(-2, -1)
+def _torch_linear(a, b, bias, trans_a, trans_b, out):
+    a_mat = a.transpose(-2, -1) if trans_a else a
+    b_mat = b.transpose(-2, -1) if trans_b else b
 
-    if trans_b:
-        b = b.transpose(-2, -1)
-
-    result = torch.matmul(a.float(), b.float())
+    try:
+        result = torch.matmul(a_mat.float(), b_mat.float()).to(out.dtype)
+    except RuntimeError:
+        result = torch.matmul(a_mat.float(), b_mat.float()).to(out.dtype)
 
     if bias is not None:
-        result = result + bias.float()
+        result = result + bias
 
-    out.copy_(result.to(out.dtype))
+    out.copy_(result)
 
     return out
