@@ -107,11 +107,14 @@ def _assert_close(actual, expected, rtol, atol):
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
+@pytest.mark.parametrize("device", ("cuda", "npu"))
 def test_rotary_embedding_full(
     num_heads, head_size, is_neox_style, dtype, rtol, atol, device
 ):
     """Full rotary: ``rotary_dim == head_size``."""
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
@@ -201,7 +204,7 @@ def test_rotary_embedding_full(
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
+@pytest.mark.parametrize("device", ("cuda", "npu"))
 def test_rotary_embedding_partial(
     num_heads,
     num_kv_heads,
@@ -214,6 +217,9 @@ def test_rotary_embedding_partial(
     device,
 ):
     """Partial rotary: ``rotary_dim < head_size``."""
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
