@@ -29,6 +29,31 @@ if(AUTO_DETECT_DEVICES)
     if(NVIDIA_DEV_FILES)
         set(WITH_NVIDIA ON)
         message(STATUS "Auto-detected NVIDIA environment.")
+
+        # Detect the GPU's compute capability so we compile for the right
+        # architecture.  Without this, CMake may pick a lower default (e.g.
+        # SM75) and kernels that require newer features (bf16 on SM80+) will
+        # fail at runtime.
+        if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+            execute_process(
+                COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+                OUTPUT_VARIABLE _gpu_caps
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+
+            if(_gpu_caps)
+                # Take the first GPU's capability (e.g. "8.0" -> "80").
+                string(REGEX MATCH "([0-9]+)\\.([0-9]+)" _cap_match "${_gpu_caps}")
+                string(REPLACE "." "" _arch "${_cap_match}")
+
+                if(_arch)
+                    set(CMAKE_CUDA_ARCHITECTURES "${_arch}" CACHE STRING
+                        "CUDA architectures (auto-detected from GPU)")
+                    message(STATUS "Auto-detected CUDA architecture: SM${_arch}")
+                endif()
+            endif()
+        endif()
     endif()
 
     file(GLOB ILUVATAR_DEV_FILES "/dev/iluvatar*")
