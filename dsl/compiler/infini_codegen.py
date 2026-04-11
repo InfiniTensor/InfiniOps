@@ -113,6 +113,11 @@ def _expr_for_node(
 
         return f"{func}({_ref(node.inputs[0])}, {_ref(node.inputs[1])})"
 
+    if node.kind == NodeKind.CAST:
+        # Type conversion — the actual cast is handled by the functor's
+        # return-type conversion, so just pass through the input expression.
+        return _ref(node.inputs[0])
+
     if node.kind == NodeKind.SCALAR:
         # Literal scalar.
         val = node.attrs.get("value")
@@ -155,7 +160,6 @@ def _generate_binary_functor_cuda(
         node = dag.get(nid)
 
         if node.kind == NodeKind.INPUT:
-
             if node.name == match.input_names[0]:
                 var_map[nid] = "va"
             elif node.name == match.input_names[1]:
@@ -216,7 +220,6 @@ def _generate_binary_functor_cpu(
         node = dag.get(nid)
 
         if node.kind == NodeKind.INPUT:
-
             if node.name == match.input_names[0]:
                 var_map[nid] = "va"
             elif node.name == match.input_names[1]:
@@ -256,6 +259,116 @@ struct {functor_name} {{
     using ComputeType = float;
     auto va = static_cast<ComputeType>(a);
     auto vb = static_cast<ComputeType>(b);
+{body}
+  }}
+}};"""
+
+
+# ---- Unary elementwise code generation ---------------------------------------
+
+
+def _generate_unary_functor_cuda(
+    op: InfiniOpDef,
+    dag: ComputeDAG,
+    match: MatchResult,
+) -> str:
+    """Generate the device-side unary functor for CUDA."""
+    prefix = _dsl_prefix(op)
+
+    # Build the functor body by walking the DAG in topological order.
+    topo = dag.topo_sort()
+    var_map: dict[int, str] = {}
+    body_lines: list[str] = []
+
+    for nid in topo:
+        node = dag.get(nid)
+
+        if node.kind == NodeKind.INPUT:
+            var_map[nid] = "va"
+
+            continue
+
+        if node.kind == NodeKind.SCALAR:
+            val = node.attrs.get("value")
+
+            if val is not None:
+                var_map[nid] = repr(val)
+            else:
+                var_map[nid] = node.name
+
+            continue
+
+        expr = _expr_for_node(dag, node, var_map, is_cuda=True)
+
+        if nid == dag.output_id:
+            body_lines.append(f"    return Caster<kDev>::template Cast<TOut>({expr});")
+        else:
+            vname = f"t{nid}"
+            body_lines.append(f"    auto {vname} = {expr};")
+            var_map[nid] = vname
+
+    body = "\n".join(body_lines)
+    functor_name = f"{prefix}{op.name}Op"
+
+    return f"""\
+// Device-side unary functor for `{op.name}` (DSL).
+template <Device::Type kDev>
+struct {functor_name} {{
+  template <typename TIn, typename TOut>
+  __device__ __forceinline__ TOut operator()(const TIn& x) const {{
+    auto va = Caster<kDev>::template Cast<float>(x);
+{body}
+  }}
+}};"""
+
+
+def _generate_unary_functor_cpu(
+    op: InfiniOpDef,
+    dag: ComputeDAG,
+    match: MatchResult,
+) -> str:
+    """Generate the host-side unary functor for CPU."""
+    prefix = _dsl_prefix(op)
+    topo = dag.topo_sort()
+    var_map: dict[int, str] = {}
+    body_lines: list[str] = []
+
+    for nid in topo:
+        node = dag.get(nid)
+
+        if node.kind == NodeKind.INPUT:
+            var_map[nid] = "va"
+
+            continue
+
+        if node.kind == NodeKind.SCALAR:
+            val = node.attrs.get("value")
+
+            if val is not None:
+                var_map[nid] = repr(val)
+            else:
+                var_map[nid] = node.name
+
+            continue
+
+        expr = _expr_for_node(dag, node, var_map, is_cuda=False)
+
+        if nid == dag.output_id:
+            body_lines.append(f"    return static_cast<TOut>({expr});")
+        else:
+            vname = f"t{nid}"
+            body_lines.append(f"    auto {vname} = {expr};")
+            var_map[nid] = vname
+
+    body = "\n".join(body_lines)
+    functor_name = f"{prefix}Cpu{op.name}Op"
+
+    return f"""\
+// Host-side unary functor for `{op.name}` (CPU, DSL).
+struct {functor_name} {{
+  template <typename TIn, typename TOut>
+  TOut operator()(const TIn& x) const {{
+    auto va = static_cast<float>(x);
 {body}
   }}
 }};"""
@@ -502,7 +615,6 @@ def _build_finalize_expr(
     post_reduce: list[int] = []
 
     for nid in topo[reduce_idx + 1 :]:
-
         if match.transform_nodes and nid in match.transform_nodes:
             break
 
@@ -540,14 +652,12 @@ def _build_finalize_expr(
         return "    return acc / static_cast<float>(count);"
 
     if reduce_node.kind == NodeKind.REDUCE_SUM:
-
         if is_cuda:
             return "    return total;"
 
         return "    return acc;"
 
     if reduce_node.kind == NodeKind.REDUCE_MAX:
-
         if is_cuda:
             return "    return total;"
 
@@ -573,7 +683,6 @@ def _build_transform_body(
     # Common pattern: input * reduced * weight[i].
     # For RmsNorm: return x * rms * weight[i].
     if _is_rms_norm_transform(dag, match):
-
         if is_cuda:
             return (
                 "    return Caster<kDev>::template Cast<TData>(\n"
@@ -608,7 +717,6 @@ def _is_rms_norm_transform(dag: ComputeDAG, match: MatchResult) -> bool:
 
     # Look for a weight tensor input.
     for node in dag.nodes.values():
-
         if node.kind == NodeKind.INPUT and node.name == "weight":
             return True
 
@@ -625,7 +733,6 @@ def _generate_reduce_members(
 
     # Check if epsilon is used.
     for node in dag.nodes.values():
-
         if node.kind == NodeKind.SCALAR and node.name == "eps":
             members.append("  float epsilon;")
 
@@ -641,7 +748,6 @@ def _generate_transform_members(
     members = []
 
     for node in dag.nodes.values():
-
         if node.kind == NodeKind.INPUT and node.name == "weight":
             members.append("  const void* weight;")
 
@@ -667,6 +773,9 @@ def generate_cuda_kernel(
     if match.brick == BrickKind.BINARY_ELEMENTWISE:
         return _gen_binary_elementwise_cuda(op, dag, match, guard, op_snake)
 
+    if match.brick == BrickKind.UNARY_ELEMENTWISE:
+        return _gen_unary_elementwise_cuda(op, dag, match, guard, op_snake)
+
     if match.brick == BrickKind.REDUCE_THEN_TRANSFORM:
         return _gen_reduce_transform_cuda(op, dag, match, guard, op_snake)
 
@@ -688,6 +797,9 @@ def generate_cpu_kernel(
 
     if match.brick == BrickKind.BINARY_ELEMENTWISE:
         return _gen_binary_elementwise_cpu(op, dag, match, guard, op_snake)
+
+    if match.brick == BrickKind.UNARY_ELEMENTWISE:
+        return _gen_unary_elementwise_cpu(op, dag, match, guard, op_snake)
 
     if match.brick == BrickKind.REDUCE_THEN_TRANSFORM:
         return _gen_reduce_transform_cpu(op, dag, match, guard, op_snake)
@@ -789,6 +901,107 @@ class Operator<{op.name}, Device::Type::kCpu{impl_suffix}> : public {op.name} {{
         input_shape_, other_shape_, out_shape_,
         input_strides_, other_strides_, out_strides_,
         out_type_, {functor_name}{{}});
+  }}
+}};
+
+}}  // namespace infini::ops
+
+#endif
+"""
+
+
+# ---- Unary elementwise file generators ---------------------------------------
+
+
+def _gen_unary_elementwise_cuda(
+    op: InfiniOpDef,
+    dag: ComputeDAG,
+    match: MatchResult,
+    guard: str,
+    op_snake: str,
+) -> str:
+    prefix = _dsl_prefix(op)
+    functor = _generate_unary_functor_cuda(op, dag, match)
+    base_header = f"base/{op_snake}.h"
+    class_name = f"{prefix}Cuda{op.name}"
+    functor_name = f"{prefix}{op.name}Op"
+
+    return f"""\
+#ifndef {guard}
+#define {guard}
+
+#include "cuda/templates/unary_elementwise.cuh"
+#include "{base_header}"
+
+namespace infini::ops {{
+
+{functor}
+
+template <typename Backend>
+class {class_name} : public {op.name} {{
+ public:
+  {class_name}(const Tensor input, Tensor out)
+      : {op.name}{{input, out}},
+        brick_{{input, out, ndim_}} {{}}
+
+  void operator()(const Tensor input, Tensor out) const override {{
+    brick_.template Run<AllTypes, AllTypes, {functor_name}>(
+        stream_, input, out, output_size_, ndim_,
+        is_input_contiguous_, is_out_contiguous_,
+        input_dtype_, out_dtype_);
+  }}
+
+ private:
+  UnaryElementwiseBrick<Backend> brick_;
+}};
+
+}}  // namespace infini::ops
+
+#endif
+"""
+
+
+def _gen_unary_elementwise_cpu(
+    op: InfiniOpDef,
+    dag: ComputeDAG,
+    match: MatchResult,
+    guard: str,
+    op_snake: str,
+) -> str:
+    prefix = _dsl_prefix(op)
+    functor = _generate_unary_functor_cpu(op, dag, match)
+    base_header = f"base/{op_snake}.h"
+    functor_name = f"{prefix}Cpu{op.name}Op"
+    impl_suffix = ", Impl::kDsl" if op.impl_index > 0 else ""
+    impl_include = (
+        f'#include "impl.h"\n#include "cpu/{op_snake}/registry.h"\n'
+        if op.impl_index > 0
+        else ""
+    )
+
+    return f"""\
+#ifndef {guard}
+#define {guard}
+
+#include "cpu/templates/unary_elementwise.h"
+#include "{base_header}"
+{impl_include}
+namespace infini::ops {{
+
+{functor}
+
+template <>
+class Operator<{op.name}, Device::Type::kCpu{impl_suffix}> : public {op.name} {{
+ public:
+  using {op.name}::{op.name};
+
+  void operator()(const Tensor input, Tensor out) const override {{
+    CpuUnaryElementwise<AllTypes, AllTypes>(
+        input, out, output_size_, ndim_,
+        is_input_contiguous_, is_out_contiguous_,
+        input_shape_, out_shape_,
+        input_strides_, out_strides_,
+        input_dtype_, out_dtype_, {functor_name}{{}});
   }}
 }};
 
