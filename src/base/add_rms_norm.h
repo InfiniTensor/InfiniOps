@@ -11,26 +11,33 @@ namespace infini::ops {
 
 class AddRmsNorm : public Operator<AddRmsNorm> {
  public:
-  AddRmsNorm(const Tensor x1, const Tensor x2, const Tensor gamma, float eps,
+  AddRmsNorm(const Tensor x1, const Tensor x2, const Tensor weight, float eps,
              Tensor y_out, Tensor x_out)
-      : input_shape_{x1.shape()},
+      : x1_strides_{x1.strides()},
+        x2_strides_{x2.strides()},
+        y_out_strides_{y_out.strides()},
+        x_out_strides_{x_out.strides()},
         eps_{eps},
-        dim_{x1.size(-1)},
-        ndim_{x1.ndim()},
-        batch_size_{ndim_ == 2 ? x1.size(-2) : x1.size(-3)},
-        nhead_{ndim_ == 2 ? 1 : x1.size(-2)},
-        rstd_shape_{static_cast<int64_t>(batch_size_),
-                    static_cast<int64_t>(nhead_)} {
-    assert(x1.dtype() == x2.dtype());
-    assert(x1.dtype() == y_out.dtype());
-    assert(x1.dtype() == x_out.dtype());
+        dim_{y_out.size(-1)},
+        ndim_{y_out.ndim()},
+        batch_size_{ndim_ == 2 ? y_out.size(-2) : y_out.size(-3)},
+        nhead_{ndim_ == 2 ? 1 : y_out.size(-2)} {
+    assert(x1.dtype() == x2.dtype() && x1.dtype() == weight.dtype() &&
+           x1.dtype() == y_out.dtype() && x1.dtype() == x_out.dtype());
   }
 
-  virtual void operator()(const Tensor x1, const Tensor x2, const Tensor gamma,
-                          float eps, Tensor y_out, Tensor x_out) const = 0;
+  virtual void operator()(const Tensor x1, const Tensor x2,
+                          const Tensor weight, float eps, Tensor y_out,
+                          Tensor x_out) const = 0;
 
  protected:
-  Tensor::Shape input_shape_;
+  Tensor::Strides x1_strides_;
+
+  Tensor::Strides x2_strides_;
+
+  Tensor::Strides y_out_strides_;
+
+  Tensor::Strides x_out_strides_;
 
   float eps_{1e-6f};
 
@@ -41,8 +48,6 @@ class AddRmsNorm : public Operator<AddRmsNorm> {
   Tensor::Size batch_size_{0};
 
   Tensor::Size nhead_{1};
-
-  std::vector<int64_t> rstd_shape_;
 };
 
 }  // namespace infini::ops
