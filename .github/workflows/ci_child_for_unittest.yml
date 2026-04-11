@@ -177,7 +177,7 @@ jobs:
           image_ref = resolve_image(
               config,
               job.get("platform", platform),
-              env_opt("IMAGE_TAG") or job.get("image", "046d1f6"),
+              env_opt("IMAGE_TAG") or job.get("image", "latest"),
           )
 
           docker_args_text = shlex.join(docker_args)
