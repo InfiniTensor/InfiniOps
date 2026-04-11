@@ -158,8 +158,8 @@ Based on this baseline, areas with the most optimization potential:
 2. **Linear**: 0.210 ms for (1024,4096,4096) — could benefit from
    cuBLASLt like Matmul.
 
-3. **CausalSoftmax (1,32,128,128)**: 0.054-0.061 ms — relatively slow
-   for the size, may benefit from FlashInfer's fused softmax.
+3. **CausalSoftmax (1,32,128,128)**: 0.054-0.061 ms — may benefit from
+   warp-level online softmax or shared memory tiling optimization.
 
 4. **Elementwise ops**: All at ~0.010 ms (launch overhead). For larger
    tensors, consider vectorized loads (float4) and grid-stride loops.
