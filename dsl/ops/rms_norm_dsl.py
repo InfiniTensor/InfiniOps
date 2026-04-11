@@ -1,7 +1,7 @@
-"""Example `@infini_op` definition for RmsNorm (DSL version).
+"""DSL alternative implementation for RmsNorm (impl_index=1).
 
-Demonstrates a reduce-then-transform pattern.  The existing `rms_norm.py`
-stays as `@manual_op` until migration is complete.
+Registers as ``Operator<RmsNorm, kDev, 1>`` alongside the existing
+hand-written ``Operator<RmsNorm, kDev, 0>``.
 """
 
 from dsl.decorators import infini_op
@@ -9,7 +9,8 @@ from dsl.primitives import Scalar, Tensor, reduce_mean, rsqrt
 
 
 @infini_op(
-    name="RmsNormDsl",
+    name="RmsNorm",
+    impl_index=1,
     shapes={"B": "batch_size", "H": "nhead", "D": "dim"},
     manual_backends={
         "ascend": "ascend/rms_norm/kernel.h",

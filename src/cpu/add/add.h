@@ -5,6 +5,7 @@
 
 #include "base/add.h"
 #include "common/generic_utils.h"
+#include "cpu/add/registry.h"
 #include "cpu/caster_.h"
 
 namespace infini::ops {

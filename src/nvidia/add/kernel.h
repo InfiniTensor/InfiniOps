@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "cuda/add/kernel.h"
+#include "nvidia/add/registry.h"
 #include "nvidia/caster.cuh"
 #include "nvidia/runtime_.h"
 

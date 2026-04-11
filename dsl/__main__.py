@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import pathlib
 import sys
 
@@ -33,19 +34,76 @@ def _generate_infini_op(
     op_snake = _to_snake(op.name)
     generated: list[pathlib.Path] = []
 
+    # Determine output filenames based on impl_index.
+    cuda_filename = "dsl.h" if op.impl_index > 0 else "kernel.h"
+    cpu_filename = "dsl.h" if op.impl_index > 0 else f"{op_snake}.h"
+
     # Generate shared CUDA kernel.
     cuda_content = generate_cuda_kernel(op, dag, match)
-    cuda_path = output_dir / "cuda" / op_snake / "kernel.h"
+    cuda_path = output_dir / "cuda" / op_snake / cuda_filename
     cuda_path.parent.mkdir(parents=True, exist_ok=True)
     cuda_path.write_text(cuda_content)
     generated.append(cuda_path)
 
     # Generate CPU implementation.
     cpu_content = generate_cpu_kernel(op, dag, match)
-    cpu_path = output_dir / "cpu" / op_snake / f"{op_snake}.h"
+    cpu_path = output_dir / "cpu" / op_snake / cpu_filename
     cpu_path.parent.mkdir(parents=True, exist_ok=True)
     cpu_path.write_text(cpu_content)
     generated.append(cpu_path)
+
+    return generated
+
+
+def _generate_registry(
+    op_name: str,
+    impl_indices: list[int],
+    devices: list[str],
+    output_dir: pathlib.Path,
+) -> list[pathlib.Path]:
+    """Generate ``registry.h`` files declaring active implementation indices."""
+    op_snake = _to_snake(op_name)
+    generated: list[pathlib.Path] = []
+
+    for device in ["cpu"] + [d for d in devices if d in CUDA_LIKE_BACKENDS]:
+        if device == "cpu":
+            device_enum = "Device::Type::kCpu"
+        else:
+            from dsl.compiler.codegen import BACKEND_ENUM
+
+            device_enum = f"Device::Type::k{BACKEND_ENUM[device]}"
+
+        guard = f"INFINI_OPS_{device.upper()}_{op_snake.upper()}_REGISTRY_H_"
+
+        # Use named constants from Impl for readability.
+        named_indices = ", ".join(
+            "Impl::kDsl" if i > 0 else "Impl::kDefault"
+            for i in sorted(impl_indices)
+        )
+
+        content = (
+            f"#ifndef {guard}\n"
+            f"#define {guard}\n"
+            f"\n"
+            f'#include "base/{op_snake}.h"\n'
+            f'#include "impl.h"\n'
+            f"\n"
+            f"namespace infini::ops {{\n"
+            f"\n"
+            f"template <>\n"
+            f"struct ActiveImplementationsImpl<{op_name}, {device_enum}> {{\n"
+            f"  using type = List<{named_indices}>;\n"
+            f"}};\n"
+            f"\n"
+            f"}}  // namespace infini::ops\n"
+            f"\n"
+            f"#endif\n"
+        )
+
+        reg_path = output_dir / device / op_snake / "registry.h"
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        reg_path.write_text(content)
+        generated.append(reg_path)
 
     return generated
 
@@ -117,6 +175,21 @@ def main() -> None:
         else:
             generated = generate_wrappers_for_op(op, args.devices, args.output)
 
+        # Process DSL variants (impl_index > 0).
+        variants = REGISTRY.variants(name)
+
+        for variant in variants:
+            generated += _generate_infini_op(variant, args.output)
+            generated += generate_wrappers_for_op(
+                variant, args.devices, args.output
+            )
+
+        if variants:
+            impl_indices = [0] + [v.impl_index for v in variants]
+            generated += _generate_registry(
+                name, impl_indices, args.devices, args.output
+            )
+
         total_generated += len(generated)
 
         if args.verify:
@@ -146,6 +219,12 @@ def main() -> None:
                     total_diffs += 1
                 else:
                     print(f"OK   {rel}")
+
+    # Write per-operator implementation name mappings.
+    all_impl_names = REGISTRY.all_impl_names()
+    impl_names_path = args.output / "impl_names.json"
+    impl_names_path.parent.mkdir(parents=True, exist_ok=True)
+    impl_names_path.write_text(json.dumps(all_impl_names, indent=2) + "\n")
 
     if args.verify:
         print(f"\n{total_generated} files checked, {total_diffs} differences.")

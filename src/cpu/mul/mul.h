@@ -6,6 +6,7 @@
 #include "base/mul.h"
 #include "common/generic_utils.h"
 #include "cpu/caster_.h"
+#include "cpu/mul/registry.h"
 
 namespace infini::ops {
 

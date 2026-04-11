@@ -7,10 +7,8 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from dsl.compiler.dag import (
-    ELEMENTWISE,
     ELEMENTWISE_BINARY,
     ELEMENTWISE_UNARY,
-    REDUCTIONS,
     ComputeDAG,
     DagNode,
     NodeKind,

@@ -128,13 +128,23 @@ def _expr_for_node(
 # ---- Binary elementwise code generation ------------------------------------
 
 
+def _dsl_prefix(op: InfiniOpDef) -> str:
+    """Return the prefix for DSL-generated class names.
+
+    When ``impl_index > 0``, class names are prefixed with ``Dsl`` to
+    avoid collisions with the hand-written implementation.
+    """
+
+    return "Dsl" if op.impl_index > 0 else ""
+
+
 def _generate_binary_functor_cuda(
     op: InfiniOpDef,
     dag: ComputeDAG,
     match: MatchResult,
 ) -> str:
     """Generate the device-side binary functor for CUDA."""
-    op_snake = _to_snake(op.name)
+    prefix = _dsl_prefix(op)
 
     # Build the functor body by walking the DAG in topological order.
     topo = dag.topo_sort()
@@ -175,12 +185,12 @@ def _generate_binary_functor_cuda(
             var_map[nid] = vname
 
     body = "\n".join(body_lines)
-    name_pascal = op.name
+    functor_name = f"{prefix}{op.name}Op"
 
     return f"""\
-// Device-side binary functor for `{name_pascal}`.
+// Device-side binary functor for `{op.name}` (DSL).
 template <Device::Type kDev>
-struct {name_pascal}Op {{
+struct {functor_name} {{
   template <typename T>
   __device__ __forceinline__ T operator()(const T& a, const T& b) const {{
     using ComputeType = float;
@@ -197,6 +207,7 @@ def _generate_binary_functor_cpu(
     match: MatchResult,
 ) -> str:
     """Generate the host-side binary functor for CPU."""
+    prefix = _dsl_prefix(op)
     topo = dag.topo_sort()
     var_map: dict[int, str] = {}
     body_lines: list[str] = []
@@ -235,10 +246,11 @@ def _generate_binary_functor_cpu(
             var_map[nid] = vname
 
     body = "\n".join(body_lines)
+    functor_name = f"{prefix}Cpu{op.name}Op"
 
     return f"""\
-// Host-side binary functor for `{op.name}` (CPU).
-struct Cpu{op.name}Op {{
+// Host-side binary functor for `{op.name}` (CPU, DSL).
+struct {functor_name} {{
   template <typename T>
   T operator()(const T& a, const T& b) const {{
     using ComputeType = float;
@@ -282,9 +294,11 @@ def _generate_reduce_op_cuda(
     pre_reduce_expr = _build_pre_reduce_expr(dag, reduce_node, is_cuda=True)
     finalize_expr = _build_finalize_expr(dag, reduce_node, match, is_cuda=True)
 
+    prefix = _dsl_prefix(op)
+
     return f"""\
-// Reduce op for `{op.name}`.
-struct {op.name}Reduce {{
+// Reduce op for `{op.name}` (DSL).
+struct {prefix}{op.name}Reduce {{
   template <unsigned int block_size, Device::Type kDev, typename TData>
   __device__ __forceinline__ float Accumulate(const TData* ptr,
                                               size_t count) const {{
@@ -336,9 +350,11 @@ def _generate_reduce_op_cpu(
     accum_expr = _build_accum_expr_scalar(dag, reduce_node, is_cuda=False)
     finalize_expr = _build_finalize_expr(dag, reduce_node, match, is_cuda=False)
 
+    prefix = _dsl_prefix(op)
+
     return f"""\
-// CPU reduce op for `{op.name}`.
-struct Cpu{op.name}Reduce {{
+// CPU reduce op for `{op.name}` (DSL).
+struct {prefix}Cpu{op.name}Reduce {{
   float Init() const {{ return {init_val}; }}
 
   float Accumulate(float acc, float v) const {{ return {accum_expr}; }}
@@ -359,9 +375,11 @@ def _generate_transform_op_cuda(
     """Generate the CUDA transform op struct."""
     transform_body = _build_transform_body(dag, match, is_cuda=True)
 
+    prefix = _dsl_prefix(op)
+
     return f"""\
-// Transform op for `{op.name}`.
-struct {op.name}Transform {{
+// Transform op for `{op.name}` (DSL).
+struct {prefix}{op.name}Transform {{
   template <Device::Type kDev, typename TData>
   __device__ __forceinline__ TData Apply(TData x, float reduced,
                                          size_t i) const {{
@@ -380,9 +398,11 @@ def _generate_transform_op_cpu(
     """Generate the CPU transform op struct."""
     transform_body = _build_transform_body(dag, match, is_cuda=False)
 
+    prefix = _dsl_prefix(op)
+
     return f"""\
-// CPU transform op for `{op.name}`.
-struct Cpu{op.name}Transform {{
+// CPU transform op for `{op.name}` (DSL).
+struct {prefix}Cpu{op.name}Transform {{
   template <typename T>
   T Apply(T x, float reduced, size_t i) const {{
 {transform_body}
@@ -421,7 +441,7 @@ def _build_pre_reduce_expr(
     # Generic: just accumulate the expression.
     var_map = {input_node.inputs[0]: "v"} if input_node.inputs else {"v": "v"}
 
-    return f"      ss += v;"
+    return "      ss += v;"
 
 
 def _build_accum_expr_scalar(
@@ -638,7 +658,11 @@ def generate_cuda_kernel(
 ) -> str:
     """Generate the shared CUDA kernel header for an `@infini_op`."""
     op_snake = _to_snake(op.name)
-    guard = f"INFINI_OPS_CUDA_{op_snake.upper()}_KERNEL_H_"
+
+    if op.impl_index > 0:
+        guard = f"INFINI_OPS_CUDA_{op_snake.upper()}_DSL_H_"
+    else:
+        guard = f"INFINI_OPS_CUDA_{op_snake.upper()}_KERNEL_H_"
 
     if match.brick == BrickKind.BINARY_ELEMENTWISE:
         return _gen_binary_elementwise_cuda(op, dag, match, guard, op_snake)
@@ -656,7 +680,11 @@ def generate_cpu_kernel(
 ) -> str:
     """Generate the CPU implementation header for an `@infini_op`."""
     op_snake = _to_snake(op.name)
-    guard = f"INFINI_OPS_CPU_{op_snake.upper()}_{op_snake.upper()}_H_"
+
+    if op.impl_index > 0:
+        guard = f"INFINI_OPS_CPU_{op_snake.upper()}_DSL_H_"
+    else:
+        guard = f"INFINI_OPS_CPU_{op_snake.upper()}_{op_snake.upper()}_H_"
 
     if match.brick == BrickKind.BINARY_ELEMENTWISE:
         return _gen_binary_elementwise_cpu(op, dag, match, guard, op_snake)
@@ -677,8 +705,11 @@ def _gen_binary_elementwise_cuda(
     guard: str,
     op_snake: str,
 ) -> str:
+    prefix = _dsl_prefix(op)
     functor = _generate_binary_functor_cuda(op, dag, match)
     base_header = f"base/{op_snake}.h"
+    class_name = f"{prefix}Cuda{op.name}"
+    functor_name = f"{prefix}{op.name}Op"
 
     return f"""\
 #ifndef {guard}
@@ -692,15 +723,15 @@ namespace infini::ops {{
 {functor}
 
 template <typename Backend>
-class Cuda{op.name} : public {op.name} {{
+class {class_name} : public {op.name} {{
  public:
-  Cuda{op.name}(const Tensor input, const Tensor other, Tensor out)
+  {class_name}(const Tensor input, const Tensor other, Tensor out)
       : {op.name}{{input, other, out}},
         brick_{{input, other, out, ndim_}} {{}}
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {{
-    brick_.template Run<AllTypes, {op.name}Op>(
+    brick_.template Run<AllTypes, {functor_name}>(
         stream_, input, other, out, output_size_, ndim_,
         is_input_contiguous_, is_other_contiguous_, is_out_contiguous_,
         out_type_);
@@ -723,8 +754,16 @@ def _gen_binary_elementwise_cpu(
     guard: str,
     op_snake: str,
 ) -> str:
+    prefix = _dsl_prefix(op)
     functor = _generate_binary_functor_cpu(op, dag, match)
     base_header = f"base/{op_snake}.h"
+    functor_name = f"{prefix}Cpu{op.name}Op"
+    impl_suffix = ", Impl::kDsl" if op.impl_index > 0 else ""
+    impl_include = (
+        f'#include "impl.h"\n#include "cpu/{op_snake}/registry.h"\n'
+        if op.impl_index > 0
+        else ""
+    )
 
     return f"""\
 #ifndef {guard}
@@ -732,13 +771,13 @@ def _gen_binary_elementwise_cpu(
 
 #include "cpu/templates/binary_elementwise.h"
 #include "{base_header}"
-
+{impl_include}
 namespace infini::ops {{
 
 {functor}
 
 template <>
-class Operator<{op.name}, Device::Type::kCpu> : public {op.name} {{
+class Operator<{op.name}, Device::Type::kCpu{impl_suffix}> : public {op.name} {{
  public:
   using {op.name}::{op.name};
 
@@ -749,7 +788,7 @@ class Operator<{op.name}, Device::Type::kCpu> : public {op.name} {{
         is_input_contiguous_, is_other_contiguous_, is_out_contiguous_,
         input_shape_, other_shape_, out_shape_,
         input_strides_, other_strides_, out_strides_,
-        out_type_, Cpu{op.name}Op{{}});
+        out_type_, {functor_name}{{}});
   }}
 }};
 
@@ -769,9 +808,13 @@ def _gen_reduce_transform_cuda(
     guard: str,
     op_snake: str,
 ) -> str:
+    prefix = _dsl_prefix(op)
     reduce_op = _generate_reduce_op_cuda(op, dag, match)
     transform_op = _generate_transform_op_cuda(op, dag, match)
     base_header = f"base/{op_snake}.h"
+    class_name = f"{prefix}Cuda{op.name}"
+    reduce_name = f"{prefix}{op.name}Reduce"
+    transform_name = f"{prefix}{op.name}Transform"
 
     # Determine the type list based on the operator.
     type_list = "ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>"
@@ -790,7 +833,7 @@ namespace infini::ops {{
 {transform_op}
 
 template <typename Backend>
-class Cuda{op.name} : public {op.name} {{
+class {class_name} : public {op.name} {{
  public:
   using {op.name}::{op.name};
 
@@ -799,8 +842,8 @@ class Cuda{op.name} : public {op.name} {{
     LaunchReduceThenTransform<Backend, {type_list}>(
         stream_, input, out, batch_size_, nhead_, dim_,
         out.dtype(), input_strides_, out_strides_,
-        {op.name}Reduce{{eps}},
-        {op.name}Transform{{weight.data()}});
+        {reduce_name}{{eps}},
+        {transform_name}{{weight.data()}});
   }}
 }};
 
@@ -817,9 +860,18 @@ def _gen_reduce_transform_cpu(
     guard: str,
     op_snake: str,
 ) -> str:
+    prefix = _dsl_prefix(op)
     reduce_op = _generate_reduce_op_cpu(op, dag, match)
     transform_op = _generate_transform_op_cpu(op, dag, match)
     base_header = f"base/{op_snake}.h"
+    reduce_name = f"{prefix}Cpu{op.name}Reduce"
+    transform_name = f"{prefix}Cpu{op.name}Transform"
+    impl_suffix = ", Impl::kDsl" if op.impl_index > 0 else ""
+    impl_include = (
+        f'#include "impl.h"\n#include "cpu/{op_snake}/registry.h"\n'
+        if op.impl_index > 0
+        else ""
+    )
 
     type_list = "ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>"
 
@@ -829,7 +881,7 @@ def _gen_reduce_transform_cpu(
 
 #include "cpu/templates/reduce_transform.h"
 #include "{base_header}"
-
+{impl_include}
 namespace infini::ops {{
 
 {reduce_op}
@@ -837,7 +889,7 @@ namespace infini::ops {{
 {transform_op}
 
 template <>
-class Operator<{op.name}, Device::Type::kCpu> : public {op.name} {{
+class Operator<{op.name}, Device::Type::kCpu{impl_suffix}> : public {op.name} {{
  public:
   using {op.name}::{op.name};
 
@@ -846,8 +898,8 @@ class Operator<{op.name}, Device::Type::kCpu> : public {op.name} {{
     CpuReduceThenTransform<{type_list}>(
         input, out, batch_size_, nhead_, dim_,
         out.dtype(), input_strides_, out_strides_,
-        Cpu{op.name}Reduce{{eps}},
-        Cpu{op.name}Transform{{weight.data()}});
+        {reduce_name}{{eps}},
+        {transform_name}{{weight.data()}});
   }}
 }};
 

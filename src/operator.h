@@ -52,10 +52,30 @@ struct CacheKey {
   }
 };
 
+// Check whether a value is present in a compile-time List.
+template <auto... values>
+constexpr bool ListContains(std::size_t value, List<values...>) {
+  return ((value == static_cast<std::size_t>(values)) || ...);
+}
+
+// Return the first element of a compile-time List.
+template <auto head, auto... tail>
+constexpr std::size_t ListFirst(List<head, tail...>) {
+  return static_cast<std::size_t>(head);
+}
+
 template <typename Functor, typename... Args, auto... implementation_indices>
 auto DispatchImplementation(std::size_t implementation_index, Functor&& func,
                             std::string_view context_str,
-                            List<implementation_indices...>, Args&&... args) {
+                            List<implementation_indices...> list,
+                            Args&&... args) {
+  // Fall back to the first available implementation when the requested
+  // index does not exist (e.g., operator has only a DSL implementation
+  // but the caller uses the default index 0).
+  if (!ListContains(implementation_index, list)) {
+    implementation_index = ListFirst(list);
+  }
+
   return DispatchFunc<std::size_t,
                       static_cast<std::size_t>(implementation_indices)...>(
       implementation_index, std::forward<Functor>(func), context_str,

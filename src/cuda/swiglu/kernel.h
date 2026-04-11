@@ -16,8 +16,8 @@ namespace infini::ops {
 template <typename Backend>
 class CudaSwiglu : public Swiglu {
  public:
-  CudaSwiglu(const Tensor input, const Tensor gate, Tensor out)
-      : Swiglu{input, gate, out} {
+  CudaSwiglu(const Tensor input, const Tensor other, Tensor out)
+      : Swiglu{input, other, out} {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
 
@@ -31,8 +31,8 @@ class CudaSwiglu : public Swiglu {
     std::memcpy(metadata.data() + offset, input_shape_.data(), shape_size);
     offset += shape_size;
 
-    d_gate_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, gate_shape_.data(), shape_size);
+    d_other_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, other_shape_.data(), shape_size);
     offset += shape_size;
 
     d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -43,8 +43,8 @@ class CudaSwiglu : public Swiglu {
     std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
     offset += strides_size;
 
-    d_gate_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, gate_strides_.data(), strides_size);
+    d_other_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, other_strides_.data(), strides_size);
     offset += strides_size;
 
     d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
@@ -56,7 +56,7 @@ class CudaSwiglu : public Swiglu {
 
   ~CudaSwiglu() { Backend::Free(d_metadata_); }
 
-  void operator()(const Tensor input, const Tensor gate,
+  void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllFloatTypes, AllCudaBlockSizes>(
@@ -73,14 +73,14 @@ class CudaSwiglu : public Swiglu {
 
           T* d_out = reinterpret_cast<T*>(out.data());
           const T* d_input = reinterpret_cast<const T*>(input.data());
-          const T* d_gate = reinterpret_cast<const T*>(gate.data());
+          const T* d_gate = reinterpret_cast<const T*>(other.data());
 
           SwigluKernel<Backend::kDeviceType, T, kBlockSize>
               <<<gridDims, blockDims, 0, cuda_stream>>>(
                   d_out, d_input, d_gate, d_out_shape_, d_input_shape_,
-                  d_gate_shape_, d_out_strides_, d_input_strides_,
-                  d_gate_strides_, output_size_, ndim_, is_out_contiguous_,
-                  is_input_contiguous_, is_gate_contiguous_);
+                  d_other_shape_, d_out_strides_, d_input_strides_,
+                  d_other_strides_, output_size_, ndim_, is_out_contiguous_,
+                  is_input_contiguous_, is_other_contiguous_);
         },
         "CudaSwiglu::operator()");
   }
@@ -90,13 +90,13 @@ class CudaSwiglu : public Swiglu {
 
   Tensor::Size* d_input_shape_{nullptr};
 
-  Tensor::Size* d_gate_shape_{nullptr};
+  Tensor::Size* d_other_shape_{nullptr};
 
   Tensor::Size* d_out_shape_{nullptr};
 
   Tensor::Stride* d_input_strides_{nullptr};
 
-  Tensor::Stride* d_gate_strides_{nullptr};
+  Tensor::Stride* d_other_strides_{nullptr};
 
   Tensor::Stride* d_out_strides_{nullptr};
 };

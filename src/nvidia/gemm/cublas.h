@@ -8,7 +8,7 @@
 namespace infini::ops {
 
 template <>
-class Operator<Gemm, Device::Type::kNvidia, 0>
+class Operator<Gemm, Device::Type::kNvidia, GemmImpl::kCublas>
     : public BlasGemm<Blas<Device::Type::kNvidia>> {
  public:
   using BlasGemm<Blas<Device::Type::kNvidia>>::BlasGemm;

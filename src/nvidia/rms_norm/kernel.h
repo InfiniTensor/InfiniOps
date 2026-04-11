@@ -5,6 +5,7 @@
 
 #include "cuda/rms_norm/kernel.h"
 #include "nvidia/caster.cuh"
+#include "nvidia/rms_norm/registry.h"
 #include "nvidia/runtime_.h"
 
 namespace infini::ops {

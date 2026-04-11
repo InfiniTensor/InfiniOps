@@ -57,12 +57,14 @@ def _resolve_cuda_template_info(
     Returns ``(CudaClassName, include_path)`` or ``None`` if the operator
     does not use a shared CUDA template.
     """
-    from dsl.decorators import InfiniOpDef, ManualOpDef
+    from dsl.decorators import InfiniOpDef
 
     if isinstance(op, InfiniOpDef):
         op_snake = _to_snake(op.name)
+        prefix = "Dsl" if op.impl_index > 0 else ""
+        filename = "dsl.h" if op.impl_index > 0 else "kernel.h"
 
-        return f"Cuda{op.name}", f"cuda/{op_snake}/kernel.h"
+        return f"{prefix}Cuda{op.name}", f"cuda/{op_snake}/{filename}"
 
     cuda_entry = op.backends.get("cuda")
 
@@ -86,9 +88,12 @@ def generate_cuda_wrapper(
 
     For operators backed by a shared ``Cuda*<Runtime<...>>`` template.
     """
+    from dsl.decorators import InfiniOpDef
+
     op_snake = _to_snake(op.name)
     enum_name = BACKEND_ENUM[backend]
-    guard = _include_guard(backend, op_snake, "kernel.h")
+    filename = "dsl.h" if isinstance(op, InfiniOpDef) and op.impl_index > 0 else "kernel.h"
+    guard = _include_guard(backend, op_snake, filename)
 
     info = _resolve_cuda_template_info(op)
 
@@ -102,12 +107,19 @@ def generate_cuda_wrapper(
 
     # Build the template specialization.
     device_type = f"Device::Type::k{enum_name}"
+    need_impl_h = False
 
-    if impl_index is not None:
-        device_type += f", {impl_index}"
+    if impl_index is not None and impl_index > 0:
+        device_type += ", Impl::kDsl"
+        need_impl_h = True
 
     # Collect includes — no blank lines between them (matches existing style).
     lines: list[str] = ["#include <utility>", ""]
+
+    if need_impl_h:
+        lines.append('#include "impl.h"')
+        lines.append(f'#include "{backend}/{op_snake}/registry.h"')
+        lines.append("")
 
     if backend == "moore":
         lines.append("// clang-format off")
@@ -205,7 +217,7 @@ def generate_wrappers_for_op(
 
     Returns a list of generated file paths.
     """
-    from dsl.decorators import InfiniOpDef, ManualOpDef
+    from dsl.decorators import ManualOpDef
 
     op_snake = _to_snake(op.name)
     generated: list[pathlib.Path] = []
@@ -217,6 +229,10 @@ def generate_wrappers_for_op(
         # For @infini_op, the CUDA kernel is auto-generated.
         backends = dict(op.manual_backends)
         backends["cuda"] = f"cuda/{op_snake}/kernel.h"
+
+    # Determine impl_index and output filename.
+    impl_index = getattr(op, "impl_index", None)
+    out_filename = "dsl.h" if impl_index and impl_index > 0 else "kernel.h"
 
     for backend in devices:
 
@@ -234,8 +250,8 @@ def generate_wrappers_for_op(
             continue
 
         # Generate from shared CUDA template.
-        content = generate_cuda_wrapper(op, backend)
-        out_path = output_dir / backend / op_snake / "kernel.h"
+        content = generate_cuda_wrapper(op, backend, impl_index=impl_index)
+        out_path = output_dir / backend / op_snake / out_filename
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(content)
         generated.append(out_path)

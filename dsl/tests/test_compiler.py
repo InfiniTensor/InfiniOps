@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 
-from dsl.compiler.dag import ComputeDAG, NodeKind
+from dsl.compiler.dag import NodeKind
 from dsl.compiler.parser import parse_infini_op
 from dsl.compiler.patterns import BrickKind, match_dag
 from dsl.compiler.infini_codegen import generate_cuda_kernel, generate_cpu_kernel
-from dsl.compiler.registry import REGISTRY
 from dsl.decorators import InfiniOpDef
 
 

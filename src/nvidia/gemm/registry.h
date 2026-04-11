@@ -5,9 +5,15 @@
 
 namespace infini::ops {
 
+// Gemm-specific implementation indices (both hand-written, not DSL).
+struct GemmImpl {
+  static constexpr std::size_t kCublas = 0;
+  static constexpr std::size_t kCublasLt = 1;
+};
+
 template <>
 struct ActiveImplementationsImpl<Gemm, Device::Type::kNvidia> {
-  using type = List<0, 1>;
+  using type = List<GemmImpl::kCublas, GemmImpl::kCublasLt>;
 };
 
 }  // namespace infini::ops
