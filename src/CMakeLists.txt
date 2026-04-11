@@ -227,15 +227,15 @@ if(GENERATE_PYTHON_BINDINGS)
     # platform) would omit specializations for other enabled backends,
     # causing link-time or runtime failures.
     execute_process(
-        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
+        COMMAND ${Python_EXECUTABLE} -m dsl --devices ${DEVICE_LIST}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )
 
     if(NOT script_result EQUAL 0)
-        message(FATAL_ERROR "Generating wrappers - failed")
+        message(FATAL_ERROR "DSL compilation and binding generation - failed")
     else()
-        message(STATUS "Generating wrappers - done")
+        message(STATUS "DSL compilation and binding generation - done")
     endif()
 
     set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
