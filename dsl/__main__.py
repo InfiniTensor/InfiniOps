@@ -226,13 +226,19 @@ def main() -> None:
     impl_names_path.parent.mkdir(parents=True, exist_ok=True)
     impl_names_path.write_text(json.dumps(all_impl_names, indent=2) + "\n")
 
+    # Generate pybind11 bindings and C API (replaces generate_wrappers.py).
+    if not args.verify:
+        from dsl.compiler.bindings import generate_all_bindings
+
+        generate_all_bindings(args.devices, args.output, all_impl_names)
+
     if args.verify:
         print(f"\n{total_generated} files checked, {total_diffs} differences.")
 
         if total_diffs:
             sys.exit(1)
     else:
-        print(f"Generated {total_generated} wrapper files in {args.output}/")
+        print(f"Generated {total_generated} DSL files + bindings in {args.output}/")
 
 
 if __name__ == "__main__":
