@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_CUDA_FLASH_ATTENTION_KERNEL_H_
 #define INFINI_OPS_CUDA_FLASH_ATTENTION_KERNEL_H_
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <vector>
@@ -32,8 +33,46 @@ namespace infini::ops {
 // `BatchDecodeWithPagedKVCacheDispatched` with the `DecodePlan` scheduler.
 template <typename Backend>
 class CudaFlashAttention : public FlashAttention {
+  // FlashInfer recommends 128 MB for each scheduler workspace buffer.
+  static constexpr size_t kIntWorkspaceBytes = 128 * 1024 * 1024;
+  static constexpr size_t kFloatWorkspaceBytes = 128 * 1024 * 1024;
+
+  // Scratch region after the two large buffers, used for small metadata
+  // arrays (`d_qo_indptr`, `d_kv_indptr`, page indices, etc.).
+  static constexpr size_t kScratchBytes = 8 * 1024 * 1024;  // 8 MB.
+
+  // Pinned host staging buffer for FlashInfer scheduler.
+  static constexpr size_t kPinnedBytes = kIntWorkspaceBytes;
+
  public:
-  using FlashAttention::FlashAttention;
+  template <typename... Args>
+  CudaFlashAttention(Args&&... args) : FlashAttention(std::forward<Args>(args)...) {
+    cudaMalloc(&default_workspace_, workspace_size_in_bytes());
+    assert(default_workspace_ && "failed to allocate device workspace");
+    cudaMallocHost(&pinned_workspace_, kPinnedBytes);
+    assert(pinned_workspace_ && "failed to allocate pinned host workspace");
+  }
+
+  ~CudaFlashAttention() override {
+    if (default_workspace_) {
+      cudaFree(default_workspace_);
+      default_workspace_ = nullptr;
+    }
+
+    if (pinned_workspace_) {
+      cudaFreeHost(pinned_workspace_);
+      pinned_workspace_ = nullptr;
+    }
+  }
+
+  // Non-copyable, non-movable (pinned memory ownership).
+  CudaFlashAttention(const CudaFlashAttention&) = delete;
+  CudaFlashAttention& operator=(const CudaFlashAttention&) = delete;
+
+  std::size_t workspace_size_in_bytes() const override {
+    // int_workspace (128 MB) + float_workspace (128 MB) + scratch (8 MB).
+    return kIntWorkspaceBytes + kFloatWorkspaceBytes + kScratchBytes;
+  }
 
   void operator()(const Tensor query, const Tensor key, const Tensor value,
                   std::optional<Tensor> cu_seqlens_q,
@@ -385,18 +424,21 @@ class CudaFlashAttention : public FlashAttention {
 
     uint32_t total_num_rows = static_cast<uint32_t>(h_cu_q[batch_size]);
 
-    // Allocate device int workspace and pinned host staging buffer.
-    constexpr size_t kIntWorkspaceBytes = 128 * 1024 * 1024;  // 128 MB.
-    void* int_buf = nullptr;
-    void* pinned_buf = nullptr;
-    cudaMalloc(&int_buf, kIntWorkspaceBytes);
-    cudaMallocHost(&pinned_buf, kIntWorkspaceBytes);
+    // Partition pre-allocated device workspace into sub-regions.
+    void* active_workspace = workspace_ ? workspace_ : default_workspace_;
+    size_t active_workspace_size = workspace_ ? workspace_size_in_bytes_
+                                              : workspace_size_in_bytes();
+    char* ws = static_cast<char*>(active_workspace);
+    size_t ws_offset = 0;
+
+    void* int_buf = ws + ws_offset;
+    ws_offset += kIntWorkspaceBytes;
 
     // Run PrefillPlan with split-KV disabled for simplicity.
     flashinfer::PrefillPlanInfo plan_info;
     cudaError_t plan_err = flashinfer::PrefillPlan<int32_t>(
         /*float_buffer=*/nullptr,
-        /*float_workspace_size_in_bytes=*/0, int_buf, pinned_buf,
+        /*float_workspace_size_in_bytes=*/0, int_buf, pinned_workspace_,
         kIntWorkspaceBytes, plan_info, h_cu_q.data(), h_cu_kv.data(),
         total_num_rows, batch_size,
         static_cast<uint32_t>(num_heads), static_cast<uint32_t>(num_kv_heads),
@@ -410,11 +452,19 @@ class CudaFlashAttention : public FlashAttention {
     assert(plan_err == cudaSuccess && "FlashInfer PrefillPlan failed");
     (void)plan_err;
 
-    // Upload cu_seqlens as int32 to device for the batch params.
-    int32_t* d_qo_indptr = nullptr;
-    int32_t* d_kv_indptr = nullptr;
-    cudaMalloc(&d_qo_indptr, batch_size_plus_one * sizeof(int32_t));
-    cudaMalloc(&d_kv_indptr, batch_size_plus_one * sizeof(int32_t));
+    // Upload cu_seqlens as int32 to device from the scratch region.
+    // Skip float workspace region (unused for prefill) to reach scratch.
+    ws_offset += kFloatWorkspaceBytes;
+
+    int32_t* d_qo_indptr = reinterpret_cast<int32_t*>(ws + ws_offset);
+    ws_offset += batch_size_plus_one * sizeof(int32_t);
+
+    int32_t* d_kv_indptr = reinterpret_cast<int32_t*>(ws + ws_offset);
+    ws_offset += batch_size_plus_one * sizeof(int32_t);
+
+    assert(ws_offset <= active_workspace_size &&
+           "FlashAttention batch prefill workspace overflow");
+
     cudaMemcpyAsync(d_qo_indptr, h_cu_q.data(),
                     batch_size_plus_one * sizeof(int32_t),
                     cudaMemcpyHostToDevice, stream);
@@ -517,11 +567,6 @@ class CudaFlashAttention : public FlashAttention {
         assert(false && "unsupported CTA_TILE_Q from PrefillPlan");
     }
 
-    // Clean up workspace.
-    cudaFree(d_qo_indptr);
-    cudaFree(d_kv_indptr);
-    cudaFree(int_buf);
-    cudaFreeHost(pinned_buf);
   }
 
   // Helper to dispatch batch prefill kernel with a compile-time CTA_TILE_Q.
@@ -667,15 +712,31 @@ class CudaFlashAttention : public FlashAttention {
       }
     }
 
-    // Upload paged KV metadata to device.
-    int32_t* d_page_indices = nullptr;
-    int32_t* d_page_indptr = nullptr;
-    int32_t* d_last_page_len = nullptr;
+    // Partition pre-allocated device workspace into sub-regions.
+    void* active_workspace = workspace_ ? workspace_ : default_workspace_;
+    size_t active_workspace_size = workspace_ ? workspace_size_in_bytes_
+                                              : workspace_size_in_bytes();
+    char* ws = static_cast<char*>(active_workspace);
+    size_t ws_offset = 0;
 
-    cudaMalloc(&d_page_indices,
-               std::max<size_t>(total_pages, 1) * sizeof(int32_t));
-    cudaMalloc(&d_page_indptr, (num_reqs + 1) * sizeof(int32_t));
-    cudaMalloc(&d_last_page_len, num_reqs * sizeof(int32_t));
+    void* int_buf = ws + ws_offset;
+    ws_offset += kIntWorkspaceBytes;
+
+    void* float_buf = ws + ws_offset;
+    ws_offset += kFloatWorkspaceBytes;
+
+    // Small metadata arrays from the scratch region.
+    int32_t* d_page_indices = reinterpret_cast<int32_t*>(ws + ws_offset);
+    ws_offset += std::max<size_t>(total_pages, 1) * sizeof(int32_t);
+
+    int32_t* d_page_indptr = reinterpret_cast<int32_t*>(ws + ws_offset);
+    ws_offset += (num_reqs + 1) * sizeof(int32_t);
+
+    int32_t* d_last_page_len = reinterpret_cast<int32_t*>(ws + ws_offset);
+    ws_offset += num_reqs * sizeof(int32_t);
+
+    assert(ws_offset <= active_workspace_size &&
+           "FlashAttention paged decode workspace overflow");
 
     if (total_pages > 0) {
       cudaMemcpyAsync(d_page_indices, h_page_indices.data(),
@@ -700,15 +761,7 @@ class CudaFlashAttention : public FlashAttention {
         flashinfer::QKVLayout::kNHD, kv_data, kv_data, d_page_indices,
         d_page_indptr, d_last_page_len);
 
-    // Allocate workspace buffers for DecodePlan.
-    constexpr size_t kFloatWorkspaceBytes = 128 * 1024 * 1024;
-    constexpr size_t kIntWorkspaceBytes = 128 * 1024 * 1024;
-    void* float_buf = nullptr;
-    void* int_buf = nullptr;
-    void* pinned_buf = nullptr;
-    cudaMalloc(&float_buf, kFloatWorkspaceBytes);
-    cudaMalloc(&int_buf, kIntWorkspaceBytes);
-    cudaMallocHost(&pinned_buf, kIntWorkspaceBytes);
+    // Device workspace was partitioned above; use pinned host member.
 
     using AttentionVariant =
         flashinfer::DefaultAttention</*use_custom_mask=*/false,
@@ -726,38 +779,31 @@ class CudaFlashAttention : public FlashAttention {
       case 1:
         LaunchPagedDecodeInner<HEAD_DIM, 1, DType, AttentionVariant, Params>(
             query, output, paged_kv, float_buf, kFloatWorkspaceBytes, int_buf,
-            pinned_buf, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
+            pinned_workspace_, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
             num_heads, scale, window_left, block_size, stream);
         break;
       case 2:
         LaunchPagedDecodeInner<HEAD_DIM, 2, DType, AttentionVariant, Params>(
             query, output, paged_kv, float_buf, kFloatWorkspaceBytes, int_buf,
-            pinned_buf, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
+            pinned_workspace_, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
             num_heads, scale, window_left, block_size, stream);
         break;
       case 4:
         LaunchPagedDecodeInner<HEAD_DIM, 4, DType, AttentionVariant, Params>(
             query, output, paged_kv, float_buf, kFloatWorkspaceBytes, int_buf,
-            pinned_buf, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
+            pinned_workspace_, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
             num_heads, scale, window_left, block_size, stream);
         break;
       case 8:
         LaunchPagedDecodeInner<HEAD_DIM, 8, DType, AttentionVariant, Params>(
             query, output, paged_kv, float_buf, kFloatWorkspaceBytes, int_buf,
-            pinned_buf, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
+            pinned_workspace_, kIntWorkspaceBytes, h_page_indptr.data(), num_reqs,
             num_heads, scale, window_left, block_size, stream);
         break;
       default:
         assert(false && "unsupported GQA group size for paged decode");
     }
 
-    // Clean up.
-    cudaFree(d_page_indices);
-    cudaFree(d_page_indptr);
-    cudaFree(d_last_page_len);
-    cudaFree(float_buf);
-    cudaFree(int_buf);
-    cudaFreeHost(pinned_buf);
   }
 
   // Inner helper for paged decode, templated on compile-time GROUP_SIZE.
@@ -841,6 +887,13 @@ class CudaFlashAttention : public FlashAttention {
            "FlashInfer BatchDecodeWithPagedKVCacheDispatched failed");
     (void)err;
   }
+
+  // Device workspace, allocated once in the constructor. Used as fallback
+  // when the handle does not provide a workspace buffer.
+  mutable void* default_workspace_{nullptr};
+
+  // Pinned host staging buffer, allocated once in the constructor.
+  mutable void* pinned_workspace_{nullptr};
 };
 
 }  // namespace infini::ops
