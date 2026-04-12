@@ -21,6 +21,11 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: ${{ matrix.timeout_minutes }}
     steps:
+      - name: Checkout
+          uses: actions/checkout@v4
+          with:
+            submodules: recursive
+
       - name: Show stage plan
         env:
           MATRIX_JSON: ${{ inputs.matrix_json }}
