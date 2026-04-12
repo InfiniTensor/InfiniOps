@@ -213,11 +213,7 @@ jobs:
           mkdir -p ${{ github.run_id }}_${{ matrix.id }}
           cd ${{ github.run_id }}_${{ matrix.id }}
           
-          git init
-          git remote add origin git@github.com:Vincent777/ci_autotest.git
-          git fetch --depth=1 origin main
-          git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
-          chmod a+x daemon.sh
+          chmod a+x .ci/daemon.sh
 
           PLATFORM=${{ matrix.platform }}
           echo "**************************************************************************************"
@@ -229,7 +225,7 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
 
-          exec ./daemon.sh \
+          exec .ci/daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \

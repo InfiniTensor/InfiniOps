@@ -75,11 +75,7 @@ jobs:
               mkdir -p ${{ github.run_id }}_${{ matrix.id }}
               cd ${{ github.run_id }}_${{ matrix.id }}
               
-              git init
-              git remote add origin git@github.com:Vincent777/ci_autotest.git
-              git fetch --depth=1 origin main
-              git show origin/main:ascend_test_suite/daemon.sh > daemon.sh
-              chmod a+x daemon.sh
+              chmod a+x .ci/daemon.sh
               
               DOCKER_ARGS="${{ join(matrix.docker_args, ' ') }}"
               VOLUME_ARGS=$(printf " -v %s" ${{ join(matrix.volumes, ' ') }})
@@ -96,7 +92,7 @@ jobs:
               echo "${{ matrix.job_env.IMAGE }}"
               echo "************************************************************************"
 
-              exec ./daemon.sh \
+              exec .ci/daemon.sh \
                 "${PLATFORM^}" \
                 Smoke \
                 ${{ matrix.job_env.ENGINE }}  \
