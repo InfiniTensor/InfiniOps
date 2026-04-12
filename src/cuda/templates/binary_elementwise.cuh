@@ -14,7 +14,53 @@
 
 namespace infini::ops {
 
-// Generic binary elementwise GPU kernel.
+// Vectorized binary elementwise kernel for contiguous tensors.
+//
+// Processes VEC_SIZE elements per thread using vectorized load/store for
+// higher memory bandwidth utilization.  Falls back to scalar when the
+// total element count is not divisible by VEC_SIZE.
+template <Device::Type kDev, typename Op, typename T, unsigned int BLOCK_SIZE,
+          int VEC_SIZE>
+__global__ void BinaryElementwiseVecKernel(T* __restrict__ out,
+                                           const T* __restrict__ a,
+                                           const T* __restrict__ b,
+                                           size_t output_size) {
+  size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t stride = gridDim.x * blockDim.x;
+  size_t vec_count = output_size / VEC_SIZE;
+
+  using VecT = typename utils::AlignedVec<T, VEC_SIZE>::type;
+  const VecT* a_vec = reinterpret_cast<const VecT*>(a);
+  const VecT* b_vec = reinterpret_cast<const VecT*>(b);
+  VecT* out_vec = reinterpret_cast<VecT*>(out);
+
+  Op op{};
+
+  for (size_t i = tid; i < vec_count; i += stride) {
+    VecT va = a_vec[i];
+    VecT vb = b_vec[i];
+    const T* pa = reinterpret_cast<const T*>(&va);
+    const T* pb = reinterpret_cast<const T*>(&vb);
+    VecT vout;
+    T* po = reinterpret_cast<T*>(&vout);
+
+    #pragma unroll
+    for (int j = 0; j < VEC_SIZE; ++j) {
+      po[j] = op(pa[j], pb[j]);
+    }
+
+    out_vec[i] = vout;
+  }
+
+  // Handle remaining elements.
+  size_t tail_start = vec_count * VEC_SIZE;
+
+  for (size_t i = tail_start + tid; i < output_size; i += stride) {
+    out[i] = op(a[i], b[i]);
+  }
+}
+
+// Generic binary elementwise GPU kernel (non-contiguous path).
 //
 // `Op` is a device-side functor with signature `T operator()(const T&, const T&)`.
 template <Device::Type kDev, typename Op, typename T, unsigned int BLOCK_SIZE>
@@ -90,15 +136,15 @@ class BinaryElementwiseBrick {
 
   // Launch the elementwise kernel with dtype dispatch.
   //
-  // `TypeList` is the compile-time list of supported `DataType` values
-  // (e.g. `AllTypes`, `AllFloatTypes`).
-  // `Op` is a device-side functor templated on `Device::Type kDev` with
-  // a member `template <typename T> T operator()(const T&, const T&)`.
+  // When all three tensors are contiguous, uses a vectorized kernel with
+  // 128-bit coalesced loads for higher memory bandwidth.  Falls back to
+  // the scalar kernel with per-element IndexToOffset for non-contiguous.
   template <typename TypeList, template <Device::Type> class Op>
   void Run(void* stream, const Tensor a, const Tensor b, Tensor out,
            Tensor::Size output_size, Tensor::Size ndim, bool a_contig,
            bool b_contig, bool out_contig, DataType dtype) const {
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
+    bool all_contig = a_contig && b_contig && out_contig;
 
     DispatchFunc<TypeList, AllCudaBlockSizes>(
         {static_cast<int64_t>(dtype), block_size},
@@ -108,19 +154,41 @@ class BinaryElementwiseBrick {
 
           auto cuda_stream =
               static_cast<typename Backend::Stream>(stream ? stream : 0);
-          dim3 blockDims(
-              std::min(static_cast<Tensor::Size>(block_size), output_size));
-          dim3 gridDims(utils::CeilDiv(output_size, blockDims.x));
 
-          BinaryElementwiseKernel<Backend::kDeviceType, Op<Backend::kDeviceType>,
-                                  T, kBlockSize>
-              <<<gridDims, blockDims, 0, cuda_stream>>>(
-                  reinterpret_cast<T*>(out.data()),
-                  reinterpret_cast<const T*>(a.data()),
-                  reinterpret_cast<const T*>(b.data()), d_out_shape_,
-                  d_a_shape_, d_b_shape_, d_out_strides_, d_a_strides_,
-                  d_b_strides_, output_size, ndim, out_contig, a_contig,
-                  b_contig);
+          if (all_contig) {
+            // Vectorized path: 128-bit loads, grid-stride loop.
+            constexpr int kVecSize = utils::OptimalVecSize<T>();
+            size_t vec_count = output_size / kVecSize;
+            size_t total_threads = vec_count > 0 ? vec_count : output_size;
+            dim3 blockDims(std::min(static_cast<size_t>(block_size),
+                                    total_threads));
+            dim3 gridDims(
+                std::min(utils::CeilDiv(total_threads, blockDims.x),
+                         static_cast<decltype(total_threads)>(65535)));
+
+            BinaryElementwiseVecKernel<Backend::kDeviceType,
+                                       Op<Backend::kDeviceType>, T,
+                                       kBlockSize, kVecSize>
+                <<<gridDims, blockDims, 0, cuda_stream>>>(
+                    reinterpret_cast<T*>(out.data()),
+                    reinterpret_cast<const T*>(a.data()),
+                    reinterpret_cast<const T*>(b.data()), output_size);
+          } else {
+            // Scalar path with IndexToOffset for non-contiguous tensors.
+            dim3 blockDims(
+                std::min(static_cast<Tensor::Size>(block_size), output_size));
+            dim3 gridDims(utils::CeilDiv(output_size, blockDims.x));
+
+            BinaryElementwiseKernel<Backend::kDeviceType,
+                                    Op<Backend::kDeviceType>, T, kBlockSize>
+                <<<gridDims, blockDims, 0, cuda_stream>>>(
+                    reinterpret_cast<T*>(out.data()),
+                    reinterpret_cast<const T*>(a.data()),
+                    reinterpret_cast<const T*>(b.data()), d_out_shape_,
+                    d_a_shape_, d_b_shape_, d_out_strides_, d_a_strides_,
+                    d_b_strides_, output_size, ndim, out_contig, a_contig,
+                    b_contig);
+          }
         },
         "BinaryElementwiseBrick::Run");
   }
