@@ -252,9 +252,8 @@ jobs:
             "${IMAGE_TAG}" &
           
           CHILD_PID=$!
-          echo -n "Running"
           while kill -0 "$CHILD_PID" 2>/dev/null; do
-            echo -n "."
+            echo "Running..."
             sleep 1
           done
 
