@@ -49,13 +49,60 @@ kernel rewrite — deferred.
 | **Linear 1024×4096²** | 0.171 | — | 1.2x faster |
 | **FlashAttn S=2048** | 0.241 | 286 TFLOPS | 1.12x faster |
 
-## Remaining Optimization Opportunities
+## Round 6 (new series): Full Baseline with CUDA Profiler
 
-1. **Add**: 1318 vs PyTorch 1650 GB/s (20% gap) — investigate AddOp
-   functor overhead, may need `__hadd2` for fp16 vector operations.
-2. **Cast**: 1279 vs 1642 GB/s (22% gap) — needs typed vectorized
-   load with different input/output vec sizes.
-3. **RmsNorm**: 3.3x slower than PyTorch at (32,32,4096) — needs
-   optimized reduce kernel.
-4. **Gemm cuBLAS 1024³**: 53 vs PyTorch 62 TFLOPS — switch default to
-   cuBLASLt (blocked by test tolerance issue).
+Used `torch.profiler` to measure actual kernel time (not Python overhead):
+
+| Operator | InfiniOps kernel | PyTorch kernel | Real ratio |
+|----------|-----------------|----------------|------------|
+| **Add (4096²)** | 60.1 us | 59.3 us | **1.0x ✓** |
+| **CausalSoftmax** | 73.3 us | 16.5 us (2 kernels) | **4.4x ✗** |
+| **Cast fp32→fp16** | 103.6 us | 61.5 us | **1.7x ✗** |
+| **RmsNorm** | 21 us (bench) | 11 us (bench) | **1.9x ✗** |
+| **AddRmsNorm** | 42.6 us | 28.9 us (2 kernels) | **1.5x ✗** |
+
+Key insight: Add's 20% benchmark gap is entirely Python binding
+overhead — CUDA kernel is matching PyTorch.
+
+## Round 7: Cast Vectorized Load (new series Round 3)
+
+Added 128-bit vectorized input load + output store.
+
+Cast fp32→fp16 (4096²): 0.092 ms → **0.078 ms** (+17%, 1285 GB/s).
+Gap vs PyTorch (1645 GB/s): 22% — limited by mixed-type vectorization
+(input vec size ≠ output vec size).
+
+## Round 8: RmsNorm Vectorized Attempts (new series Rounds 4-5)
+
+Attempted two approaches:
+1. Register caching (store x in registers during reduce, reuse in
+   transform) — **failed**: register pressure reduced occupancy, slower.
+2. Warp shuffle reduction (replace CUB BlockReduce with manual
+   `__shfl_xor_sync`) — **failed**: no improvement, CUB is already
+   well-optimized.
+3. Vectorized 128-bit struct loads — **failed**: anonymous struct
+   alignment issues, compiler couldn't optimize.
+
+Root cause: PyTorch's `vectorized_layer_norm` uses a fundamentally
+different approach — needs deeper study with nsight compute.
+
+## Current Status (Post All Optimization)
+
+| Operator | InfiniOps (ms) | PyTorch (ms) | Ratio | Status |
+|----------|---------------|-------------|-------|--------|
+| Add (4096²) | 0.076 | 0.061 | 0.80x | ✓ kernel matched (binding overhead) |
+| Mul (4096²) | 0.061 | 0.061 | 1.00x | ✓ |
+| Swiglu (4096²) | 0.062 | 0.167 | 2.68x | ✓ faster |
+| Cast (4096²) | 0.078 | 0.061 | 0.78x | ✗ 22% gap |
+| RmsNorm | 0.021 | 0.011 | 0.49x | ✗ 2x gap |
+| AddRmsNorm | 0.036 | 0.028 | 0.78x | ✗ |
+| CausalSoftmax | 0.056 | 0.034 | 0.61x | ✗ |
+| Gemm 4096³ | 0.594 | 0.571 | 0.96x | ✓ |
+| Matmul 4096³ | 0.590 | 0.574 | 0.97x | ✓ |
+| Linear 1024×4096² | 0.173 | 0.211 | 1.22x | ✓ faster |
+| RotaryEmbed | 0.020 | 0.099 | 4.93x | ✓ faster |
+| FlashAttn S=2048 | 0.240 | 0.269 | 1.12x | ✓ faster |
+
+**7/12 operators match or beat PyTorch.** Remaining gaps in
+RmsNorm/AddRmsNorm (vectorized reduce), CausalSoftmax (warp-level
+softmax), and Cast (mixed-type vectorization).
