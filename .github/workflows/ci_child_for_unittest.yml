@@ -253,7 +253,6 @@ jobs:
           
           CHILD_PID=$!
           while kill -0 "$CHILD_PID" 2>/dev/null; do
-            echo "Running..."
             sleep 1
           done
 
