@@ -95,7 +95,7 @@ jobs:
               echo "${{ matrix.job_env.IMAGE }}"
               echo "************************************************************************"
 
-              ./daemon.sh \
+              exec ./daemon.sh \
                 "${PLATFORM^}" \
                 Smoke \
                 ${{ matrix.job_env.ENGINE }}  \

@@ -197,16 +197,6 @@ jobs:
         env:
           ${{ matrix.job_env }}
         run: |
-          set -m
-
-          cleanup() {
-              trap - SIGINT SIGTERM SIGHUP SIGPIPE
-              echo "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-              exit 130
-          }
-
-          trap cleanup SIGINT SIGTERM SIGHUP SIGPIPE
-
           set -e
           echo "==> running job: ${{ matrix.job_name }}"
 
