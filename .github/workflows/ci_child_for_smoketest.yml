@@ -67,6 +67,9 @@ jobs:
               echo "Version = ${{ matrix.job_env.IMAGE }}"
               set -m
 
+              src_dir=$(pwd)
+              echo "src_dir: ${src_dir}"
+
               cd /home/zkjh
               if [ ! -d "CI_${{ matrix.platform }}_test" ]; then
                 mkdir -p "CI_${{ matrix.platform }}_test"
@@ -75,10 +78,8 @@ jobs:
               mkdir -p ${{ github.run_id }}_${{ matrix.id }}
               cd ${{ github.run_id }}_${{ matrix.id }}
               
-              pwd
-              ls -lah 
-
-              chmod a+x .ci/daemon.sh
+              cp $scr_dir/.ci/daemon.sh .
+              chmod a+x ./daemon.sh
               
               DOCKER_ARGS="${{ join(matrix.docker_args, ' ') }}"
               VOLUME_ARGS=$(printf " -v %s" ${{ join(matrix.volumes, ' ') }})
@@ -95,7 +96,7 @@ jobs:
               echo "${{ matrix.job_env.IMAGE }}"
               echo "************************************************************************"
 
-              exec .ci/daemon.sh \
+              exec ./daemon.sh \
                 "${PLATFORM^}" \
                 Smoke \
                 ${{ matrix.job_env.ENGINE }}  \
