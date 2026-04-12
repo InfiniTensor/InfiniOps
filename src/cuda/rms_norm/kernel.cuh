@@ -26,7 +26,6 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
                               int64_t stride_x_batch, int64_t stride_x_nhead,
                               const TWeight* __restrict__ w, size_t nhead,
                               size_t dim, float epsilon) {
-  // Dynamic shared memory: [dim] elements of TCompute for caching x.
   extern __shared__ char smem_raw[];
   TCompute* x_cache = reinterpret_cast<TCompute*>(smem_raw);
 
@@ -45,8 +44,6 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
     ss += val * val;
   }
 
-  // Block reduce sum-of-squares.
-  // Place CUB temp storage after the x_cache region to avoid overlap.
   using BlockReduce = cub::BlockReduce<TCompute, block_size>;
   __shared__ typename BlockReduce::TempStorage temp_storage;
   TCompute total = BlockReduce(temp_storage).Sum(ss);
@@ -59,8 +56,7 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
 
   __syncthreads();
 
-  // Pass 2: Transform using cached x from shared memory (no second
-  // global read).
+  // Pass 2: Transform using cached x from shared memory.
   for (size_t i = threadIdx.x; i < dim; i += block_size) {
     y_ptr[i] = Caster<kDev>::template Cast<TData>(
         x_cache[i] *
