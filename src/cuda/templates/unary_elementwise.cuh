@@ -14,7 +14,23 @@
 
 namespace infini::ops {
 
-// Generic unary elementwise GPU kernel.
+// Vectorized unary elementwise kernel for contiguous tensors.
+// Processes multiple elements per thread using grid-stride loop.
+template <Device::Type kDev, typename Op, typename TIn, typename TOut,
+          unsigned int BLOCK_SIZE>
+__global__ void UnaryElementwiseVecKernel(TOut* __restrict__ out,
+                                          const TIn* __restrict__ in,
+                                          size_t output_size) {
+  Op op{};
+  size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t stride = gridDim.x * blockDim.x;
+
+  for (size_t i = tid; i < output_size; i += stride) {
+    out[i] = op.template operator()<TIn, TOut>(in[i]);
+  }
+}
+
+// Generic unary elementwise GPU kernel (non-contiguous path).
 //
 // `Op` is a device-side functor with signature `TOut operator()(const TIn&)`.
 template <Device::Type kDev, typename Op, typename TIn, typename TOut,
@@ -101,18 +117,35 @@ class UnaryElementwiseBrick {
 
           auto cuda_stream =
               static_cast<typename Backend::Stream>(stream ? stream : 0);
-          dim3 blockDims(
-              std::min(static_cast<Tensor::Size>(block_size), output_size));
-          dim3 gridDims(utils::CeilDiv(output_size, blockDims.x));
 
-          UnaryElementwiseKernel<Backend::kDeviceType,
-                                 Op<Backend::kDeviceType>, TIn, TOut,
-                                 kBlockSize>
-              <<<gridDims, blockDims, 0, cuda_stream>>>(
-                  reinterpret_cast<TOut*>(out.data()),
-                  reinterpret_cast<const TIn*>(input.data()), d_out_shape_,
-                  d_in_shape_, d_out_strides_, d_in_strides_, output_size, ndim,
-                  out_contig, in_contig);
+          if (in_contig && out_contig) {
+            // Vectorized path: grid-stride loop for contiguous tensors.
+            dim3 blockDims(std::min(static_cast<size_t>(block_size),
+                                    static_cast<size_t>(output_size)));
+            dim3 gridDims(
+                std::min(utils::CeilDiv(output_size, blockDims.x),
+                         static_cast<decltype(output_size)>(65535)));
+
+            UnaryElementwiseVecKernel<Backend::kDeviceType,
+                                      Op<Backend::kDeviceType>, TIn, TOut,
+                                      kBlockSize>
+                <<<gridDims, blockDims, 0, cuda_stream>>>(
+                    reinterpret_cast<TOut*>(out.data()),
+                    reinterpret_cast<const TIn*>(input.data()), output_size);
+          } else {
+            dim3 blockDims(
+                std::min(static_cast<Tensor::Size>(block_size), output_size));
+            dim3 gridDims(utils::CeilDiv(output_size, blockDims.x));
+
+            UnaryElementwiseKernel<Backend::kDeviceType,
+                                   Op<Backend::kDeviceType>, TIn, TOut,
+                                   kBlockSize>
+                <<<gridDims, blockDims, 0, cuda_stream>>>(
+                    reinterpret_cast<TOut*>(out.data()),
+                    reinterpret_cast<const TIn*>(input.data()), d_out_shape_,
+                    d_in_shape_, d_out_strides_, d_in_strides_, output_size,
+                    ndim, out_contig, in_contig);
+          }
         },
         "UnaryElementwiseBrick::Run");
   }
