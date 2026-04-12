@@ -42,6 +42,11 @@ if(WITH_NVIDIA)
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
 
+    target_include_directories(infiniops PUBLIC
+        "${PROJECT_SOURCE_DIR}/third_party/flashinfer/include"
+        "${PROJECT_SOURCE_DIR}/third_party/flashinfer/3rdparty/cutlass/include"
+    )
+
     list(APPEND DEVICE_LIST "nvidia")
     set_target_properties(infiniops PROPERTIES
         CUDA_STANDARD 17
@@ -172,20 +177,73 @@ if(WITH_CAMBRICON)
     list(APPEND DEVICE_LIST "cambricon")
 endif()
 
-target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+if(WITH_ASCEND)
+    # ASCEND_HOME is set by the top-level CMakeLists.txt.
+    file(GLOB_RECURSE ASCEND_SOURCES CONFIGURE_DEPENDS
+        "ascend/*.cc"
+        "ascend/*.cpp"
+    )
+    # Exclude kernel_impl.cpp — AscendC device code, not compiled by the host C++ compiler.
+    list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
+
+    target_compile_definitions(infiniops PUBLIC WITH_ASCEND=1)
+    target_sources(infiniops PRIVATE ${ASCEND_SOURCES})
+
+    # Resolve the driver lib dir two levels above the toolkit root.
+    get_filename_component(ASCEND_ROOT "${ASCEND_HOME}/../.." ABSOLUTE)
+
+    # Prefer the real driver HAL; fall back to the toolkit stub for build-only
+    # environments (e.g., Docker CI images without hardware drivers installed).
+    # CANN <= 8.0: stub at runtime/lib64/stub/; CANN >= 8.5: devlib/<arch>-linux/devlib/.
+    set(ASCEND_HAL_REAL   "${ASCEND_ROOT}/driver/lib64/driver/libascend_hal.so")
+    set(ASCEND_HAL_STUB   "${ASCEND_HOME}/runtime/lib64/stub/libascend_hal.so")
+    set(ASCEND_HAL_DEVLIB "${ASCEND_HOME}/${CMAKE_SYSTEM_PROCESSOR}-linux/devlib/libascend_hal.so")
+    if(EXISTS "${ASCEND_HAL_REAL}")
+        set(ASCEND_HAL_LIB "${ASCEND_HAL_REAL}")
+    elseif(EXISTS "${ASCEND_HAL_STUB}")
+        set(ASCEND_HAL_LIB "${ASCEND_HAL_STUB}")
+        message(STATUS "ascend_hal: driver not found, using stub for linking")
+    elseif(EXISTS "${ASCEND_HAL_DEVLIB}")
+        set(ASCEND_HAL_LIB "${ASCEND_HAL_DEVLIB}")
+        message(STATUS "ascend_hal: driver not found, using devlib for linking")
+    else()
+        message(FATAL_ERROR "libascend_hal.so not found (tried ${ASCEND_HAL_REAL}, ${ASCEND_HAL_STUB}, and ${ASCEND_HAL_DEVLIB})")
+    endif()
+
+    target_include_directories(infiniops PUBLIC
+        "${ASCEND_HOME}/include"
+        "${ASCEND_HOME}/include/aclnn"
+        "${ASCEND_HOME}/include/aclnnop")
+    target_link_libraries(infiniops PUBLIC
+        "${ASCEND_HOME}/lib64/libascendcl.so"
+        "${ASCEND_HOME}/lib64/libnnopbase.so"
+        "${ASCEND_HOME}/lib64/libopapi.so"
+        "${ASCEND_HAL_LIB}")
+
+    list(APPEND DEVICE_LIST "ascend")
+endif()
+
+target_include_directories(infiniops PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/generated
+)
 
 if(GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
+    # Always regenerate bindings so the included kernel headers match the
+    # active device list.  Stale generated files (e.g., committed for one
+    # platform) would omit specializations for other enabled backends,
+    # causing link-time or runtime failures.
     execute_process(
-        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
+        COMMAND ${Python_EXECUTABLE} -m dsl --devices ${DEVICE_LIST}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )
 
     if(NOT script_result EQUAL 0)
-        message(FATAL_ERROR "Generating wrappers - failed")
+        message(FATAL_ERROR "DSL compilation and binding generation - failed")
     else()
-        message(STATUS "Generating wrappers - done")
+        message(STATUS "DSL compilation and binding generation - done")
     endif()
 
     set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
@@ -204,7 +262,7 @@ if(GENERATE_PYTHON_BINDINGS)
         pybind11_add_module(ops NO_EXTRAS ${PYBIND11_SOURCES})
     endif()
 
-    target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
+    target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/generated)
     target_link_libraries(ops PRIVATE infiniops)
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "$ORIGIN")

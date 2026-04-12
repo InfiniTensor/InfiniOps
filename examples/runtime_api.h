@@ -4,7 +4,7 @@
 #include "device.h"
 
 #ifdef WITH_NVIDIA
-#include "nvidia/gemm/cublas.h"
+#include "nvidia/gemm/kernel.h"
 #include "nvidia/gemm/cublaslt.h"
 #include "nvidia/runtime_.h"
 #elif WITH_ILUVATAR
@@ -19,6 +19,9 @@
 #elif WITH_MOORE
 #include "moore/gemm/mublas.h"
 #include "moore/runtime_.h"
+#elif WITH_ASCEND
+#include "ascend/gemm/kernel.h"
+#include "ascend/runtime_.h"
 #elif WITH_CPU
 #include "cpu/gemm/gemm.h"
 #include "cpu/runtime_.h"
@@ -38,6 +41,8 @@ using DefaultRuntimeUtils = Runtime<Device::Type::kMetax>;
 using DefaultRuntimeUtils = Runtime<Device::Type::kCambricon>;
 #elif WITH_MOORE
 using DefaultRuntimeUtils = Runtime<Device::Type::kMoore>;
+#elif WITH_ASCEND
+using DefaultRuntimeUtils = Runtime<Device::Type::kAscend>;
 #elif WITH_CPU
 using DefaultRuntimeUtils = Runtime<Device::Type::kCpu>;
 #endif

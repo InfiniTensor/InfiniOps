@@ -1,6 +1,7 @@
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import textwrap
@@ -19,6 +20,8 @@ _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 
 _INCLUDE_DIR = _GENERATION_DIR / "include"
+
+_BINDINGS_OVERRIDES_DIR = pathlib.Path("scripts") / "bindings_overrides"
 
 _INDENTATION = "  "
 
@@ -91,26 +94,77 @@ class _Operator:
         self.calls = calls
 
 
-def _generate_pybind11(operator):
+def _find_optional_tensor_params(op_name):
+    """Return a set of parameter names declared as `std::optional<Tensor>` in
+    the base header.  libclang resolves the type to ``int`` when the STL
+    headers are not fully available, so we fall back to a regex scan of the
+    source text.
+    """
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
+
+
+def _find_vector_tensor_params(op_name):
+    """Return a set of parameter names declared as `std::vector<Tensor>` in
+    the base header.
+    """
+    import re
+
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
+
+
+def _generate_pybind11(operator, impl_names=None):
+    optional_tensor_params = _find_optional_tensor_params(operator.name)
+    vector_tensor_params = _find_vector_tensor_params(operator.name)
+
+    if impl_names is None:
+        impl_names = {}
+
+    def _is_optional_tensor(arg):
+        if arg.spelling in optional_tensor_params:
+            return True
+        return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+
+    def _is_vector_tensor(arg):
+        if arg.spelling in vector_tensor_params:
+            return True
+        return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
+
     def _generate_params(node):
-        return (
-            ", ".join(
-                f"{arg.type.spelling} {arg.spelling}"
-                for arg in node.get_arguments()
-                if arg.spelling != "stream"
-            )
-            .replace("const Tensor", "py::object")
-            .replace("Tensor", "py::object")
-        )
+        parts = []
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+            if _is_optional_tensor(arg):
+                parts.append(f"std::optional<py::object> {arg.spelling}")
+            elif _is_vector_tensor(arg):
+                parts.append(f"std::vector<py::object> {arg.spelling}")
+            else:
+                param = arg.type.spelling.replace("const Tensor", "py::object").replace(
+                    "Tensor", "py::object"
+                )
+                parts.append(f"{param} {arg.spelling}")
+
+        return ", ".join(parts)
 
     def _generate_arguments(node):
-        return ", ".join(
-            f"TensorFromPybind11Handle({arg.spelling})"
-            if "Tensor" in arg.type.spelling
-            else arg.spelling
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
+        args = []
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+            if _is_optional_tensor(arg):
+                args.append(f"OptionalTensorFromPybind11Handle({arg.spelling})")
+            elif _is_vector_tensor(arg):
+                args.append(f"VectorTensorFromPybind11Handle({arg.spelling})")
+            elif "Tensor" in arg.type.spelling:
+                args.append(f"TensorFromPybind11Handle({arg.spelling})")
+            else:
+                args.append(arg.spelling)
+
+        return ", ".join(args)
 
     op_name = operator.name
 
@@ -133,19 +187,61 @@ def _generate_pybind11(operator):
         call_args = _generate_arguments(call)
 
         if not method:
-            params = (
-                f"{call_params}, std::size_t implementation_index"
+            # Overload 1: implementation_index (numeric, backward compatible).
+            params_idx = (
+                f"{call_params}, std::size_t implementation_index, std::uintptr_t stream"
                 if call_params
-                else "std::size_t implementation_index"
+                else "std::size_t implementation_index, std::uintptr_t stream"
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
 
-            return f"""  m.def("{op_name}", []({params}) {{
-    Config config;
-    config.set_implementation_index(implementation_index);
-    return Self::call({{}}, config, {call_args});
-  }}, {py_args_str}py::kw_only(), py::arg("implementation_index") = 0);"""
+            overload_idx = (
+                f'  m.def("{op_name}", []({params_idx}) {{\n'
+                f"    Config config;\n"
+                f"    config.set_implementation_index(implementation_index);\n"
+                f"    Handle handle;\n"
+                f"    if (stream) {{\n"
+                f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
+                f"    }}\n"
+                f"    return Self::call(handle, config, {call_args});\n"
+                f'  }}, {py_args_str}py::kw_only(), py::arg("implementation_index") = 0, py::arg("stream") = 0);'
+            )
+
+            # Overload 2: implementation (string name, e.g. "dsl").
+            # Only generate if there are named implementations.
+            if not impl_names:
+                return overload_idx
+
+            # Build C++ initializer list for the per-operator map.
+            map_entries = ", ".join(
+                f'{{"{name}", {idx}}}' for name, idx in impl_names.items()
+            )
+            valid_names = ", ".join(f"'{n}'" for n in impl_names)
+
+            params_str = (
+                f"{call_params}, const std::string& implementation, std::uintptr_t stream"
+                if call_params
+                else "const std::string& implementation, std::uintptr_t stream"
+            )
+
+            overload_str = (
+                f'  m.def("{op_name}", []({params_str}) {{\n'
+                f"    static const std::unordered_map<std::string, std::size_t> kImplNames{{{{{map_entries}}}}};\n"
+                f"    auto it = kImplNames.find(implementation);\n"
+                f'    if (it == kImplNames.end()) throw py::value_error(\n'
+                f'        "unknown implementation: \'" + implementation + "\' (valid: {valid_names})");\n'
+                f"    Config config;\n"
+                f"    config.set_implementation_index(it->second);\n"
+                f"    Handle handle;\n"
+                f"    if (stream) {{\n"
+                f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
+                f"    }}\n"
+                f"    return Self::call(handle, config, {call_args});\n"
+                f'  }}, {py_args_str}py::kw_only(), py::arg("implementation"), py::arg("stream") = 0);'
+            )
+
+            return f"{overload_idx}\n{overload_str}"
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
         return static_cast<const Operator<Self>&>(self)({call_args});
@@ -169,6 +265,8 @@ def _generate_pybind11(operator):
 
 #include "base/{op_name}.h"
 #include "config.h"
+#include "handle.h"
+#include "operator.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;
@@ -417,6 +515,14 @@ if __name__ == "__main__":
     else:
         ops = _get_all_ops(args.devices)
 
+    # Load per-operator implementation name mappings (generated by DSL compiler).
+    impl_names_path = _GENERATION_DIR / "impl_names.json"
+
+    if impl_names_path.exists():
+        all_impl_names = json.loads(impl_names_path.read_text())
+    else:
+        all_impl_names = {}
+
     header_paths = []
     bind_func_names = []
 
@@ -424,11 +530,24 @@ if __name__ == "__main__":
         extractor = _OperatorExtractor()
         operator = extractor(op_name)
 
+        pascal_name = _snake_to_pascal(op_name)
+        op_impl_names = all_impl_names.get(pascal_name, {})
+
         source_path = _GENERATED_SRC_DIR / op_name
         header_name = f"{op_name}.h"
-        bind_func_name = f"Bind{_snake_to_pascal(op_name)}"
+        bind_func_name = f"Bind{pascal_name}"
 
-        (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
+        binding_path = _BINDINGS_DIR / header_name
+        override_path = _BINDINGS_OVERRIDES_DIR / header_name
+
+        # Use a hand-written binding if one exists in the overrides directory;
+        # otherwise auto-generate.
+        if override_path.exists():
+            binding_path.write_text(override_path.read_text())
+        else:
+            binding_path.write_text(
+                _generate_pybind11(operator, op_impl_names)
+            )
 
         legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
         source_path.mkdir(exist_ok=True)

@@ -32,11 +32,17 @@ def get_available_devices():
     if hasattr(torch, "musa") and torch.musa.is_available():
         devices.append("musa")
 
+    if hasattr(torch, "npu") and torch.npu.is_available():
+        devices.append("npu")
+
     return tuple(devices)
 
 
 with contextlib.suppress(ImportError, ModuleNotFoundError):
     import torch_mlu  # noqa: F401
+
+with contextlib.suppress(ImportError, ModuleNotFoundError):
+    import torch_npu  # noqa: F401
 
 
 def empty_strided(shape, strides, *, dtype=None, device=None):
@@ -74,6 +80,14 @@ def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     ).random_(low, high)
 
     return output
+
+
+def get_npu_stream(tensor):
+    """Return the current NPU stream handle for `tensor`, or 0 on other devices."""
+    if tensor.device.type != "npu":
+        return 0
+
+    return torch.npu.current_stream().npu_stream
 
 
 def clone_strided(input):

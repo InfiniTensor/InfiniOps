@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -36,6 +37,14 @@ struct CacheKey {
     tensors.push_back(t);
   }
 
+  void Absorb(const std::vector<Tensor>& ts) {
+    HashCombine(hash, ts.size());
+    for (const auto& t : ts) {
+      HashCombine(hash, t);
+      tensors.push_back(t);
+    }
+  }
+
   template <typename T>
   void Absorb(const T& v) {
     HashCombine(hash, v);
@@ -43,10 +52,30 @@ struct CacheKey {
   }
 };
 
+// Check whether a value is present in a compile-time List.
+template <auto... values>
+constexpr bool ListContains(std::size_t value, List<values...>) {
+  return ((value == static_cast<std::size_t>(values)) || ...);
+}
+
+// Return the first element of a compile-time List.
+template <auto head, auto... tail>
+constexpr std::size_t ListFirst(List<head, tail...>) {
+  return static_cast<std::size_t>(head);
+}
+
 template <typename Functor, typename... Args, auto... implementation_indices>
 auto DispatchImplementation(std::size_t implementation_index, Functor&& func,
                             std::string_view context_str,
-                            List<implementation_indices...>, Args&&... args) {
+                            List<implementation_indices...> list,
+                            Args&&... args) {
+  // Fall back to the first available implementation when the requested
+  // index does not exist (e.g., operator has only a DSL implementation
+  // but the caller uses the default index 0).
+  if (!ListContains(implementation_index, list)) {
+    implementation_index = ListFirst(list);
+  }
+
   return DispatchFunc<std::size_t,
                       static_cast<std::size_t>(implementation_indices)...>(
       implementation_index, std::forward<Functor>(func), context_str,
@@ -176,10 +205,10 @@ class Operator : public OperatorBase {
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      it = cache
-               .emplace(std::move(key),
-                        make(config, std::forward<Args>(args)...))
-               .first;
+      // Pass args as lvalue refs so they remain valid for the `operator()` call
+      // below. Forwarding rvalue temporaries into `make()` would leave the args
+      // in a moved-from (empty) state before operator() can use them.
+      it = cache.emplace(std::move(key), make(config, args...)).first;
     }
 
     auto& op{it->second};

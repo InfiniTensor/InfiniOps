@@ -116,6 +116,31 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }
 
+inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
+    const std::optional<py::object>& obj) {
+  if (!obj.has_value() || obj->is_none()) return std::nullopt;
+  return TensorFromPybind11Handle(*obj);
+}
+
+inline std::optional<Tensor> TensorFromPybind11Handle(
+    std::optional<py::object> obj) {
+  if (!obj.has_value() || obj->is_none()) {
+    return std::nullopt;
+  }
+
+  return TensorFromPybind11Handle(obj->cast<py::handle>());
+}
+
+inline std::vector<Tensor> VectorTensorFromPybind11Handle(
+    const std::vector<py::object>& objs) {
+  std::vector<Tensor> result;
+  result.reserve(objs.size());
+  for (const auto& obj : objs) {
+    result.push_back(TensorFromPybind11Handle(obj));
+  }
+  return result;
+}
+
 }  // namespace infini::ops
 
 #endif

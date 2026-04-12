@@ -14,6 +14,7 @@ option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
+option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
@@ -28,6 +29,31 @@ if(AUTO_DETECT_DEVICES)
     if(NVIDIA_DEV_FILES)
         set(WITH_NVIDIA ON)
         message(STATUS "Auto-detected NVIDIA environment.")
+
+        # Detect the GPU's compute capability so we compile for the right
+        # architecture.  Without this, CMake may pick a lower default (e.g.
+        # SM75) and kernels that require newer features (bf16 on SM80+) will
+        # fail at runtime.
+        if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+            execute_process(
+                COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+                OUTPUT_VARIABLE _gpu_caps
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+
+            if(_gpu_caps)
+                # Take the first GPU's capability (e.g. "8.0" -> "80").
+                string(REGEX MATCH "([0-9]+)\\.([0-9]+)" _cap_match "${_gpu_caps}")
+                string(REPLACE "." "" _arch "${_cap_match}")
+
+                if(_arch)
+                    set(CMAKE_CUDA_ARCHITECTURES "${_arch}" CACHE STRING
+                        "CUDA architectures (auto-detected from GPU)")
+                    message(STATUS "Auto-detected CUDA architecture: SM${_arch}")
+                endif()
+            endif()
+        endif()
     endif()
 
     file(GLOB ILUVATAR_DEV_FILES "/dev/iluvatar*")
@@ -71,20 +97,25 @@ if(AUTO_DETECT_DEVICES)
         set(WITH_MOORE OFF)
         set(WITH_MOORE OFF CACHE BOOL "Enable Moore backend" FORCE)
     endif()
+
+    if(DEFINED ENV{ASCEND_HOME_PATH} OR EXISTS "/dev/davinci0")
+        set(WITH_ASCEND ON)
+        message(STATUS "Auto-detected Ascend environment.")
+    endif()
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_METAX WITH_MOORE)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_METAX WITH_MOORE WITH_ASCEND)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
 endforeach()
 
 if(_gpu_backend_count GREATER 1)
-    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_METAX`, and `WITH_MOORE` are mutually exclusive. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_METAX`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NVIDIA)
@@ -178,8 +209,23 @@ if(WITH_CAMBRICON)
     find_library(CAMBRICON_PAPI_LIB       NAMES cnpapi     HINTS "${NEUWARE_HOME}/lib64" REQUIRED)
 endif()
 
+if(WITH_ASCEND)
+    add_compile_definitions(WITH_ASCEND=1)
+    if(NOT DEFINED ASCEND_HOME)
+        if(DEFINED ENV{ASCEND_HOME_PATH} AND NOT "$ENV{ASCEND_HOME_PATH}" STREQUAL "")
+            set(ASCEND_HOME "$ENV{ASCEND_HOME_PATH}" CACHE PATH "Ascend toolkit root")
+        else()
+            set(ASCEND_HOME "/usr/local/Ascend/ascend-toolkit/latest" CACHE PATH "Ascend toolkit root")
+        endif()
+    endif()
+    if(NOT EXISTS "${ASCEND_HOME}")
+        message(FATAL_ERROR "`WITH_ASCEND` is ON but `${ASCEND_HOME}` was not found. Set ASCEND_HOME_PATH.")
+    endif()
+    message(STATUS "Using Ascend from `${ASCEND_HOME}`.")
+endif()
+
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
     add_compile_definitions(WITH_CPU=1)
 endif()
 
