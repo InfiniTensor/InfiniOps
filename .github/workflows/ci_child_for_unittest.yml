@@ -238,9 +238,7 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
 
-          echo "daemon start" >&2
-
-          exec stdbuf -oL -eL ./daemon.sh \
+          exec ./daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \
