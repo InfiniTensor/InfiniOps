@@ -15,17 +15,45 @@
 namespace infini::ops {
 
 // Vectorized unary elementwise kernel for contiguous tensors.
-// Processes multiple elements per thread using grid-stride loop.
+//
+// Uses vectorized load/store with grid-stride loop.  VEC_SIZE is chosen
+// based on the *input* type to target 128-bit loads.
 template <Device::Type kDev, typename Op, typename TIn, typename TOut,
-          unsigned int BLOCK_SIZE>
+          unsigned int BLOCK_SIZE, int VEC_SIZE>
 __global__ void UnaryElementwiseVecKernel(TOut* __restrict__ out,
                                           const TIn* __restrict__ in,
                                           size_t output_size) {
   Op op{};
   size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
   size_t stride = gridDim.x * blockDim.x;
+  size_t vec_count = output_size / VEC_SIZE;
 
-  for (size_t i = tid; i < output_size; i += stride) {
+  using InVec = typename utils::AlignedVec<TIn, VEC_SIZE>::type;
+  const InVec* in_vec = reinterpret_cast<const InVec*>(in);
+
+  // Use output vectorization when sizeof matches (same type cast) or
+  // when VEC_SIZE output elements fit naturally.
+  using OutVec = typename utils::AlignedVec<TOut, VEC_SIZE>::type;
+  OutVec* out_vec = reinterpret_cast<OutVec*>(out);
+
+  for (size_t i = tid; i < vec_count; i += stride) {
+    InVec vin = in_vec[i];
+    const TIn* pin = reinterpret_cast<const TIn*>(&vin);
+    OutVec vout;
+    TOut* po = reinterpret_cast<TOut*>(&vout);
+
+    #pragma unroll
+    for (int j = 0; j < VEC_SIZE; ++j) {
+      po[j] = op.template operator()<TIn, TOut>(pin[j]);
+    }
+
+    out_vec[i] = vout;
+  }
+
+  // Handle remaining elements.
+  size_t tail_start = vec_count * VEC_SIZE;
+
+  for (size_t i = tail_start + tid; i < output_size; i += stride) {
     out[i] = op.template operator()<TIn, TOut>(in[i]);
   }
 }
@@ -119,16 +147,19 @@ class UnaryElementwiseBrick {
               static_cast<typename Backend::Stream>(stream ? stream : 0);
 
           if (in_contig && out_contig) {
-            // Vectorized path: grid-stride loop for contiguous tensors.
+            // Vectorized path: 128-bit loads on input type.
+            constexpr int kVecSize = utils::OptimalVecSize<TIn>();
+            size_t vec_count = output_size / kVecSize;
+            size_t total_threads = vec_count > 0 ? vec_count : output_size;
             dim3 blockDims(std::min(static_cast<size_t>(block_size),
-                                    static_cast<size_t>(output_size)));
+                                    total_threads));
             dim3 gridDims(
-                std::min(utils::CeilDiv(output_size, blockDims.x),
-                         static_cast<decltype(output_size)>(65535)));
+                std::min(utils::CeilDiv(total_threads, blockDims.x),
+                         static_cast<decltype(total_threads)>(65535)));
 
             UnaryElementwiseVecKernel<Backend::kDeviceType,
                                       Op<Backend::kDeviceType>, TIn, TOut,
-                                      kBlockSize>
+                                      kBlockSize, kVecSize>
                 <<<gridDims, blockDims, 0, cuda_stream>>>(
                     reinterpret_cast<TOut*>(out.data()),
                     reinterpret_cast<const TIn*>(input.data()), output_size);
