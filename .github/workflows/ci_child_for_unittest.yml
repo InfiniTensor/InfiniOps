@@ -197,22 +197,9 @@ jobs:
         env:
           ${{ matrix.job_env }}
         run: |
-          set -m
-
-          cleanup() {
-              trap - SIGINT SIGTERM SIGHUP SIGPIPE
-              echo "Receiving Termination Signal..."
-              if [ -n "${CHILD_PID:-}" ] && kill -0 "$CHILD_PID" 2>/dev/null; then
-                kill -TERM "$CHILD_PID" 2>/dev/null || true
-                wait "$CHILD_PID" 2>/dev/null || true
-              fi
-              exit 130
-          }
-
-          trap cleanup SIGINT SIGTERM SIGHUP SIGPIPE
-
           set -e
           echo "==> running job: ${{ matrix.job_name }}"
+          set -m
 
           if [ -n "${RESULT_DIR:-}" ] && [ "${RESULT_DIR}" != "None" ]; then
             mkdir -p "${RESULT_DIR}"
@@ -242,7 +229,7 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
 
-          ./daemon.sh \
+          exec ./daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \
@@ -250,13 +237,3 @@ jobs:
             "${DOCKER_ARGS}" \
             ${{ github.run_id }} \
             "${IMAGE_TAG}" &
-          
-          CHILD_PID=$!
-          while kill -0 "$CHILD_PID" 2>/dev/null; do
-            sleep 1
-          done
-
-          EXIT_CODE=0
-          wait "$CHILD_PID" || EXIT_CODE=$?
-
-          exit "$EXIT_CODE"
