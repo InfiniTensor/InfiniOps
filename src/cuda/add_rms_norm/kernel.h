@@ -52,8 +52,10 @@ class CudaAddRmsNorm : public AddRmsNorm {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
+          size_t smem_bytes = dim_ * sizeof(float);
+
           AddRmsNormKernel<kBlockSize, Backend::kDeviceType, float, T, T>
-              <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
+              <<<num_blocks, kBlockSize, smem_bytes, cuda_stream>>>(
                   reinterpret_cast<T*>(y_out.data()), stride_y_out_batch,
                   stride_y_out_nhead, reinterpret_cast<T*>(x_out.data()),
                   stride_x_out_batch, stride_x_out_nhead,
