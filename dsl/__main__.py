@@ -60,10 +60,33 @@ def _generate_registry(
     impl_indices: list[int],
     devices: list[str],
     output_dir: pathlib.Path,
+    primary_op: ManualOpDef | InfiniOpDef | None = None,
 ) -> list[pathlib.Path]:
     """Generate ``registry.h`` files declaring active implementation indices."""
     op_snake = _to_snake(op_name)
     generated: list[pathlib.Path] = []
+
+    # Determine which devices have a hand-written default implementation
+    # (index 0).  If the primary @manual_op has a `cuda` or device-specific
+    # backend entry, it has a default impl on CUDA-like platforms.  If not,
+    # only the DSL variant (index 1+) exists.
+    from dsl.decorators import ManualOpDef
+
+    def _has_default_impl(device: str) -> bool:
+        if primary_op is None:
+            return True
+
+        if not isinstance(primary_op, ManualOpDef):
+            return True
+
+        backends = primary_op.backends
+
+        if device == "cpu":
+            return "cpu" in backends
+
+        # For CUDA-like devices, a default impl exists if either the
+        # specific device or the shared "cuda" key is in backends.
+        return device in backends or "cuda" in backends
 
     for device in ["cpu"] + [d for d in devices if d in CUDA_LIKE_BACKENDS]:
         if device == "cpu":
@@ -75,10 +98,20 @@ def _generate_registry(
 
         guard = f"INFINI_OPS_{device.upper()}_{op_snake.upper()}_REGISTRY_H_"
 
+        # Filter impl_indices: only include kDefault (0) if a hand-written
+        # implementation exists for this device.
+        device_indices = [
+            i for i in impl_indices
+            if i > 0 or _has_default_impl(device)
+        ]
+
+        if not device_indices:
+            continue
+
         # Use named constants from Impl for readability.
         named_indices = ", ".join(
             "Impl::kDsl" if i > 0 else "Impl::kDefault"
-            for i in sorted(impl_indices)
+            for i in sorted(device_indices)
         )
 
         content = (
@@ -187,7 +220,7 @@ def main() -> None:
         if variants:
             impl_indices = [0] + [v.impl_index for v in variants]
             generated += _generate_registry(
-                name, impl_indices, args.devices, args.output
+                name, impl_indices, args.devices, args.output, op
             )
 
         total_generated += len(generated)

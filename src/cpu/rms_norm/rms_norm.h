@@ -6,7 +6,6 @@
 #include "base/rms_norm.h"
 #include "common/generic_utils.h"
 #include "cpu/caster_.h"
-#include "cpu/rms_norm/registry.h"
 #include "data_type.h"
 #include "tensor.h"
 

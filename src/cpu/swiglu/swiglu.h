@@ -6,7 +6,6 @@
 #include "base/swiglu.h"
 #include "common/generic_utils.h"
 #include "cpu/caster_.h"
-#include "cpu/swiglu/registry.h"
 
 namespace infini::ops {
 

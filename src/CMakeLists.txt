@@ -223,7 +223,10 @@ if(WITH_ASCEND)
     list(APPEND DEVICE_LIST "ascend")
 endif()
 
-target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(infiniops PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/generated
+)
 
 if(GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
@@ -259,7 +262,7 @@ if(GENERATE_PYTHON_BINDINGS)
         pybind11_add_module(ops NO_EXTRAS ${PYBIND11_SOURCES})
     endif()
 
-    target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
+    target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/generated)
     target_link_libraries(ops PRIVATE infiniops)
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "$ORIGIN")

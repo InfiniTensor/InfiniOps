@@ -5,6 +5,7 @@ from dsl.decorators import manual_op
     name="FlashAttention",
     base="src/base/flash_attention.h",
     backends={
+        "cuda": "cuda/flash_attention/kernel.h",
         "ascend": "ascend/flash_attention/kernel.h",
     },
 )
