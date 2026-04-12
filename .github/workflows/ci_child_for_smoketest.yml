@@ -78,7 +78,7 @@ jobs:
               mkdir -p ${{ github.run_id }}_${{ matrix.id }}
               cd ${{ github.run_id }}_${{ matrix.id }}
               
-              cp $scr_dir/.ci/daemon.sh .
+              cp ${src_dir}/.ci/daemon.sh .
               chmod a+x ./daemon.sh
               
               DOCKER_ARGS="${{ join(matrix.docker_args, ' ') }}"
