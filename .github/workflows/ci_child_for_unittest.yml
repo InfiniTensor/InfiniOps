@@ -260,4 +260,3 @@ jobs:
           wait "$CHILD_PID" || EXIT_CODE=$?
 
           exit "$EXIT_CODE"
-  
