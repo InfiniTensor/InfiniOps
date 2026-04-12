@@ -201,7 +201,7 @@ jobs:
 
           cleanup() {
               trap - SIGINT SIGTERM SIGHUP SIGPIPE
-              echo "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+              echo "Receiving Termination Signal..."
               if [ -n "${CHILD_PID:-}" ] && kill -0 "$CHILD_PID" 2>/dev/null; then
                 kill -TERM "$CHILD_PID" 2>/dev/null || true
                 wait "$CHILD_PID" 2>/dev/null || true

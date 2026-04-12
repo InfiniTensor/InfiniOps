@@ -61,6 +61,7 @@ jobs:
         env: ${{ matrix.job_env }}
         run: |
               set -e
+              echo "==> running job: ${{ matrix.job_name }}"
               echo "Smoke Test Starting..."
               echo "MODEL_LIST = ${{ matrix.job_env.MODEL_LIST }}"
               echo "Version = ${{ matrix.job_env.IMAGE }}"
