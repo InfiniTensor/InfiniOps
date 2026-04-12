@@ -459,7 +459,7 @@ def _snake_to_pascal(snake_str):
     return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
-def _get_all_ops(devices):
+def _get_all_ops(devices, output_dir=None):
     ops = {}
 
     for file_path in _BASE_DIR.iterdir():
@@ -467,15 +467,26 @@ def _get_all_ops(devices):
             continue
 
         op_name = file_path.stem
-
         ops[op_name] = []
 
-        for file_path in _SRC_DIR.rglob("*"):
-            if not file_path.is_file() or file_path.parent.parent.name not in devices:
-                continue
+        search_dirs = [_SRC_DIR]
 
-            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
-                ops[op_name].append(file_path)
+        if output_dir is not None:
+            search_dirs.append(output_dir)
+
+        for search_dir in search_dirs:
+            for file_path in search_dir.rglob("*"):
+                if (
+                    not file_path.is_file()
+                    or file_path.parent.parent.name not in devices
+                ):
+                    continue
+
+                if (
+                    f"class Operator<{_snake_to_pascal(op_name)}"
+                    in file_path.read_text()
+                ):
+                    ops[op_name].append(file_path)
 
     return ops
 
@@ -499,7 +510,7 @@ def generate_all_bindings(
     if ops_json.exists():
         ops = json.loads(ops_json.read_text())
     else:
-        ops = _get_all_ops(devices)
+        ops = _get_all_ops(devices, output_dir)
 
     header_paths = []
     bind_func_names = []
