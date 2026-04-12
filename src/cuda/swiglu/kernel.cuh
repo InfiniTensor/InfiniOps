@@ -24,6 +24,27 @@ __device__ __forceinline__ T Sigmoid(const T& x) {
   }
 }
 
+// Device-side SwiGLU functor for BinaryElementwiseBrick.
+// SwiGLU(input, gate) = input * gate * sigmoid(gate).
+template <Device::Type kDev>
+struct SwigluOp {
+  template <typename T>
+  __device__ __forceinline__ T operator()(const T& input,
+                                          const T& gate) const {
+    if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
+      float gf = Caster<kDev>::template Cast<float>(gate);
+      float uf = Caster<kDev>::template Cast<float>(input);
+      float sf = __frcp_rn(__fadd_rn(1.0f, __expf(-gf)));
+      return Caster<kDev>::template Cast<T>(
+          __fmul_rn(__fmul_rn(gf, sf), uf));
+    } else if constexpr (std::is_same_v<T, float>) {
+      return __fmul_rn(__fmul_rn(gate, Sigmoid<kDev>(gate)), input);
+    } else {
+      return gate * Sigmoid<kDev>(gate) * input;
+    }
+  }
+};
+
 // SwiGLU(x, gate) = Swish(x) * gate = (x * sigmoid(x)) * gate.
 template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
 __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
