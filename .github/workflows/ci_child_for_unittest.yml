@@ -238,7 +238,7 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
 
-          ./daemon.sh \
+          exec ./daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \
