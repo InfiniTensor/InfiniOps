@@ -5,6 +5,8 @@
 #include <cstdint>
 
 #include "base/flash_attention.h"
+#include "flashinfer/attention/decode.cuh"
+#include "flashinfer/attention/default_decode_params.cuh"
 #include "flashinfer/attention/default_prefill_params.cuh"
 #include "flashinfer/attention/mask.cuh"
 #include "flashinfer/attention/prefill.cuh"
@@ -13,6 +15,12 @@
 
 namespace infini::ops {
 
+// FlashAttention via FlashInfer header-only API.
+//
+// Automatically selects between prefill and decode paths:
+// - query seq_len > 1 → SinglePrefillWithKVCacheDispatched
+// - query seq_len == 1 → SingleDecodeWithKVCacheDispatched (faster for
+//   autoregressive generation)
 template <typename Backend>
 class CudaFlashAttention : public FlashAttention {
  public:
@@ -28,37 +36,48 @@ class CudaFlashAttention : public FlashAttention {
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
 
-    if (causal) {
-      DispatchHeadDim(query, key, value, output, num_heads, num_kv_heads,
-                      head_size, scale, window_left,
-                      flashinfer::MaskMode::kCausal, cuda_stream);
+    bool is_decode = (num_tokens_ == 1);
+
+    if (is_decode) {
+      // Decode path: single token query, full KV cache.
+      DispatchHeadDimDecode(query, key, value, output, num_heads, num_kv_heads,
+                            head_size, scale, window_left, cuda_stream);
+    } else if (causal) {
+      DispatchHeadDimPrefill(query, key, value, output, num_heads, num_kv_heads,
+                             head_size, scale, window_left,
+                             flashinfer::MaskMode::kCausal, cuda_stream);
     } else {
-      DispatchHeadDim(query, key, value, output, num_heads, num_kv_heads,
-                      head_size, scale, window_left,
-                      flashinfer::MaskMode::kNone, cuda_stream);
+      DispatchHeadDimPrefill(query, key, value, output, num_heads, num_kv_heads,
+                             head_size, scale, window_left,
+                             flashinfer::MaskMode::kNone, cuda_stream);
     }
   }
 
  private:
-  void DispatchHeadDim(const Tensor& query, const Tensor& key,
-                       const Tensor& value, Tensor& output, int64_t num_heads,
-                       int64_t num_kv_heads, int64_t head_size, double scale,
-                       int64_t window_left, flashinfer::MaskMode mask_mode,
-                       typename Backend::Stream stream) const {
+  // ---- Prefill path (query seq_len > 1) ---------------------------------
+
+  void DispatchHeadDimPrefill(const Tensor& query, const Tensor& key,
+                              const Tensor& value, Tensor& output,
+                              int64_t num_heads, int64_t num_kv_heads,
+                              int64_t head_size, double scale,
+                              int64_t window_left,
+                              flashinfer::MaskMode mask_mode,
+                              typename Backend::Stream stream) const {
     switch (head_size) {
       case 64:
-        DispatchMaskMode<64>(query, key, value, output, num_heads, num_kv_heads,
-                             scale, window_left, mask_mode, stream);
+        DispatchMaskModePrefill<64>(query, key, value, output, num_heads,
+                                    num_kv_heads, scale, window_left,
+                                    mask_mode, stream);
         break;
       case 128:
-        DispatchMaskMode<128>(query, key, value, output, num_heads,
-                              num_kv_heads, scale, window_left, mask_mode,
-                              stream);
+        DispatchMaskModePrefill<128>(query, key, value, output, num_heads,
+                                     num_kv_heads, scale, window_left,
+                                     mask_mode, stream);
         break;
       case 256:
-        DispatchMaskMode<256>(query, key, value, output, num_heads,
-                              num_kv_heads, scale, window_left, mask_mode,
-                              stream);
+        DispatchMaskModePrefill<256>(query, key, value, output, num_heads,
+                                     num_kv_heads, scale, window_left,
+                                     mask_mode, stream);
         break;
       default:
         assert(false && "unsupported head dimension for FlashAttention");
@@ -66,19 +85,20 @@ class CudaFlashAttention : public FlashAttention {
   }
 
   template <uint32_t HEAD_DIM>
-  void DispatchMaskMode(const Tensor& query, const Tensor& key,
-                        const Tensor& value, Tensor& output, int64_t num_heads,
-                        int64_t num_kv_heads, double scale, int64_t window_left,
-                        flashinfer::MaskMode mask_mode,
-                        typename Backend::Stream stream) const {
+  void DispatchMaskModePrefill(const Tensor& query, const Tensor& key,
+                               const Tensor& value, Tensor& output,
+                               int64_t num_heads, int64_t num_kv_heads,
+                               double scale, int64_t window_left,
+                               flashinfer::MaskMode mask_mode,
+                               typename Backend::Stream stream) const {
     switch (mask_mode) {
       case flashinfer::MaskMode::kCausal:
-        DispatchDtype<HEAD_DIM, flashinfer::MaskMode::kCausal>(
+        DispatchDtypePrefill<HEAD_DIM, flashinfer::MaskMode::kCausal>(
             query, key, value, output, num_heads, num_kv_heads, scale,
             window_left, stream);
         break;
       case flashinfer::MaskMode::kNone:
-        DispatchDtype<HEAD_DIM, flashinfer::MaskMode::kNone>(
+        DispatchDtypePrefill<HEAD_DIM, flashinfer::MaskMode::kNone>(
             query, key, value, output, num_heads, num_kv_heads, scale,
             window_left, stream);
         break;
@@ -88,32 +108,30 @@ class CudaFlashAttention : public FlashAttention {
   }
 
   template <uint32_t HEAD_DIM, flashinfer::MaskMode MASK_MODE>
-  void DispatchDtype(const Tensor& query, const Tensor& key,
-                     const Tensor& value, Tensor& output, int64_t num_heads,
-                     int64_t num_kv_heads, double scale, int64_t window_left,
-                     typename Backend::Stream stream) const {
+  void DispatchDtypePrefill(const Tensor& query, const Tensor& key,
+                            const Tensor& value, Tensor& output,
+                            int64_t num_heads, int64_t num_kv_heads,
+                            double scale, int64_t window_left,
+                            typename Backend::Stream stream) const {
     DispatchFunc<Backend::kDeviceType, ReducedFloatTypes>(
         dtype_,
         [&](auto type_tag) {
           using DType = typename decltype(type_tag)::type;
-          LaunchKernel<HEAD_DIM, MASK_MODE, DType>(query, key, value, output,
-                                                   num_heads, num_kv_heads,
-                                                   scale, window_left, stream);
+          LaunchPrefill<HEAD_DIM, MASK_MODE, DType>(
+              query, key, value, output, num_heads, num_kv_heads, scale,
+              window_left, stream);
         },
-        "CudaFlashAttention::operator()");
+        "CudaFlashAttention::prefill");
   }
 
   template <uint32_t HEAD_DIM, flashinfer::MaskMode MASK_MODE, typename DType>
-  void LaunchKernel(const Tensor& query, const Tensor& key,
-                    const Tensor& value, Tensor& output, int64_t num_heads,
-                    int64_t num_kv_heads, double scale, int64_t window_left,
-                    typename Backend::Stream stream) const {
-    // Determine whether sliding window is active.
-    constexpr bool kUseSlidingWindow = false;
-
+  void LaunchPrefill(const Tensor& query, const Tensor& key,
+                     const Tensor& value, Tensor& output, int64_t num_heads,
+                     int64_t num_kv_heads, double scale, int64_t window_left,
+                     typename Backend::Stream stream) const {
     using AttentionVariant =
         flashinfer::DefaultAttention</*use_custom_mask=*/false,
-                                     kUseSlidingWindow,
+                                     /*use_sliding_window=*/false,
                                      /*use_logits_soft_cap=*/false,
                                      /*use_alibi=*/false>;
 
@@ -149,7 +167,6 @@ class CudaFlashAttention : public FlashAttention {
     params.rope_rcp_theta = 1.0f;
     params.partition_kv = 0;
 
-    // For non-partitioned KV, tmp buffer is not needed.
     cudaError_t err =
         flashinfer::SinglePrefillWithKVCacheDispatched<
             HEAD_DIM, HEAD_DIM, flashinfer::PosEncodingMode::kNone,
@@ -158,6 +175,87 @@ class CudaFlashAttention : public FlashAttention {
 
     assert(err == cudaSuccess &&
            "FlashInfer SinglePrefillWithKVCacheDispatched failed");
+    (void)err;
+  }
+
+  // ---- Decode path (query seq_len == 1) ---------------------------------
+
+  void DispatchHeadDimDecode(const Tensor& query, const Tensor& key,
+                             const Tensor& value, Tensor& output,
+                             int64_t num_heads, int64_t num_kv_heads,
+                             int64_t head_size, double scale,
+                             int64_t window_left,
+                             typename Backend::Stream stream) const {
+    switch (head_size) {
+      case 64:
+        DispatchDtypeDecode<64>(query, key, value, output, num_heads,
+                                num_kv_heads, scale, window_left, stream);
+        break;
+      case 128:
+        DispatchDtypeDecode<128>(query, key, value, output, num_heads,
+                                 num_kv_heads, scale, window_left, stream);
+        break;
+      case 256:
+        DispatchDtypeDecode<256>(query, key, value, output, num_heads,
+                                 num_kv_heads, scale, window_left, stream);
+        break;
+      default:
+        assert(false && "unsupported head dimension for FlashAttention decode");
+    }
+  }
+
+  template <uint32_t HEAD_DIM>
+  void DispatchDtypeDecode(const Tensor& query, const Tensor& key,
+                           const Tensor& value, Tensor& output,
+                           int64_t num_heads, int64_t num_kv_heads,
+                           double scale, int64_t window_left,
+                           typename Backend::Stream stream) const {
+    DispatchFunc<Backend::kDeviceType, ReducedFloatTypes>(
+        dtype_,
+        [&](auto type_tag) {
+          using DType = typename decltype(type_tag)::type;
+          LaunchDecode<HEAD_DIM, DType>(query, key, value, output, num_heads,
+                                        num_kv_heads, scale, window_left,
+                                        stream);
+        },
+        "CudaFlashAttention::decode");
+  }
+
+  template <uint32_t HEAD_DIM, typename DType>
+  void LaunchDecode(const Tensor& query, const Tensor& key,
+                    const Tensor& value, Tensor& output, int64_t num_heads,
+                    int64_t num_kv_heads, double scale, int64_t window_left,
+                    typename Backend::Stream stream) const {
+    using AttentionVariant =
+        flashinfer::DefaultAttention</*use_custom_mask=*/false,
+                                     /*use_sliding_window=*/false,
+                                     /*use_logits_soft_cap=*/false,
+                                     /*use_alibi=*/false>;
+
+    uint32_t kv_len = static_cast<uint32_t>(key.size(0));
+
+    flashinfer::SingleDecodeParams<DType, DType, DType> params(
+        reinterpret_cast<DType*>(const_cast<void*>(query.data())),
+        reinterpret_cast<DType*>(const_cast<void*>(key.data())),
+        reinterpret_cast<DType*>(const_cast<void*>(value.data())),
+        reinterpret_cast<DType*>(output.data()),
+        /*maybe_alibi_slopes=*/nullptr, kv_len,
+        static_cast<uint32_t>(num_heads), static_cast<uint32_t>(num_kv_heads),
+        flashinfer::QKVLayout::kNHD, HEAD_DIM,
+        static_cast<int32_t>(window_left),
+        /*logits_soft_cap=*/0.0f, static_cast<float>(scale),
+        /*rope_scale=*/1.0f, /*rope_theta=*/1e4f);
+
+    // Decode needs a temporary buffer for partial results.
+    // Size: num_qo_heads * HEAD_DIM * sizeof(DType).
+    // For single decode this is small enough to use nullptr (non-partitioned).
+    cudaError_t err =
+        flashinfer::SingleDecodeWithKVCacheDispatched<
+            HEAD_DIM, flashinfer::PosEncodingMode::kNone, AttentionVariant>(
+            params, /*tmp=*/nullptr, stream);
+
+    assert(err == cudaSuccess &&
+           "FlashInfer SingleDecodeWithKVCacheDispatched failed");
     (void)err;
   }
 };
