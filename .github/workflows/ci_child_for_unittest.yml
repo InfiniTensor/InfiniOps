@@ -242,7 +242,7 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
 
-          stdbuf -oL -eL ./daemon.sh \
+          ./daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \
