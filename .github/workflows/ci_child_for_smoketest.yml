@@ -75,6 +75,9 @@ jobs:
               mkdir -p ${{ github.run_id }}_${{ matrix.id }}
               cd ${{ github.run_id }}_${{ matrix.id }}
               
+              pwd
+              ls -lah 
+
               chmod a+x .ci/daemon.sh
               
               DOCKER_ARGS="${{ join(matrix.docker_args, ' ') }}"
