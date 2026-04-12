@@ -169,15 +169,20 @@ def generate_blas_wrapper(
     """Generate a BLAS-based backend wrapper (e.g. GEMM via cuBLAS)."""
     op_snake = _to_snake(op.name)
     enum_name = BACKEND_ENUM[backend]
-
-    # Derive filename from the blas_include (e.g. "metax/blas.h" → mcblas).
-    filename = f"{backend.lower()}blas.h"
-    guard = _include_guard(backend, op_snake, filename)
+    guard = _include_guard(backend, op_snake, "kernel.h")
 
     device_type = f"Device::Type::k{enum_name}"
 
     if impl_index is not None:
         device_type += f", {impl_index}"
+
+    # Include the platform's registry if the operator has one in src/.
+    registry_path = pathlib.Path(f"src/{backend}/{op_snake}/registry.h")
+    registry_include = (
+        f'#include "{backend}/{op_snake}/registry.h"\n'
+        if registry_path.exists()
+        else ""
+    )
 
     return (
         f"#ifndef {guard}\n"
@@ -185,6 +190,7 @@ def generate_blas_wrapper(
         f"\n"
         f'#include "{blas_include}"\n'
         f'#include "{backend}/blas.h"\n'
+        f"{registry_include}"
         f"\n"
         f"namespace infini::ops {{\n"
         f"\n"
@@ -234,6 +240,10 @@ def generate_wrappers_for_op(
     impl_index = getattr(op, "impl_index", None)
     out_filename = "dsl.h" if impl_index and impl_index > 0 else "kernel.h"
 
+    # Check if the cuda entry is a BLAS-style operator.
+    cuda_entry = backends.get("cuda")
+    is_blas = isinstance(cuda_entry, dict) and cuda_entry.get("blas", False)
+
     for backend in devices:
 
         if backend not in CUDA_LIKE_BACKENDS:
@@ -249,8 +259,17 @@ def generate_wrappers_for_op(
             # Explicit hand-written file — do not generate a wrapper.
             continue
 
-        # Generate from shared CUDA template.
-        content = generate_cuda_wrapper(op, backend, impl_index=impl_index)
+        if is_blas:
+            # Generate BLAS-based wrapper (e.g., BlasGemm<Blas<kNvidia>>).
+            blas_class = cuda_entry["class"]
+            blas_include = cuda_entry["include"]
+            content = generate_blas_wrapper(
+                op, backend, blas_class, blas_include, impl_index=impl_index
+            )
+        else:
+            # Generate standard CUDA wrapper (e.g., CudaOp<Runtime<kNvidia>>).
+            content = generate_cuda_wrapper(op, backend, impl_index=impl_index)
+
         out_path = output_dir / backend / op_snake / out_filename
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(content)
