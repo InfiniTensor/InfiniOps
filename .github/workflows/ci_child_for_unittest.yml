@@ -238,7 +238,9 @@ jobs:
           echo "${IMAGE_TAG}"
           echo "**************************************************************************************"
 
-          exec ./daemon.sh \
+          echo "daemon start" >&2
+
+          exec stdbuf -oL -eL ./daemon.sh \
             "${PLATFORM^}" \
             "Unit" \
             "InfiniTensor" \
@@ -246,4 +248,3 @@ jobs:
             "${DOCKER_ARGS}" \
             ${{ github.run_id }} \
             "${IMAGE_TAG}"
-  
