@@ -10,24 +10,14 @@
 
 namespace infini::ops {
 
-namespace {
-
-template <unsigned int block_size, Device::Type kDev, typename TData,
-          typename TCompute>
-__device__ __forceinline__ TCompute SumSquared(const TData* data_ptr,
-                                               size_t count) {
-  TCompute ss = 0;
-  for (size_t i = threadIdx.x; i < count; i += block_size) {
-    TCompute value = Caster<kDev>::template Cast<TCompute>(data_ptr[i]);
-    ss += value * value;
-  }
-  using BlockReduce = cub::BlockReduce<TCompute, block_size>;
-  __shared__ typename BlockReduce::TempStorage temp_storage;
-  return BlockReduce(temp_storage).Sum(ss);
-}
-
-}  // namespace
-
+// Single-pass RmsNorm kernel with shared memory caching.
+//
+// Pass 1: Load x from global memory into shared memory, accumulate
+//         sum-of-squares in registers, then block-reduce.
+// Pass 2: Read x from shared memory (NOT global), apply rms * weight,
+//         write y to global memory.
+//
+// This halves global memory traffic compared to the two-pass approach.
 template <unsigned int block_size, Device::Type kDev, typename TCompute,
           typename TData, typename TWeight>
 __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
@@ -36,26 +26,45 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
                               int64_t stride_x_batch, int64_t stride_x_nhead,
                               const TWeight* __restrict__ w, size_t nhead,
                               size_t dim, float epsilon) {
+  // Dynamic shared memory: [dim] elements of TCompute for caching x.
+  extern __shared__ char smem_raw[];
+  TCompute* x_cache = reinterpret_cast<TCompute*>(smem_raw);
+
   size_t batch_idx = blockIdx.x / nhead;
   size_t head_idx = blockIdx.x % nhead;
 
   auto y_ptr = y + batch_idx * stride_y_batch + head_idx * stride_y_nhead;
   auto x_ptr = x + batch_idx * stride_x_batch + head_idx * stride_x_nhead;
-  auto w_ptr = w;
 
-  TCompute ss = SumSquared<block_size, kDev, TData, TCompute>(x_ptr, dim);
-
-  __shared__ TCompute rms;
-  if (threadIdx.x == 0) {
-    rms = Caster<kDev>::template Cast<TCompute>(
-        rsqrtf(ss / Caster<kDev>::template Cast<TCompute>(dim) + epsilon));
-  }
-  __syncthreads();
+  // Pass 1: Load x into shared memory and compute sum-of-squares.
+  TCompute ss = 0;
 
   for (size_t i = threadIdx.x; i < dim; i += block_size) {
+    TCompute val = Caster<kDev>::template Cast<TCompute>(x_ptr[i]);
+    x_cache[i] = val;
+    ss += val * val;
+  }
+
+  // Block reduce sum-of-squares.
+  // Place CUB temp storage after the x_cache region to avoid overlap.
+  using BlockReduce = cub::BlockReduce<TCompute, block_size>;
+  __shared__ typename BlockReduce::TempStorage temp_storage;
+  TCompute total = BlockReduce(temp_storage).Sum(ss);
+
+  __shared__ TCompute rms;
+
+  if (threadIdx.x == 0) {
+    rms = rsqrtf(total / static_cast<TCompute>(dim) + epsilon);
+  }
+
+  __syncthreads();
+
+  // Pass 2: Transform using cached x from shared memory (no second
+  // global read).
+  for (size_t i = threadIdx.x; i < dim; i += block_size) {
     y_ptr[i] = Caster<kDev>::template Cast<TData>(
-        Caster<kDev>::template Cast<TCompute>(x_ptr[i]) *
-        Caster<kDev>::template Cast<TCompute>(w_ptr[i]) * rms);
+        x_cache[i] *
+        Caster<kDev>::template Cast<TCompute>(w[i]) * rms);
   }
 }
 

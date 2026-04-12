@@ -43,8 +43,11 @@ class CudaRmsNorm : public RmsNorm {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
+          // Dynamic shared memory for caching x values (single-pass).
+          size_t smem_bytes = dim_ * sizeof(float);
+
           RmsNormKernel<kBlockSize, Backend::kDeviceType, float, T, T>
-              <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
+              <<<num_blocks, kBlockSize, smem_bytes, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()), stride_out_batch,
                   stride_out_nhead, reinterpret_cast<const T*>(input.data()),
                   stride_input_batch, stride_input_nhead,
