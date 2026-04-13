@@ -83,8 +83,6 @@ jobs:
               mkdir -p ${{ github.run_id }}_${{ matrix.id }}
               cd ${{ github.run_id }}_${{ matrix.id }}
 
-              pwd
-              
               cp ${src_dir}/.ci/daemon.sh .
               chmod a+x ./daemon.sh
               
