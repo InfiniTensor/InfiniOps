@@ -34,13 +34,13 @@ class CudaCausalSoftmax : public CausalSoftmax {
     assert(out.dtype() == input.dtype());
 
     constexpr int kMaxBlockSize = BackendMaxBlockSize<Backend>::value;
-    int block_size = std::min(
-        RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(),
-        kMaxBlockSize);
+    int block_size =
+        std::min(RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(),
+                 kMaxBlockSize);
 
-    DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
-                 SupportedCudaBlockSizesType<
-                     BackendMaxBlockSize<Backend>::value>>(
+    DispatchFunc<
+        ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
+        SupportedCudaBlockSizesType<BackendMaxBlockSize<Backend>::value>>(
         // TODO: Output dtype should use the one passed in during construction.
         {static_cast<int64_t>(out.dtype()), block_size},
         [&](auto list_tag) {

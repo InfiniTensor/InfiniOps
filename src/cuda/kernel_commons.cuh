@@ -13,7 +13,8 @@ template <typename Backend, typename = void>
 struct BackendMaxBlockSize : std::integral_constant<int, 2048> {};
 
 template <typename Backend>
-struct BackendMaxBlockSize<Backend, std::void_t<decltype(Backend::max_block_size)>>
+struct BackendMaxBlockSize<Backend,
+                           std::void_t<decltype(Backend::max_block_size)>>
     : std::integral_constant<int, Backend::max_block_size> {};
 
 template <int max_block_size>
