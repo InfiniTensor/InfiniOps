@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_BASE_MATMUL_H_
-#define INFINI_OPS_BASE_MATMUL_H_
+#ifndef INFINI_OPS_BASE_MAT_MUL_H_
+#define INFINI_OPS_BASE_MAT_MUL_H_
 
 #include "operator.h"
 #include "tensor.h"
