@@ -84,14 +84,23 @@ struct std::equal_to<infini::ops::detail::CacheKey> {
 
 namespace infini::ops {
 
-template <typename Key, Device::Type kDev>
+template <typename Key, Device::Type kDev, std::size_t N = 0>
 struct ActiveImplementationsImpl {
+  using type = List<>;
+};
+
+template <typename Key, Device::Type kDev>
+struct ActiveImplementationsImpl<Key, kDev, 0> {
   using type = List<0>;
 };
 
 template <typename Key, Device::Type kDev>
 using ActiveImplementations =
-    typename ActiveImplementationsImpl<Key, kDev>::type;
+    typename Flatten<
+        typename ActiveImplementationsImpl<Key, kDev, 0>::type,
+        typename ActiveImplementationsImpl<Key, kDev, 1>::type,
+        typename ActiveImplementationsImpl<Key, kDev, 2>::type,
+        typename ActiveImplementationsImpl<Key, kDev, 3>::type>::type;
 
 class OperatorBase {
  public:

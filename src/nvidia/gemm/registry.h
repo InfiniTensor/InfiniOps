@@ -6,7 +6,7 @@
 namespace infini::ops {
 
 template <>
-struct ActiveImplementationsImpl<Gemm, Device::Type::kNvidia> {
+struct ActiveImplementationsImpl<Gemm, Device::Type::kNvidia, 0> {
   using type = List<0, 1>;
 };
 
