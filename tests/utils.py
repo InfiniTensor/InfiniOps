@@ -82,12 +82,47 @@ def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     return output
 
 
-def get_npu_stream(tensor):
-    """Return the current NPU stream handle for `tensor`, or 0 on other devices."""
-    if tensor.device.type != "npu":
+def get_stream(device):
+    """Return the raw stream handle for `device`, or 0 for CPU.
+
+    Uses `torch.accelerator.current_stream` when available, falling back to
+    device-specific APIs for older PyTorch versions.
+    """
+    if isinstance(device, torch.device):
+        device = device.type
+
+    if isinstance(device, str) and ":" in device:
+        device = device.split(":")[0]
+
+    if device == "cpu":
         return 0
 
-    return torch.npu.current_stream().npu_stream
+    if hasattr(torch, "accelerator") and hasattr(torch.accelerator, "current_stream"):
+        stream = torch.accelerator.current_stream()
+
+        # Each backend exposes the raw handle under a different attribute name.
+        for attr in ("npu_stream", "cuda_stream", "mlu_stream", "musa_stream"):
+            if hasattr(stream, attr):
+                return getattr(stream, attr)
+
+        return 0
+
+    # Fallback for older PyTorch builds without `torch.accelerator`.
+    _STREAM_ACCESSORS = {
+        "npu": ("npu", "npu_stream"),
+        "cuda": ("cuda", "cuda_stream"),
+        "mlu": ("mlu", "mlu_stream"),
+        "musa": ("musa", "musa_stream"),
+    }
+
+    if device in _STREAM_ACCESSORS:
+        mod_name, attr = _STREAM_ACCESSORS[device]
+        mod = getattr(torch, mod_name, None)
+
+        if mod is not None and hasattr(mod, "current_stream"):
+            return getattr(mod.current_stream(), attr)
+
+    return 0
 
 
 def clone_strided(input):

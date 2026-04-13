@@ -11,11 +11,11 @@
 
 namespace infini::ops::ascend {
 
-// Build an aclTensor descriptor from an InfiniOps Tensor.
+// Build an `aclTensor` descriptor from an InfiniOps `Tensor`.
 //
 // When `transpose_last2` is true the last two dimensions are swapped in the
-// descriptor (shape and strides) without copying data.  This is used by GEMM
-// and Matmul to express a transpose via the view.
+// descriptor (shape and strides) without copying data.  This is used by `Gemm`
+// and `MatMul` to express a transpose via the view.
 inline aclTensor* buildAclTensor(const Tensor& t,
                                  bool transpose_last2 = false) {
   std::vector<int64_t> shape(t.shape().begin(), t.shape().end());
@@ -45,7 +45,7 @@ inline aclTensor* buildAclTensor(const Tensor& t,
   std::vector<int64_t> storage_shape = {storage_elems};
 
   return aclCreateTensor(
-      shape.data(), static_cast<int64_t>(shape.size()), toAclDtype(t.dtype()),
+      shape.data(), static_cast<int64_t>(shape.size()), ToAclDtype(t.dtype()),
       strides.data(),
       /*storageOffset=*/0, ACL_FORMAT_ND, storage_shape.data(),
       static_cast<int64_t>(storage_shape.size()), const_cast<void*>(t.data()));

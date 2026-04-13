@@ -6,34 +6,24 @@
 
 namespace infini::ops {
 
-class Matmul : public Operator<Matmul> {
+class MatMul : public Operator<MatMul> {
  public:
-  // `trans_a` / `trans_b`: If true, transpose the last two dims of `a` / `b`
-  // before multiplying.  These are constructor parameters so the `CacheKey`
-  // encodes the transposition and distinct descriptors are cached for each
-  // combination.
-  Matmul(const Tensor a, const Tensor b, Tensor c, bool trans_a, bool trans_b)
-      : a_shape_{a.shape()},
-        b_shape_{b.shape()},
-        c_shape_{c.shape()},
-        trans_a_{trans_a},
-        trans_b_{trans_b} {
-    assert(a.dtype() == b.dtype());
+  MatMul(const Tensor input, const Tensor other, Tensor out)
+      : input_shape_{input.shape()},
+        other_shape_{other.shape()},
+        out_shape_{out.shape()} {
+    assert(input.dtype() == other.dtype());
   }
 
-  virtual void operator()(const Tensor a, const Tensor b, Tensor c,
-                          bool trans_a, bool trans_b) const = 0;
+  virtual void operator()(const Tensor input, const Tensor other,
+                          Tensor out) const = 0;
 
  protected:
-  Tensor::Shape a_shape_;
+  Tensor::Shape input_shape_;
 
-  Tensor::Shape b_shape_;
+  Tensor::Shape other_shape_;
 
-  Tensor::Shape c_shape_;
-
-  bool trans_a_{false};
-
-  bool trans_b_{false};
+  Tensor::Shape out_shape_;
 };
 
 }  // namespace infini::ops

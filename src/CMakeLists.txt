@@ -178,7 +178,7 @@ if(WITH_ASCEND)
         "ascend/*.cc"
         "ascend/*.cpp"
     )
-    # Exclude kernel_impl.cpp — AscendC device code, not compiled by the host C++ compiler.
+    # Exclude `kernel_impl.cpp` — AscendC device code, not compiled by the host C++ compiler.
     list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
 
     target_compile_definitions(infiniops PUBLIC WITH_ASCEND=1)

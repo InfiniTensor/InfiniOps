@@ -16,7 +16,7 @@ def pytest_addoption(parser):
         "--devices",
         nargs="+",
         default=None,
-        help="Device(s) to test on (e.g., --devices ascend cpu). Accepts platform names (ascend, nvidia, cambricon, metax, moore, iluvatar) or PyTorch device types (npu, cuda, mlu, musa). Defaults to all available devices.",
+        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
     )
 
 
@@ -46,7 +46,8 @@ def set_seed_per_test(request):
 
 _NPU_UNSUPPORTED_DTYPES = {torch.float64}
 
-# `torch_npu` does not implement random number generation for `uint16`/`uint32`/`uint64`.
+# `torch_npu` does not implement random number generation for
+# `uint16`/`uint32`/`uint64`.
 for _bits in (16, 32, 64):
     _t = getattr(torch, f"uint{_bits}", None)
     if _t is not None:
@@ -54,7 +55,8 @@ for _bits in (16, 32, 64):
 
 
 @pytest.fixture(autouse=True)
-def skip_unsupported_dtype(request):
+def skip_unsupported_dtypes(request):
+
     if not hasattr(request.node, "callspec"):
         return
 
@@ -71,16 +73,16 @@ def _set_random_seed(seed):
 
 _PLATFORM_TO_TORCH_DEVICE = {
     "nvidia": "cuda",
-    "iluvatar": "cuda",
     "metax": "cuda",
-    "cambricon": "mlu",
+    "iluvatar": "cuda",
     "moore": "musa",
+    "cambricon": "mlu",
     "ascend": "npu",
 }
 
 
 def _resolve_device(name):
-    """Map a platform name (e.g., ``ascend``) to a PyTorch device type (e.g., ``npu``)."""
+    """Map a platform name (e.g., `ascend`) to a PyTorch device type (e.g., `npu`)."""
     return _PLATFORM_TO_TORCH_DEVICE.get(name, name)
 
 

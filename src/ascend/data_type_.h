@@ -9,14 +9,8 @@
 
 namespace infini::ops::ascend {
 
-inline aclDataType toAclDtype(DataType dt) {
+inline aclDataType ToAclDtype(DataType dt) {
   switch (dt) {
-    case DataType::kFloat16:
-      return ACL_FLOAT16;
-    case DataType::kBFloat16:
-      return ACL_BF16;
-    case DataType::kFloat32:
-      return ACL_FLOAT;
     case DataType::kInt8:
       return ACL_INT8;
     case DataType::kInt16:
@@ -33,14 +27,20 @@ inline aclDataType toAclDtype(DataType dt) {
       return ACL_UINT32;
     case DataType::kUInt64:
       return ACL_UINT64;
+    case DataType::kFloat16:
+      return ACL_FLOAT16;
+    case DataType::kBFloat16:
+      return ACL_BF16;
+    case DataType::kFloat32:
+      return ACL_FLOAT;
     default:
-      assert(false && "unsupported dtype for Ascend backend");
+      assert(false && "Unsupported dtype for Ascend backend.");
       return ACL_DT_UNDEFINED;
   }
 }
 
-// Returns true for integer (signed or unsigned) DataType values.
-inline bool isIntegerDtype(DataType dt) {
+// Returns true for integer (signed or unsigned) `DataType` values.
+inline bool IsIntegerDtype(DataType dt) {
   switch (dt) {
     case DataType::kInt8:
     case DataType::kInt16:
