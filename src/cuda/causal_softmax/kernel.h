@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
 #define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 
@@ -32,10 +33,14 @@ class CudaCausalSoftmax : public CausalSoftmax {
 
     assert(out.dtype() == input.dtype());
 
-    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
+    constexpr int kMaxBlockSize = BackendMaxBlockSize<Backend>::value;
+    int block_size =
+        std::min(RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(),
+                 kMaxBlockSize);
 
-    DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
-                 AllCudaBlockSizes>(
+    DispatchFunc<
+        ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
+        SupportedCudaBlockSizesType<BackendMaxBlockSize<Backend>::value>>(
         // TODO: Output dtype should use the one passed in during construction.
         {static_cast<int64_t>(out.dtype()), block_size},
         [&](auto list_tag) {
