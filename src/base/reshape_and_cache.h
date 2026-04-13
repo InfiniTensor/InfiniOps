@@ -8,6 +8,15 @@
 
 namespace infini::ops {
 
+// Scatter `key` / `value` tokens into a paged KV cache.
+//
+// Interface follows vLLM's `reshape_and_cache` kernel:
+//   `vllm._custom_ops.reshape_and_cache_flash`
+//
+// `kv_cache` layout: `[2, num_blocks, block_size, num_kv_heads, head_size]`.
+// `slot_mapping`: 1D `[num_tokens]`, each entry is the linear slot index
+// into the cache.  Padding tokens must be filtered by the caller (no
+// negative indices).
 class ReshapeAndCache : public Operator<ReshapeAndCache> {
  public:
   ReshapeAndCache(const Tensor key, const Tensor value, const Tensor kv_cache,
