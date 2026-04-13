@@ -29,6 +29,7 @@ _UINT_DTYPES = tuple(
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
+@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -39,12 +40,28 @@ _UINT_DTYPES = tuple(
     + tuple((dtype, 0, 0) for dtype in _INT_DTYPES + _UINT_DTYPES),
 )
 def test_add(
-    shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
+    shape,
+    input_strides,
+    other_strides,
+    out_strides,
+    implementation_index,
+    dtype,
+    device,
+    rtol,
+    atol,
 ):
     if device == "musa" and dtype in _UINT_DTYPES:
         pytest.skip(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
+
+    active_indices = infini.ops.Add.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
+
+    if implementation_index == 1 and dtype in _UINT_DTYPES:
+        pytest.skip("ATen `add` does not support unsigned integer types")
 
     if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
         input = randint_strided(
@@ -59,11 +76,18 @@ def test_add(
 
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(_add, _torch_add, (input, other, out), {}, rtol=rtol, atol=atol)
+    return Payload(
+        lambda *args: _add(*args, implementation_index=implementation_index),
+        _torch_add,
+        (input, other, out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
 
 
-def _add(input, other, out):
-    infini.ops.add(input, other, out)
+def _add(input, other, out, implementation_index=0):
+    infini.ops.add(input, other, out, implementation_index=implementation_index)
 
     return out
 
