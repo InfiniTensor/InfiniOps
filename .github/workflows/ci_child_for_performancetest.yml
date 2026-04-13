@@ -1,0 +1,112 @@
+name: CI Child Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      matrix_json:
+        description: "Matrix JSON generated from .ci/config.yaml"
+        required: true
+        type: string
+
+jobs:
+  platform-jobs:
+    # Matrix expands into independent jobs (one per platform/job entry),
+    # not serial steps in a single job. If a platform runner is busy/offline,
+    # only that matrix entry stays queued.
+    name: ${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix: ${{ fromJson(inputs.matrix_json) }}
+    runs-on: self-hosted
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show stage plan
+        env:
+          MATRIX_JSON: ${{ inputs.matrix_json }}
+          CURRENT_JOB: ${{ matrix.id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          data = json.loads(os.environ["MATRIX_JSON"])
+          current = os.environ["CURRENT_JOB"]
+          entry = next((x for x in data.get("include", []) if x.get("id") == current), None)
+          if not entry:
+              print(f"[warn] matrix entry not found for {current}")
+              raise SystemExit(0)
+
+          test_cmd = entry.get("test_cmd", "")
+          lines = [
+              f"job: {entry.get('id')}",
+              f"platform: {entry.get('platform')}",
+              "stage order:",
+              "  1) setup",
+              f"  2) test -> {test_cmd}",
+          ]
+          text = "\n".join(lines)
+          print(text)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as f:
+                  f.write("### Stage plan\n\n")
+                  f.write("```\n")
+                  f.write(text)
+                  f.write("\n```\n\n")
+          PY
+
+      - name: Trigger ${{ matrix.platform }} GPU Performance Test task
+        env: ${{ matrix.job_env }}
+        run: |
+              set -e
+              echo "==> running job: ${{ matrix.job_name }}"
+              echo "Performance Test Starting..."
+              echo "MODEL_LIST = ${{ matrix.job_env.MODEL_LIST }}"
+              echo "Version = ${{ matrix.job_env.IMAGE }}"
+              set -m
+
+              src_dir=$(pwd)
+              echo "src_dir: ${src_dir}"
+
+              cd /home/zkjh
+              if [ ! -d "CI_${{ matrix.platform }}_test" ]; then
+                mkdir -p "CI_${{ matrix.platform }}_test"
+              fi
+              cd CI_${{ matrix.platform }}_test
+              mkdir -p ${{ github.run_id }}_${{ matrix.id }}
+              cd ${{ github.run_id }}_${{ matrix.id }}
+              
+              cp ${src_dir}/.ci/daemon.sh .
+              chmod a+x ./daemon.sh
+              
+              DOCKER_ARGS="${{ join(matrix.docker_args, ' ') }}"
+              VOLUME_ARGS=$(printf " -v %s" ${{ join(matrix.volumes, ' ') }})
+              SHM_SIZE="--shm-size=${{ matrix.shm_size }}"
+              PLATFORM=${{ matrix.platform }}
+
+              echo "************************************************************************"
+              echo "PLATFORM=${PLATFORM^}"
+              echo "Performance"
+              echo "${{ matrix.job_env.ENGINE }}"
+              echo "${{ matrix.job_env.MODEL_LIST }}:${{ matrix.ngpus }}:A100"
+              echo "${DOCKER_ARGS} ${VOLUME_ARGS} ${SHM_SIZE}"
+              echo "${{ github.run_id }}"
+              echo "${{ matrix.job_env.IMAGE }}"
+              echo "************************************************************************"
+
+              exec ./daemon.sh \
+                "${PLATFORM^}" \
+                Performance \
+                ${{ matrix.job_env.ENGINE }}  \
+                "${{ matrix.job_env.MODEL_LIST }}" \
+                "${DOCKER_ARGS} ${VOLUME_ARGS} ${SHM_SIZE}" \
+                ${{ github.run_id }}  \
+                "Random"  \
+                ${{ matrix.job_env.IMAGE }}

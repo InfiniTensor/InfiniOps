@@ -13,6 +13,7 @@ jobs:
     outputs:
       matrix_json_for_unittest: ${{ steps.generate.outputs.matrix_json_for_unittest }}
       matrix_json_for_smoketest: ${{ steps.generate.outputs.matrix_json_for_smoketest }}
+      matrix_json_for_performancetest: ${{ steps.generate.outputs.matrix_json_for_performancetest }}
       job_types_with_jobs: ${{ steps.generate.outputs.job_types_with_jobs }}
     steps:
       - name: Checkout
@@ -38,6 +39,8 @@ jobs:
           echo "matrix_json_for_unittest=${{ steps.generate.outputs.matrix_json_for_unittest }}"
           echo
           echo "matrix_json_for_smoketest=${{ steps.generate.outputs.matrix_json_for_smoketest }}"
+          echo
+          echo "matrix_json_for_performancetest=${{ steps.generate.outputs.matrix_json_for_performancetest }}"
 
   run-child-unittest:
     name: Execute unittest child pipeline
@@ -54,3 +57,11 @@ jobs:
     uses: ./.github/workflows/ci_child_for_smoketest.yml
     with:
       matrix_json: ${{ needs.prepare.outputs.matrix_json_for_smoketest }}
+
+  run-child-performancetest:
+    name: Execute performancetest child pipeline
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.job_types_with_jobs), 'performancetest')
+    uses: ./.github/workflows/ci_child_for_performancetest.yml
+    with:
+      matrix_json: ${{ needs.prepare.outputs.matrix_json_for_performancetest }}
