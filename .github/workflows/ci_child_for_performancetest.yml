@@ -116,5 +116,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: performance test report
-          path: ./*.xlsx
+          path: /data/shared/limingge/artifacts/CI_${{ matrix.platform }}_test/${{ github.run_id }}_${{ matrix.id }}/*.xlsx
           retention-days: 7
