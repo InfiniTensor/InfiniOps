@@ -95,9 +95,10 @@ jobs:
               echo "PLATFORM=${PLATFORM^}"
               echo "Performance"
               echo "${{ matrix.job_env.ENGINE }}"
-              echo "${{ matrix.job_env.MODEL_LIST }}:${{ matrix.ngpus }}:A100"
+              echo "${{ matrix.job_env.MODEL_LIST }}"
               echo "${DOCKER_ARGS} ${VOLUME_ARGS} ${SHM_SIZE}"
               echo "${{ github.run_id }}"
+              echo "Random"
               echo "${{ matrix.job_env.IMAGE }}"
               echo "************************************************************************"
 
