@@ -16,6 +16,8 @@ option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
 option(WITH_ASCEND "Enable Ascend backend" OFF)
 
+option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
+
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
@@ -77,6 +79,24 @@ if(AUTO_DETECT_DEVICES)
         set(WITH_ASCEND ON)
         message(STATUS "Auto-detected Ascend environment.")
     endif()
+endif()
+
+if(WITH_TORCH)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "import torch; print(torch.utils.cmake_prefix_path)"
+        OUTPUT_VARIABLE TORCH_CMAKE_PREFIX_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _torch_result
+    )
+
+    if(NOT _torch_result EQUAL 0)
+        message(FATAL_ERROR "`WITH_TORCH` is `ON` but `torch` is not installed or `torch.utils.cmake_prefix_path` is not available.")
+    endif()
+
+    list(APPEND CMAKE_PREFIX_PATH "${TORCH_CMAKE_PREFIX_PATH}")
+    find_package(Torch REQUIRED)
+    message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -413,7 +413,12 @@ def _snake_to_pascal(snake_str):
     return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
-def _get_all_ops(devices):
+def _get_all_ops(devices, with_torch=False):
+    scan_dirs = set(devices)
+
+    if with_torch:
+        scan_dirs.add("torch")
+
     ops = {}
 
     for file_path in _BASE_DIR.iterdir():
@@ -425,7 +430,7 @@ def _get_all_ops(devices):
         ops[op_name] = []
 
         for file_path in _SRC_DIR.rglob("*"):
-            if not file_path.is_file() or file_path.parent.parent.name not in devices:
+            if not file_path.is_file() or file_path.parent.parent.name not in scan_dirs:
                 continue
 
             if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
@@ -445,6 +450,12 @@ if __name__ == "__main__":
         help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `moore`, `iluvatar`, `kunlun`, `hygon`, and `qy`. (default: `cpu`)",
     )
 
+    parser.add_argument(
+        "--with-torch",
+        action="store_true",
+        help="Include PyTorch C++ backend implementations.",
+    )
+
     args = parser.parse_args()
 
     _BINDINGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -456,7 +467,7 @@ if __name__ == "__main__":
     if ops_json.exists():
         ops = json.loads(ops_json.read_text())
     else:
-        ops = _get_all_ops(args.devices)
+        ops = _get_all_ops(args.devices, with_torch=args.with_torch)
 
     header_paths = []
     bind_func_names = []
