@@ -75,7 +75,7 @@ jobs:
               src_dir=$(pwd)
               echo "src_dir: ${src_dir}"
 
-              cd /home/zkjh
+              cd /data/shared/limingge/artifacts
               if [ ! -d "CI_${{ matrix.platform }}_test" ]; then
                 mkdir -p "CI_${{ matrix.platform }}_test"
               fi
