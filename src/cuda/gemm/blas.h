@@ -42,25 +42,25 @@ class BlasGemm : public Gemm {
     const auto& trans_b_value{trans_b.value_or(trans_b_)};
     auto op_a{GetOpA(trans_a_value, trans_b_value)};
     auto op_b{GetOpB(trans_a_value, trans_b_value)};
-    const void* alpha_ptr{GetAlphaPtr(alpha_value, c.dtype())};
-    const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
+    const void* alpha_ptr{GetAlphaPtr(alpha_value, c_type_)};
+    const void* beta_ptr{GetBetaPtr(beta_value, c_type_)};
 
     Backend::BlasGemmStridedBatchedEx(
         GetHandle(), op_a, op_b, swap_a_and_b_ ? n_ : m_,
         swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
         swap_a_and_b_ ? b.data() : a.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? b.dtype()
-                                                                   : a.dtype()),
+        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? b_type_
+                                                                   : a_type_),
         swap_a_and_b_ ? ldb_ : lda_,
         swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
         swap_a_and_b_ ? a.data() : b.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? a.dtype()
-                                                                   : b.dtype()),
+        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? a_type_
+                                                                   : b_type_),
         swap_a_and_b_ ? lda_ : ldb_,
         swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr, c.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(c.dtype()), ldc_,
+        BlasUtils<Backend::kDeviceType>::GetDataType(c_type_), ldc_,
         batch_stride_c_, batch_count_,
-        BlasUtils<Backend::kDeviceType>::GetComputeType(c.dtype()),
+        BlasUtils<Backend::kDeviceType>::GetComputeType(c_type_),
         Backend::BLAS_GEMM_DEFAULT);
   }
 

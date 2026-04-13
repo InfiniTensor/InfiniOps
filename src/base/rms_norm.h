@@ -14,6 +14,7 @@ class RmsNorm : public Operator<RmsNorm> {
   RmsNorm(const Tensor input, const Tensor weight, float eps, Tensor out)
       : input_shape_{input.shape()},
         out_shape_{out.shape()},
+        dtype_{out.dtype()},
         input_strides_{input.strides()},
         out_strides_{out.strides()},
         eps_{eps},
@@ -40,6 +41,8 @@ class RmsNorm : public Operator<RmsNorm> {
   Tensor::Shape input_shape_;
 
   Tensor::Shape out_shape_;
+
+  const DataType dtype_;
 
   Tensor::Strides input_strides_;
 

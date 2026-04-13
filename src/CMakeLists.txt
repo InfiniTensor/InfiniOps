@@ -174,6 +174,14 @@ endif()
 
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+file(GLOB FACTORY_SOURCES "${PROJECT_SOURCE_DIR}/generated/src/*/make.cc")
+if(FACTORY_SOURCES)
+    if(WITH_NVIDIA OR WITH_ILUVATAR)
+        set_source_files_properties(${FACTORY_SOURCES} PROPERTIES LANGUAGE CUDA)
+    endif()
+    target_sources(infiniops PRIVATE ${FACTORY_SOURCES})
+endif()
+
 if(GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
     execute_process(

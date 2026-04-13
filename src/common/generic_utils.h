@@ -5,9 +5,9 @@
 
 namespace infini::ops::utils {
 
-std::size_t IndexToOffset(std::size_t flat_index, std::size_t ndim,
-                          const std::size_t* shape,
-                          const std::ptrdiff_t* strides) {
+inline std::size_t IndexToOffset(std::size_t flat_index, std::size_t ndim,
+                                 const std::size_t* shape,
+                                 const std::ptrdiff_t* strides) {
   std::size_t res = 0;
   for (std::size_t i = ndim; i-- > 0;) {
     res += (flat_index % shape[i]) * strides[i];

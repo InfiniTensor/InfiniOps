@@ -56,11 +56,10 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
     const auto* a_ptr{swap_a_and_b_ ? b.data() : a.data()};
     const auto* b_ptr{swap_a_and_b_ ? a.data() : b.data()};
     const auto a_dtype{BlasUtils<Device::Type::kNvidia>::GetDataType(
-        swap_a_and_b_ ? b.dtype() : a.dtype())};
+        swap_a_and_b_ ? b_type_ : a_type_)};
     const auto b_dtype{BlasUtils<Device::Type::kNvidia>::GetDataType(
-        swap_a_and_b_ ? a.dtype() : b.dtype())};
-    const auto c_dtype{
-        BlasUtils<Device::Type::kNvidia>::GetDataType(c.dtype())};
+        swap_a_and_b_ ? a_type_ : b_type_)};
+    const auto c_dtype{BlasUtils<Device::Type::kNvidia>::GetDataType(c_type_)};
     const auto a_ld{static_cast<uint64_t>(swap_a_and_b_ ? ldb_ : lda_)};
     const auto b_ld{static_cast<uint64_t>(swap_a_and_b_ ? lda_ : ldb_)};
     const auto c_ld{static_cast<uint64_t>(ldc_)};
@@ -72,7 +71,7 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
 
     cublasLtMatmulDesc_t op_desc{};
     auto status = cublasLtMatmulDescCreate(
-        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(c.dtype()),
+        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(c_type_),
         CUDA_R_32F);
     assert(status == CUBLAS_STATUS_SUCCESS &&
            "failed to create cuBLASLt matmul descriptor");
