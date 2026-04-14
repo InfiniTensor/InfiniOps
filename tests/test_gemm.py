@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, randn_strided
+from tests.utils import Payload, get_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -92,6 +92,7 @@ def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
         trans_a,
         trans_b,
         c,
+        stream=get_stream(a.device),
         implementation_index=implementation_index,
     )
 

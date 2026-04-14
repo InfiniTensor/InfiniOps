@@ -12,6 +12,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--benchmark", action="store_true", help="Run performance benchmarks."
     )
+    parser.addoption(
+        "--devices",
+        nargs="+",
+        default=None,
+        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
+    )
 
 
 def pytest_configure(config):
@@ -38,9 +44,45 @@ def set_seed_per_test(request):
     _set_random_seed(_hash(_test_case_path_from_request(request)))
 
 
+_NPU_UNSUPPORTED_DTYPES = {torch.float64}
+
+# `torch_npu` does not implement random number generation for
+# `uint16`/`uint32`/`uint64`.
+for _bits in (16, 32, 64):
+    _t = getattr(torch, f"uint{_bits}", None)
+    if _t is not None:
+        _NPU_UNSUPPORTED_DTYPES.add(_t)
+
+
+@pytest.fixture(autouse=True)
+def skip_unsupported_dtypes(request):
+    if not hasattr(request.node, "callspec"):
+        return
+
+    params = request.node.callspec.params
+
+    if params.get("device") == "npu" and params.get("dtype") in _NPU_UNSUPPORTED_DTYPES:
+        pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
+
+
 def _set_random_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
+
+
+_PLATFORM_TO_TORCH_DEVICE = {
+    "nvidia": "cuda",
+    "metax": "cuda",
+    "iluvatar": "cuda",
+    "moore": "musa",
+    "cambricon": "mlu",
+    "ascend": "npu",
+}
+
+
+def _resolve_device(name):
+    """Map a platform name (e.g., `ascend`) to a PyTorch device type (e.g., `npu`)."""
+    return _PLATFORM_TO_TORCH_DEVICE.get(name, name)
 
 
 def pytest_generate_tests(metafunc):
@@ -57,7 +99,17 @@ def pytest_generate_tests(metafunc):
         )
 
     if "device" in metafunc.fixturenames and "device" not in already_parametrized:
-        metafunc.parametrize("device", get_available_devices())
+        cli_devices = metafunc.config.getoption("--devices")
+        available = get_available_devices()
+
+        if cli_devices:
+            devices = tuple(
+                d for d in (_resolve_device(x) for x in cli_devices) if d in available
+            )
+        else:
+            devices = ()
+
+        metafunc.parametrize("device", devices or available)
 
 
 @pytest.hookimpl(tryfirst=True)

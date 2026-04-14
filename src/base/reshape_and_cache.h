@@ -1,0 +1,80 @@
+#ifndef INFINI_OPS_BASE_RESHAPE_AND_CACHE_H_
+#define INFINI_OPS_BASE_RESHAPE_AND_CACHE_H_
+
+#include <cstddef>
+#include <vector>
+
+#include "operator.h"
+
+namespace infini::ops {
+
+// Scatter `key` / `value` tokens into a paged KV cache.
+//
+// Interface follows vLLM's `reshape_and_cache` kernel:
+//   `vllm._custom_ops.reshape_and_cache_flash`
+//
+// `kv_cache` layout: `[2, num_blocks, block_size, num_kv_heads, head_size]`.
+// `slot_mapping`: 1D `[num_tokens]`, each entry is the linear slot index
+// into the cache.  Padding tokens must be filtered by the caller (no
+// negative indices).
+class ReshapeAndCache : public Operator<ReshapeAndCache> {
+ public:
+  ReshapeAndCache(const Tensor key, const Tensor value, const Tensor kv_cache,
+                  const Tensor slot_mapping, Tensor kv_cache_out)
+      : num_tokens_{key.size(0)},
+        num_kv_heads_{key.size(1)},
+        head_size_{key.size(2)},
+        block_size_{kv_cache.size(2)},
+        key_shape_{key.shape()},
+        value_shape_{value.shape()},
+        kv_cache_shape_{kv_cache.shape()},
+        slot_mapping_shape_{slot_mapping.shape()},
+        key_strides_{key.strides()},
+        value_strides_{value.strides()},
+        kv_cache_strides_{kv_cache.strides()},
+        slot_mapping_strides_{slot_mapping.strides()},
+        kv_cache_out_strides_{kv_cache_out.strides()} {
+    assert(key.shape() == value.shape() &&
+           "`ReshapeAndCache` requires key and value same shape");
+    assert(kv_cache.ndim() == 5 &&
+           "`ReshapeAndCache` requires kv_cache to be 5D [2, num_blocks, "
+           "block_size, num_kv_heads, head_size]");
+    assert(slot_mapping.ndim() == 1 &&
+           "`ReshapeAndCache` requires slot_mapping to be 1D");
+  }
+
+  virtual void operator()(const Tensor key, const Tensor value,
+                          const Tensor kv_cache, const Tensor slot_mapping,
+                          Tensor kv_cache_out) const = 0;
+
+ protected:
+  Tensor::Size num_tokens_{0};
+
+  Tensor::Size num_kv_heads_{0};
+
+  Tensor::Size head_size_{0};
+
+  Tensor::Size block_size_{0};
+
+  Tensor::Shape key_shape_;
+
+  Tensor::Shape value_shape_;
+
+  Tensor::Shape kv_cache_shape_;
+
+  Tensor::Shape slot_mapping_shape_;
+
+  Tensor::Strides key_strides_;
+
+  Tensor::Strides value_strides_;
+
+  Tensor::Strides kv_cache_strides_;
+
+  Tensor::Strides slot_mapping_strides_;
+
+  Tensor::Strides kv_cache_out_strides_;
+};
+
+}  // namespace infini::ops
+
+#endif
