@@ -104,19 +104,32 @@ endif()
 
 if(WITH_TORCH)
     find_package(Python COMPONENTS Interpreter REQUIRED)
+
+    # Query torch paths directly instead of using `find_package(Torch)`,
+    # which pulls in Caffe2's cmake config and may fail on platforms with
+    # non-standard CUDA toolchains.
     execute_process(
-        COMMAND ${Python_EXECUTABLE} -c "import torch; print(torch.utils.cmake_prefix_path)"
-        OUTPUT_VARIABLE TORCH_CMAKE_PREFIX_PATH
+        COMMAND ${Python_EXECUTABLE} -c "from torch.utils.cpp_extension import include_paths; print(';'.join(include_paths()))"
+        OUTPUT_VARIABLE TORCH_INCLUDE_DIRS
         OUTPUT_STRIP_TRAILING_WHITESPACE
         RESULT_VARIABLE _torch_result
     )
 
     if(NOT _torch_result EQUAL 0)
-        message(FATAL_ERROR "`WITH_TORCH` is `ON` but `torch` is not installed or `torch.utils.cmake_prefix_path` is not available.")
+        message(FATAL_ERROR "`WITH_TORCH` is `ON` but `torch` is not installed.")
     endif()
 
-    list(APPEND CMAKE_PREFIX_PATH "${TORCH_CMAKE_PREFIX_PATH}")
-    find_package(Torch REQUIRED)
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "from torch.utils.cpp_extension import library_paths; print(';'.join(library_paths()))"
+        OUTPUT_VARIABLE _torch_lib_dirs
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    find_library(TORCH_LIB torch HINTS ${_torch_lib_dirs} REQUIRED)
+    find_library(TORCH_CPU_LIB torch_cpu HINTS ${_torch_lib_dirs} REQUIRED)
+    find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
+    set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
+
     message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
 endif()
 
