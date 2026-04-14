@@ -1,0 +1,66 @@
+name: Scheduled CI Parent Pipeline
+
+on:
+  schedule:
+    - cron: "33 15 * * *"   # 每天 UTC 02:00
+  workflow_dispatch:        # 可选：支持手动触发
+
+jobs:
+  prepare:
+    name: Generate matrix from config
+    runs-on: ubuntu-latest
+    outputs:
+      matrix_json_for_unittest: ${{ steps.generate.outputs.matrix_json_for_unittest }}
+      matrix_json_for_smoketest: ${{ steps.generate.outputs.matrix_json_for_smoketest }}
+      matrix_json_for_performancetest: ${{ steps.generate.outputs.matrix_json_for_performancetest }}
+      job_types_with_jobs: ${{ steps.generate.outputs.job_types_with_jobs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install converter dependency
+        run: pip install pyyaml
+
+      - name: Convert .ci/config.yaml to matrix JSON (by job type)
+        id: generate
+        run: python .ci/scripts/config_to_matrix.py --config .ci/config.yaml --write-github-outputs
+
+      - name: Show generated job types
+        run: |
+          echo "job_types_with_jobs=${{ steps.generate.outputs.job_types_with_jobs }}"
+          echo "matrix_json_for_unittest=${{ steps.generate.outputs.matrix_json_for_unittest }}"
+          echo
+          echo "matrix_json_for_smoketest=${{ steps.generate.outputs.matrix_json_for_smoketest }}"
+          echo
+          echo "matrix_json_for_performancetest=${{ steps.generate.outputs.matrix_json_for_performancetest }}"
+
+  run-child-unittest:
+    name: Execute unittest child pipeline
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.job_types_with_jobs), 'unittest')
+    uses: ./.github/workflows/ci_child_for_unittest.yml
+    with:
+      matrix_json: ${{ needs.prepare.outputs.matrix_json_for_unittest }}
+
+  run-child-smoketest:
+    name: Execute smoketest child pipeline
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.job_types_with_jobs), 'smoketest')
+    uses: ./.github/workflows/ci_child_for_smoketest.yml
+    with:
+      matrix_json: ${{ needs.prepare.outputs.matrix_json_for_smoketest }}
+
+  run-child-performancetest:
+    name: Execute performancetest child pipeline
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.job_types_with_jobs), 'performancetest')
+    uses: ./.github/workflows/ci_child_for_performancetest.yml
+    with:
+      matrix_json: ${{ needs.prepare.outputs.matrix_json_for_performancetest }}
