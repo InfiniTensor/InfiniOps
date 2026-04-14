@@ -226,12 +226,12 @@ if(WITH_TORCH)
     target_include_directories(infiniops PUBLIC ${TORCH_INCLUDE_DIRS})
 
     if(WITH_METAX OR WITH_MOORE)
-        # Vendor compilers (mxcc/mcc) cannot compile vendor-forked torch
-        # headers. Compile torch sources with the system C++ compiler instead.
+        # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
+        # headers. Compile `torch` sources with the system C++ compiler instead.
         find_program(SYSTEM_CXX NAMES g++ c++)
 
         if(NOT SYSTEM_CXX)
-            message(FATAL_ERROR "Could not find system g++ for torch compilation.")
+            message(FATAL_ERROR "Could not find system `g++` for `torch` compilation.")
         endif()
 
         set(_torch_include_flags "")
@@ -239,7 +239,7 @@ if(WITH_TORCH)
             list(APPEND _torch_include_flags "-isystem" "${_dir}")
         endforeach()
 
-        # Vendor-specific defines required by forked torch headers.
+        # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1")

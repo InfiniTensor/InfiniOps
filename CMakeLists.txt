@@ -105,8 +105,8 @@ endif()
 if(WITH_TORCH)
     find_package(Python COMPONENTS Interpreter REQUIRED)
 
-    # Query torch paths directly instead of using `find_package(Torch)`,
-    # which pulls in Caffe2's cmake config and may fail on platforms with
+    # Query `torch` paths directly instead of using `find_package(Torch)`,
+    # which pulls in Caffe2's CMake config and may fail on platforms with
     # non-standard CUDA toolchains.
     execute_process(
         COMMAND ${Python_EXECUTABLE} -c "from torch.utils.cpp_extension import include_paths; print(';'.join(include_paths()))"
@@ -130,9 +130,9 @@ if(WITH_TORCH)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
-    # Query the CXX11 ABI setting torch was compiled with.
-    # Mismatched ABI causes linker errors (e.g. undefined reference to
-    # c10::Device::Device(std::string const&)).
+    # Query the `CXX11` ABI setting that `torch` was compiled with.
+    # A mismatch causes linker errors (e.g. undefined reference to
+    # `c10::Device::Device(std::string const&)`).
     execute_process(
         COMMAND ${Python_EXECUTABLE} -c "import torch; print(int(torch.compiled_with_cxx11_abi()))"
         OUTPUT_VARIABLE TORCH_CXX11_ABI
@@ -179,23 +179,22 @@ if(WITH_ILUVATAR)
     else()
         set(CMAKE_CUDA_COMPILER "clang++" CACHE STRING "Iluvatar CUDA compiler (clang++)")
     endif()
-    # `-x ivcore` must NOT be in CMAKE_CUDA_FLAGS — CMake passes those flags
+    # `-x ivcore` must not be in `CMAKE_CUDA_FLAGS` — CMake passes those flags
     # to both compile and link steps. During linking, `-x ivcore` causes
-    # clang++ to re-parse .o files as source code.
+    # `clang++` to re-parse `.o` files as source code.
     set(CMAKE_CUDA_FLAGS "--cuda-gpu-arch=${ILUVATAR_ARCH} -fPIC -Wno-error=unused-variable -Wno-error=unused-private-field -Wno-unused-variable" CACHE STRING "Iluvatar CUDA flags")
     set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Iluvatar")
     set(CMAKE_CUDA_ARCHITECTURES OFF CACHE STRING "Iluvatar CUDA architectures (passed via CMAKE_CUDA_FLAGS)")
-    # Disable CMake's automatic CUDA runtime linking — Iluvatar doesn't
-    # ship `libcudadevrt` which CMake's compiler test tries to link.
-    # We link the runtime manually via `find_package(CUDAToolkit)`.
+    # Iluvatar does not ship `libcudadevrt`, which CMake's compiler test
+    # tries to link. Disable automatic CUDA runtime linking and link
+    # manually via `find_package(CUDAToolkit)` instead.
     set(CMAKE_CUDA_RUNTIME_LIBRARY NONE)
     message(STATUS "Iluvatar: CUDA compiler ${CMAKE_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
-    # Add `-x ivcore` as compile-only flag (not during linking).
-    # Iluvatar's clang++ accepts both `-x ivcore` and `-x cuda` during
-    # compilation (warning on the latter), but `-x ivcore` in link flags
-    # causes .o files to be re-parsed as source.
+    # Add `-x ivcore` as a compile-only flag so it is not passed during
+    # linking, where it would cause `clang++` to re-parse `.o` files as
+    # source.
     add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-x$<SEMICOLON>ivcore>)
 endif()
 

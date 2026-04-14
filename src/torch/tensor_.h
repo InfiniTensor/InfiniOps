@@ -34,7 +34,7 @@ inline at::ScalarType ToAtenDtype(DataType dtype) {
     case DataType::kUInt32:
       [[fallthrough]];
     case DataType::kUInt64:
-      assert(false && "Unsigned integer types require PyTorch 2.4 or later.");
+      assert(false && "unsigned integer types require PyTorch 2.4 or later");
       return at::kFloat;
 #endif
     case DataType::kFloat16:
@@ -46,7 +46,7 @@ inline at::ScalarType ToAtenDtype(DataType dtype) {
     case DataType::kFloat64:
       return at::kDouble;
     default:
-      assert(false && "Unsupported dtype for ATen conversion.");
+      assert(false && "unsupported dtype for ATen conversion");
       return at::kFloat;
   }
 }
