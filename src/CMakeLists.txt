@@ -266,6 +266,20 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
 
     find_package(Python COMPONENTS Interpreter Development)
+
+    if(NOT pybind11_DIR)
+        execute_process(
+            COMMAND ${Python_EXECUTABLE} -m pybind11 --cmakedir
+            OUTPUT_VARIABLE _pybind11_cmake_dir
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _pybind11_result
+        )
+
+        if(_pybind11_result EQUAL 0)
+            set(pybind11_DIR "${_pybind11_cmake_dir}" CACHE PATH "pybind11 CMake directory")
+        endif()
+    endif()
+
     find_package(pybind11 CONFIG)
 
     if(PYBIND11_ENABLE_EXTRAS)
