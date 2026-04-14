@@ -429,8 +429,8 @@ def _get_all_ops(devices, with_torch=False):
 
         ops[op_name] = []
 
-        for file_path in _SRC_DIR.rglob("*"):
-            if not file_path.is_file() or file_path.parent.parent.name not in scan_dirs:
+        for file_path in _SRC_DIR.rglob("*.h"):
+            if file_path.parent.parent.name not in scan_dirs:
                 continue
 
             if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():

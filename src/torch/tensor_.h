@@ -2,6 +2,7 @@
 #define INFINI_OPS_TORCH_TENSOR__H_
 
 #include <torch/torch.h>
+#include <torch/version.h>
 
 #include "tensor.h"
 #include "torch/device_.h"
@@ -21,11 +22,21 @@ inline at::ScalarType ToAtenDtype(DataType dtype) {
     case DataType::kUInt8:
       return at::kByte;
     case DataType::kUInt16:
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 4)
       return c10::ScalarType::UInt16;
     case DataType::kUInt32:
       return c10::ScalarType::UInt32;
     case DataType::kUInt64:
       return c10::ScalarType::UInt64;
+#else
+      [[fallthrough]];
+    case DataType::kUInt32:
+      [[fallthrough]];
+    case DataType::kUInt64:
+      assert(false && "Unsigned integer types require PyTorch 2.4 or later.");
+      return at::kFloat;
+#endif
     case DataType::kFloat16:
       return at::kHalf;
     case DataType::kBFloat16:
