@@ -2,7 +2,7 @@ name: Scheduled CI Parent Pipeline
 
 on:
   schedule:
-    - cron: "33 15 * * *"   # 每天 UTC 02:00
+    - cron: "38 15 * * *"   # 每天 UTC 02:00
   workflow_dispatch:        # 可选：支持手动触发
 
 jobs:
