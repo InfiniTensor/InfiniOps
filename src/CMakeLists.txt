@@ -16,7 +16,7 @@ if(WITH_CPU)
 
     target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
-    find_package(OpenMP REQUIRED)
+    find_package(OpenMP REQUIRED COMPONENTS CXX)
     target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
 
     list(APPEND DEVICE_LIST "cpu")
@@ -239,6 +239,15 @@ if(WITH_TORCH)
             list(APPEND _torch_include_flags "-isystem" "${_dir}")
         endforeach()
 
+        # Vendor-specific defines required by forked torch headers.
+        set(_torch_extra_flags "")
+        if(WITH_METAX)
+            list(APPEND _torch_extra_flags "-DUSE_MACA=1")
+        endif()
+        if(DEFINED TORCH_CXX11_ABI)
+            list(APPEND _torch_extra_flags "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
+        endif()
+
         set(TORCH_OBJECT_DIR "${CMAKE_CURRENT_BINARY_DIR}/torch_objs")
         file(MAKE_DIRECTORY "${TORCH_OBJECT_DIR}")
 
@@ -256,6 +265,7 @@ if(WITH_TORCH)
                     -std=c++17 -fPIC -O2
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
                     ${_torch_include_flags}
+                    ${_torch_extra_flags}
                     -c "${_src}" -o "${_obj}"
                 DEPENDS "${_src}"
                 COMMENT "Compiling ${_rel} with system C++ compiler"
