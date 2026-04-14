@@ -11,6 +11,8 @@ namespace infini::ops {
 
 class AddRmsNorm : public Operator<AddRmsNorm> {
  public:
+  // TODO: Make `eps` an `std::optional<float>` with a PyTorch-aligned default.
+  // Also consider the same change for `RmsNorm`.
   AddRmsNorm(const Tensor input, const Tensor other, const Tensor weight,
              float eps, Tensor out, Tensor rstd_out)
       : input_shape_{input.shape()},
