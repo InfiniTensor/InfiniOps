@@ -19,6 +19,7 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
+option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
 if(AUTO_DETECT_DEVICES)
@@ -78,6 +79,26 @@ if(AUTO_DETECT_DEVICES)
     if(DEFINED ENV{ASCEND_HOME_PATH} OR EXISTS "/dev/davinci0")
         set(WITH_ASCEND ON)
         message(STATUS "Auto-detected Ascend environment.")
+    endif()
+endif()
+
+if(AUTO_DETECT_BACKENDS)
+    message(STATUS "Auto-detecting available backends...")
+
+    find_package(Python COMPONENTS Interpreter QUIET)
+
+    if(Python_FOUND)
+        execute_process(
+            COMMAND ${Python_EXECUTABLE} -c "import torch"
+            RESULT_VARIABLE _torch_import_result
+            OUTPUT_QUIET
+            ERROR_QUIET
+        )
+
+        if(_torch_import_result EQUAL 0)
+            set(WITH_TORCH ON)
+            message(STATUS "Auto-detected PyTorch.")
+        endif()
     endif()
 endif()
 
