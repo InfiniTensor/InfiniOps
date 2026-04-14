@@ -2,7 +2,7 @@ name: Scheduled CI Parent Pipeline
 
 on:
   schedule:
-    - cron: "38 15 * * *"   # 每天 UTC 02:00
+    - cron: "45 15 * * *"   # 每天 UTC 02:00
 
 jobs:
   prepare:
