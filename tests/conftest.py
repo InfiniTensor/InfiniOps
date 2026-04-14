@@ -56,7 +56,6 @@ for _bits in (16, 32, 64):
 
 @pytest.fixture(autouse=True)
 def skip_unsupported_dtypes(request):
-
     if not hasattr(request.node, "callspec"):
         return
 
