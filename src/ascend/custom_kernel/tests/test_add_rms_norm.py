@@ -1,7 +1,7 @@
 """Correctness tests for custom AscendC add_rms_norm kernel."""
 
 import torch
-import torch_npu
+import torch_npu  # noqa: F401  Registers NPU device.
 import pytest
 
 

@@ -5,7 +5,6 @@ import glob
 import json
 import os
 import subprocess
-import sys
 
 
 CASES_FILE = os.path.join(os.path.dirname(__file__), "rms_norm_cases.jsonl")
