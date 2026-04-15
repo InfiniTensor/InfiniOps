@@ -2,7 +2,7 @@
 
 import json
 import torch
-import torch_npu
+import torch_npu  # noqa: F401  Registers NPU device.
 import ascend_kernel  # noqa: F401
 
 
