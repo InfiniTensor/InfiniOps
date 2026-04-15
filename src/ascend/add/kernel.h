@@ -20,8 +20,8 @@ class Operator<Add, Device::Type::kAscend> : public Add {
         in_cache_(input),
         oth_cache_(other),
         out_cache_(out) {
-    // aclCreateScalar stores the pointer rather than copying the value, so
-    // alpha_storage_* must remain alive for the lifetime of alpha_.
+    // `aclCreateScalar` stores the pointer rather than copying the value, so
+    // `alpha_storage_*` must remain alive for the lifetime of `alpha_`.
     // The alpha scalar type must match the tensor dtype: use int64 for integer
     // dtypes and float for floating-point dtypes.
     if (ascend::isIntegerDtype(input.dtype())) {
@@ -71,8 +71,9 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   mutable uint64_t ws_size_ = 0;
 
   float alpha_float_storage_ =
-      1.0f;                        // stable address for aclCreateScalar (float)
-  int64_t alpha_int_storage_ = 1;  // stable address for aclCreateScalar (int)
+      1.0f;  // Stable address for `aclCreateScalar` (float).
+  int64_t alpha_int_storage_ =
+      1;  // Stable address for `aclCreateScalar` (int).
   aclScalar* alpha_ = nullptr;
 };
 

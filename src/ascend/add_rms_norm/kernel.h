@@ -14,9 +14,9 @@
 
 namespace infini::ops {
 
-// Decomposed implementation: aclnnAdd + aclnnRmsNorm.
+// Decomposed implementation: `aclnnAdd` + `aclnnRmsNorm`.
 //
-// The fused aclnnAddRmsNorm API has ~200 us host-side launch overhead that
+// The fused `aclnnAddRmsNorm` API has ~200 us host-side launch overhead that
 // dominates small-tensor dispatch.  Decomposing into two fast ACLNN calls
 // reduces host dispatch from ~224 us to ~56 us (4x faster) with negligible
 // NPU-side impact for inference tensor sizes.
@@ -31,10 +31,10 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
         gamma_cache_(gamma),
         y_out_cache_(y_out),
         x_out_cache_(x_out) {
-    // Alpha scalar for aclnnAdd (x_out = x1 + 1.0 * x2).
+    // Alpha scalar for `aclnnAdd` (x_out = x1 + 1.0 * x2).
     alpha_ = aclCreateScalar(&alpha_storage_, ACL_FLOAT);
 
-    // aclnnRmsNorm writes rstd as a required side output.
+    // `aclnnRmsNorm` writes `rstd` as a required side output.
     // Size computed here; buffer obtained from pool in `operator()`.
     rstd_shape_ = {static_cast<int64_t>(batch_size_),
                    static_cast<int64_t>(nhead_)};

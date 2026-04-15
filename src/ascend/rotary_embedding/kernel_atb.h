@@ -56,9 +56,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out) {
     assert(rotary_dim == head_size &&
-           "ATB `RotaryEmbedding` requires rotary_dim == head_size");
+           "ATB `RotaryEmbedding` requires `rotary_dim` == `head_size`");
     assert(is_neox_style &&
-           "ATB `RotaryEmbedding` requires neox style (rotaryCoeff=2)");
+           "ATB `RotaryEmbedding` requires neox style (`rotaryCoeff`=2)");
 
     const int64_t max_seq_len = cos_sin_cache.size(0);
     const int64_t D = head_size_;

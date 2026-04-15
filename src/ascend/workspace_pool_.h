@@ -55,8 +55,8 @@ class WorkspacePool {
     // Slow path: look up arena in the map under lock.
     assert(!capturing_ &&
            "`WorkspacePool`: `aclrtMalloc` on slow path during graph "
-           "capture. Ensure all operators run at least once during "
-           "eager warmup.");
+           "capture; ensure all operators run at least once during "
+           "eager warmup");
 
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -122,6 +122,7 @@ class WorkspacePool {
  private:
   struct SlotKey {
     aclrtStream stream;
+
     std::string slot;
 
     bool operator==(const SlotKey& o) const {

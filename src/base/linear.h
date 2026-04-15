@@ -11,7 +11,8 @@ namespace infini::ops {
 //
 // When bias is present, computes out = a @ b + bias in a single dispatch.
 // When bias is absent, computes out = a @ b (equivalent to Matmul).
-// trans_a / trans_b: if true, transpose the last two dims before multiplying.
+// `trans_a` / `trans_b`: If true, transpose the last two dims before
+// multiplying.
 class Linear : public Operator<Linear> {
  public:
   Linear(const Tensor a, const Tensor b, std::optional<Tensor> bias,

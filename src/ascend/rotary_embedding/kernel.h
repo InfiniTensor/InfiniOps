@@ -17,7 +17,7 @@
 
 namespace infini::ops {
 
-// Rotary position embedding via aclnnApplyRotaryPosEmbV2.
+// Rotary position embedding via `aclnnApplyRotaryPosEmbV2`.
 //
 // V2 handles Q and K simultaneously in a single inplace call (layout=4, TND).
 // The `rotaryMode` parameter accepts "half", "interleave", or "quarter", but
@@ -42,12 +42,13 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out) {
     assert(rotary_dim == head_size &&
-           "Ascend `RotaryEmbedding` requires rotary_dim == head_size "
+           "ascend `RotaryEmbedding` requires `rotary_dim` == `head_size` "
            "(partial rotation not supported)");
     assert(is_neox_style &&
-           "Ascend `RotaryEmbedding` requires neox style — "
-           "aclnnApplyRotaryPosEmbV2 rotaryMode only supports \"half\"; "
-           "\"interleave\" and \"quarter\" return ACLNN_ERR_PARAM_INVALID");
+           "ascend `RotaryEmbedding` requires neox style — "
+           "`aclnnApplyRotaryPosEmbV2` `rotaryMode` only supports "
+           "\"half\"; \"interleave\" and \"quarter\" return "
+           "`ACLNN_ERR_PARAM_INVALID`");
 
     const int64_t max_seq_len = cos_sin_cache.size(0);
     const int64_t D = head_size_;
@@ -101,7 +102,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     const int64_t Nkv = num_kv_heads_;
     aclDataType acl_dt = ascend::toAclDtype(query.dtype());
 
-    // Gathered cos/sin buffers [T, D] — filled by aclnnIndexSelect each call.
+    // Gathered cos/sin buffers [T, D] — filled by `aclnnIndexSelect` each call.
     size_t gathered_bytes = static_cast<size_t>(T * D) * elem_sz;
     aclrtMalloc(&cos_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
     aclrtMalloc(&sin_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
@@ -147,7 +148,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     const int64_t Nkv = key.size(1);
     const int64_t D = head_size;
 
-    // Step 1: Gather cos/sin by positions via aclnnIndexSelect (async).
+    // Step 1: Gather cos/sin by positions via `aclnnIndexSelect` (async).
     {
       auto t_cos_table = cos_table_cache_.get(cos_table_dev_);
       auto t_sin_table = sin_table_cache_.get(sin_table_dev_);

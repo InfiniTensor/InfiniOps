@@ -34,7 +34,7 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
     assert(key.ndim() == 3 &&
            "`RotaryEmbedding` requires key to be 3D [T, N_kv, D]");
     assert(rotary_dim <= head_size &&
-           "`RotaryEmbedding` requires rotary_dim <= head_size");
+           "`RotaryEmbedding` requires `rotary_dim` <= `head_size`");
   }
 
   virtual void operator()(const Tensor positions, const Tensor query,

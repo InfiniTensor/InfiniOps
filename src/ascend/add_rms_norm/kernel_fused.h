@@ -13,12 +13,12 @@
 
 namespace infini::ops {
 
-// Fused implementation via aclnnAddRmsNorm (implementation index 1).
+// Fused implementation via `aclnnAddRmsNorm` (implementation index 1).
 //
 // Computes x_out = x1 + x2 and y_out = rms_norm(x_out, gamma, eps) in a
 // single CANN launch.  The fused API has higher host-side launch overhead
-// (~200 us) compared to the decomposed aclnnAdd + aclnnRmsNorm path (~39 us),
-// but may offer better NPU-side efficiency for large tensors where kernel
+// (~200 us) compared to the decomposed `aclnnAdd` + `aclnnRmsNorm` path (~39
+// us), but may offer better NPU-side efficiency for large tensors where kernel
 // fusion reduces memory traffic.
 //
 // Select via `implementation_index=1` in Python:
@@ -34,7 +34,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
         gamma_cache_(gamma),
         y_out_cache_(y_out),
         x_out_cache_(x_out) {
-    // aclnnAddRmsNorm requires rstdOut to have the same ndim as x1, with
+    // `aclnnAddRmsNorm` requires `rstdOut` to have the same ndim as x1, with
     // the last gamma.ndim() dimensions set to 1.  For example:
     //   x1 shape(2, 32, 128), gamma shape(128) -> rstdOut shape(2, 32, 1)
     //   x1 shape(64, 128),    gamma shape(128) -> rstdOut shape(64, 1)

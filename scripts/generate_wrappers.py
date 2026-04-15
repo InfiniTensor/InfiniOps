@@ -107,8 +107,6 @@ def _find_vector_tensor_params(op_name):
     """Return a set of parameter names declared as `std::vector<Tensor>` in
     the base header.
     """
-    import re
-
     source = (_BASE_DIR / f"{op_name}.h").read_text()
 
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))

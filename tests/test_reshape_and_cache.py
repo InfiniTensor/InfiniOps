@@ -4,8 +4,8 @@ import torch
 
 from tests.utils import Payload, get_npu_stream, randn_strided
 
-# ReshapeAndCache only works on NPU (aclrtMemcpy-based), so tests only
-# parametrize on float16/bfloat16 and use explicit device parametrization.
+# `ReshapeAndCache` only works on NPU (`aclrtMemcpy`-based), so tests only
+# parametrize on `float16`/`bfloat16` and use explicit device parametrization.
 
 
 @pytest.mark.auto_act_and_assert

@@ -187,7 +187,7 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       // Pass args as lvalue refs so they remain valid for the `operator()` call
       // below. Forwarding rvalue temporaries into `make()` would leave the args
-      // in a moved-from (empty) state before operator() can use them.
+      // in a moved-from (empty) state before `operator()` can use them.
       it = cache.emplace(std::move(key), make(config, args...)).first;
     }
 
