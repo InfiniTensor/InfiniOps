@@ -10,7 +10,8 @@ namespace infini::ops {
 // Implementation 2: ATB `ReshapeAndCacheNdKernel` (fused K+V, graph-safe).
 template <>
 struct ActiveImplementationsImpl<ReshapeAndCache, Device::Type::kAscend> {
-#if defined(INFINI_HAS_ATB) && __has_include("aclnnop/aclnn_scatter_pa_kv_cache.h")
+#if defined(INFINI_HAS_ATB) && \
+    __has_include("aclnnop/aclnn_scatter_pa_kv_cache.h")
   using type = List<0, 1, 2>;
 #elif defined(INFINI_HAS_ATB)
   using type = List<0, 2>;
@@ -24,4 +25,3 @@ struct ActiveImplementationsImpl<ReshapeAndCache, Device::Type::kAscend> {
 }  // namespace infini::ops
 
 #endif
-

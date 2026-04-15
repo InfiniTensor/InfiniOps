@@ -60,10 +60,8 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
       } else {
         aclSetInputTensorAddr(executor_, 0, t_bias,
                               const_cast<void*>(bias->data()));
-        aclSetInputTensorAddr(executor_, 1, t_a,
-                              const_cast<void*>(a.data()));
-        aclSetInputTensorAddr(executor_, 2, t_b,
-                              const_cast<void*>(b.data()));
+        aclSetInputTensorAddr(executor_, 1, t_a, const_cast<void*>(a.data()));
+        aclSetInputTensorAddr(executor_, 2, t_b, const_cast<void*>(b.data()));
         aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       }
 
@@ -77,14 +75,12 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
     } else {
       if (!executor_) {
         int8_t cube_math_type = 1;
-        aclnnMatmulGetWorkspaceSize(t_a, t_b, t_out, cube_math_type,
-                                    &ws_size_, &executor_);
+        aclnnMatmulGetWorkspaceSize(t_a, t_b, t_out, cube_math_type, &ws_size_,
+                                    &executor_);
         aclSetAclOpExecutorRepeatable(executor_);
       } else {
-        aclSetInputTensorAddr(executor_, 0, t_a,
-                              const_cast<void*>(a.data()));
-        aclSetInputTensorAddr(executor_, 1, t_b,
-                              const_cast<void*>(b.data()));
+        aclSetInputTensorAddr(executor_, 0, t_a, const_cast<void*>(a.data()));
+        aclSetInputTensorAddr(executor_, 1, t_b, const_cast<void*>(b.data()));
         aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       }
 

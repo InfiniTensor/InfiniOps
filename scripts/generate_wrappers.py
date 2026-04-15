@@ -99,6 +99,7 @@ def _find_optional_tensor_params(op_name):
     source text.
     """
     source = (_BASE_DIR / f"{op_name}.h").read_text()
+
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
 
@@ -109,6 +110,7 @@ def _find_vector_tensor_params(op_name):
     import re
 
     source = (_BASE_DIR / f"{op_name}.h").read_text()
+
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
 

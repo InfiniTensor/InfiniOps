@@ -10,14 +10,14 @@
 #include <vector>
 
 #include "acl/acl.h"
+#include "ascend/atb_common_.h"
 #include "ascend/common.h"
+#include "ascend/rotary_embedding/registry.h"
+#include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
 #include "atb/operation.h"
 #include "atb/types.h"
-#include "ascend/atb_common_.h"
-#include "ascend/rotary_embedding/registry.h"
-#include "ascend/workspace_pool_.h"
 #include "base/rotary_embedding.h"
 #include "operator.h"
 
@@ -83,23 +83,18 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       for (int64_t j = 0; j < half_D; ++j) {
         const auto* c_src =
             cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
-        const auto* s_src =
-            cache_host.data() +
-            static_cast<size_t>(p * D + half_D + j) * elem_sz;
+        const auto* s_src = cache_host.data() +
+                            static_cast<size_t>(p * D + half_D + j) * elem_sz;
 
+        std::memcpy(cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+                    c_src, elem_sz);
         std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz, c_src,
-            elem_sz);
-        std::memcpy(
-            cos_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
             c_src, elem_sz);
+        std::memcpy(sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+                    s_src, elem_sz);
         std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz, s_src,
-            elem_sz);
-        std::memcpy(
-            sin_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
             s_src, elem_sz);
       }
     }
@@ -191,13 +186,12 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     if (positions.element_size() == sizeof(int32_t)) {
       // Already int32 — async D2D copy, graph-compatible.
-      aclrtMemcpyAsync(pos_buf_dev_, pos32_bytes, positions.data(),
-                       pos32_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
+      aclrtMemcpyAsync(pos_buf_dev_, pos32_bytes, positions.data(), pos32_bytes,
+                       ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     } else {
       // int64 fallback — D2H, CPU cast, H2D (not graph-compatible).
       std::vector<int64_t> pos_i64(static_cast<size_t>(T));
-      aclrtMemcpyAsync(pos_i64.data(),
-                       static_cast<size_t>(T) * sizeof(int64_t),
+      aclrtMemcpyAsync(pos_i64.data(), static_cast<size_t>(T) * sizeof(int64_t),
                        positions.data(),
                        static_cast<size_t>(T) * sizeof(int64_t),
                        ACL_MEMCPY_DEVICE_TO_HOST, stream);
@@ -219,8 +213,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     uint64_t q_bytes = static_cast<uint64_t>(T * hiddenQ) * elem_size_;
     uint64_t k_bytes = static_cast<uint64_t>(T * hiddenK) * elem_size_;
-    uint64_t table_bytes =
-        static_cast<uint64_t>(max_seq_len_ * D) * elem_size_;
+    uint64_t table_bytes = static_cast<uint64_t>(max_seq_len_ * D) * elem_size_;
 
     atb::Tensor t_q =
         ascend::toAtbTensor(q_2d_shape_, acl_dt_, query_out.data(), q_bytes);
@@ -230,8 +223,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                                             cos_table_dev_, table_bytes);
     atb::Tensor t_sin = ascend::toAtbTensor(cos_sin_table_shape_, acl_dt_,
                                             sin_table_dev_, table_bytes);
-    atb::Tensor t_pos = ascend::toAtbTensor(pos_shape_, ACL_INT32,
-                                            pos_buf_dev_, pos32_bytes);
+    atb::Tensor t_pos =
+        ascend::toAtbTensor(pos_shape_, ACL_INT32, pos_buf_dev_, pos32_bytes);
 
     atb::VariantPack vp;
     vp.inTensors = {t_q, t_k, t_cos, t_sin, t_pos};
@@ -240,7 +233,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     uint64_t ws_size = 0;
     atb::Status s = op_->Setup(vp, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB Rope Setup failed");
+    assert(s == atb::NO_ERROR && "ATB Rope setup failed");
 
     uint8_t* ws_ptr = nullptr;
 
@@ -251,7 +244,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     s = op_->Execute(vp, ws_ptr, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB Rope Execute failed");
+    assert(s == atb::NO_ERROR && "ATB Rope execute failed");
   }
 
  private:

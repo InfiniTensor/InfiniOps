@@ -51,19 +51,20 @@ class PagedAttention : public Operator<PagedAttention> {
         seq_lens_shape_{seq_lens.shape()},
         block_table_shape_{block_table.shape()},
         output_shape_{output.shape()} {
-    assert(num_heads % num_kv_heads == 0 &&
-           "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`.");
+    assert(
+        num_heads % num_kv_heads == 0 &&
+        "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`");
     assert(query.ndim() == 3 &&
            "`PagedAttention` requires query to be 3D [batch, num_heads, "
-           "head_size].");
+           "head_size]");
     assert(key_cache.ndim() == 4 &&
            "`PagedAttention` requires key_cache to be 4D [num_blocks, "
-           "block_size, num_kv_heads, head_size].");
+           "block_size, num_kv_heads, head_size]");
     assert(seq_lens.ndim() == 1 &&
-           "`PagedAttention` requires seq_lens to be 1D [batch].");
+           "`PagedAttention` requires seq_lens to be 1D [batch]");
     assert(block_table.ndim() == 2 &&
            "`PagedAttention` requires block_table to be 2D [batch, "
-           "max_num_blocks].");
+           "max_num_blocks]");
   }
 
   virtual void operator()(const Tensor query, const Tensor key_cache,

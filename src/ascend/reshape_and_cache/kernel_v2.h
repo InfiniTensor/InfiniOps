@@ -62,8 +62,8 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 1>
 
     // 4D K cache view: [num_blocks, block_size, num_kv_heads, head_size].
     // K cache is kv_cache_out[0], starting at offset 0.
-    kv_k_cache_ = ascend::AclTensorCache(
-        {num_blocks, bs, nkv, hs}, acl_dt, kv_cache_out.data());
+    kv_k_cache_ = ascend::AclTensorCache({num_blocks, bs, nkv, hs}, acl_dt,
+                                         kv_cache_out.data());
 
     // V cache is kv_cache_out[1], offset by stride(0) elements.
     v_offset_bytes_ = static_cast<size_t>(kv_cache_out.stride(0)) *
@@ -79,8 +79,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 1>
     auto stream = static_cast<aclrtStream>(stream_);
 
     void* kv_k_data = kv_cache_out.data();
-    void* kv_v_data =
-        static_cast<char*>(kv_cache_out.data()) + v_offset_bytes_;
+    void* kv_v_data = static_cast<char*>(kv_cache_out.data()) + v_offset_bytes_;
 
     auto t_key = key_cache_.get(const_cast<void*>(key.data()));
     auto t_value = value_cache_.get(const_cast<void*>(value.data()));
@@ -99,8 +98,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 1>
         /*cacheModeOptional=*/nullptr,
         /*scatterModeOptional=*/nullptr,
         /*stridesOptional=*/nullptr,
-        /*offsetsOptional=*/nullptr,
-        &ws, &exec);
+        /*offsetsOptional=*/nullptr, &ws, &exec);
     auto& arena = ascend::workspacePool().ensure(stream, ws);
     aclnnScatterPaKvCache(arena.buf, ws, exec, stream);
   }

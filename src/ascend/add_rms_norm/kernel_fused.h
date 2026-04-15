@@ -76,16 +76,13 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
     auto stream = static_cast<aclrtStream>(stream_);
 
     if (!executor_) {
-      aclnnAddRmsNormGetWorkspaceSize(t_x1, t_x2, t_gamma,
-                                      static_cast<double>(eps), t_y_out,
-                                      rstd_tensor_, t_x_out, &ws_size_,
-                                      &executor_);
+      aclnnAddRmsNormGetWorkspaceSize(
+          t_x1, t_x2, t_gamma, static_cast<double>(eps), t_y_out, rstd_tensor_,
+          t_x_out, &ws_size_, &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
-      aclSetInputTensorAddr(executor_, 0, t_x1,
-                            const_cast<void*>(x1.data()));
-      aclSetInputTensorAddr(executor_, 1, t_x2,
-                            const_cast<void*>(x2.data()));
+      aclSetInputTensorAddr(executor_, 0, t_x1, const_cast<void*>(x1.data()));
+      aclSetInputTensorAddr(executor_, 1, t_x2, const_cast<void*>(x2.data()));
       aclSetInputTensorAddr(executor_, 2, t_gamma,
                             const_cast<void*>(gamma.data()));
       aclSetOutputTensorAddr(executor_, 0, t_y_out, y_out.data());
