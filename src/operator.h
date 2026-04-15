@@ -37,6 +37,14 @@ struct CacheKey {
     tensors.push_back(t);
   }
 
+  void Absorb(const std::vector<Tensor>& ts) {
+    HashCombine(hash, ts.size());
+    for (const auto& t : ts) {
+      HashCombine(hash, t);
+      tensors.push_back(t);
+    }
+  }
+
   template <typename T>
   void Absorb(const T& v) {
     HashCombine(hash, v);
