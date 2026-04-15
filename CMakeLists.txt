@@ -16,6 +16,8 @@ option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
 option(WITH_ASCEND "Enable Ascend backend" OFF)
 
+option(BUILD_CUSTOM_KERNEL "Build custom AscendC kernel PyTorch extension (requires torch_npu)" OFF)
+
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
