@@ -44,7 +44,7 @@ _UINT_DTYPES = tuple(
     )
     + tuple((dtype, 0, 0) for dtype in _INT_DTYPES + _UINT_DTYPES),
 )
-def test_add(
+def test_mul(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
     if device == "musa" and dtype in _UINT_DTYPES:
@@ -65,26 +65,26 @@ def test_add(
 
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(_add, _torch_add, (input, other, out), {}, rtol=rtol, atol=atol)
+    return Payload(_mul, _torch_mul, (input, other, out), {}, rtol=rtol, atol=atol)
 
 
-def _add(input, other, out):
+def _mul(input, other, out):
     if input.device.type == "npu":
-        infini.ops.add(input, other, out, stream=get_npu_stream(input))
+        infini.ops.mul(input, other, out, stream=get_npu_stream(input))
     else:
-        infini.ops.add(input, other, out)
+        infini.ops.mul(input, other, out)
 
     return out
 
 
-def _torch_add(input, other, out):
+def _torch_mul(input, other, out):
     if input.dtype in _UINT_DTYPES:
         input = input.to(torch.int64)
 
     if other.dtype in _UINT_DTYPES:
         other = other.to(torch.int64)
 
-    res = torch.add(input, other)
+    res = torch.mul(input, other)
     out.copy_(res.to(out.dtype))
 
     return out
