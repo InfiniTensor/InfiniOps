@@ -17,10 +17,12 @@ Operator<Gemm, kDev, 2>::Operator(const Tensor a, const Tensor b,
       device_index_{c.device().index()} {}
 
 template <Device::Type kDev>
-void Operator<Gemm, kDev, 2>::operator()(
-    const Tensor a, const Tensor b, std::optional<float> alpha,
-    std::optional<float> beta, std::optional<int> trans_a,
-    std::optional<int> trans_b, Tensor c) const {
+void Operator<Gemm, kDev, 2>::operator()(const Tensor a, const Tensor b,
+                                         std::optional<float> alpha,
+                                         std::optional<float> beta,
+                                         std::optional<int> trans_a,
+                                         std::optional<int> trans_b,
+                                         Tensor c) const {
   auto at_a = ToAtenTensor<kDev>(const_cast<void*>(a.data()), a_shape_,
                                  a_strides_, a_type_, device_index_);
   auto at_b = ToAtenTensor<kDev>(const_cast<void*>(b.data()), b_shape_,

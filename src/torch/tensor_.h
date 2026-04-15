@@ -64,8 +64,9 @@ inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
   auto options = at::TensorOptions().dtype(ToAtenDtype(dtype));
 
   if constexpr (kDev != Device::Type::kCpu) {
-    std::string device_str = std::string(detail::TorchDeviceName<kDev>::kValue) +
-                             ":" + std::to_string(device_index);
+    std::string device_str =
+        std::string(detail::TorchDeviceName<kDev>::kValue) + ":" +
+        std::to_string(device_index);
     options = options.device(device_str);
   }
 

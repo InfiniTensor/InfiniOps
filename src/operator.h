@@ -95,12 +95,11 @@ struct ActiveImplementationsImpl<Key, kDev, 0> {
 };
 
 template <typename Key, Device::Type kDev>
-using ActiveImplementations =
-    typename Flatten<
-        typename ActiveImplementationsImpl<Key, kDev, 0>::type,
-        typename ActiveImplementationsImpl<Key, kDev, 1>::type,
-        typename ActiveImplementationsImpl<Key, kDev, 2>::type,
-        typename ActiveImplementationsImpl<Key, kDev, 3>::type>::type;
+using ActiveImplementations = typename Flatten<
+    typename ActiveImplementationsImpl<Key, kDev, 0>::type,
+    typename ActiveImplementationsImpl<Key, kDev, 1>::type,
+    typename ActiveImplementationsImpl<Key, kDev, 2>::type,
+    typename ActiveImplementationsImpl<Key, kDev, 3>::type>::type;
 
 class OperatorBase {
  public:
