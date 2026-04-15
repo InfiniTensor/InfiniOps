@@ -43,7 +43,9 @@ def test_silu_and_mul(shape, x_strides, out_strides, dtype, device, rtol, atol):
 def _silu_and_mul(x, out):
     if x.device.type == "npu":
         infini.ops.silu_and_mul(
-            x, -1, out,
+            x,
+            -1,
+            out,
             stream=get_npu_stream(x),
         )
     else:

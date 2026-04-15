@@ -111,13 +111,17 @@ if __name__ == "__main__":
     ref = rms_norm_ref(x, w, 1e-6)
     out = torch.ops.npu.rms_norm(x.npu(), w.npu(), 1e-6)
     max_err = torch.max(torch.abs(out.cpu() - ref)).item()
-    print(f"  fp16 (4,128): max_abs_err = {max_err:.6e} ... {'PASS' if max_err < 1e-3 else 'FAIL'}")
+    print(
+        f"  fp16 (4,128): max_abs_err = {max_err:.6e} ... {'PASS' if max_err < 1e-3 else 'FAIL'}"
+    )
 
     x = torch.randn(4, 128, dtype=torch.float32)
     w = torch.randn(128, dtype=torch.float32)
     ref = rms_norm_ref(x, w, 1e-6)
     out = torch.ops.npu.rms_norm(x.npu(), w.npu(), 1e-6)
     max_err = torch.max(torch.abs(out.cpu() - ref)).item()
-    print(f"  fp32 (4,128): max_abs_err = {max_err:.6e} ... {'PASS' if max_err < 1e-5 else 'FAIL'}")
+    print(
+        f"  fp32 (4,128): max_abs_err = {max_err:.6e} ... {'PASS' if max_err < 1e-5 else 'FAIL'}"
+    )
 
     print("Quick test done.")

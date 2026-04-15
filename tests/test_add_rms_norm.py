@@ -61,17 +61,28 @@ def test_add_rms_norm(
     )
 
 
-def _add_rms_norm(x1, x2, gamma, *, eps=1e-6, y_out=None, x_out=None,
-                  implementation_index=0):
+def _add_rms_norm(
+    x1, x2, gamma, *, eps=1e-6, y_out=None, x_out=None, implementation_index=0
+):
     if x1.device.type == "npu":
         infini.ops.add_rms_norm(
-            x1, x2, gamma, eps, y_out, x_out,
+            x1,
+            x2,
+            gamma,
+            eps,
+            y_out,
+            x_out,
             implementation_index=implementation_index,
             stream=get_npu_stream(x1),
         )
     else:
         infini.ops.add_rms_norm(
-            x1, x2, gamma, eps, y_out, x_out,
+            x1,
+            x2,
+            gamma,
+            eps,
+            y_out,
+            x_out,
             implementation_index=implementation_index,
         )
 
@@ -85,8 +96,9 @@ def _torch_add_rms_norm(x1, x2, gamma, *, eps=1e-6, y_out=None, x_out=None):
     if x_out is not None:
         x_out.copy_(x_sum)
 
-    rms = torch.sqrt(torch.mean(x_sum.float() * x_sum.float(), dim=-1,
-                                keepdim=True) + eps)
+    rms = torch.sqrt(
+        torch.mean(x_sum.float() * x_sum.float(), dim=-1, keepdim=True) + eps
+    )
     y = (x_sum.float() / rms * gamma.float()).to(x1.dtype)
 
     if y_out is not None:

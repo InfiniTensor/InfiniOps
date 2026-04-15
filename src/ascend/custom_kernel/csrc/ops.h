@@ -13,9 +13,9 @@
 
 namespace ascend_kernel {
 
-at::Tensor rms_norm(const at::Tensor &input, const at::Tensor &weight,
+at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
                     double eps);
 
-} // namespace ascend_kernel
+}  // namespace ascend_kernel
 
-#endif // OPS_H
+#endif  // OPS_H

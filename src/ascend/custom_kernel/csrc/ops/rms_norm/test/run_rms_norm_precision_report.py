@@ -100,18 +100,20 @@ def run_shape_cases():
             tol = (1e-3, 1e-3) if dtype == torch.float16 else (1e-5, 1e-5)
             passed = torch.allclose(out, ref, rtol=tol[0], atol=tol[1])
 
-            results.append({
-                "category": cat,
-                "description": desc,
-                "shape": str(shape),
-                "dtype": dtype_str,
-                "max_abs_err": m["max_abs_err"],
-                "mean_abs_err": m["mean_abs_err"],
-                "max_rel_err": m["max_rel_err"],
-                "mean_rel_err": m["mean_rel_err"],
-                "cosine_sim": m["cosine_sim"],
-                "passed": passed,
-            })
+            results.append(
+                {
+                    "category": cat,
+                    "description": desc,
+                    "shape": str(shape),
+                    "dtype": dtype_str,
+                    "max_abs_err": m["max_abs_err"],
+                    "mean_abs_err": m["mean_abs_err"],
+                    "max_rel_err": m["max_rel_err"],
+                    "mean_rel_err": m["mean_rel_err"],
+                    "cosine_sim": m["cosine_sim"],
+                    "passed": passed,
+                }
+            )
             status = "PASS" if passed else "FAIL"
             print(
                 f"  [{status}] {cat:6s} {desc:30s} {dtype_str:7s} "
@@ -145,18 +147,20 @@ def run_boundary_cases():
             tol = (1e-3, 1e-3) if dtype == torch.float16 else (1e-5, 1e-5)
             passed = torch.allclose(out, ref, rtol=tol[0], atol=tol[1])
 
-            results.append({
-                "category": "Boundary",
-                "description": f"{name}: {desc}",
-                "shape": str(shape),
-                "dtype": dtype_str,
-                "max_abs_err": m["max_abs_err"],
-                "mean_abs_err": m["mean_abs_err"],
-                "max_rel_err": m["max_rel_err"],
-                "mean_rel_err": m["mean_rel_err"],
-                "cosine_sim": m["cosine_sim"],
-                "passed": passed,
-            })
+            results.append(
+                {
+                    "category": "Boundary",
+                    "description": f"{name}: {desc}",
+                    "shape": str(shape),
+                    "dtype": dtype_str,
+                    "max_abs_err": m["max_abs_err"],
+                    "mean_abs_err": m["mean_abs_err"],
+                    "max_rel_err": m["max_rel_err"],
+                    "mean_rel_err": m["mean_rel_err"],
+                    "cosine_sim": m["cosine_sim"],
+                    "passed": passed,
+                }
+            )
             status = "PASS" if passed else "FAIL"
             print(
                 f"  [{status}] Bound  {name:20s} {dtype_str:7s} "
@@ -186,9 +190,13 @@ def main():
     print(f"{'=' * 70}")
 
     # Save JSON.
-    output_path = "/workspace/ascend-kernel/csrc/ops/rms_norm/test/rms_norm_precision.json"
+    output_path = (
+        "/workspace/ascend-kernel/csrc/ops/rms_norm/test/rms_norm_precision.json"
+    )
     with open(output_path, "w") as f:
-        json.dump({"results": all_results, "total": total, "passed": passed}, f, indent=2)
+        json.dump(
+            {"results": all_results, "total": total, "passed": passed}, f, indent=2
+        )
 
     print(f"JSON report saved to: {output_path}")
 

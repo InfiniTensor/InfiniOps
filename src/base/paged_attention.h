@@ -51,9 +51,8 @@ class PagedAttention : public Operator<PagedAttention> {
         seq_lens_shape_{seq_lens.shape()},
         block_table_shape_{block_table.shape()},
         output_shape_{output.shape()} {
-    assert(
-        num_heads % num_kv_heads == 0 &&
-        "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`");
+    assert(num_heads % num_kv_heads == 0 &&
+           "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`");
     assert(query.ndim() == 3 &&
            "`PagedAttention` requires query to be 3D [batch, num_heads, "
            "head_size]");
