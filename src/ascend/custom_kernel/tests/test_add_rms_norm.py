@@ -1,23 +1,9 @@
 """Correctness tests for custom AscendC add_rms_norm kernel."""
 
+import pytest
 import torch
 import torch_npu  # noqa: F401  Registers NPU device.
-import pytest
-
-
-def _load_custom_kernel():
-    """Load the custom kernel shared library."""
-    import ctypes
-    import glob
-    import os
-
-    lib_dir = os.path.join(os.path.dirname(__file__), "..", "output")
-    libs = glob.glob(os.path.join(lib_dir, "libascend_kernel.so"))
-    assert libs, f"No libascend_kernel.so found in {lib_dir}"
-    ctypes.CDLL(libs[0])
-
-
-_load_custom_kernel()
+import ascend_kernel  # noqa: F401  Loads `libascend_kernel.so` into `torch.ops.npu`.
 
 
 def _ref_add_rms_norm(x1, x2, weight, eps):
