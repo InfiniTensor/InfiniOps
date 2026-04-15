@@ -77,7 +77,7 @@ def test_add_rms_norm_correctness(dtype, shape):
         f"{(x_out_npu.cpu() - x_out_ref).abs().max().item()}"
     )
 
-    # Check y = rms_norm(x_out) * weight.
+    # Check `y = rms_norm(x_out) * weight`.
     rtol = 1e-3 if dtype == torch.float16 else 1e-5
     atol = 1e-3 if dtype == torch.float16 else 1e-5
     assert torch.allclose(y_npu.cpu(), y_ref, rtol=rtol, atol=atol), (

@@ -75,7 +75,7 @@ def _add_rms_norm(x1, x2, gamma, *, eps=1e-6, y_out=None, x_out=None,
             implementation_index=implementation_index,
         )
 
-    # Concatenate both outputs into a single flat tensor for allclose comparison.
+    # Concatenate both outputs into a single flat tensor for `allclose` comparison.
     return torch.cat([y_out.contiguous().flatten(), x_out.contiguous().flatten()])
 
 
