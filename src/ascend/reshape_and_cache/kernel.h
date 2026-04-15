@@ -15,11 +15,11 @@
 
 namespace infini::ops {
 
-// Device-side scatter via aclnnInplaceIndexCopy.
+// Device-side scatter via `aclnnInplaceIndexCopy`.
 //
 // The previous implementation copied slot_mapping D2H (aclrtSynchronizeStream),
 // then issued per-token D2D memcpy in a host loop.  For batch=256, this meant
-// ~100 us sync + ~500 us host loop overhead.  aclnnInplaceIndexCopy performs
+// ~100 us sync + ~500 us host loop overhead.  `aclnnInplaceIndexCopy` performs
 // the scatter entirely on the NPU with two ACLNN calls (one for K, one for V),
 // eliminating all D2H synchronisation and host-side loops.
 //
@@ -72,7 +72,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend>
     auto t_slot = slot_cache_.get(const_cast<void*>(slot_mapping.data()));
 
     // K cache scatter: kv_k[slot_mapping[i]] = key[i] along dim 0.
-    // Executor caching is not used here because aclnnInplaceIndexCopy is an
+    // Executor caching is not used here because `aclnnInplaceIndexCopy` is an
     // inplace operation where self is both input and output; the executor
     // reuse via aclSetInputTensorAddr does not update the output reference.
     uint64_t k_ws = 0;

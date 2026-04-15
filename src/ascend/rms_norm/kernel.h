@@ -22,7 +22,7 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
         in_cache_(input),
         weight_cache_(weight),
         out_cache_(out) {
-    // aclnnRmsNorm writes rstd as a required side output.
+    // `aclnnRmsNorm` writes `rstd` as a required side output.
     // Size computed here; buffer obtained from pool in `operator()`.
     rstd_shape_ = {static_cast<int64_t>(batch_size_),
                    static_cast<int64_t>(nhead_)};

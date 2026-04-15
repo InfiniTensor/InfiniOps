@@ -58,7 +58,7 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
         ((static_cast<int64_t>(dim_) + align_elems - 1) / align_elems) *
         align_elems;
     assert(static_cast<int64_t>(dim_) == dim_length_align_ &&
-           "Custom RmsNorm kernel requires 32-byte aligned last dimension");
+           "custom `RmsNorm` kernel requires 32-byte aligned last dimension");
 
     total_rows_ =
         static_cast<int64_t>(batch_size_) * static_cast<int64_t>(nhead_);

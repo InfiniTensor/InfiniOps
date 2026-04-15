@@ -413,9 +413,11 @@ def _ref_flash_attention_paged(
         k_pages = []
         v_pages = []
         remaining = kv_len
+
         for b in blocks:
             if remaining <= 0:
                 break
+
             take = min(remaining, block_size)
             # cache layout: [num_blocks, block_size, KV_N, D]
             # Slice [take, KV_N, D], transpose to [KV_N, take, D] for cat.

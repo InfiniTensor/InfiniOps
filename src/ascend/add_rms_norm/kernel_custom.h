@@ -33,8 +33,9 @@ namespace infini::ops {
 //
 // A single-kernel implementation that computes x_out = x1 + x2 followed by
 // y = rms_norm(x_out, gamma, eps) in one launch, avoiding the decomposed
-// aclnnAdd + aclnnRmsNorm calls (index 0) or the fused aclnnAddRmsNorm call
-// (index 1).  Migrated from the custom RmsNorm kernel (index 1 of RmsNorm).
+// `aclnnAdd` + `aclnnRmsNorm` calls (index 0) or the fused `aclnnAddRmsNorm`
+// call (index 1).  Migrated from the custom RmsNorm kernel (index 1 of
+// RmsNorm).
 //
 // Select via `implementation_index=2` in Python:
 //   infini.ops.add_rms_norm(x1, x2, gamma, eps, y_out, x_out,
@@ -59,8 +60,9 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
     dim_length_align_ =
         ((static_cast<int64_t>(dim_) + align_elems - 1) / align_elems) *
         align_elems;
-    assert(static_cast<int64_t>(dim_) == dim_length_align_ &&
-           "Custom AddRmsNorm kernel requires 32-byte aligned last dimension");
+    assert(
+        static_cast<int64_t>(dim_) == dim_length_align_ &&
+        "custom `AddRmsNorm` kernel requires 32-byte aligned last dimension");
 
     total_rows_ =
         static_cast<int64_t>(batch_size_) * static_cast<int64_t>(nhead_);

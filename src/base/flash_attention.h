@@ -40,7 +40,7 @@ class FlashAttention : public Operator<FlashAttention> {
         has_cu_seqlens_kv_{cu_seqlens_kv.has_value()},
         has_block_table_{block_table.has_value()} {
     assert(num_heads % num_kv_heads == 0 &&
-           "`FlashAttention` requires num_heads divisible by num_kv_heads");
+           "`FlashAttention` requires `num_heads` divisible by `num_kv_heads`");
     assert(query.ndim() == 3 &&
            "`FlashAttention` requires query to be 3D [T, N, D]");
   }

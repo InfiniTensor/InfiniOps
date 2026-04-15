@@ -121,7 +121,7 @@ def test_rotary_embedding_full(
             "(rotaryMode='half')"
         )
 
-    # aclnnApplyRotaryPosEmbV2 accumulates with ~4 ULP error for float16.
+    # `aclnnApplyRotaryPosEmbV2` accumulates with ~4 ULP error for `float16`.
     if device == "npu" and dtype == torch.float16:
         atol = 0.01
 

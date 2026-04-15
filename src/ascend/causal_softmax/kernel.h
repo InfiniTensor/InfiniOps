@@ -64,10 +64,11 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
                                    mstrides.data(), 0, ACL_FORMAT_ND,
                                    mshape.data(), mshape.size(), mask_buf_);
 
-    // Scalar -inf for the masked-fill step. aclCreateScalar stores the pointer
-    // rather than copying, so neg_inf_storage_ must stay alive with the object.
+    // Scalar -inf for the masked-fill step.  `aclCreateScalar` stores the
+    // pointer rather than copying, so `neg_inf_storage_` must stay alive with
+    // the object.
     neg_inf_ = aclCreateScalar(&neg_inf_storage_, ACL_FLOAT);
-    // Workspaces are allocated lazily on first operator() call.
+    // Workspaces are allocated lazily on first `operator()` call.
   }
 
   ~Operator() {
