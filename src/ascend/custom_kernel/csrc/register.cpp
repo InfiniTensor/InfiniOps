@@ -15,10 +15,10 @@
 
 namespace {
 TORCH_LIBRARY_FRAGMENT(npu, m) {
-    m.def("rms_norm(Tensor input, Tensor weight, float eps=1e-6) -> Tensor");
+  m.def("rms_norm(Tensor input, Tensor weight, float eps=1e-6) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(npu, PrivateUse1, m) {
-    m.impl("rms_norm", TORCH_FN(ascend_kernel::rms_norm));
+  m.impl("rms_norm", TORCH_FN(ascend_kernel::rms_norm));
 }
 }  // namespace

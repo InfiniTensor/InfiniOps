@@ -26,7 +26,17 @@ def _atb_pa_available():
         sl = torch.tensor([bs], dtype=torch.int32, device="npu")
         o = torch.zeros(B, N, D, dtype=torch.float16, device="npu")
         infini.ops.paged_attention(
-            q, kc, vc, sl, bt, N, Nkv, D, 1.0 / D**0.5, bs, o,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            N,
+            Nkv,
+            D,
+            1.0 / D**0.5,
+            bs,
+            o,
             stream=get_npu_stream(q),
         )
         torch.npu.synchronize()
@@ -95,9 +105,7 @@ def test_paged_attention_basic(
         dtype=dtype,
         device=device,
     )
-    output = torch.empty(
-        (num_reqs, num_heads, head_size), dtype=dtype, device=device
-    )
+    output = torch.empty((num_reqs, num_heads, head_size), dtype=dtype, device=device)
 
     # Block table: request i uses blocks [i*num_blocks_per_req, ...].
     block_table = torch.zeros(
@@ -109,17 +117,32 @@ def test_paged_attention_basic(
             block_table[i, j] = i * num_blocks_per_req + j
 
     # Context lengths (total KV length per request).
-    seq_lens = torch.full(
-        (num_reqs,), kv_len, dtype=torch.int32, device=device
-    )
+    seq_lens = torch.full((num_reqs,), kv_len, dtype=torch.int32, device=device)
 
     return Payload(
         lambda q, kc, vc, sl, bt, o: _paged_attention(
-            q, kc, vc, sl, bt, num_heads, num_kv_heads, head_size, scale,
-            block_size, o,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
+            o,
         ),
         lambda q, kc, vc, sl, bt, o: _ref_paged_attention(
-            q, kc, vc, sl, bt, num_heads, num_kv_heads, head_size, scale,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
             block_size,
         ),
         (query, key_cache, value_cache, seq_lens, block_table, output),
@@ -159,12 +182,8 @@ def test_paged_attention_variable_seq_lens(
 
     kv_lens = [8, 32, 16, 128]
     num_reqs = len(kv_lens)
-    max_blocks_per_req = max(
-        (kv + block_size - 1) // block_size for kv in kv_lens
-    )
-    num_blocks = sum(
-        (kv + block_size - 1) // block_size for kv in kv_lens
-    )
+    max_blocks_per_req = max((kv + block_size - 1) // block_size for kv in kv_lens)
+    num_blocks = sum((kv + block_size - 1) // block_size for kv in kv_lens)
     scale = 1.0 / head_size**0.5
 
     query = randn_strided(
@@ -182,9 +201,7 @@ def test_paged_attention_variable_seq_lens(
         dtype=dtype,
         device=device,
     )
-    output = torch.empty(
-        (num_reqs, num_heads, head_size), dtype=dtype, device=device
-    )
+    output = torch.empty((num_reqs, num_heads, head_size), dtype=dtype, device=device)
 
     # Block table: assign blocks sequentially.
     block_table = torch.zeros(
@@ -203,11 +220,28 @@ def test_paged_attention_variable_seq_lens(
 
     return Payload(
         lambda q, kc, vc, sl, bt, o: _paged_attention(
-            q, kc, vc, sl, bt, num_heads, num_kv_heads, head_size, scale,
-            block_size, o,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
+            o,
         ),
         lambda q, kc, vc, sl, bt, o: _ref_paged_attention(
-            q, kc, vc, sl, bt, num_heads, num_kv_heads, head_size, scale,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
             block_size,
         ),
         (query, key_cache, value_cache, seq_lens, block_table, output),
@@ -263,9 +297,7 @@ def test_paged_attention_single_request(
         dtype=dtype,
         device=device,
     )
-    output = torch.empty(
-        (num_reqs, num_heads, head_size), dtype=dtype, device=device
-    )
+    output = torch.empty((num_reqs, num_heads, head_size), dtype=dtype, device=device)
 
     block_table = torch.arange(
         num_blocks_per_req, dtype=torch.int32, device=device
@@ -275,11 +307,28 @@ def test_paged_attention_single_request(
 
     return Payload(
         lambda q, kc, vc, sl, bt, o: _paged_attention(
-            q, kc, vc, sl, bt, num_heads, num_kv_heads, head_size, scale,
-            block_size, o,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
+            o,
         ),
         lambda q, kc, vc, sl, bt, o: _ref_paged_attention(
-            q, kc, vc, sl, bt, num_heads, num_kv_heads, head_size, scale,
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
             block_size,
         ),
         (query, key_cache, value_cache, seq_lens, block_table, output),
@@ -290,19 +339,45 @@ def test_paged_attention_single_request(
 
 
 def _paged_attention(
-    query, key_cache, value_cache, seq_lens, block_table,
-    num_heads, num_kv_heads, head_size, scale, block_size, output,
+    query,
+    key_cache,
+    value_cache,
+    seq_lens,
+    block_table,
+    num_heads,
+    num_kv_heads,
+    head_size,
+    scale,
+    block_size,
+    output,
 ):
     if query.device.type == "npu":
         infini.ops.paged_attention(
-            query, key_cache, value_cache, seq_lens, block_table,
-            num_heads, num_kv_heads, head_size, scale, block_size,
-            output, stream=get_npu_stream(query),
+            query,
+            key_cache,
+            value_cache,
+            seq_lens,
+            block_table,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
+            output,
+            stream=get_npu_stream(query),
         )
     else:
         infini.ops.paged_attention(
-            query, key_cache, value_cache, seq_lens, block_table,
-            num_heads, num_kv_heads, head_size, scale, block_size,
+            query,
+            key_cache,
+            value_cache,
+            seq_lens,
+            block_table,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
             output,
         )
 
@@ -310,8 +385,16 @@ def _paged_attention(
 
 
 def _ref_paged_attention(
-    query, key_cache, value_cache, seq_lens, block_table,
-    num_heads, num_kv_heads, head_size, scale, block_size,
+    query,
+    key_cache,
+    value_cache,
+    seq_lens,
+    block_table,
+    num_heads,
+    num_kv_heads,
+    head_size,
+    scale,
+    block_size,
 ):
     """PyTorch SDPA reference for paged decode attention."""
     sl = seq_lens.cpu()
@@ -365,7 +448,11 @@ def _ref_paged_attention(
 
         # Decode: query attends to all past KV (no causal mask).
         out = torch.nn.functional.scaled_dot_product_attention(
-            q_4d, k_4d, v_4d, scale=scale, is_causal=False,
+            q_4d,
+            k_4d,
+            v_4d,
+            scale=scale,
+            is_causal=False,
         )
 
         # [1, N, 1, D] -> [1, N, D]

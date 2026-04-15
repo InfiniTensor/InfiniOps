@@ -34,9 +34,7 @@ from tests.utils import Payload, empty_strided, get_npu_stream, randn_strided
     ),
 )
 def test_cat(shapes, dim, out_shape, dtype, device, rtol, atol):
-    inputs = [
-        randn_strided(s, None, dtype=dtype, device=device) for s in shapes
-    ]
+    inputs = [randn_strided(s, None, dtype=dtype, device=device) for s in shapes]
     out = empty_strided(out_shape, None, dtype=dtype, device=device)
 
     return Payload(

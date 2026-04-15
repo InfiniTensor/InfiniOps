@@ -218,9 +218,7 @@ def test_rotary_embedding_partial(
         pytest.skip("NPU not available")
 
     if device == "npu":
-        pytest.skip(
-            "Ascend aclnnApplyRotaryPosEmbV2 requires rotary_dim == head_size"
-        )
+        pytest.skip("Ascend aclnnApplyRotaryPosEmbV2 requires rotary_dim == head_size")
 
     num_tokens = 16
     max_seq_len = 64

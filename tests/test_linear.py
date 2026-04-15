@@ -69,9 +69,7 @@ def test_linear(
 
 def _linear(a, b, bias, out, trans_a=False, trans_b=False):
     if a.device.type == "npu":
-        infini.ops.linear(
-            a, b, bias, trans_a, trans_b, out, stream=get_npu_stream(a)
-        )
+        infini.ops.linear(a, b, bias, trans_a, trans_b, out, stream=get_npu_stream(a))
     else:
         infini.ops.linear(a, b, bias, trans_a, trans_b, out)
 

@@ -117,26 +117,30 @@ def main():
         ok = run_msprof(case, output_dir, iters=20, warmup=10)
 
         if not ok:
-            all_results.append({
-                "id": case_id,
-                "desc": desc,
-                "shape": str(case["shape"]),
-                "dtype": case["dtype"],
-                "status": "FAILED",
-            })
+            all_results.append(
+                {
+                    "id": case_id,
+                    "desc": desc,
+                    "shape": str(case["shape"]),
+                    "dtype": case["dtype"],
+                    "status": "FAILED",
+                }
+            )
             continue
 
         rows = parse_op_summary(output_dir, OP_TYPE_KEYWORD)
 
         if not rows:
             print(f"  WARNING: No matching OP Type '{OP_TYPE_KEYWORD}' found")
-            all_results.append({
-                "id": case_id,
-                "desc": desc,
-                "shape": str(case["shape"]),
-                "dtype": case["dtype"],
-                "status": "NO_MATCH",
-            })
+            all_results.append(
+                {
+                    "id": case_id,
+                    "desc": desc,
+                    "shape": str(case["shape"]),
+                    "dtype": case["dtype"],
+                    "status": "NO_MATCH",
+                }
+            )
             continue
 
         # Aggregate Task Duration across matching rows.
@@ -157,7 +161,9 @@ def main():
         else:
             avg_dur = min_dur = max_dur = 0.0
 
-        print(f"  Task Duration: avg={avg_dur:.2f}us min={min_dur:.2f}us max={max_dur:.2f}us ({len(durations)} calls)")
+        print(
+            f"  Task Duration: avg={avg_dur:.2f}us min={min_dur:.2f}us max={max_dur:.2f}us ({len(durations)} calls)"
+        )
 
         result = {
             "id": case_id,
@@ -191,7 +197,9 @@ def main():
     print(f"JSON results saved to: {json_path}")
 
     # Print summary table.
-    print(f"\n{'ID':>3} {'Shape':>20} {'Dtype':>8} {'Avg(us)':>10} {'Min(us)':>10} {'Max(us)':>10} {'Calls':>6}")
+    print(
+        f"\n{'ID':>3} {'Shape':>20} {'Dtype':>8} {'Avg(us)':>10} {'Min(us)':>10} {'Max(us)':>10} {'Calls':>6}"
+    )
     print("-" * 75)
 
     for r in all_results:

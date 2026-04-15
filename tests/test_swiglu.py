@@ -29,15 +29,20 @@ from tests.utils import Payload, empty_strided, get_npu_stream, rand_strided
     ),
 )
 def test_swiglu(
-    shape, input_strides, gate_strides, out_strides, implementation_index,
-    dtype, device, rtol, atol,
+    shape,
+    input_strides,
+    gate_strides,
+    out_strides,
+    implementation_index,
+    dtype,
+    device,
+    rtol,
+    atol,
 ):
     active_indices = infini.ops.Swiglu.active_implementation_indices(device)
 
     if implementation_index not in active_indices:
-        pytest.skip(
-            f"implementation `{implementation_index}` not active on `{device}`"
-        )
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
@@ -58,13 +63,17 @@ def test_swiglu(
 def _swiglu(input, gate, out, implementation_index=0):
     if input.device.type == "npu":
         infini.ops.swiglu(
-            input, gate, out,
+            input,
+            gate,
+            out,
             implementation_index=implementation_index,
             stream=get_npu_stream(input),
         )
     else:
         infini.ops.swiglu(
-            input, gate, out,
+            input,
+            gate,
+            out,
             implementation_index=implementation_index,
         )
 
