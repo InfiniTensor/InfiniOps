@@ -34,7 +34,7 @@ namespace infini::ops {
 // synchronous D2H copies for these two small tensors in each call.
 // All other tensors are device-only.
 //
-// ATB VariantPack layout (BSND with S=1):
+// ATB `VariantPack` layout (BSND with S=1):
 //   inTensors[0] = query         [B, N, D]
 //   inTensors[1] = key_cache     [num_blocks, block_size, Nkv, D]
 //   inTensors[2] = value_cache   [num_blocks, block_size, Nkv, D]
@@ -154,7 +154,7 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
   }
 
  private:
-  // Build the ATB VariantPack.
+  // Build the ATB `VariantPack`.
   //
   // Query and output are 3D [B, N, D] (BSND with S=1 for decode).
   // Block table and context lens carry both `deviceData` and
@@ -183,12 +183,12 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     atb::Tensor t_value_cache = ascend::toAtbTensor(kv_cache_shape_, acl_dt_,
                                                     value_cache_data, kv_bytes);
 
-    // Block table [B, max_blocks] — with hostData for `aclIntArray*`.
+    // Block table [B, max_blocks] — with `hostData` for `aclIntArray*`.
     atb::Tensor t_block_table = ascend::toAtbTensor(
         block_table_shape_, bt_dt_, block_table_data, bt_host_bytes_);
     t_block_table.hostData = bt_host_;
 
-    // Context lens [B] — with hostData for `aclIntArray*`.
+    // Context lens [B] — with `hostData` for `aclIntArray*`.
     atb::Tensor t_context_lens = ascend::toAtbTensor(
         context_lens_shape_, sl_dt_, seq_lens_data, sl_host_bytes_);
     t_context_lens.hostData = sl_host_;

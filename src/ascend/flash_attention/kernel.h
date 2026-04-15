@@ -77,7 +77,7 @@ inline aclIntArray* cumSeqLengths(const Tensor& cu_seqlens,
 }
 
 // Allocate a 2048x2048 lower-triangular UINT8 causal mask on device.
-// Required for sparseMode >= 2.
+// Required for `sparseMode` >= 2.
 inline aclTensor* makeCausalMask(void** mask_buf, aclrtStream stream) {
   constexpr int64_t kMaskDim = 2048;
   const int64_t mask_elems = kMaskDim * kMaskDim;

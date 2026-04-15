@@ -29,7 +29,7 @@ namespace infini::ops {
 // `aclnnInplaceIndexCopy` path (index 0, ~35 us).
 //
 // The ATB operation is created once in the constructor.  Setup is called
-// before each Execute to bind the VariantPack.
+// before each `Execute` to bind the `VariantPack`.
 //
 // NOTE: `ReshapeAndCacheParam` requires int32 `slot_mapping`.  When the
 // caller passes int64 (the default in PyTorch / vLLM), this operator casts
@@ -57,7 +57,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
     int64_t hs = static_cast<int64_t>(head_size_);
     int64_t T = static_cast<int64_t>(num_tokens_);
 
-    // Cache shapes for rebuilding VariantPack on each call.
+    // Cache shapes for rebuilding `VariantPack` on each call.
     kv_shape_ = {num_blocks, bs, nkv, hs};
     key_shape_ = {T, nkv, hs};
     slot_shape_ = {T};
@@ -134,7 +134,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
                                            const_cast<void*>(value.data()),
                                            kv_cache_out.data(), slot32_ptr);
 
-    // Setup binds the VariantPack and computes workspace requirements.
+    // `Setup` binds the `VariantPack` and computes workspace requirements.
     uint64_t ws_size = 0;
     atb::Status s = op_->Setup(vp, ws_size, ctx);
     assert(s == atb::NO_ERROR &&
@@ -154,7 +154,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
   }
 
  private:
-  // Build the ATB VariantPack for this operation.
+  // Build the ATB `VariantPack` for this operation.
   //
   // ATB `ReshapeAndCache` expects 5 inputs and 2 outputs:
   //   inTensors[0] = key         [num_tokens, num_kv_heads, head_size]

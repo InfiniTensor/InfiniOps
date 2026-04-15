@@ -68,6 +68,7 @@ def _compute_metrics(out, ref):
 
     ref_abs = ref.float().abs()
     nonzero = ref_abs > 1e-10
+
     if nonzero.any():
         rel_err = diff[nonzero] / ref_abs[nonzero]
         max_rel_err = rel_err.max().item()

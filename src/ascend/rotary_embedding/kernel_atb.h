@@ -44,7 +44,7 @@ namespace infini::ops {
 //
 // Restrictions:
 //   - rotary_dim must equal head_size (full rotation only).
-//   - is_neox_style must be true (rotaryCoeff=2).
+//   - is_neox_style must be true (`rotaryCoeff`=2).
 //   - fp16 only (ATB inference constraint).
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
@@ -74,7 +74,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     aclrtMemcpy(cache_host.data(), table_bytes, cos_sin_cache.data(),
                 table_bytes, ACL_MEMCPY_DEVICE_TO_HOST);
 
-    // ATB Rope with rotaryCoeff=2 expects cos/sin of shape [S, D].
+    // ATB Rope with `rotaryCoeff`=2 expects cos/sin of shape [S, D].
     // Neox-style expansion: [c0..c_{hD-1}, c0..c_{hD-1}].
     std::vector<uint8_t> cos_host(table_bytes);
     std::vector<uint8_t> sin_host(table_bytes);
@@ -208,7 +208,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                        ACL_MEMCPY_HOST_TO_DEVICE, stream);
     }
 
-    // Build ATB VariantPack with 5 inputs + 2 outputs.
+    // Build ATB `VariantPack` with 5 inputs + 2 outputs.
     atb::Context* ctx = ascend::getAtbContext(stream);
 
     uint64_t q_bytes = static_cast<uint64_t>(T * hiddenQ) * elem_size_;
@@ -233,7 +233,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     uint64_t ws_size = 0;
     atb::Status s = op_->Setup(vp, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB Rope setup failed");
+    assert(s == atb::NO_ERROR && "ATB rope setup failed");
 
     uint8_t* ws_ptr = nullptr;
 
@@ -244,7 +244,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     s = op_->Execute(vp, ws_ptr, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB Rope execute failed");
+    assert(s == atb::NO_ERROR && "ATB rope execute failed");
   }
 
  private:
@@ -260,7 +260,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
   mutable size_t pos_buf_size_ = 0;
 
-  // Cached shapes for ATB VariantPack.
+  // Cached shapes for ATB `VariantPack`.
   std::vector<int64_t> q_2d_shape_;
 
   std::vector<int64_t> k_2d_shape_;
