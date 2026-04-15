@@ -18,7 +18,10 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix: ${{ fromJson(inputs.matrix_json) }}
-    runs-on: [self-hosted, linux, ${{ matrix.platform }}]
+    runs-on:
+      - self-hosted
+      - linux
+      - ${{ matrix.platform }}
     timeout-minutes: ${{ matrix.timeout_minutes }}
     steps:
       - name: Checkout
