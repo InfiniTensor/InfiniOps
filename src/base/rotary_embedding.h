@@ -8,15 +8,6 @@
 
 namespace infini::ops {
 
-// Rotary position embedding (RoPE) applied in-place to Q and K.
-//
-// Interface follows vLLM's `RotaryEmbedding.forward_oot()`:
-//   `vllm.model_executor.layers.rotary_embedding.RotaryEmbedding`
-//
-// `positions`: `[T]` token position indices.
-// `cos_sin_cache`: precomputed `[max_seq_len, rotary_dim]` table.
-// `query` / `key`: `[T, N, D]` (TND layout), mutated in-place into
-// `query_out` / `key_out`.
 class RotaryEmbedding : public Operator<RotaryEmbedding> {
  public:
   RotaryEmbedding(const Tensor positions, const Tensor query, const Tensor key,
