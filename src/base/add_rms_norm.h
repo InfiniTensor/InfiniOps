@@ -11,26 +11,23 @@ namespace infini::ops {
 
 class AddRmsNorm : public Operator<AddRmsNorm> {
  public:
-  // TODO: Make `eps` an `std::optional<float>` with a PyTorch-aligned default.
-  // Also consider the same change for `RmsNorm`.
-  AddRmsNorm(const Tensor input, const Tensor other, const Tensor weight,
-             float eps, Tensor out, Tensor rstd_out)
-      : input_shape_{input.shape()},
+  AddRmsNorm(const Tensor x1, const Tensor x2, const Tensor gamma, float eps,
+             Tensor y_out, Tensor x_out)
+      : input_shape_{x1.shape()},
         eps_{eps},
-        dim_{input.size(-1)},
-        ndim_{input.ndim()},
-        batch_size_{ndim_ == 2 ? input.size(-2) : input.size(-3)},
-        nhead_{ndim_ == 2 ? 1 : input.size(-2)},
+        dim_{x1.size(-1)},
+        ndim_{x1.ndim()},
+        batch_size_{ndim_ == 2 ? x1.size(-2) : x1.size(-3)},
+        nhead_{ndim_ == 2 ? 1 : x1.size(-2)},
         rstd_shape_{static_cast<int64_t>(batch_size_),
                     static_cast<int64_t>(nhead_)} {
-    assert(input.dtype() == other.dtype());
-    assert(input.dtype() == out.dtype());
-    assert(input.dtype() == rstd_out.dtype());
+    assert(x1.dtype() == x2.dtype());
+    assert(x1.dtype() == y_out.dtype());
+    assert(x1.dtype() == x_out.dtype());
   }
 
-  virtual void operator()(const Tensor input, const Tensor other,
-                          const Tensor weight, float eps, Tensor out,
-                          Tensor rstd_out) const = 0;
+  virtual void operator()(const Tensor x1, const Tensor x2, const Tensor gamma,
+                          float eps, Tensor y_out, Tensor x_out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
