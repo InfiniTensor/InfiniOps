@@ -34,9 +34,8 @@ inline aclIntArray* extractSeqLengths(const Tensor& cu_seqlens,
     cu_host_ptr = static_cast<const int64_t*>(cu_seqlens.data());
   } else {
     cu_host_buf.resize(n);
-    aclrtMemcpyAsync(cu_host_buf.data(), n * sizeof(int64_t),
-                     cu_seqlens.data(), n * sizeof(int64_t),
-                     ACL_MEMCPY_DEVICE_TO_HOST, stream);
+    aclrtMemcpyAsync(cu_host_buf.data(), n * sizeof(int64_t), cu_seqlens.data(),
+                     n * sizeof(int64_t), ACL_MEMCPY_DEVICE_TO_HOST, stream);
     aclrtSynchronizeStream(stream);
     cu_host_ptr = cu_host_buf.data();
   }
@@ -67,9 +66,8 @@ inline aclIntArray* cumSeqLengths(const Tensor& cu_seqlens,
     cu_host_ptr = static_cast<const int64_t*>(cu_seqlens.data());
   } else {
     cu_host_buf.resize(n);
-    aclrtMemcpyAsync(cu_host_buf.data(), n * sizeof(int64_t),
-                     cu_seqlens.data(), n * sizeof(int64_t),
-                     ACL_MEMCPY_DEVICE_TO_HOST, stream);
+    aclrtMemcpyAsync(cu_host_buf.data(), n * sizeof(int64_t), cu_seqlens.data(),
+                     n * sizeof(int64_t), ACL_MEMCPY_DEVICE_TO_HOST, stream);
     aclrtSynchronizeStream(stream);
     cu_host_ptr = cu_host_buf.data();
   }
@@ -141,10 +139,10 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
       const int64_t D = query.size(2);
       const int64_t B = query.size(0);
 
-      decode_q_cache_ = ascend::AclTensorCache(
-          {B, N, 1, D}, acl_dt, const_cast<void*>(query.data()));
-      decode_out_cache_ = ascend::AclTensorCache(
-          {B, N, 1, D}, acl_dt, output.data());
+      decode_q_cache_ = ascend::AclTensorCache({B, N, 1, D}, acl_dt,
+                                               const_cast<void*>(query.data()));
+      decode_out_cache_ =
+          ascend::AclTensorCache({B, N, 1, D}, acl_dt, output.data());
       block_table_cache_ = ascend::AclTensorCache(block_table.value());
 
       // Pre-compute KV reshape metadata.
@@ -224,8 +222,8 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
           t_q, key_list, val_list,
           nullptr,       // pseShift
           causal_mask_,  // attenMask (pre-computed, or nullptr)
-          seq_q,       // actualSeqLengths
-          seq_kv,      // actualSeqLengthsKv
+          seq_q,         // actualSeqLengths
+          seq_kv,        // actualSeqLengthsKv
           nullptr, nullptr, nullptr, nullptr,
           nullptr,           // deqScale1..quantOffset2
           nullptr, nullptr,  // antiquantScale, antiquantOffset

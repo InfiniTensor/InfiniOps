@@ -47,10 +47,9 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
 
     // Lazily create rstd tensor descriptor on first call.
     if (!rstd_tensor_) {
-      rstd_tensor_ = aclCreateTensor(
-          rstd_shape_.data(), 2, ACL_FLOAT,
-          /*strides=*/nullptr, 0, ACL_FORMAT_ND, rstd_shape_.data(), 2,
-          rstd_arena.buf);
+      rstd_tensor_ = aclCreateTensor(rstd_shape_.data(), 2, ACL_FLOAT,
+                                     /*strides=*/nullptr, 0, ACL_FORMAT_ND,
+                                     rstd_shape_.data(), 2, rstd_arena.buf);
     } else {
       aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf);
     }

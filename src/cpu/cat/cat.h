@@ -55,7 +55,8 @@ class Operator<Cat, Device::Type::kCpu> : public Cat {
         auto in_ptr = static_cast<const char*>(inputs[t]->data());
 
         auto src_offset = (o * in_dim) * inner * elem_size;
-        auto dst_offset = (o * out_dim_size + offset_in_dim) * inner * elem_size;
+        auto dst_offset =
+            (o * out_dim_size + offset_in_dim) * inner * elem_size;
         auto copy_size = in_dim * inner * elem_size;
 
         std::memcpy(out_ptr + dst_offset, in_ptr + src_offset, copy_size);

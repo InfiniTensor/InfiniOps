@@ -10,13 +10,13 @@
 #include <vector>
 
 #include "acl/acl.h"
+#include "ascend/atb_common_.h"
+#include "ascend/paged_attention/registry.h"
+#include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
 #include "atb/operation.h"
 #include "atb/types.h"
-#include "ascend/atb_common_.h"
-#include "ascend/paged_attention/registry.h"
-#include "ascend/workspace_pool_.h"
 #include "base/paged_attention.h"
 #include "operator.h"
 
@@ -45,10 +45,10 @@ template <>
 class Operator<PagedAttention, Device::Type::kAscend, 0>
     : public PagedAttention {
  public:
-  Operator(const Tensor query, const Tensor key_cache,
-           const Tensor value_cache, const Tensor seq_lens,
-           const Tensor block_table, int64_t num_heads, int64_t num_kv_heads,
-           int64_t head_size, double scale, int64_t block_size, Tensor output)
+  Operator(const Tensor query, const Tensor key_cache, const Tensor value_cache,
+           const Tensor seq_lens, const Tensor block_table, int64_t num_heads,
+           int64_t num_kv_heads, int64_t head_size, double scale,
+           int64_t block_size, Tensor output)
       : PagedAttention(query, key_cache, value_cache, seq_lens, block_table,
                        num_heads, num_kv_heads, head_size, scale, block_size,
                        output) {
@@ -88,7 +88,7 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     sl_host_bytes_ = static_cast<uint64_t>(B) * sl_elem_size_;
     bt_host_ = std::malloc(bt_host_bytes_);
     sl_host_ = std::malloc(sl_host_bytes_);
-    assert(bt_host_ && sl_host_ && "Host buffer allocation failed");
+    assert(bt_host_ && sl_host_ && "host buffer allocation failed");
 
     // Create the ATB operation (reused across calls).
     atb::infer::PagedAttentionParam param;
@@ -97,8 +97,7 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     param.qkScale = static_cast<float>(scale_);
 
     atb::Status s = atb::CreateOperation(param, &op_);
-    assert(s == atb::NO_ERROR &&
-           "atb::CreateOperation(PagedAttention) failed");
+    assert(s == atb::NO_ERROR && "atb::CreateOperation(PagedAttention) failed");
   }
 
   ~Operator() {
@@ -124,14 +123,13 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
 
     // D2H copy for block_table and context_lens.
     // ATB reads `hostData` to construct internal `aclIntArray*`.
-    aclrtMemcpy(bt_host_, bt_host_bytes_, block_table.data(),
-                bt_host_bytes_, ACL_MEMCPY_DEVICE_TO_HOST);
-    aclrtMemcpy(sl_host_, sl_host_bytes_, seq_lens.data(),
-                sl_host_bytes_, ACL_MEMCPY_DEVICE_TO_HOST);
+    aclrtMemcpy(bt_host_, bt_host_bytes_, block_table.data(), bt_host_bytes_,
+                ACL_MEMCPY_DEVICE_TO_HOST);
+    aclrtMemcpy(sl_host_, sl_host_bytes_, seq_lens.data(), sl_host_bytes_,
+                ACL_MEMCPY_DEVICE_TO_HOST);
 
     atb::VariantPack vp = buildVariantPack(
-        const_cast<void*>(query.data()),
-        const_cast<void*>(key_cache.data()),
+        const_cast<void*>(query.data()), const_cast<void*>(key_cache.data()),
         const_cast<void*>(value_cache.data()),
         const_cast<void*>(block_table.data()),
         const_cast<void*>(seq_lens.data()), output.data());
@@ -164,8 +162,7 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
   // `aclIntArray*` parameters.
   atb::VariantPack buildVariantPack(void* query_data, void* key_cache_data,
                                     void* value_cache_data,
-                                    void* block_table_data,
-                                    void* seq_lens_data,
+                                    void* block_table_data, void* seq_lens_data,
                                     void* output_data) const {
     int64_t B = query_tnd_shape_[0];
     int64_t N = query_tnd_shape_[1];
@@ -180,12 +177,11 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     int64_t nb = kv_cache_shape_[0];
     int64_t bs = kv_cache_shape_[1];
     int64_t Nkv = kv_cache_shape_[2];
-    uint64_t kv_bytes =
-        static_cast<uint64_t>(nb * bs * Nkv * D) * elem_size_;
-    atb::Tensor t_key_cache = ascend::toAtbTensor(kv_cache_shape_, acl_dt_,
-                                                  key_cache_data, kv_bytes);
-    atb::Tensor t_value_cache = ascend::toAtbTensor(
-        kv_cache_shape_, acl_dt_, value_cache_data, kv_bytes);
+    uint64_t kv_bytes = static_cast<uint64_t>(nb * bs * Nkv * D) * elem_size_;
+    atb::Tensor t_key_cache =
+        ascend::toAtbTensor(kv_cache_shape_, acl_dt_, key_cache_data, kv_bytes);
+    atb::Tensor t_value_cache = ascend::toAtbTensor(kv_cache_shape_, acl_dt_,
+                                                    value_cache_data, kv_bytes);
 
     // Block table [B, max_blocks] — with hostData for `aclIntArray*`.
     atb::Tensor t_block_table = ascend::toAtbTensor(

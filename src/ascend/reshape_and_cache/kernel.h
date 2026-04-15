@@ -46,8 +46,8 @@ class Operator<ReshapeAndCache, Device::Type::kAscend>
 
     // Flattened K cache view: [total_slots, num_kv_heads, head_size].
     // K cache is kv_cache_out[0], starting at offset 0.
-    kv_k_cache_ = ascend::AclTensorCache(
-        {total_slots, nkv, hs}, acl_dt, kv_cache_out.data());
+    kv_k_cache_ = ascend::AclTensorCache({total_slots, nkv, hs}, acl_dt,
+                                         kv_cache_out.data());
 
     // V cache is kv_cache_out[1], offset by stride(0) elements.
     v_offset_bytes_ = static_cast<size_t>(kv_cache_out.stride(0)) *
@@ -63,8 +63,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend>
     auto stream = static_cast<aclrtStream>(stream_);
 
     void* kv_k_data = kv_cache_out.data();
-    void* kv_v_data =
-        static_cast<char*>(kv_cache_out.data()) + v_offset_bytes_;
+    void* kv_v_data = static_cast<char*>(kv_cache_out.data()) + v_offset_bytes_;
 
     auto t_kv_k = kv_k_cache_.get(kv_k_data);
     auto t_kv_v = kv_v_cache_.get(kv_v_data);
@@ -78,16 +77,16 @@ class Operator<ReshapeAndCache, Device::Type::kAscend>
     // reuse via aclSetInputTensorAddr does not update the output reference.
     uint64_t k_ws = 0;
     aclOpExecutor* k_exec = nullptr;
-    aclnnInplaceIndexCopyGetWorkspaceSize(t_kv_k, 0, t_slot, t_key,
-                                          &k_ws, &k_exec);
+    aclnnInplaceIndexCopyGetWorkspaceSize(t_kv_k, 0, t_slot, t_key, &k_ws,
+                                          &k_exec);
     auto& k_arena = ascend::workspacePool().ensure(stream, k_ws);
     aclnnInplaceIndexCopy(k_arena.buf, k_ws, k_exec, stream);
 
     // V cache scatter: kv_v[slot_mapping[i]] = value[i] along dim 0.
     uint64_t v_ws = 0;
     aclOpExecutor* v_exec = nullptr;
-    aclnnInplaceIndexCopyGetWorkspaceSize(t_kv_v, 0, t_slot, t_value,
-                                          &v_ws, &v_exec);
+    aclnnInplaceIndexCopyGetWorkspaceSize(t_kv_v, 0, t_slot, t_value, &v_ws,
+                                          &v_exec);
     auto& v_arena = ascend::workspacePool().ensure(stream, v_ws);
     aclnnInplaceIndexCopy(v_arena.buf, v_ws, v_exec, stream);
   }

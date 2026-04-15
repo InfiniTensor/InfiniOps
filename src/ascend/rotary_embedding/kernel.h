@@ -70,26 +70,20 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     for (int64_t p = 0; p < max_seq_len; ++p) {
       for (int64_t j = 0; j < half_D; ++j) {
         const auto* c_src =
-            cache_host.data() +
-            static_cast<size_t>(p * D + j) * elem_sz;
-        const auto* s_src =
-            cache_host.data() +
-            static_cast<size_t>(p * D + half_D + j) * elem_sz;
+            cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
+        const auto* s_src = cache_host.data() +
+                            static_cast<size_t>(p * D + half_D + j) * elem_sz;
 
         // Neox expansion: [c0..c_{hD-1}, c0..c_{hD-1}] (halves duplicated).
+        std::memcpy(cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+                    c_src, elem_sz);
         std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+            cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
             c_src, elem_sz);
+        std::memcpy(sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+                    s_src, elem_sz);
         std::memcpy(
-            cos_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
-            c_src, elem_sz);
-        std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-            s_src, elem_sz);
-        std::memcpy(
-            sin_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
             s_src, elem_sz);
       }
     }
@@ -113,22 +107,22 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     aclrtMalloc(&sin_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
 
     // IndexSelect descriptors: table ptrs stable, positions ptr varies.
-    cos_table_cache_ = ascend::AclTensorCache(
-        {max_seq_len, D}, acl_dt, cos_table_dev_);
-    sin_table_cache_ = ascend::AclTensorCache(
-        {max_seq_len, D}, acl_dt, sin_table_dev_);
-    idx_cache_ = ascend::AclTensorCache(
-        {T}, ACL_INT64, const_cast<void*>(positions.data()));
+    cos_table_cache_ =
+        ascend::AclTensorCache({max_seq_len, D}, acl_dt, cos_table_dev_);
+    sin_table_cache_ =
+        ascend::AclTensorCache({max_seq_len, D}, acl_dt, sin_table_dev_);
+    idx_cache_ = ascend::AclTensorCache({T}, ACL_INT64,
+                                        const_cast<void*>(positions.data()));
     cos_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt, cos_dev_);
     sin_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt, sin_dev_);
 
     // V2 descriptors: cos/sin [T, 1, D], Q [T, Nq, D], K [T, Nkv, D].
     cos_v2_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt, cos_dev_);
     sin_v2_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt, sin_dev_);
-    q_cache_ = ascend::AclTensorCache(
-        {T, Nq, D}, acl_dt, const_cast<void*>(query_out.data()));
-    k_cache_ = ascend::AclTensorCache(
-        {T, Nkv, D}, acl_dt, const_cast<void*>(key_out.data()));
+    q_cache_ = ascend::AclTensorCache({T, Nq, D}, acl_dt,
+                                      const_cast<void*>(query_out.data()));
+    k_cache_ = ascend::AclTensorCache({T, Nkv, D}, acl_dt,
+                                      const_cast<void*>(key_out.data()));
   }
 
   ~Operator() {

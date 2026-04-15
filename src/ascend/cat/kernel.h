@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "aclnn/aclnn_base.h"
 #include "aclnn/acl_meta.h"
+#include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_cat.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
@@ -55,9 +55,9 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
             in_caches_[i].get(const_cast<void*>(inputs[i]->data()));
       }
 
-      tensor_list_ = aclCreateTensorList(
-          const_cast<const aclTensor**>(acl_tensors.data()),
-          static_cast<uint64_t>(input_count_));
+      tensor_list_ =
+          aclCreateTensorList(const_cast<const aclTensor**>(acl_tensors.data()),
+                              static_cast<uint64_t>(input_count_));
 
       aclnnCatGetWorkspaceSize(tensor_list_, dim_, t_out, &ws_size_,
                                &executor_);

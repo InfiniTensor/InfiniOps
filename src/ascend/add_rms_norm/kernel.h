@@ -7,8 +7,8 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnn_add.h"
 #include "aclnn_rms_norm.h"
-#include "ascend/common.h"
 #include "ascend/add_rms_norm/registry.h"
+#include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
 #include "operator.h"
 
@@ -63,10 +63,8 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
                                &add_exec_);
       aclSetAclOpExecutorRepeatable(add_exec_);
     } else {
-      aclSetInputTensorAddr(add_exec_, 0, t_x1,
-                            const_cast<void*>(x1.data()));
-      aclSetInputTensorAddr(add_exec_, 1, t_x2,
-                            const_cast<void*>(x2.data()));
+      aclSetInputTensorAddr(add_exec_, 0, t_x1, const_cast<void*>(x1.data()));
+      aclSetInputTensorAddr(add_exec_, 1, t_x2, const_cast<void*>(x2.data()));
       aclSetOutputTensorAddr(add_exec_, 0, t_x_out, x_out.data());
     }
     auto& add_arena = ascend::workspacePool().ensure(stream, add_ws_);
@@ -78,18 +76,17 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
 
     // Lazily create rstd tensor descriptor on first call.
     if (!rstd_tensor_) {
-      rstd_tensor_ = aclCreateTensor(
-          rstd_shape_.data(), 2, ACL_FLOAT,
-          /*strides=*/nullptr, 0, ACL_FORMAT_ND, rstd_shape_.data(), 2,
-          rstd_arena.buf);
+      rstd_tensor_ = aclCreateTensor(rstd_shape_.data(), 2, ACL_FLOAT,
+                                     /*strides=*/nullptr, 0, ACL_FORMAT_ND,
+                                     rstd_shape_.data(), 2, rstd_arena.buf);
     } else {
       aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf);
     }
 
     // Step 2: y_out = rms_norm(x_out, gamma, eps).
     if (!norm_exec_) {
-      aclnnRmsNormGetWorkspaceSize(t_x_out, t_gamma, eps, t_y_out,
-                                   rstd_tensor_, &norm_ws_, &norm_exec_);
+      aclnnRmsNormGetWorkspaceSize(t_x_out, t_gamma, eps, t_y_out, rstd_tensor_,
+                                   &norm_ws_, &norm_exec_);
       aclSetAclOpExecutorRepeatable(norm_exec_);
     } else {
       aclSetInputTensorAddr(norm_exec_, 0, t_x_out, x_out.data());

@@ -47,14 +47,14 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
     Tensor::Size K = trans_a ? a_shape_[ndim_a - 2] : a_shape_[ndim_a - 1];
 
     // Compute strides for the inner matrix dimensions after transpose.
-    Tensor::Stride stride_a_m = trans_a ? a_strides_[ndim_a - 1]
-                                        : a_strides_[ndim_a - 2];
-    Tensor::Stride stride_a_k = trans_a ? a_strides_[ndim_a - 2]
-                                        : a_strides_[ndim_a - 1];
-    Tensor::Stride stride_b_k = trans_b ? b_strides_[ndim_b - 1]
-                                        : b_strides_[ndim_b - 2];
-    Tensor::Stride stride_b_n = trans_b ? b_strides_[ndim_b - 2]
-                                        : b_strides_[ndim_b - 1];
+    Tensor::Stride stride_a_m =
+        trans_a ? a_strides_[ndim_a - 1] : a_strides_[ndim_a - 2];
+    Tensor::Stride stride_a_k =
+        trans_a ? a_strides_[ndim_a - 2] : a_strides_[ndim_a - 1];
+    Tensor::Stride stride_b_k =
+        trans_b ? b_strides_[ndim_b - 1] : b_strides_[ndim_b - 2];
+    Tensor::Stride stride_b_n =
+        trans_b ? b_strides_[ndim_b - 2] : b_strides_[ndim_b - 1];
     Tensor::Stride stride_out_m = out_strides_[ndim_out - 2];
     Tensor::Stride stride_out_n = out_strides_[ndim_out - 1];
 
@@ -64,10 +64,8 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
       batch_count *= out_shape_[i];
     }
 
-    Tensor::Stride batch_stride_a =
-        ndim_a > 2 ? a_strides_[ndim_a - 3] : 0;
-    Tensor::Stride batch_stride_b =
-        ndim_b > 2 ? b_strides_[ndim_b - 3] : 0;
+    Tensor::Stride batch_stride_a = ndim_a > 2 ? a_strides_[ndim_a - 3] : 0;
+    Tensor::Stride batch_stride_b = ndim_b > 2 ? b_strides_[ndim_b - 3] : 0;
     Tensor::Stride batch_stride_out =
         ndim_out > 2 ? out_strides_[ndim_out - 3] : 0;
 
@@ -89,10 +87,8 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
           float sum = 0.0f;
 
           for (Tensor::Size l = 0; l < K; ++l) {
-            float a_val =
-                Cast<float>(A_batch[i * stride_a_m + l * stride_a_k]);
-            float b_val =
-                Cast<float>(B_batch[l * stride_b_k + j * stride_b_n]);
+            float a_val = Cast<float>(A_batch[i * stride_a_m + l * stride_a_k]);
+            float b_val = Cast<float>(B_batch[l * stride_b_k + j * stride_b_n]);
             sum += a_val * b_val;
           }
 
