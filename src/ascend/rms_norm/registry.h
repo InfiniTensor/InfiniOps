@@ -7,7 +7,7 @@ namespace infini::ops {
 
 template <>
 struct ActiveImplementationsImpl<RmsNorm, Device::Type::kAscend> {
-#ifdef INFINI_HAS_CUSTOM_RMS_NORM
+#ifdef INFINI_HAS_CUSTOM_KERNELS
   using type = List<0, 1>;
 #else
   using type = List<0>;

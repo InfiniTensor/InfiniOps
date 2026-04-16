@@ -1,7 +1,7 @@
 #ifndef INFINI_OPS_ASCEND_RMS_NORM_KERNEL_CUSTOM_H_
 #define INFINI_OPS_ASCEND_RMS_NORM_KERNEL_CUSTOM_H_
 
-#ifdef INFINI_HAS_CUSTOM_RMS_NORM
+#ifdef INFINI_HAS_CUSTOM_KERNELS
 
 #include <algorithm>
 #include <cstdint>
@@ -162,5 +162,5 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
 
 }  // namespace infini::ops
 
-#endif  // INFINI_HAS_CUSTOM_RMS_NORM
+#endif  // INFINI_HAS_CUSTOM_KERNELS
 #endif  // INFINI_OPS_ASCEND_RMS_NORM_KERNEL_CUSTOM_H_
