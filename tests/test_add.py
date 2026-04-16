@@ -29,6 +29,8 @@ _UINT_DTYPES = tuple(
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
+# TODO: Generate implementation indices dynamically from
+# `Add.active_implementation_indices` instead of hardcoding.
 @pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
