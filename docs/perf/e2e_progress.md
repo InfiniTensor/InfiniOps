@@ -17,6 +17,7 @@ Columns: total tokens per second (infini / ascend), ratio, and notes.
 | 2026-04-17 | `7b6099f` | 0.5B | piecewise |  7,940.2 | 15,525.2 | 51.14% | Baseline. infini graph speedup only 1.10x vs ascend 1.53x. |
 | 2026-04-17 | `7b6099f` | 3B   | eager     |  5,290.7 |  6,690.4 | 79.08% | Baseline. One pp below target — easiest to clear first. |
 | 2026-04-17 | `7b6099f` | 3B   | piecewise |  5,299.1 | 10,147.6 | 52.22% | Baseline. infini graph speedup ~1.00x vs ascend 1.52x. |
+| 2026-04-17 | `691f429` | 3B   | piecewise(fa) |  5,405.5 | 10,147.6 | 53.27% | `INFINI_DECODE_ATTENTION=fa` +2.0% on 3B; no-op on 0.5B. |
 
 ## Status vs target
 
@@ -74,6 +75,32 @@ See `env_flag_sweep_2026-04-17.md`.
 Side fix: `vllm_infini/_compiler.py` was missing `graph_returns_tuple` import —
 needed for `INFINI_USE_TORCHAIR=1` to load at all.
 
+## Current status vs target (2026-04-17)
+
+Best results so far:
+
+| Model | Mode | infini tok/s | ascend tok/s | Ratio | Gap to 80% |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 0.5B | eager     |  7,188 | 10,151 | 70.82% | -9.2 pp |
+| 0.5B | piecewise |  7,940 | 15,525 | 51.14% | -28.9 pp |
+| 3B   | eager     |  5,291 |  6,690 | 79.08% | **-0.9 pp** |
+| 3B   | piecewise (fa) |  5,406 | 10,148 | 53.27% | -26.7 pp |
+
+3B eager is essentially at target (0.9 pp below). Graph mode is the gating problem on both models, and its root cause is host-side (see `graph_mode_root_cause_2026-04-17.md`).
+
+## Next actions (blocked/unblocked)
+
+- **Me (vllm-infini)**:
+  - Run a clean `py-spy` comparison that isn't contaminated by the vllm-ascend shutdown hang. Attempt 1 captured infini but not ascend (ascend hung on engine-core shutdown for >1 hour after bench completed).
+  - Identify and close a single host-side hotspot in the 3B eager path to clear 80%.
+- **Operator** (blocked, needs `operator` decision):
+  - Task #10 pointed at MatMulV2 is invalidated — per-call decode MatMulV2 is at parity with vllm-ascend.
+  - Real structural lever is decode-path ATB/ACLNN kernels that accept device-tensor seqlens (unblocks longer graph span).
+- **Team lead**:
+  - If graph-mode target is considered equal priority to eager, advise whether we invest heavily in closing the ~27 pp graph gap or focus on getting 3B eager over 80% first (1 pp away).
+
 Detailed per-op data: see `e2e_baseline_eager_2026-04-17.md`,
-`e2e_baseline_piecewise_2026-04-17.md`, and
-`graph_mode_root_cause_2026-04-17.md`.
+`e2e_baseline_piecewise_2026-04-17.md`,
+`env_flag_sweep_2026-04-17.md`,
+`sampler_investigation_2026-04-17.md`,
+and `graph_mode_root_cause_2026-04-17.md`.
