@@ -23,7 +23,7 @@ class Operator<Mul, Device::Type::kAscend> : public Mul {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     in_cache_.release();
     oth_cache_.release();
     out_cache_.release();

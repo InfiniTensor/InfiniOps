@@ -64,7 +64,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     gate_cache_.release();
     in_cache_.release();
     out_cache_.release();

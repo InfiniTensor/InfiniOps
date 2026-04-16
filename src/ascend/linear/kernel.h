@@ -33,7 +33,7 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     bias_cache_.release();
     a_cache_.release();
     b_cache_.release();

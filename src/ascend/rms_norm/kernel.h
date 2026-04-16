@@ -32,11 +32,11 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     in_cache_.release();
     weight_cache_.release();
     out_cache_.release();
-    // `rstd_tensor_` is owned by `executor_` — do not destroy manually.
+    // `rstd_tensor_` leaks with the executor at shutdown (see `64c367c`).
   }
 
   void operator()(const Tensor input, const Tensor weight, float eps,

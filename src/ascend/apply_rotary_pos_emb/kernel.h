@@ -25,9 +25,11 @@ namespace infini::ops {
 // V2 layout=4 (TND): Q `[T, Nq, D]`, K `[T, Nkv, D]`, cos/sin `[T, 1, D]`.
 // Operates inplace on `query_out` and `key_out`.
 //
-// Restrictions:
-//   - `is_neox_style` must be true (rotaryMode="half" only).
-//   - fp16 only (V2 accumulation error is acceptable for inference).
+// Restriction (implementation choice, not a V2 API limit):
+//   - `is_neox_style` must be true.  `aclnnApplyRotaryPosEmbV2` accepts
+//     `rotaryMode` values `"half"` / `"interleave"` / `"quarter"`; this
+//     wrapper plumbs only `"half"`.  fp16 and bf16 both work at runtime
+//     (V2 accumulates with a few ULP of error).
 template <>
 class Operator<ApplyRotaryPosEmb, Device::Type::kAscend>
     : public ApplyRotaryPosEmb {
@@ -62,7 +64,7 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend>
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     cos_cache_.release();
     sin_cache_.release();
     q_cache_.release();
