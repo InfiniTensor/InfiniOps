@@ -34,9 +34,10 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Test: destroy tensors first, then executor.
-    // If CANN executor reference-counts tensors, this is safe.
-    // If not, aclDestroyAclOpExecutor will double-free and crash.
+    // Destroy cached tensors and the executor, then the scalar.
+    // Historical note: this active-destroy pattern works for `Add` at
+    // process exit but crashed for most other operators — see `64c367c`
+    // and the rest of `src/ascend/*/kernel.h` which use `release()` only.
     in_cache_.destroy();
     oth_cache_.destroy();
     out_cache_.destroy();

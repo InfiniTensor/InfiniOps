@@ -23,7 +23,7 @@ class Operator<Cast, Device::Type::kAscend> : public Cast {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     in_cache_.release();
     out_cache_.release();
   }

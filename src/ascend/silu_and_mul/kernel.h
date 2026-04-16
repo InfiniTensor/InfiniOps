@@ -38,7 +38,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     x_cache_.release();
     out_cache_.release();
   }

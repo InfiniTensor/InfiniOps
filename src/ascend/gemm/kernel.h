@@ -33,7 +33,7 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     self_cache_.release();
     a_cache_.release();
     b_cache_.release();

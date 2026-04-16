@@ -45,10 +45,11 @@ namespace infini::ops {
 // gathered `[T, D]` tensors to ATB Rope.  The `seqlen` input is a single
 // int32 element equal to T (all tokens treated as one batch).
 //
-// Restrictions:
-//   - rotary_dim must equal head_size (full rotation only).
-//   - is_neox_style must be true (rotaryCoeff=2).
-//   - fp16 only (ATB inference constraint).
+// Restrictions (implementation choices, not ATB API limits):
+//   - `rotary_dim` must equal `head_size` (full rotation only).  ATB
+//     RopeParam supports `rotaryCoeff=2/4/head_size/head_size_2` per the
+//     CANN 8.5 ATB docs; this wrapper plumbs only `rotaryCoeff=2`.
+//   - `is_neox_style` must be true.
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     : public RotaryEmbedding {
@@ -74,7 +75,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     aclrtMalloc(&cos_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
     aclrtMalloc(&sin_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
 
-    // Upload initial cos_sin_cache.
+    // Upload initial cos_sin_cache.  In real inference the cache is loaded
+    // once and never mutated, so this one-time upload is sufficient.
     uploadCosSinCache(cos_sin_cache);
 
     // Cache shapes and metadata.
@@ -121,7 +123,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     cos_table_cache_.release();
     sin_table_cache_.release();
     idx_cache_.release();
@@ -154,6 +156,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     int64_t hiddenQ = static_cast<int64_t>(query.numel()) / T;
     int64_t hiddenK = static_cast<int64_t>(key.numel()) / T;
 
+    // Re-upload cos/sin tables if the caller passes a different
+    // `cos_sin_cache` buffer.  `CacheKey` matches on shape/stride/dtype and
+    // ignores data pointers, so a cached operator instance is reused across
+    // calls with different cache allocations — see
+    // `operator_cache_stale_data` in memory.
     // Step 1: Gather cos/sin by positions via aclnnIndexSelect (async).
     {
       auto t_cos_table = cos_table_cache_.get(cos_table_dev_);

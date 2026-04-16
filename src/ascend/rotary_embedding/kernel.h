@@ -17,20 +17,20 @@
 
 namespace infini::ops {
 
-// Rotary position embedding via aclnnApplyRotaryPosEmbV2.
+// Rotary position embedding via `aclnnApplyRotaryPosEmbV2`.
 //
 // V2 handles Q and K simultaneously in a single inplace call (layout=4, TND).
-// The `rotaryMode` parameter accepts "half", "interleave", or "quarter", but
-// CANN currently only supports "half" (neox style).  Passing "interleave" or
-// "quarter" returns ACLNN_ERR_PARAM_INVALID.
 //
 // fp16 note: V2 accumulates with ~4 ULP error for float16 (max diff ~0.008),
 // which exceeds strict atol=0.001 tests but is acceptable for inference.
 // bfloat16 passes with atol=0.005.
 //
-// Restrictions:
-//   - rotary_dim must equal head_size (partial rotation not supported).
-//   - is_neox_style must be true (rotaryMode="half" only).
+// Restrictions (implementation choices, not V2 API limits):
+//   - `rotary_dim` must equal `head_size` (partial rotation not
+//     implemented; V2's cos/sin second dim can be `head_size/2` per the
+//     CANN 8.5 docs).
+//   - `is_neox_style` must be true.  V2 accepts `rotaryMode="half" /
+//     "interleave" / "quarter"`; this wrapper plumbs only `"half"`.
 // All mainstream models (LLaMA, Qwen, Mistral, DeepSeek) satisfy both.
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend>
@@ -45,11 +45,10 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
         elem_sz_{cos_sin_cache.element_size()} {
     assert(rotary_dim == head_size &&
            "Ascend `RotaryEmbedding` requires rotary_dim == head_size "
-           "(partial rotation not supported)");
+           "(partial rotation not implemented in this wrapper)");
     assert(is_neox_style &&
-           "Ascend `RotaryEmbedding` requires neox style — "
-           "aclnnApplyRotaryPosEmbV2 rotaryMode only supports \"half\"; "
-           "\"interleave\" and \"quarter\" return ACLNN_ERR_PARAM_INVALID");
+           "Ascend `RotaryEmbedding` requires neox style — this wrapper "
+           "only plumbs `rotaryMode=\"half\"` through V2");
 
     const int64_t D = head_size_;
     size_t table_bytes = static_cast<size_t>(max_seq_len_ * D) * elem_sz_;
@@ -58,7 +57,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     aclrtMalloc(&cos_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
     aclrtMalloc(&sin_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
 
-    // Upload initial cos_sin_cache.
+    // Upload initial cos_sin_cache.  In real inference the cache is loaded
+    // once and never mutated, so this one-time upload is sufficient.
     uploadCosSinCache(cos_sin_cache);
 
     const int64_t T = num_tokens_;
@@ -93,7 +93,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     cos_table_cache_.release();
     sin_table_cache_.release();
     idx_cache_.release();
@@ -121,6 +121,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     const int64_t Nkv = num_kv_heads_;
     const int64_t D = head_size;
 
+    // Re-upload cos/sin tables if the caller passes a different
+    // `cos_sin_cache` buffer.  `CacheKey` matches on shape/stride/dtype and
+    // ignores data pointers, so a cached operator instance is reused across
+    // calls with different cache allocations — see
+    // `operator_cache_stale_data` in memory.
     // Step 1: Gather cos/sin by positions via aclnnIndexSelect (async).
     {
       auto t_cos_table = cos_table_cache_.get(cos_table_dev_);

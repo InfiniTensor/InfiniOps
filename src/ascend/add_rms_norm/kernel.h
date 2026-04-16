@@ -44,14 +44,14 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
 
-    // Release tensor caches — executors destroy their tensors internally.
+    // Null cached descriptors — see `AclTensorCache::release()`.
     x1_cache_.release();
     x2_cache_.release();
     gamma_cache_.release();
     y_out_cache_.release();
     x_out_cache_.release();
 
-    // `rstd_tensor_` is owned by `norm_exec_` — do not destroy manually.
+    // `rstd_tensor_` leaks with `norm_exec_` at shutdown (see `64c367c`).
     if (alpha_) aclDestroyScalar(alpha_);
   }
 

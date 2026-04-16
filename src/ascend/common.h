@@ -153,13 +153,20 @@ class AclTensorCache {
     return *this;
   }
 
-  // Release ownership of the tensor without destroying it.
-  // Call in destructors to prevent double-free when executors own the tensor.
+  // Null the cached descriptor pointer without calling `aclDestroyTensor`.
+  // Call from the owning operator's destructor: the descriptor is still
+  // referenced by a Repeatable `aclOpExecutor` which would be destroyed
+  // alongside the tensor, and per CANN 8.5 docs that destruction is our
+  // responsibility.  In practice `aclDestroyAclOpExecutor` during process
+  // shutdown crashes even with `isAclRuntimeAlive()` true — see `64c367c` —
+  // so operators leak the executor at shutdown; skipping `aclDestroyTensor`
+  // here keeps `~AclTensorCache` from double-freeing a descriptor the
+  // executor still holds.
   void release() { tensor_ = nullptr; }
 
-  // Explicitly destroy the tensor and clear the pointer.
-  // Use before `aclDestroyAclOpExecutor` to test whether CANN executor
-  // reference-counts tensors (i.e. whether double-destroy is safe).
+  // Explicitly destroy the cached tensor and clear the pointer.
+  // Use only when the descriptor is owned outside any executor (e.g. an
+  // intermediate tensor not passed to `aclnn*GetWorkspaceSize`).
   void destroy() {
     if (tensor_) {
       aclDestroyTensor(tensor_);
