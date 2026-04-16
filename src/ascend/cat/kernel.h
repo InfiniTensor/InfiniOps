@@ -29,7 +29,11 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
   }
 
   ~Operator() {
-    if (executor_) aclDestroyAclOpExecutor(executor_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    out_cache_.release();
+
     if (tensor_list_) aclDestroyTensorList(tensor_list_);
   }
 

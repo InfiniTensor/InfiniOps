@@ -42,10 +42,17 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
   }
 
   ~Operator() {
-    if (add_exec_) aclDestroyAclOpExecutor(add_exec_);
-    if (norm_exec_) aclDestroyAclOpExecutor(norm_exec_);
-    aclDestroyScalar(alpha_);
-    if (rstd_tensor_) aclDestroyTensor(rstd_tensor_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    x1_cache_.release();
+    x2_cache_.release();
+    gamma_cache_.release();
+    y_out_cache_.release();
+    x_out_cache_.release();
+
+    // `rstd_tensor_` is owned by `norm_exec_` — do not destroy manually.
+    if (alpha_) aclDestroyScalar(alpha_);
   }
 
   void operator()(const Tensor x1, const Tensor x2, const Tensor gamma,

@@ -62,9 +62,13 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
   }
 
   ~Operator() {
-    if (cat_exec_) aclDestroyAclOpExecutor(cat_exec_);
-    if (swiglu_exec_) aclDestroyAclOpExecutor(swiglu_exec_);
-    if (copy_exec_) aclDestroyAclOpExecutor(copy_exec_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    gate_cache_.release();
+    in_cache_.release();
+    out_cache_.release();
+
     if (cat_tensor_list_) aclDestroyTensorList(cat_tensor_list_);
   }
 

@@ -86,7 +86,11 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
 
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
-    if (cast_exec_) aclDestroyAclOpExecutor(cast_exec_);
+
+    // Release tensor caches — executors destroy their tensors internally.
+    weight_src_cache_.release();
+    weight_dst_cache_.release();
+
     if (weight_fp32_data_) aclrtFree(weight_fp32_data_);
   }
 

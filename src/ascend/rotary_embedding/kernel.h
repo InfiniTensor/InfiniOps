@@ -91,9 +91,18 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
   }
 
   ~Operator() {
-    if (idx_cos_exec_) aclDestroyAclOpExecutor(idx_cos_exec_);
-    if (idx_sin_exec_) aclDestroyAclOpExecutor(idx_sin_exec_);
-    if (v2_exec_) aclDestroyAclOpExecutor(v2_exec_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    cos_table_cache_.release();
+    sin_table_cache_.release();
+    idx_cache_.release();
+    cos_out_cache_.release();
+    sin_out_cache_.release();
+    cos_v2_cache_.release();
+    sin_v2_cache_.release();
+    q_cache_.release();
+    k_cache_.release();
 
     if (cos_table_dev_) aclrtFree(cos_table_dev_);
     if (sin_table_dev_) aclrtFree(sin_table_dev_);

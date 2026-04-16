@@ -31,7 +31,14 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
   }
 
   ~Operator() {
-    if (executor_) aclDestroyAclOpExecutor(executor_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    bias_cache_.release();
+    a_cache_.release();
+    b_cache_.release();
+    out_cache_.release();
+
     if (alpha_scalar_) aclDestroyScalar(alpha_scalar_);
     if (beta_scalar_) aclDestroyScalar(beta_scalar_);
   }

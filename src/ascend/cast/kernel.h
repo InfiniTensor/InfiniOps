@@ -21,7 +21,11 @@ class Operator<Cast, Device::Type::kAscend> : public Cast {
         acl_out_dtype_(ascend::toAclDtype(out.dtype())) {}
 
   ~Operator() {
-    if (executor_) aclDestroyAclOpExecutor(executor_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    in_cache_.release();
+    out_cache_.release();
   }
 
   void operator()(const Tensor input, Tensor out) const override {

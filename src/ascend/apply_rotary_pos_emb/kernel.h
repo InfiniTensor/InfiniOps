@@ -60,7 +60,13 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend>
   }
 
   ~Operator() {
-    if (v2_exec_) aclDestroyAclOpExecutor(v2_exec_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    cos_cache_.release();
+    sin_cache_.release();
+    q_cache_.release();
+    k_cache_.release();
   }
 
   void operator()(const Tensor query, const Tensor key, const Tensor cos,

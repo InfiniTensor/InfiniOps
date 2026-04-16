@@ -32,8 +32,17 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   }
 
   ~Operator() {
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Test: destroy tensors first, then executor.
+    // If CANN executor reference-counts tensors, this is safe.
+    // If not, aclDestroyAclOpExecutor will double-free and crash.
+    in_cache_.destroy();
+    oth_cache_.destroy();
+    out_cache_.destroy();
+
     if (executor_) aclDestroyAclOpExecutor(executor_);
-    aclDestroyScalar(alpha_);
+    if (alpha_) aclDestroyScalar(alpha_);
   }
 
   void operator()(const Tensor input, const Tensor other,
