@@ -89,6 +89,27 @@ endif()
 
 if(WITH_NVIDIA)
     add_compile_definitions(WITH_NVIDIA=1)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+            set(CMAKE_CUDA_ARCHITECTURES "native")
+        else()
+            # Detect GPU architecture via `nvidia-smi`.
+            execute_process(
+                COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+                OUTPUT_VARIABLE _gpu_cc OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET RESULT_VARIABLE _nvsmi_result
+            )
+            if(_nvsmi_result EQUAL 0 AND _gpu_cc)
+                string(REGEX MATCH "^[0-9]+\\.[0-9]+" _first_cc "${_gpu_cc}")
+                string(REPLACE "." "" _arch "${_first_cc}")
+                set(CMAKE_CUDA_ARCHITECTURES "${_arch}")
+                message(STATUS "Auto-detected CUDA architecture: `sm_${_arch}`.")
+            else()
+                message(WARNING "Could not detect GPU architecture; defaulting to `sm_80`.")
+                set(CMAKE_CUDA_ARCHITECTURES "80")
+            endif()
+        endif()
+    endif()
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
