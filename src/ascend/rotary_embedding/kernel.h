@@ -107,12 +107,6 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
                   Tensor key_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Re-upload if cos_sin_cache data pointer changed (different tensor).
-    // In production this pointer is stable (fixed weight), so this is a no-op.
-    if (cos_sin_cache.data() != last_cos_sin_ptr_) {
-      uploadCosSinCache(cos_sin_cache);
-    }
-
     const int64_t T = query.size(0);
     const int64_t Nq = num_heads_;
     const int64_t Nkv = num_kv_heads_;
@@ -190,8 +184,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
 
  private:
   // D2H copy cos_sin_cache, split into cos/sin, neox-expand, and upload to
-  // device.  Called once at construction and again if the caller provides a
-  // different cos_sin_cache tensor (detected by data-pointer change).
+  // device.  Called once at construction.
   void uploadCosSinCache(const Tensor cos_sin_cache) const {
     const int64_t D = head_size_;
     const int64_t half_D = D / 2;
@@ -234,17 +227,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
                 ACL_MEMCPY_HOST_TO_DEVICE);
     aclrtMemcpy(sin_table_dev_, table_bytes, sin_host.data(), table_bytes,
                 ACL_MEMCPY_HOST_TO_DEVICE);
-
-    last_cos_sin_ptr_ = cos_sin_cache.data();
   }
 
   int64_t max_seq_len_;
 
   size_t elem_sz_;
-
-  // Tracks which cos_sin_cache was last uploaded so we can re-upload if the
-  // caller provides a different tensor (same shape, different data).
-  mutable const void* last_cos_sin_ptr_ = nullptr;
 
   // Pre-expanded cos/sin tables on device: [max_seq_len, D].
   void* cos_table_dev_ = nullptr;
