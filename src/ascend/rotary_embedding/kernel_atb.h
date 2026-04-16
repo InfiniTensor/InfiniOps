@@ -63,57 +63,19 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     assert(is_neox_style &&
            "ATB `RotaryEmbedding` requires neox style (rotaryCoeff=2)");
 
-    const int64_t max_seq_len = cos_sin_cache.size(0);
     const int64_t D = head_size_;
-    const int64_t half_D = D / 2;
     const size_t elem_sz = cos_sin_cache.element_size();
 
-    // One-time: D2H copy cos_sin_cache, split into cos/sin, upload.
-    // cos_sin_cache layout per row: [c0..c_{hD-1}, s0..s_{hD-1}].
-    size_t row_bytes = static_cast<size_t>(D) * elem_sz;
-    size_t table_bytes = static_cast<size_t>(max_seq_len) * row_bytes;
+    max_seq_len_ = cos_sin_cache.size(0);
+    size_t table_bytes =
+        static_cast<size_t>(max_seq_len_) * static_cast<size_t>(D) * elem_sz;
 
-    std::vector<uint8_t> cache_host(table_bytes);
-    aclrtMemcpy(cache_host.data(), table_bytes, cos_sin_cache.data(),
-                table_bytes, ACL_MEMCPY_DEVICE_TO_HOST);
-
-    // ATB Rope with rotaryCoeff=2 expects cos/sin of shape [T, D].
-    // Neox-style expansion: [c0..c_{hD-1}, c0..c_{hD-1}].
-    std::vector<uint8_t> cos_host(table_bytes);
-    std::vector<uint8_t> sin_host(table_bytes);
-
-    for (int64_t p = 0; p < max_seq_len; ++p) {
-      for (int64_t j = 0; j < half_D; ++j) {
-        const auto* c_src =
-            cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
-        const auto* s_src =
-            cache_host.data() +
-            static_cast<size_t>(p * D + half_D + j) * elem_sz;
-
-        std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz, c_src,
-            elem_sz);
-        std::memcpy(
-            cos_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
-            c_src, elem_sz);
-        std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz, s_src,
-            elem_sz);
-        std::memcpy(
-            sin_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
-            s_src, elem_sz);
-      }
-    }
-
-    // Upload expanded tables to device (persistent, reused across calls).
+    // Allocate device buffers for expanded cos/sin tables [max_seq_len, D].
     aclrtMalloc(&cos_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
     aclrtMalloc(&sin_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-    aclrtMemcpy(cos_table_dev_, table_bytes, cos_host.data(), table_bytes,
-                ACL_MEMCPY_HOST_TO_DEVICE);
-    aclrtMemcpy(sin_table_dev_, table_bytes, sin_host.data(), table_bytes,
-                ACL_MEMCPY_HOST_TO_DEVICE);
+
+    // Upload initial cos_sin_cache.
+    uploadCosSinCache(cos_sin_cache);
 
     // Cache shapes and metadata.
     const int64_t T = num_tokens_;
@@ -125,7 +87,6 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     seqlen_shape_ = {1};
     acl_dt_ = ascend::toAclDtype(query.dtype());
     elem_size_ = static_cast<uint64_t>(elem_sz);
-    max_seq_len_ = max_seq_len;
 
     // Allocate gathered cos/sin buffers [T, D] — filled by aclnnIndexSelect.
     size_t gathered_bytes = static_cast<size_t>(T * D) * elem_sz;
@@ -140,9 +101,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     // IndexSelect descriptor caches: table ptrs stable, positions ptr varies.
     cos_table_cache_ = ascend::AclTensorCache(
-        {max_seq_len, D}, acl_dt_, cos_table_dev_);
+        {max_seq_len_, D}, acl_dt_, cos_table_dev_);
     sin_table_cache_ = ascend::AclTensorCache(
-        {max_seq_len, D}, acl_dt_, sin_table_dev_);
+        {max_seq_len_, D}, acl_dt_, sin_table_dev_);
     idx_cache_ = ascend::AclTensorCache(
         {T}, ACL_INT64, const_cast<void*>(positions.data()));
     cos_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, cos_dev_);
@@ -179,6 +140,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                   int64_t rotary_dim, bool is_neox_style, Tensor query_out,
                   Tensor key_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
+
+    // Re-upload if cos_sin_cache data pointer changed (different tensor).
+    if (cos_sin_cache.data() != last_cos_sin_ptr_) {
+      uploadCosSinCache(cos_sin_cache);
+    }
 
     int64_t T = query.size(0);
     int64_t D = head_size;
@@ -282,6 +248,60 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
   }
 
  private:
+  // D2H copy cos_sin_cache, split into cos/sin, neox-expand, and upload to
+  // device.  Called once at construction and again if the caller provides a
+  // different cos_sin_cache tensor (detected by data-pointer change).
+  void uploadCosSinCache(const Tensor cos_sin_cache) const {
+    const int64_t D = head_size_;
+    const int64_t half_D = D / 2;
+    const size_t elem_sz = cos_sin_cache.element_size();
+    size_t table_bytes =
+        static_cast<size_t>(max_seq_len_) * static_cast<size_t>(D) * elem_sz;
+
+    std::vector<uint8_t> cache_host(table_bytes);
+    aclrtMemcpy(cache_host.data(), table_bytes, cos_sin_cache.data(),
+                table_bytes, ACL_MEMCPY_DEVICE_TO_HOST);
+
+    std::vector<uint8_t> cos_host(table_bytes);
+    std::vector<uint8_t> sin_host(table_bytes);
+
+    for (int64_t p = 0; p < max_seq_len_; ++p) {
+      for (int64_t j = 0; j < half_D; ++j) {
+        const auto* c_src =
+            cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
+        const auto* s_src =
+            cache_host.data() +
+            static_cast<size_t>(p * D + half_D + j) * elem_sz;
+
+        std::memcpy(
+            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz, c_src,
+            elem_sz);
+        std::memcpy(
+            cos_host.data() +
+                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            c_src, elem_sz);
+        std::memcpy(
+            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz, s_src,
+            elem_sz);
+        std::memcpy(
+            sin_host.data() +
+                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            s_src, elem_sz);
+      }
+    }
+
+    aclrtMemcpy(cos_table_dev_, table_bytes, cos_host.data(), table_bytes,
+                ACL_MEMCPY_HOST_TO_DEVICE);
+    aclrtMemcpy(sin_table_dev_, table_bytes, sin_host.data(), table_bytes,
+                ACL_MEMCPY_HOST_TO_DEVICE);
+
+    last_cos_sin_ptr_ = cos_sin_cache.data();
+  }
+
+  // Tracks which cos_sin_cache was last uploaded so we can re-upload if the
+  // caller provides a different tensor (same shape, different data).
+  mutable const void* last_cos_sin_ptr_ = nullptr;
+
   atb::Operation* op_ = nullptr;
 
   // Neox-expanded cos/sin tables on device: [max_seq_len, D].
