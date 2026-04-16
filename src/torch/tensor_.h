@@ -9,6 +9,36 @@
 
 namespace infini::ops {
 
+namespace detail {
+
+constexpr int kTorchVersion = TORCH_VERSION_MAJOR * 100 + TORCH_VERSION_MINOR;
+
+// Unsigned integer scalar types are only available in PyTorch >= 2.4.
+// The template parameter makes `if constexpr` discard the branch that
+// references enum values absent in older PyTorch versions.
+template <int kVersion = kTorchVersion>
+inline at::ScalarType ToAtenUnsignedDataType(DataType dtype) {
+  if constexpr (kVersion >= 204) {
+    switch (dtype) {
+      case DataType::kUInt16:
+        return c10::ScalarType::UInt16;
+      case DataType::kUInt32:
+        return c10::ScalarType::UInt32;
+      case DataType::kUInt64:
+        return c10::ScalarType::UInt64;
+      default:
+        assert(false && "not an unsigned integer dtype");
+        return at::kFloat;
+    }
+  } else {
+    (void)dtype;
+    assert(false && "unsigned integer types require PyTorch 2.4 or later");
+    return at::kFloat;
+  }
+}
+
+}  // namespace detail
+
 inline at::ScalarType ToAtenDtype(DataType dtype) {
   switch (dtype) {
     case DataType::kInt8:
@@ -22,21 +52,9 @@ inline at::ScalarType ToAtenDtype(DataType dtype) {
     case DataType::kUInt8:
       return at::kByte;
     case DataType::kUInt16:
-#if TORCH_VERSION_MAJOR > 2 || \
-    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 4)
-      return c10::ScalarType::UInt16;
     case DataType::kUInt32:
-      return c10::ScalarType::UInt32;
     case DataType::kUInt64:
-      return c10::ScalarType::UInt64;
-#else
-      [[fallthrough]];
-    case DataType::kUInt32:
-      [[fallthrough]];
-    case DataType::kUInt64:
-      assert(false && "unsigned integer types require PyTorch 2.4 or later");
-      return at::kFloat;
-#endif
+      return detail::ToAtenUnsignedDataType(dtype);
     case DataType::kFloat16:
       return at::kHalf;
     case DataType::kBFloat16:
