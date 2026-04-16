@@ -36,8 +36,11 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
   }
 
   ~Operator() {
-    if (swiglu_exec_) aclDestroyAclOpExecutor(swiglu_exec_);
-    if (copy_exec_) aclDestroyAclOpExecutor(copy_exec_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    x_cache_.release();
+    out_cache_.release();
   }
 
   void operator()(const Tensor x, int64_t dim, Tensor out) const override {

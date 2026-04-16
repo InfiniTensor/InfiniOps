@@ -157,6 +157,8 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
   }
 
   ~Operator() {
+    if (!ascend::isAclRuntimeAlive()) return;
+
     if (causal_mask_) aclDestroyTensor(causal_mask_);
     if (causal_mask_buf_) aclrtFree(causal_mask_buf_);
   }

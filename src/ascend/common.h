@@ -119,7 +119,7 @@ class AclTensorCache {
   }
 
   ~AclTensorCache() {
-    if (tensor_) {
+    if (tensor_ && isAclRuntimeAlive()) {
       aclDestroyTensor(tensor_);
     }
   }
@@ -151,6 +151,20 @@ class AclTensorCache {
     }
 
     return *this;
+  }
+
+  // Release ownership of the tensor without destroying it.
+  // Call in destructors to prevent double-free when executors own the tensor.
+  void release() { tensor_ = nullptr; }
+
+  // Explicitly destroy the tensor and clear the pointer.
+  // Use before `aclDestroyAclOpExecutor` to test whether CANN executor
+  // reference-counts tensors (i.e. whether double-destroy is safe).
+  void destroy() {
+    if (tensor_) {
+      aclDestroyTensor(tensor_);
+      tensor_ = nullptr;
+    }
   }
 
   // Update the data pointer and return the cached descriptor.

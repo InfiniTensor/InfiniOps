@@ -21,7 +21,12 @@ class Operator<Matmul, Device::Type::kAscend> : public Matmul {
         out_cache_(c) {}
 
   ~Operator() {
-    if (executor_) aclDestroyAclOpExecutor(executor_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    a_cache_.release();
+    b_cache_.release();
+    out_cache_.release();
   }
 
   void operator()(const Tensor a, const Tensor b, Tensor c, bool trans_a,

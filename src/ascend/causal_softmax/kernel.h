@@ -71,12 +71,16 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
   }
 
   ~Operator() {
-    if (copy_exec_) aclDestroyAclOpExecutor(copy_exec_);
-    if (fill_exec_) aclDestroyAclOpExecutor(fill_exec_);
-    if (softmax_exec_) aclDestroyAclOpExecutor(softmax_exec_);
-    aclrtFree(mask_buf_);
-    aclDestroyTensor(mask_tensor_);
-    aclDestroyScalar(neg_inf_);
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    // Release tensor caches — executors destroy their tensors internally.
+    in_cache_.release();
+    out_cache_.release();
+    temp_cache_.release();
+
+    // `mask_tensor_` is owned by `fill_exec_` — do not destroy manually.
+    if (mask_buf_) aclrtFree(mask_buf_);
+    if (neg_inf_) aclDestroyScalar(neg_inf_);
   }
 
   void operator()(const Tensor input, Tensor out) const override {

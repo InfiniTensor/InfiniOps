@@ -11,6 +11,7 @@
 
 #include "acl/acl.h"
 #include "ascend/atb_common_.h"
+#include "ascend/common.h"
 #include "ascend/paged_attention/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "atb/context.h"
@@ -114,16 +115,19 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
   }
 
   ~Operator() {
-    if (op_) {
-      atb::DestroyOperation(op_);
-    }
-
+    // Host memory is always safe to free.
     if (!has_block_table_host_) {
       std::free(bt_host_);
     }
 
     if (!has_seq_lens_host_) {
       std::free(sl_host_);
+    }
+
+    if (!ascend::isAclRuntimeAlive()) return;
+
+    if (op_) {
+      atb::DestroyOperation(op_);
     }
   }
 
