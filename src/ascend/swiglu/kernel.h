@@ -16,7 +16,7 @@ namespace infini::ops {
 
 // Implements SwiGLU as two ACLNN calls: silu(gate) into a temp buffer,
 // then elementwise mul(input, temp) into out.
-// `aclnnSiluMul` was not used because it fuses silu_AND_mul on the same
+// aclnnSiluMul was not used because it fuses silu_AND_mul on the same
 // tensor (x * silu(x)), whereas SwiGLU requires input * silu(gate) —
 // two distinct inputs.
 template <>

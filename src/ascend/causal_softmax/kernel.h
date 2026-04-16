@@ -18,10 +18,10 @@
 namespace infini::ops {
 
 // Implements causal softmax via three ACLNN calls:
-//   1. `InplaceCopy(temp, input)` — stride-aware copy to contiguous temp
+//   1. InplaceCopy(temp, input)   — stride-aware copy to contiguous temp
 //   buffer.
-//   2. `InplaceMaskedFillScalar(temp, mask, -inf)` — apply upper-triangle mask.
-//   3. `Softmax(temp, dim=-1, out)` — softmax over the last dimension.
+//   2. InplaceMaskedFillScalar(temp, mask, -inf) — apply upper-triangle mask.
+//   3. Softmax(temp, dim=-1, out) — softmax over the last dimension.
 //
 // The boolean causal mask is pre-computed and uploaded to device once in the
 // constructor. Its shape (seq_len, total_seq_len) broadcasts over the batch.
@@ -29,7 +29,9 @@ template <>
 class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
  public:
   Operator(const Tensor input, Tensor out)
-      : CausalSoftmax(input, out), in_cache_(input), out_cache_(out) {
+      : CausalSoftmax(input, out),
+        in_cache_(input),
+        out_cache_(out) {
     // Compute temp buffer size — allocated lazily from pool in `operator()`.
     size_t n_elems = input.numel();
     size_t elem_bytes = kDataTypeToSize.at(dtype_);
@@ -64,11 +66,10 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
                                    mstrides.data(), 0, ACL_FORMAT_ND,
                                    mshape.data(), mshape.size(), mask_buf_);
 
-    // Scalar -inf for the masked-fill step.  `aclCreateScalar` stores the
-    // pointer rather than copying, so `neg_inf_storage_` must stay alive with
-    // the object.
+    // Scalar -inf for the masked-fill step. aclCreateScalar stores the pointer
+    // rather than copying, so neg_inf_storage_ must stay alive with the object.
     neg_inf_ = aclCreateScalar(&neg_inf_storage_, ACL_FLOAT);
-    // Workspaces are allocated lazily on first `operator()` call.
+    // Workspaces are allocated lazily on first operator() call.
   }
 
   ~Operator() {

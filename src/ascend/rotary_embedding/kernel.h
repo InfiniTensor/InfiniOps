@@ -17,7 +17,7 @@
 
 namespace infini::ops {
 
-// Rotary position embedding via `aclnnApplyRotaryPosEmbV2`.
+// Rotary position embedding via aclnnApplyRotaryPosEmbV2.
 //
 // V2 handles Q and K simultaneously in a single inplace call (layout=4, TND).
 // The `rotaryMode` parameter accepts "half", "interleave", or "quarter", but
@@ -42,13 +42,12 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out) {
     assert(rotary_dim == head_size &&
-           "ascend `RotaryEmbedding` requires `rotary_dim` == `head_size` "
+           "Ascend `RotaryEmbedding` requires rotary_dim == head_size "
            "(partial rotation not supported)");
     assert(is_neox_style &&
-           "ascend `RotaryEmbedding` requires neox style — "
-           "`aclnnApplyRotaryPosEmbV2` `rotaryMode` only supports "
-           "\"half\"; \"interleave\" and \"quarter\" return "
-           "`ACLNN_ERR_PARAM_INVALID`");
+           "Ascend `RotaryEmbedding` requires neox style — "
+           "aclnnApplyRotaryPosEmbV2 rotaryMode only supports \"half\"; "
+           "\"interleave\" and \"quarter\" return ACLNN_ERR_PARAM_INVALID");
 
     const int64_t max_seq_len = cos_sin_cache.size(0);
     const int64_t D = head_size_;
@@ -71,20 +70,26 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     for (int64_t p = 0; p < max_seq_len; ++p) {
       for (int64_t j = 0; j < half_D; ++j) {
         const auto* c_src =
-            cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
-        const auto* s_src = cache_host.data() +
-                            static_cast<size_t>(p * D + half_D + j) * elem_sz;
+            cache_host.data() +
+            static_cast<size_t>(p * D + j) * elem_sz;
+        const auto* s_src =
+            cache_host.data() +
+            static_cast<size_t>(p * D + half_D + j) * elem_sz;
 
         // Neox expansion: [c0..c_{hD-1}, c0..c_{hD-1}] (halves duplicated).
-        std::memcpy(cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-                    c_src, elem_sz);
         std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
             c_src, elem_sz);
-        std::memcpy(sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-                    s_src, elem_sz);
         std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            cos_host.data() +
+                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            c_src, elem_sz);
+        std::memcpy(
+            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+            s_src, elem_sz);
+        std::memcpy(
+            sin_host.data() +
+                static_cast<size_t>(p * D + half_D + j) * elem_sz,
             s_src, elem_sz);
       }
     }
@@ -102,28 +107,28 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     const int64_t Nkv = num_kv_heads_;
     aclDataType acl_dt = ascend::toAclDtype(query.dtype());
 
-    // Gathered cos/sin buffers [T, D] — filled by `aclnnIndexSelect` each call.
+    // Gathered cos/sin buffers [T, D] — filled by aclnnIndexSelect each call.
     size_t gathered_bytes = static_cast<size_t>(T * D) * elem_sz;
     aclrtMalloc(&cos_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
     aclrtMalloc(&sin_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
 
     // IndexSelect descriptors: table ptrs stable, positions ptr varies.
-    cos_table_cache_ =
-        ascend::AclTensorCache({max_seq_len, D}, acl_dt, cos_table_dev_);
-    sin_table_cache_ =
-        ascend::AclTensorCache({max_seq_len, D}, acl_dt, sin_table_dev_);
-    idx_cache_ = ascend::AclTensorCache({T}, ACL_INT64,
-                                        const_cast<void*>(positions.data()));
+    cos_table_cache_ = ascend::AclTensorCache(
+        {max_seq_len, D}, acl_dt, cos_table_dev_);
+    sin_table_cache_ = ascend::AclTensorCache(
+        {max_seq_len, D}, acl_dt, sin_table_dev_);
+    idx_cache_ = ascend::AclTensorCache(
+        {T}, ACL_INT64, const_cast<void*>(positions.data()));
     cos_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt, cos_dev_);
     sin_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt, sin_dev_);
 
     // V2 descriptors: cos/sin [T, 1, D], Q [T, Nq, D], K [T, Nkv, D].
     cos_v2_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt, cos_dev_);
     sin_v2_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt, sin_dev_);
-    q_cache_ = ascend::AclTensorCache({T, Nq, D}, acl_dt,
-                                      const_cast<void*>(query_out.data()));
-    k_cache_ = ascend::AclTensorCache({T, Nkv, D}, acl_dt,
-                                      const_cast<void*>(key_out.data()));
+    q_cache_ = ascend::AclTensorCache(
+        {T, Nq, D}, acl_dt, const_cast<void*>(query_out.data()));
+    k_cache_ = ascend::AclTensorCache(
+        {T, Nkv, D}, acl_dt, const_cast<void*>(key_out.data()));
   }
 
   ~Operator() {
@@ -144,11 +149,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     auto stream = static_cast<aclrtStream>(stream_);
 
     const int64_t T = query.size(0);
-    const int64_t Nq = query.size(1);
-    const int64_t Nkv = key.size(1);
+    const int64_t Nq = num_heads_;
+    const int64_t Nkv = num_kv_heads_;
     const int64_t D = head_size;
 
-    // Step 1: Gather cos/sin by positions via `aclnnIndexSelect` (async).
+    // Step 1: Gather cos/sin by positions via aclnnIndexSelect (async).
     {
       auto t_cos_table = cos_table_cache_.get(cos_table_dev_);
       auto t_sin_table = sin_table_cache_.get(sin_table_dev_);

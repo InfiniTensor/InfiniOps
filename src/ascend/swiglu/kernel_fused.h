@@ -76,7 +76,8 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Obtain shared temp buffer for the concatenated tensor.
-    auto& cat_arena = ascend::workspacePool().ensure(stream, cat_size_, "temp");
+    auto& cat_arena =
+        ascend::workspacePool().ensure(stream, cat_size_, "temp");
 
     // Lazily build the cat output tensor cache on first call.
     if (!cat_out_cache_) {
@@ -92,8 +93,8 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
       cat_tensor_list_ =
           aclCreateTensorList(const_cast<const aclTensor**>(tensors), 2);
       aclnnCatGetWorkspaceSize(cat_tensor_list_,
-                               static_cast<int64_t>(ndim_ - 1), t_cat, &cat_ws_,
-                               &cat_exec_);
+                               static_cast<int64_t>(ndim_ - 1), t_cat,
+                               &cat_ws_, &cat_exec_);
       aclSetAclOpExecutorRepeatable(cat_exec_);
     } else {
       // The tensor list references the same `aclTensor*` objects whose data

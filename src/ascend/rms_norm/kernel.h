@@ -22,7 +22,7 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
         in_cache_(input),
         weight_cache_(weight),
         out_cache_(out) {
-    // `aclnnRmsNorm` writes `rstd` as a required side output.
+    // aclnnRmsNorm writes rstd as a required side output.
     // Size computed here; buffer obtained from pool in `operator()`.
     rstd_shape_ = {static_cast<int64_t>(batch_size_),
                    static_cast<int64_t>(nhead_)};
@@ -47,9 +47,10 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
 
     // Lazily create rstd tensor descriptor on first call.
     if (!rstd_tensor_) {
-      rstd_tensor_ = aclCreateTensor(rstd_shape_.data(), 2, ACL_FLOAT,
-                                     /*strides=*/nullptr, 0, ACL_FORMAT_ND,
-                                     rstd_shape_.data(), 2, rstd_arena.buf);
+      rstd_tensor_ = aclCreateTensor(
+          rstd_shape_.data(), 2, ACL_FLOAT,
+          /*strides=*/nullptr, 0, ACL_FORMAT_ND, rstd_shape_.data(), 2,
+          rstd_arena.buf);
     } else {
       aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf);
     }

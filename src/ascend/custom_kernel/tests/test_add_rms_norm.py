@@ -1,9 +1,23 @@
 """Correctness tests for custom AscendC add_rms_norm kernel."""
 
-import pytest
 import torch
 import torch_npu  # noqa: F401  Registers NPU device.
-import ascend_kernel  # noqa: F401  Loads `libascend_kernel.so` into `torch.ops.npu`.
+import pytest
+
+
+def _load_custom_kernel():
+    """Load the custom kernel shared library."""
+    import ctypes
+    import glob
+    import os
+
+    lib_dir = os.path.join(os.path.dirname(__file__), "..", "output")
+    libs = glob.glob(os.path.join(lib_dir, "libascend_kernel.so"))
+    assert libs, f"No libascend_kernel.so found in {lib_dir}"
+    ctypes.CDLL(libs[0])
+
+
+_load_custom_kernel()
 
 
 def _ref_add_rms_norm(x1, x2, weight, eps):
@@ -57,7 +71,7 @@ def test_add_rms_norm_correctness(dtype, shape):
         f"x_out mismatch: max_diff={(x_out_npu.cpu() - x_out_ref).abs().max().item()}"
     )
 
-    # Check `y = rms_norm(x_out) * weight`.
+    # Check y = rms_norm(x_out) * weight.
     rtol = 1e-3 if dtype == torch.float16 else 1e-5
     atol = 1e-3 if dtype == torch.float16 else 1e-5
     assert torch.allclose(y_npu.cpu(), y_ref, rtol=rtol, atol=atol), (

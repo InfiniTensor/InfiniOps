@@ -73,8 +73,8 @@ class AclTensorCache {
  public:
   AclTensorCache() = default;
 
-  // Construct from explicit metadata (for device buffers not wrapped in
-  // Tensor). Computes contiguous strides from shape.
+  // Construct from explicit metadata (for device buffers not wrapped in Tensor).
+  // Computes contiguous strides from shape.
   AclTensorCache(std::vector<int64_t> shape, aclDataType dtype, void* data)
       : shape_(std::move(shape)), dtype_(dtype) {
     strides_.resize(shape_.size());
