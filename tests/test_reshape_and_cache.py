@@ -4,8 +4,8 @@ import torch
 
 from tests.utils import Payload, get_npu_stream, randn_strided
 
-# `ReshapeAndCache` only works on NPU (`aclrtMemcpy`-based), so tests only
-# parametrize on `float16`/`bfloat16` and use explicit device parametrization.
+# ReshapeAndCache only works on NPU (aclrtMemcpy-based), so tests only
+# parametrize on float16/bfloat16 and use explicit device parametrization.
 
 
 @pytest.mark.auto_act_and_assert
@@ -18,6 +18,7 @@ from tests.utils import Payload, get_npu_stream, randn_strided
         (16, 2, 128, 8, 64),
     ),
 )
+@pytest.mark.parametrize("implementation_index", (0, 1, 2))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -32,6 +33,7 @@ def test_reshape_and_cache_contiguous(
     head_size,
     num_blocks,
     block_size,
+    implementation_index,
     dtype,
     rtol,
     atol,
@@ -39,6 +41,11 @@ def test_reshape_and_cache_contiguous(
 ):
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
+
+    active_indices = infini.ops.ReshapeAndCache.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     key = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
@@ -57,7 +64,9 @@ def test_reshape_and_cache_contiguous(
     slot_mapping = torch.arange(num_tokens, dtype=torch.int64, device=device)
 
     return Payload(
-        _reshape_and_cache,
+        lambda *args, **kwargs: _reshape_and_cache(
+            *args, **kwargs, implementation_index=implementation_index
+        ),
         _ref_reshape_and_cache,
         (key, value, kv_cache, slot_mapping, kv_cache),
         {},
@@ -74,6 +83,7 @@ def test_reshape_and_cache_contiguous(
         (8, 4, 64, 8, 32),
     ),
 )
+@pytest.mark.parametrize("implementation_index", (0, 1, 2))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -88,6 +98,7 @@ def test_reshape_and_cache_noncontiguous_slots(
     head_size,
     num_blocks,
     block_size,
+    implementation_index,
     dtype,
     rtol,
     atol,
@@ -95,6 +106,11 @@ def test_reshape_and_cache_noncontiguous_slots(
 ):
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
+
+    active_indices = infini.ops.ReshapeAndCache.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     key = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
@@ -113,7 +129,9 @@ def test_reshape_and_cache_noncontiguous_slots(
     )
 
     return Payload(
-        _reshape_and_cache,
+        lambda *args, **kwargs: _reshape_and_cache(
+            *args, **kwargs, implementation_index=implementation_index
+        ),
         _ref_reshape_and_cache,
         (key, value, kv_cache, slot_mapping, kv_cache),
         {},
@@ -122,13 +140,28 @@ def test_reshape_and_cache_noncontiguous_slots(
     )
 
 
-def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out):
+def _reshape_and_cache(
+    key, value, kv_cache, slot_mapping, kv_cache_out, implementation_index=0
+):
     if key.device.type == "npu":
         infini.ops.reshape_and_cache(
-            key, value, kv_cache, slot_mapping, kv_cache_out, stream=get_npu_stream(key)
+            key,
+            value,
+            kv_cache,
+            slot_mapping,
+            kv_cache_out,
+            implementation_index=implementation_index,
+            stream=get_npu_stream(key),
         )
     else:
-        infini.ops.reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out)
+        infini.ops.reshape_and_cache(
+            key,
+            value,
+            kv_cache,
+            slot_mapping,
+            kv_cache_out,
+            implementation_index=implementation_index,
+        )
 
     return kv_cache_out
 

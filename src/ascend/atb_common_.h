@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "ascend/data_type_.h"
 #include "atb/context.h"
 #include "atb/operation.h"
 #include "atb/types.h"
+#include "ascend/data_type_.h"
 #include "tensor.h"
 
 namespace infini::ops::ascend {

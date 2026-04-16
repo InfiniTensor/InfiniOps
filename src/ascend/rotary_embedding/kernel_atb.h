@@ -10,14 +10,16 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "ascend/atb_common_.h"
+#include "aclnn/aclnn_base.h"
+#include "aclnnop/aclnn_index_select.h"
 #include "ascend/common.h"
-#include "ascend/rotary_embedding/registry.h"
-#include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
 #include "atb/operation.h"
 #include "atb/types.h"
+#include "ascend/atb_common_.h"
+#include "ascend/rotary_embedding/registry.h"
+#include "ascend/workspace_pool_.h"
 #include "base/rotary_embedding.h"
 #include "operator.h"
 
@@ -26,25 +28,26 @@ namespace infini::ops {
 // ATB-based rotary position embedding (implementation index 1).
 //
 // Wraps ATB `RopeParam` which applies rotary embedding in a single fused
-// kernel.  ATB Rope handles position gathering internally, eliminating
-// the 2x `aclnnIndexSelect` calls that produce ~62k GatherV3+Slice
-// kernels per inference step in the CANN path (index=0).
+// kernel, eliminating the per-token V2 decomposition in the CANN path
+// (index=0).
 //
-// ATB Rope expects 5 inputs and 2 outputs:
-//   inTensors[0] = query        [num_tokens, hiddenSizeQ]
-//   inTensors[1] = key          [num_tokens, hiddenSizeK]
-//   inTensors[2] = cos_table    [max_seq_len, headDim]
-//   inTensors[3] = sin_table    [max_seq_len, headDim]
-//   inTensors[4] = seq_len      [num_tokens] (int32, position indices)
-//   outTensors[0] = query_out   [num_tokens, hiddenSizeQ]
-//   outTensors[1] = key_out     [num_tokens, hiddenSizeK]
+// ATB Rope with `rotaryCoeff=2`, `cosFormat=0` expects 5 inputs / 2 outputs:
+//   inTensors[0] = query      [T, hiddenSizeQ]
+//   inTensors[1] = key        [T, hiddenSizeK]
+//   inTensors[2] = cos        [T, headDim]   — pre-gathered per-token cos
+//   inTensors[3] = sin        [T, headDim]   — pre-gathered per-token sin
+//   inTensors[4] = seqlen     [batch]        — per-batch sequence lengths
+//   outTensors[0] = query_out [T, hiddenSizeQ]
+//   outTensors[1] = key_out   [T, hiddenSizeK]
 //
-// The constructor splits the cos_sin_cache into separate cos/sin
-// device tables [max_seq_len, headDim] with neox expansion.
+// This implementation gathers cos/sin from pre-expanded `[max_seq_len, D]`
+// tables using `aclnnIndexSelect` on the position indices, then passes the
+// gathered `[T, D]` tensors to ATB Rope.  The `seqlen` input is a single
+// int32 element equal to T (all tokens treated as one batch).
 //
 // Restrictions:
 //   - rotary_dim must equal head_size (full rotation only).
-//   - is_neox_style must be true (`rotaryCoeff`=2).
+//   - is_neox_style must be true (rotaryCoeff=2).
 //   - fp16 only (ATB inference constraint).
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
@@ -56,9 +59,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out) {
     assert(rotary_dim == head_size &&
-           "ATB `RotaryEmbedding` requires `rotary_dim` == `head_size`");
+           "ATB `RotaryEmbedding` requires rotary_dim == head_size");
     assert(is_neox_style &&
-           "ATB `RotaryEmbedding` requires neox style (`rotaryCoeff`=2)");
+           "ATB `RotaryEmbedding` requires neox style (rotaryCoeff=2)");
 
     const int64_t max_seq_len = cos_sin_cache.size(0);
     const int64_t D = head_size_;
@@ -74,7 +77,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     aclrtMemcpy(cache_host.data(), table_bytes, cos_sin_cache.data(),
                 table_bytes, ACL_MEMCPY_DEVICE_TO_HOST);
 
-    // ATB Rope with `rotaryCoeff`=2 expects cos/sin of shape [S, D].
+    // ATB Rope with rotaryCoeff=2 expects cos/sin of shape [T, D].
     // Neox-style expansion: [c0..c_{hD-1}, c0..c_{hD-1}].
     std::vector<uint8_t> cos_host(table_bytes);
     std::vector<uint8_t> sin_host(table_bytes);
@@ -83,18 +86,23 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       for (int64_t j = 0; j < half_D; ++j) {
         const auto* c_src =
             cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
-        const auto* s_src = cache_host.data() +
-                            static_cast<size_t>(p * D + half_D + j) * elem_sz;
+        const auto* s_src =
+            cache_host.data() +
+            static_cast<size_t>(p * D + half_D + j) * elem_sz;
 
-        std::memcpy(cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-                    c_src, elem_sz);
         std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz, c_src,
+            elem_sz);
+        std::memcpy(
+            cos_host.data() +
+                static_cast<size_t>(p * D + half_D + j) * elem_sz,
             c_src, elem_sz);
-        std::memcpy(sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-                    s_src, elem_sz);
         std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz, s_src,
+            elem_sz);
+        std::memcpy(
+            sin_host.data() +
+                static_cast<size_t>(p * D + half_D + j) * elem_sz,
             s_src, elem_sz);
       }
     }
@@ -108,18 +116,37 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                 ACL_MEMCPY_HOST_TO_DEVICE);
 
     // Cache shapes and metadata.
-    // Query/key may be 2D [T, N*D] or 3D [T, N, D].  Derive the total hidden
-    // size directly from the tensor to handle both layouts.
     const int64_t T = num_tokens_;
     int64_t hiddenQ = static_cast<int64_t>(query.numel()) / T;
     int64_t hiddenK = static_cast<int64_t>(key.numel()) / T;
     q_2d_shape_ = {T, hiddenQ};
     k_2d_shape_ = {T, hiddenK};
-    cos_sin_table_shape_ = {max_seq_len, D};
-    pos_shape_ = {T};
+    cos_sin_gathered_shape_ = {T, D};
+    seqlen_shape_ = {1};
     acl_dt_ = ascend::toAclDtype(query.dtype());
     elem_size_ = static_cast<uint64_t>(elem_sz);
     max_seq_len_ = max_seq_len;
+
+    // Allocate gathered cos/sin buffers [T, D] — filled by aclnnIndexSelect.
+    size_t gathered_bytes = static_cast<size_t>(T * D) * elem_sz;
+    aclrtMalloc(&cos_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+    aclrtMalloc(&sin_dev_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+
+    // Allocate seqlen buffer: 1 int32 element holding T.
+    aclrtMalloc(&seqlen_dev_, sizeof(int32_t), ACL_MEM_MALLOC_NORMAL_ONLY);
+    int32_t seqlen_val = static_cast<int32_t>(T);
+    aclrtMemcpy(seqlen_dev_, sizeof(int32_t), &seqlen_val, sizeof(int32_t),
+                ACL_MEMCPY_HOST_TO_DEVICE);
+
+    // IndexSelect descriptor caches: table ptrs stable, positions ptr varies.
+    cos_table_cache_ = ascend::AclTensorCache(
+        {max_seq_len, D}, acl_dt_, cos_table_dev_);
+    sin_table_cache_ = ascend::AclTensorCache(
+        {max_seq_len, D}, acl_dt_, sin_table_dev_);
+    idx_cache_ = ascend::AclTensorCache(
+        {T}, ACL_INT64, const_cast<void*>(positions.data()));
+    cos_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, cos_dev_);
+    sin_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, sin_dev_);
 
     // Create the ATB Rope operation.
     atb::infer::RopeParam param;
@@ -132,10 +159,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
+
+    if (idx_cos_exec_) aclDestroyAclOpExecutor(idx_cos_exec_);
+    if (idx_sin_exec_) aclDestroyAclOpExecutor(idx_sin_exec_);
     if (op_) atb::DestroyOperation(op_);
     if (cos_table_dev_) aclrtFree(cos_table_dev_);
     if (sin_table_dev_) aclrtFree(sin_table_dev_);
-    if (pos_buf_dev_) aclrtFree(pos_buf_dev_);
+    if (cos_dev_) aclrtFree(cos_dev_);
+    if (sin_dev_) aclrtFree(sin_dev_);
+    if (seqlen_dev_) aclrtFree(seqlen_dev_);
   }
 
   Operator(const Operator&) = delete;
@@ -151,12 +183,45 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     int64_t T = query.size(0);
     int64_t D = head_size;
 
-    // Query/key may be 2D [T, N*D] or 3D [T, N, D].  Compute total hidden
-    // sizes from the tensor element count to handle both layouts.
+    // Compute total hidden sizes for the 2D view expected by ATB Rope.
+    // Works for both 2D `[T, N*D]` and 3D `[T, N, D]` input.
     int64_t hiddenQ = static_cast<int64_t>(query.numel()) / T;
     int64_t hiddenK = static_cast<int64_t>(key.numel()) / T;
 
-    // Copy q→q_out, k→k_out if not in-place.
+    // Step 1: Gather cos/sin by positions via aclnnIndexSelect (async).
+    {
+      auto t_cos_table = cos_table_cache_.get(cos_table_dev_);
+      auto t_sin_table = sin_table_cache_.get(sin_table_dev_);
+      auto t_idx = idx_cache_.get(const_cast<void*>(positions.data()));
+      auto t_cos_out = cos_out_cache_.get(cos_dev_);
+      auto t_sin_out = sin_out_cache_.get(sin_dev_);
+
+      if (!idx_cos_exec_) {
+        aclnnIndexSelectGetWorkspaceSize(t_cos_table, 0, t_idx, t_cos_out,
+                                         &idx_cos_ws_, &idx_cos_exec_);
+        aclSetAclOpExecutorRepeatable(idx_cos_exec_);
+      } else {
+        aclSetInputTensorAddr(idx_cos_exec_, 1, t_idx,
+                              const_cast<void*>(positions.data()));
+      }
+
+      if (!idx_sin_exec_) {
+        aclnnIndexSelectGetWorkspaceSize(t_sin_table, 0, t_idx, t_sin_out,
+                                         &idx_sin_ws_, &idx_sin_exec_);
+        aclSetAclOpExecutorRepeatable(idx_sin_exec_);
+      } else {
+        aclSetInputTensorAddr(idx_sin_exec_, 1, t_idx,
+                              const_cast<void*>(positions.data()));
+      }
+
+      uint64_t ws_max = idx_cos_ws_ > idx_sin_ws_ ? idx_cos_ws_ : idx_sin_ws_;
+      auto& arena = ascend::workspacePool().ensure(stream, ws_max);
+
+      aclnnIndexSelect(arena.buf, idx_cos_ws_, idx_cos_exec_, stream);
+      aclnnIndexSelect(arena.buf, idx_sin_ws_, idx_sin_exec_, stream);
+    }
+
+    // Step 2: Copy q->q_out, k->k_out if not in-place.
     size_t elem_sz = query.element_size();
 
     if (query.data() != query_out.data()) {
@@ -173,67 +238,36 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
 
-    // Provide int32 positions to ATB.  When the caller pre-casts to int32
-    // (required for NPU graph capture), a device-to-device copy suffices.
-    // The D2H+sync fallback remains for standalone tests with int64 positions.
-    size_t pos32_bytes = static_cast<size_t>(T) * sizeof(int32_t);
-
-    if (pos32_bytes > pos_buf_size_) {
-      if (pos_buf_dev_) aclrtFree(pos_buf_dev_);
-      aclrtMalloc(&pos_buf_dev_, pos32_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-      pos_buf_size_ = pos32_bytes;
-    }
-
-    if (positions.element_size() == sizeof(int32_t)) {
-      // Already int32 — async D2D copy, graph-compatible.
-      aclrtMemcpyAsync(pos_buf_dev_, pos32_bytes, positions.data(), pos32_bytes,
-                       ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
-    } else {
-      // int64 fallback — D2H, CPU cast, H2D (not graph-compatible).
-      std::vector<int64_t> pos_i64(static_cast<size_t>(T));
-      aclrtMemcpyAsync(pos_i64.data(), static_cast<size_t>(T) * sizeof(int64_t),
-                       positions.data(),
-                       static_cast<size_t>(T) * sizeof(int64_t),
-                       ACL_MEMCPY_DEVICE_TO_HOST, stream);
-      aclrtSynchronizeStream(stream);
-
-      std::vector<int32_t> pos_i32(static_cast<size_t>(T));
-
-      for (int64_t i = 0; i < T; ++i) {
-        pos_i32[static_cast<size_t>(i)] =
-            static_cast<int32_t>(pos_i64[static_cast<size_t>(i)]);
-      }
-
-      aclrtMemcpyAsync(pos_buf_dev_, pos32_bytes, pos_i32.data(), pos32_bytes,
-                       ACL_MEMCPY_HOST_TO_DEVICE, stream);
-    }
-
-    // Build ATB `VariantPack` with 5 inputs + 2 outputs.
+    // Step 3: Build ATB VariantPack with 5 inputs + 2 outputs.
+    // Inputs: q_out [T, hiddenQ], k_out [T, hiddenK],
+    //         cos [T, D], sin [T, D], seqlen [1].
+    // Outputs: q_out [T, hiddenQ], k_out [T, hiddenK].
     atb::Context* ctx = ascend::getAtbContext(stream);
 
     uint64_t q_bytes = static_cast<uint64_t>(T * hiddenQ) * elem_size_;
     uint64_t k_bytes = static_cast<uint64_t>(T * hiddenK) * elem_size_;
-    uint64_t table_bytes = static_cast<uint64_t>(max_seq_len_ * D) * elem_size_;
+    uint64_t gathered_bytes = static_cast<uint64_t>(T * D) * elem_size_;
 
     atb::Tensor t_q =
         ascend::toAtbTensor(q_2d_shape_, acl_dt_, query_out.data(), q_bytes);
     atb::Tensor t_k =
         ascend::toAtbTensor(k_2d_shape_, acl_dt_, key_out.data(), k_bytes);
-    atb::Tensor t_cos = ascend::toAtbTensor(cos_sin_table_shape_, acl_dt_,
-                                            cos_table_dev_, table_bytes);
-    atb::Tensor t_sin = ascend::toAtbTensor(cos_sin_table_shape_, acl_dt_,
-                                            sin_table_dev_, table_bytes);
-    atb::Tensor t_pos =
-        ascend::toAtbTensor(pos_shape_, ACL_INT32, pos_buf_dev_, pos32_bytes);
+    atb::Tensor t_cos = ascend::toAtbTensor(cos_sin_gathered_shape_, acl_dt_,
+                                            cos_dev_, gathered_bytes);
+    atb::Tensor t_sin = ascend::toAtbTensor(cos_sin_gathered_shape_, acl_dt_,
+                                            sin_dev_, gathered_bytes);
+    atb::Tensor t_seqlen = ascend::toAtbTensor(
+        seqlen_shape_, ACL_INT32, seqlen_dev_,
+        static_cast<uint64_t>(sizeof(int32_t)));
 
     atb::VariantPack vp;
-    vp.inTensors = {t_q, t_k, t_cos, t_sin, t_pos};
+    vp.inTensors = {t_q, t_k, t_cos, t_sin, t_seqlen};
     vp.outTensors = {t_q, t_k};
 
     uint64_t ws_size = 0;
     atb::Status s = op_->Setup(vp, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB rope setup failed");
+    assert(s == atb::NO_ERROR && "ATB Rope Setup failed");
 
     uint8_t* ws_ptr = nullptr;
 
@@ -244,7 +278,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     s = op_->Execute(vp, ws_ptr, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB rope execute failed");
+    assert(s == atb::NO_ERROR && "ATB Rope Execute failed");
   }
 
  private:
@@ -255,19 +289,42 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
   void* sin_table_dev_ = nullptr;
 
-  // Reusable int32 positions buffer on device.
-  mutable void* pos_buf_dev_ = nullptr;
+  // Device buffers for gathered [T, D] cos/sin.
+  void* cos_dev_ = nullptr;
 
-  mutable size_t pos_buf_size_ = 0;
+  void* sin_dev_ = nullptr;
 
-  // Cached shapes for ATB `VariantPack`.
+  // Device buffer for seqlen: 1 int32 element holding T.
+  void* seqlen_dev_ = nullptr;
+
+  // IndexSelect descriptor caches.
+  mutable ascend::AclTensorCache cos_table_cache_;
+
+  mutable ascend::AclTensorCache sin_table_cache_;
+
+  mutable ascend::AclTensorCache idx_cache_;
+
+  mutable ascend::AclTensorCache cos_out_cache_;
+
+  mutable ascend::AclTensorCache sin_out_cache_;
+
+  // Cached IndexSelect executors.
+  mutable aclOpExecutor* idx_cos_exec_ = nullptr;
+
+  mutable uint64_t idx_cos_ws_ = 0;
+
+  mutable aclOpExecutor* idx_sin_exec_ = nullptr;
+
+  mutable uint64_t idx_sin_ws_ = 0;
+
+  // Cached shapes for ATB VariantPack.
   std::vector<int64_t> q_2d_shape_;
 
   std::vector<int64_t> k_2d_shape_;
 
-  std::vector<int64_t> cos_sin_table_shape_;
+  std::vector<int64_t> cos_sin_gathered_shape_;
 
-  std::vector<int64_t> pos_shape_;
+  std::vector<int64_t> seqlen_shape_;
 
   aclDataType acl_dt_ = ACL_DT_UNDEFINED;
 

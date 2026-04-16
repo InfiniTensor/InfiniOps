@@ -8,14 +8,14 @@
 #include <cstdint>
 
 #include "acl/acl.h"
-#include "ascend/atb_common_.h"
-#include "ascend/common.h"
-#include "ascend/reshape_and_cache/registry.h"
-#include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
 #include "atb/operation.h"
 #include "atb/types.h"
+#include "ascend/atb_common_.h"
+#include "ascend/common.h"
+#include "ascend/reshape_and_cache/registry.h"
+#include "ascend/workspace_pool_.h"
 #include "base/reshape_and_cache.h"
 #include "operator.h"
 
@@ -29,7 +29,7 @@ namespace infini::ops {
 // `aclnnInplaceIndexCopy` path (index 0, ~35 us).
 //
 // The ATB operation is created once in the constructor.  Setup is called
-// before each `Execute` to bind the `VariantPack`.
+// before each Execute to bind the VariantPack.
 //
 // NOTE: `ReshapeAndCacheParam` requires int32 `slot_mapping`.  When the
 // caller passes int64 (the default in PyTorch / vLLM), this operator casts
@@ -57,7 +57,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
     int64_t hs = static_cast<int64_t>(head_size_);
     int64_t T = static_cast<int64_t>(num_tokens_);
 
-    // Cache shapes for rebuilding `VariantPack` on each call.
+    // Cache shapes for rebuilding VariantPack on each call.
     kv_shape_ = {num_blocks, bs, nkv, hs};
     key_shape_ = {T, nkv, hs};
     slot_shape_ = {T};
@@ -82,8 +82,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
     // Create the ATB operation (reused across calls).
     atb::infer::ReshapeAndCacheParam param;
     atb::Status s = atb::CreateOperation(param, &op_);
-    assert(s == atb::NO_ERROR &&
-           "atb::CreateOperation(ReshapeAndCache) failed");
+    assert(s == atb::NO_ERROR && "atb::CreateOperation(ReshapeAndCache) failed");
   }
 
   ~Operator() {
@@ -130,11 +129,13 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
 
     atb::Context* ctx = ascend::getAtbContext(stream);
 
-    atb::VariantPack vp = buildVariantPack(const_cast<void*>(key.data()),
-                                           const_cast<void*>(value.data()),
-                                           kv_cache_out.data(), slot32_ptr);
+    atb::VariantPack vp = buildVariantPack(
+        const_cast<void*>(key.data()),
+        const_cast<void*>(value.data()),
+        kv_cache_out.data(),
+        slot32_ptr);
 
-    // `Setup` binds the `VariantPack` and computes workspace requirements.
+    // Setup binds the VariantPack and computes workspace requirements.
     uint64_t ws_size = 0;
     atb::Status s = op_->Setup(vp, ws_size, ctx);
     assert(s == atb::NO_ERROR &&
@@ -154,14 +155,14 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
   }
 
  private:
-  // Build the ATB `VariantPack` for this operation.
+  // Build the ATB VariantPack for this operation.
   //
   // ATB `ReshapeAndCache` expects 5 inputs and 2 outputs:
   //   inTensors[0] = key         [num_tokens, num_kv_heads, head_size]
   //   inTensors[1] = value       [num_tokens, num_kv_heads, head_size]
-  //   inTensors[2] = key_cache   [num_blocks, block_size, num_kv_heads,
-  //   head_size] inTensors[3] = value_cache [num_blocks, block_size,
-  //   num_kv_heads, head_size] inTensors[4] = slot_mapping [num_tokens] (int32)
+  //   inTensors[2] = key_cache   [num_blocks, block_size, num_kv_heads, head_size]
+  //   inTensors[3] = value_cache [num_blocks, block_size, num_kv_heads, head_size]
+  //   inTensors[4] = slot_mapping [num_tokens] (int32)
   //   outTensors[0] = key_cache   (same buffer, in-place)
   //   outTensors[1] = value_cache (same buffer, in-place)
   atb::VariantPack buildVariantPack(void* key_data, void* value_data,
@@ -193,8 +194,8 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
         ascend::toAtbTensor(kv_shape_, acl_dt_, v_out_data, cache_bytes);
 
     // Always int32 — the caller's `operator()` has already cast to int32.
-    atb::Tensor t_slot =
-        ascend::toAtbTensor(slot_shape_, ACL_INT32, slot32_data, slot32_bytes_);
+    atb::Tensor t_slot = ascend::toAtbTensor(
+        slot_shape_, ACL_INT32, slot32_data, slot32_bytes_);
 
     atb::VariantPack vp;
     vp.inTensors = {t_key, t_value, t_kv_k, t_kv_v, t_slot};

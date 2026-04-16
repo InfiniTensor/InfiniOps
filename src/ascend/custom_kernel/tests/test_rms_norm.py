@@ -3,7 +3,7 @@
 import pytest
 import torch
 import torch_npu  # noqa: F401  Registers NPU device.
-import ascend_kernel  # noqa: F401  Loads `libascend_kernel.so` into `torch.ops.npu`.
+import ascend_kernel  # noqa: F401  Loads libascend_kernel.so into torch.ops.npu.
 
 
 def rms_norm_ref(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:

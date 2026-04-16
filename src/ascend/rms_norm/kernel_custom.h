@@ -21,10 +21,11 @@
 // built from `ascend/custom_kernel/csrc/ops/rms_norm/op_kernel/rms_norm.cpp`
 // via `ascendc_library()`.
 extern "C" uint32_t aclrtlaunch_rms_norm(
-    uint32_t blockDim, void* stream, void* x, void* weight, void* y,
+    uint32_t blockDim, void* stream,
+    void* x, void* weight, void* y,
     int64_t totalRows, int64_t dimLength, int64_t dimLengthAlign,
-    int64_t formerNum, int64_t formerLength, int64_t tailLength, float eps,
-    int64_t dtypeSize);
+    int64_t formerNum, int64_t formerLength, int64_t tailLength,
+    float eps, int64_t dtypeSize);
 
 namespace infini::ops {
 
@@ -58,10 +59,10 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
         ((static_cast<int64_t>(dim_) + align_elems - 1) / align_elems) *
         align_elems;
     assert(static_cast<int64_t>(dim_) == dim_length_align_ &&
-           "custom `RmsNorm` kernel requires 32-byte aligned last dimension");
+           "Custom RmsNorm kernel requires 32-byte aligned last dimension");
 
-    total_rows_ =
-        static_cast<int64_t>(batch_size_) * static_cast<int64_t>(nhead_);
+    total_rows_ = static_cast<int64_t>(batch_size_) *
+                  static_cast<int64_t>(nhead_);
 
     // For fp16 input, weight needs fp32 conversion because the custom
     // kernel always reads weight as fp32.
@@ -70,15 +71,16 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
     if (needs_weight_cast_) {
       // Allocate persistent fp32 weight buffer on device.
       size_t fp32_bytes = static_cast<size_t>(dim_) * sizeof(float);
-      aclrtMalloc(&weight_fp32_data_, fp32_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+      aclrtMalloc(&weight_fp32_data_, fp32_bytes,
+                  ACL_MEM_MALLOC_NORMAL_ONLY);
 
       // AclTensorCache for the cast source (fp16 weight descriptor).
-      weight_src_cache_ = ascend::AclTensorCache({static_cast<int64_t>(dim_)},
-                                                 ACL_FLOAT16, nullptr);
+      weight_src_cache_ = ascend::AclTensorCache(
+          {static_cast<int64_t>(dim_)}, ACL_FLOAT16, nullptr);
 
       // AclTensorCache for the cast destination (fp32 weight buffer).
-      weight_dst_cache_ = ascend::AclTensorCache({static_cast<int64_t>(dim_)},
-                                                 ACL_FLOAT, weight_fp32_data_);
+      weight_dst_cache_ = ascend::AclTensorCache(
+          {static_cast<int64_t>(dim_)}, ACL_FLOAT, weight_fp32_data_);
     }
   }
 
@@ -96,7 +98,8 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
 
     if (needs_weight_cast_) {
       // Cast weight fp16 -> fp32 using cached ACLNN executor.
-      auto t_src = weight_src_cache_.get(const_cast<void*>(weight.data()));
+      auto t_src =
+          weight_src_cache_.get(const_cast<void*>(weight.data()));
       auto t_dst = weight_dst_cache_.get(weight_fp32_data_);
 
       if (!cast_exec_) {
@@ -123,16 +126,23 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
     // though slightly sub-optimal due to per-block weight loading.
     static constexpr int64_t kMaxBlockDim = 40;
     int64_t used_cores = std::min(total_rows_, kMaxBlockDim);
-    int64_t former_length = (total_rows_ + used_cores - 1) / used_cores;
+    int64_t former_length =
+        (total_rows_ + used_cores - 1) / used_cores;
     int64_t tail_length = former_length - 1;
     int64_t former_num = total_rows_ - tail_length * used_cores;
     uint32_t block_dim = static_cast<uint32_t>(used_cores);
 
     // Launch custom AscendC kernel.
     aclrtlaunch_rms_norm(
-        block_dim, stream, const_cast<void*>(input.data()), weight_fp32,
-        out.data(), total_rows_, static_cast<int64_t>(dim_), dim_length_align_,
-        former_num, former_length, tail_length, eps, dtype_size_);
+        block_dim, stream,
+        const_cast<void*>(input.data()),
+        weight_fp32,
+        out.data(),
+        total_rows_,
+        static_cast<int64_t>(dim_),
+        dim_length_align_,
+        former_num, former_length, tail_length,
+        eps, dtype_size_);
   }
 
  private:
