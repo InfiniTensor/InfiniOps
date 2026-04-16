@@ -247,7 +247,7 @@ if(WITH_ASCEND)
         # Link the compiled AscendC kernel objects into infiniops so that
         # custom kernel implementations (e.g. RmsNorm index 1) can call
         # them via the generated launch functions.
-        target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_RMS_NORM=1)
+        target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
     endif()
 endif()
 

@@ -18,6 +18,11 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
+# Default OFF until CANN's `extract_host_stub.py` path handling is fixed for
+# `scikit-build-core` temp-dir builds (triggers `KeyError` on the preprocessed
+# object path). Enable explicitly with `-DBUILD_CUSTOM_KERNEL=ON` when the
+# toolchain is compatible or when building via the standalone
+# `src/ascend/custom_kernel/build.sh` script.
 option(BUILD_CUSTOM_KERNEL "Build custom AscendC kernel PyTorch extension (requires torch_npu)" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
