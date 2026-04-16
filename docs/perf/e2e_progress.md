@@ -18,6 +18,10 @@ Columns: total tokens per second (infini / ascend), ratio, and notes.
 | 2026-04-17 | `7b6099f` | 3B   | eager     |  5,290.7 |  6,690.4 | 79.08% | Baseline. One pp below target — easiest to clear first. |
 | 2026-04-17 | `7b6099f` | 3B   | piecewise |  5,299.1 | 10,147.6 | 52.22% | Baseline. infini graph speedup ~1.00x vs ascend 1.52x. |
 | 2026-04-17 | `691f429` | 3B   | piecewise(fa) |  5,405.5 | 10,147.6 | 53.27% | `INFINI_DECODE_ATTENTION=fa` +2.0% on 3B; no-op on 0.5B. |
+| 2026-04-17 | `c5593db` | 0.5B | eager     |  9,365.8 | 10,150.9 | **92.26%** | Stream-ptr cache lands. 3B 6/6 exact; 0.5B 5/6 (divergence moves from token 57 to 0, still coherent). |
+| 2026-04-17 | `c5593db` | 0.5B | piecewise | 10,251.3 | 15,525.2 | **66.03%** | Same commit. |
+| 2026-04-17 | `c5593db` | 3B   | eager     |  6,185.9 |  6,690.4 | **92.47%** | **Clears 80% with margin.** |
+| 2026-04-17 | `c5593db` | 3B   | piecewise |  6,475.1 | 10,147.6 | **63.81%** | Same commit. |
 
 ## Status vs target
 
@@ -75,18 +79,18 @@ See `env_flag_sweep_2026-04-17.md`.
 Side fix: `vllm_infini/_compiler.py` was missing `graph_returns_tuple` import —
 needed for `INFINI_USE_TORCHAIR=1` to load at all.
 
-## Current status vs target (2026-04-17)
+## Current status vs target (2026-04-17, after stream-ptr cache `c5593db`)
 
-Best results so far:
-
-| Model | Mode | infini tok/s | ascend tok/s | Ratio | Gap to 80% |
+| Model | Mode | infini tok/s | ascend tok/s | Ratio | vs 80% |
 | --- | --- | ---: | ---: | ---: | ---: |
-| 0.5B | eager     |  7,188 | 10,151 | 70.82% | -9.2 pp |
-| 0.5B | piecewise |  7,940 | 15,525 | 51.14% | -28.9 pp |
-| 3B   | eager     |  5,291 |  6,690 | 79.08% | **-0.9 pp** |
-| 3B   | piecewise (fa) |  5,406 | 10,148 | 53.27% | -26.7 pp |
+| 0.5B | eager     |  9,366 | 10,151 | **92.26%** | **+12.3 pp** |
+| 0.5B | piecewise | 10,251 | 15,525 | 66.03% | -14.0 pp |
+| 3B   | eager     |  6,186 |  6,690 | **92.47%** | **+12.5 pp** |
+| 3B   | piecewise |  6,475 | 10,148 | 63.81% | -16.2 pp |
 
-3B eager is essentially at target (0.9 pp below). Graph mode is the gating problem on both models, and its root cause is host-side (see `graph_mode_root_cause_2026-04-17.md`).
+**Eager target cleared on both models with margin.** Graph mode still below 80%; closing that gap is the next focus.
+
+Stream-ptr cache detail: see `docs/perf/e2e_host_profile.md`. 0.5B eager correctness went from baseline 5/6 (fp16 drift at token 57) to cached 5/6 (drift from token 0); still coherent text. Can be disabled at runtime via `INFINI_CACHE_STREAM=0`.
 
 ## Next actions (blocked/unblocked)
 
