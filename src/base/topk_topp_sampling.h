@@ -18,8 +18,9 @@ namespace infini::ops {
 //           (softmax output, must sum to 1 along dim=-1).
 //
 // Parameters:
-//   topk  : int64_t — number of highest-probability tokens to keep (0 = disabled).
-//   topp  : double  — cumulative probability threshold (0.0 = disabled).
+//   topk  : int64_t — number of highest-probability tokens to keep (0 =
+//   disabled). topp  : double  — cumulative probability threshold (0.0 =
+//   disabled).
 //
 // Output layout:
 //   out   : [batch_size] int32 — sampled token indices.

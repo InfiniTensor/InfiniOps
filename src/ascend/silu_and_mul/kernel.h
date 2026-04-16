@@ -27,9 +27,7 @@ template <>
 class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
  public:
   Operator(const Tensor x, int64_t dim, Tensor out)
-      : SiluAndMul(x, dim, out),
-        x_cache_(x),
-        out_cache_(out) {
+      : SiluAndMul(x, dim, out), x_cache_(x), out_cache_(out) {
     needs_copy_ = !is_out_contiguous_;
 
     if (needs_copy_) {
@@ -57,8 +55,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
 
       if (!out_staging_cache_) {
         std::vector<int64_t> out_shape(out_shape_.begin(), out_shape_.end());
-        out_staging_cache_.emplace(out_shape,
-                                   ascend::toAclDtype(out_dtype_),
+        out_staging_cache_.emplace(out_shape, ascend::toAclDtype(out_dtype_),
                                    staging.buf);
       }
 
@@ -68,12 +65,11 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
 
     // Call `aclnnSwiGlu`.
     if (!swiglu_exec_) {
-      aclnnSwiGluGetWorkspaceSize(t_x, dim_, t_swiglu_out,
-                                  &swiglu_ws_, &swiglu_exec_);
+      aclnnSwiGluGetWorkspaceSize(t_x, dim_, t_swiglu_out, &swiglu_ws_,
+                                  &swiglu_exec_);
       aclSetAclOpExecutorRepeatable(swiglu_exec_);
     } else {
-      aclSetInputTensorAddr(swiglu_exec_, 0, t_x,
-                            const_cast<void*>(x.data()));
+      aclSetInputTensorAddr(swiglu_exec_, 0, t_x, const_cast<void*>(x.data()));
       aclSetOutputTensorAddr(swiglu_exec_, 0, t_swiglu_out, swiglu_out_data);
     }
 
@@ -83,8 +79,8 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
     // Copy staging buffer back to non-contiguous output if needed.
     if (needs_copy_) {
       if (!copy_exec_) {
-        aclnnInplaceCopyGetWorkspaceSize(t_out, t_swiglu_out,
-                                         &copy_ws_, &copy_exec_);
+        aclnnInplaceCopyGetWorkspaceSize(t_out, t_swiglu_out, &copy_ws_,
+                                         &copy_exec_);
         aclSetAclOpExecutorRepeatable(copy_exec_);
       } else {
         aclSetInputTensorAddr(copy_exec_, 0, t_out, out.data());

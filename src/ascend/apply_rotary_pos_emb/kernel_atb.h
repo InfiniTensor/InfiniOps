@@ -98,8 +98,7 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend, 1>
 
     if (query.data() != query_out.data()) {
       aclrtMemcpyAsync(query_out.data(),
-                       static_cast<size_t>(T * hiddenQ) * elem_sz,
-                       query.data(),
+                       static_cast<size_t>(T * hiddenQ) * elem_sz, query.data(),
                        static_cast<size_t>(T * hiddenQ) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
@@ -126,9 +125,9 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend, 1>
         cos_sin_shape_, acl_dt_, const_cast<void*>(cos.data()), cs_bytes);
     atb::Tensor t_sin = ascend::toAtbTensor(
         cos_sin_shape_, acl_dt_, const_cast<void*>(sin.data()), cs_bytes);
-    atb::Tensor t_seqlen = ascend::toAtbTensor(
-        seqlen_shape_, ACL_INT32, seqlen_dev_,
-        static_cast<uint64_t>(sizeof(int32_t)));
+    atb::Tensor t_seqlen =
+        ascend::toAtbTensor(seqlen_shape_, ACL_INT32, seqlen_dev_,
+                            static_cast<uint64_t>(sizeof(int32_t)));
 
     atb::VariantPack vp;
     vp.inTensors = {t_q, t_k, t_cos, t_sin, t_seqlen};

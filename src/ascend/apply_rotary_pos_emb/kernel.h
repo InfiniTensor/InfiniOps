@@ -49,14 +49,14 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend>
 
     // V2 expects cos/sin as `[T, 1, D]`.  Input is `[T, D]` — same data,
     // different descriptor shape (T*1*D == T*D for contiguous tensors).
-    cos_cache_ = ascend::AclTensorCache(
-        {T, 1, D}, acl_dt, const_cast<void*>(cos.data()));
-    sin_cache_ = ascend::AclTensorCache(
-        {T, 1, D}, acl_dt, const_cast<void*>(sin.data()));
-    q_cache_ = ascend::AclTensorCache(
-        {T, Nq, D}, acl_dt, const_cast<void*>(query_out.data()));
-    k_cache_ = ascend::AclTensorCache(
-        {T, Nkv, D}, acl_dt, const_cast<void*>(key_out.data()));
+    cos_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt,
+                                        const_cast<void*>(cos.data()));
+    sin_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt,
+                                        const_cast<void*>(sin.data()));
+    q_cache_ = ascend::AclTensorCache({T, Nq, D}, acl_dt,
+                                      const_cast<void*>(query_out.data()));
+    k_cache_ = ascend::AclTensorCache({T, Nkv, D}, acl_dt,
+                                      const_cast<void*>(key_out.data()));
   }
 
   ~Operator() {
@@ -105,10 +105,8 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend>
     } else {
       aclSetInputTensorAddr(v2_exec_, 0, t_q, query_out.data());
       aclSetInputTensorAddr(v2_exec_, 1, t_k, key_out.data());
-      aclSetInputTensorAddr(v2_exec_, 2, t_cos,
-                            const_cast<void*>(cos.data()));
-      aclSetInputTensorAddr(v2_exec_, 3, t_sin,
-                            const_cast<void*>(sin.data()));
+      aclSetInputTensorAddr(v2_exec_, 2, t_cos, const_cast<void*>(cos.data()));
+      aclSetInputTensorAddr(v2_exec_, 3, t_sin, const_cast<void*>(sin.data()));
     }
 
     auto& arena = ascend::workspacePool().ensure(stream, v2_ws_);

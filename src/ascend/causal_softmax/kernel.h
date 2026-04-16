@@ -29,9 +29,7 @@ template <>
 class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
  public:
   Operator(const Tensor input, Tensor out)
-      : CausalSoftmax(input, out),
-        in_cache_(input),
-        out_cache_(out) {
+      : CausalSoftmax(input, out), in_cache_(input), out_cache_(out) {
     // Compute temp buffer size — allocated lazily from pool in `operator()`.
     size_t n_elems = input.numel();
     size_t elem_bytes = kDataTypeToSize.at(dtype_);
