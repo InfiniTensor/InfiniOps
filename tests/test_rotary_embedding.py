@@ -5,6 +5,20 @@ import torch
 from tests.utils import get_npu_stream, randn_strided, randint_strided
 
 
+@pytest.fixture(autouse=True)
+def _clear_rotary_cache():
+    """Clear the `RotaryEmbedding` op cache before each test.
+
+    `CacheKey` ignores the `cos_sin_cache` data pointer, so a cached op
+    constructed by a previous test with different cache contents would be
+    reused here.  In production vLLM inference the cache is loaded once,
+    so this pollution is a test-only hazard.
+    """
+    infini.ops.RotaryEmbedding.clear_cache()
+
+    yield
+
+
 def _rotary_embedding(
     positions,
     query,
@@ -16,6 +30,7 @@ def _rotary_embedding(
     query_out,
     key_out,
     device,
+    implementation_index=0,
 ):
     if device == "npu":
         infini.ops.rotary_embedding(
@@ -28,6 +43,7 @@ def _rotary_embedding(
             is_neox_style,
             query_out,
             key_out,
+            implementation_index=implementation_index,
             stream=get_npu_stream(query),
         )
     else:
@@ -115,6 +131,7 @@ def _assert_close(actual, expected, rtol, atol):
     ),
 )
 @pytest.mark.parametrize("is_neox_style", (True, False))
+@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -124,19 +141,36 @@ def _assert_close(actual, expected, rtol, atol):
 )
 @pytest.mark.parametrize("device", ("npu",))
 def test_rotary_embedding_full(
-    num_heads, head_size, is_neox_style, dtype, rtol, atol, device
+    num_heads,
+    head_size,
+    is_neox_style,
+    implementation_index,
+    dtype,
+    rtol,
+    atol,
+    device,
 ):
     """Full rotary: ``rotary_dim == head_size``."""
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
-    if device == "npu" and not is_neox_style:
-        pytest.skip(
-            "Ascend aclnnApplyRotaryPosEmbV2 only supports neox style "
-            "(rotaryMode='half')"
+    if device == "npu":
+        active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(
+            device
         )
 
-    # aclnnApplyRotaryPosEmbV2 accumulates with ~4 ULP error for float16.
+        if implementation_index not in active_indices:
+            pytest.skip(
+                f"Implementation index={implementation_index} not active on this build"
+            )
+
+    if device == "npu" and not is_neox_style:
+        pytest.skip(
+            'Ascend `RotaryEmbedding` wrappers only plumb `rotaryMode="half"` '
+            "through the underlying V2/ATB APIs."
+        )
+
+    # `aclnnApplyRotaryPosEmbV2` accumulates with ~4 ULP error for float16.
     if device == "npu" and dtype == torch.float16:
         atol = 0.01
 
@@ -185,6 +219,7 @@ def test_rotary_embedding_full(
         query_out,
         key_out,
         device,
+        implementation_index=implementation_index,
     )
 
     ref_q, ref_k = _ref_rotary_embedding(

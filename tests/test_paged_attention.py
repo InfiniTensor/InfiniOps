@@ -5,50 +5,33 @@ import torch
 from tests.utils import Payload, get_npu_stream, randn_strided
 
 
-def _atb_pa_available():
-    """Check whether ATB PagedAttention works on the current hardware.
+def _atb_pa_unsupported_reason():
+    """Return a reason string if ATB PagedAttention can't run here, else `""`.
 
-    ATB PA is known to crash during `Setup` on Ascend 910B (CANN 8.5.x).
-    Returns True only when a minimal smoke call succeeds.
+    Uses a narrow SoC-name check rather than a try/except on the op under
+    test — the latter silently masks real regressions by converting any
+    runtime failure in `paged_attention` into a clean skip.
     """
     if not (hasattr(torch, "npu") and torch.npu.is_available()):
-        return False
+        return "NPU not available"
 
     if not infini.ops.PagedAttention.active_implementation_indices("ascend"):
-        return False
+        return "ATB PagedAttention implementation not registered for Ascend"
 
-    try:
-        B, N, Nkv, D, bs = 1, 4, 4, 64, 16
-        q = torch.randn(B, N, D, dtype=torch.float16, device="npu")
-        kc = torch.randn(1, bs, Nkv, D, dtype=torch.float16, device="npu")
-        vc = torch.randn(1, bs, Nkv, D, dtype=torch.float16, device="npu")
-        bt = torch.zeros(B, 1, dtype=torch.int32, device="npu")
-        sl = torch.tensor([bs], dtype=torch.int32, device="npu")
-        o = torch.zeros(B, N, D, dtype=torch.float16, device="npu")
-        infini.ops.paged_attention(
-            q,
-            kc,
-            vc,
-            sl,
-            bt,
-            N,
-            Nkv,
-            D,
-            1.0 / D**0.5,
-            bs,
-            o,
-            stream=get_npu_stream(q),
-        )
-        torch.npu.synchronize()
+    # ATB PA crashes during `Setup` on Ascend 910B (CANN 8.5.x).  Other
+    # SoCs (Atlas A5 SoC 260) are known to work.  Extend the blacklist as
+    # more bad SoCs are identified.
+    name = torch.npu.get_device_name(0)
 
-        return True
-    except Exception:
-        return False
+    if "910B" in name:
+        return f"ATB PagedAttention crashes on {name} with CANN 8.5.x"
+
+    return ""
 
 
 _skip_no_atb_pa = pytest.mark.skipif(
-    not _atb_pa_available(),
-    reason="ATB PagedAttention not supported on this hardware",
+    bool(_atb_pa_unsupported_reason()),
+    reason=_atb_pa_unsupported_reason() or "ATB PagedAttention unsupported",
 )
 
 
