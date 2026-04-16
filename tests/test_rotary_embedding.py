@@ -342,10 +342,6 @@ def test_rotary_embedding_2d(
             f"Implementation index={implementation_index} not active on this build"
         )
 
-    # ATB path only supports float16.
-    if implementation_index == 1 and dtype != torch.float16:
-        pytest.skip("ATB RoPE only supports float16")
-
     num_kv_heads = num_heads
     rotary_dim = head_size
     max_seq_len = 64
