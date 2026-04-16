@@ -2,7 +2,6 @@
 #define INFINI_OPS_TORCH_ADD_H_
 
 #include "base/add.h"
-#include "torch/add/registry.h"
 
 namespace infini::ops {
 

@@ -2,7 +2,6 @@
 #define INFINI_OPS_TORCH_GEMM_H_
 
 #include "base/gemm.h"
-#include "torch/gemm/registry.h"
 
 namespace infini::ops {
 
