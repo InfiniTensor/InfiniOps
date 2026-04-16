@@ -100,5 +100,3 @@ def clone_strided(input):
     output.as_strided(*as_strided_args).copy_(input.as_strided(*as_strided_args))
 
     return output
-
-
