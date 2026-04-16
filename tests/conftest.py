@@ -44,6 +44,31 @@ def set_seed_per_test(request):
     _set_random_seed(_hash(_test_case_path_from_request(request)))
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _clear_operator_caches():
+    """Clear the C++ operator cache between test modules.
+
+    The ``Operator::call()`` cache keys on tensor geometry (shape, strides,
+    dtype) but not data pointers.  When different test modules create tensors
+    with identical geometry but different data content (e.g., random
+    ``cos_sin_cache`` tables), a stale cached operator from a prior module
+    silently returns wrong results.  Clearing the cache at module boundaries
+    ensures each module starts with a cold cache.
+    """
+    yield
+
+    try:
+        import infini.ops as ops
+
+        for name in dir(ops):
+            cls = getattr(ops, name)
+
+            if hasattr(cls, "clear_cache"):
+                cls.clear_cache()
+    except ImportError:
+        pass
+
+
 _NPU_UNSUPPORTED_DTYPES = {torch.float64}
 
 # `torch_npu` does not implement random number generation for `uint16`/`uint32`/`uint64`.

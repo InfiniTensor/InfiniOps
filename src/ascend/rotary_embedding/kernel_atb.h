@@ -141,11 +141,6 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                   Tensor key_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Re-upload if cos_sin_cache data pointer changed (different tensor).
-    if (cos_sin_cache.data() != last_cos_sin_ptr_) {
-      uploadCosSinCache(cos_sin_cache);
-    }
-
     int64_t T = query.size(0);
     int64_t D = head_size;
 
@@ -249,8 +244,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
  private:
   // D2H copy cos_sin_cache, split into cos/sin, neox-expand, and upload to
-  // device.  Called once at construction and again if the caller provides a
-  // different cos_sin_cache tensor (detected by data-pointer change).
+  // device.  Called once at construction.
   void uploadCosSinCache(const Tensor cos_sin_cache) const {
     const int64_t D = head_size_;
     const int64_t half_D = D / 2;
@@ -294,13 +288,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                 ACL_MEMCPY_HOST_TO_DEVICE);
     aclrtMemcpy(sin_table_dev_, table_bytes, sin_host.data(), table_bytes,
                 ACL_MEMCPY_HOST_TO_DEVICE);
-
-    last_cos_sin_ptr_ = cos_sin_cache.data();
   }
-
-  // Tracks which cos_sin_cache was last uploaded so we can re-upload if the
-  // caller provides a different tensor (same shape, different data).
-  mutable const void* last_cos_sin_ptr_ = nullptr;
 
   atb::Operation* op_ = nullptr;
 

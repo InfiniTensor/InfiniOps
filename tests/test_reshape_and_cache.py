@@ -7,6 +7,13 @@ from tests.utils import Payload, get_npu_stream, randn_strided
 # ReshapeAndCache only works on NPU (aclrtMemcpy-based), so tests only
 # parametrize on float16/bfloat16 and use explicit device parametrization.
 
+# `aclnnScatterPaKvCache` (index 1) requires Atlas A5 (SoC 260).  It compiles
+# on 910B (CANN 8.5.1 headers present) but produces wrong results at runtime.
+_SKIP_INDEX_1 = pytest.mark.skip(
+    reason="`aclnnScatterPaKvCache` (index 1) requires Atlas A5; "
+    "not supported on Ascend 910B"
+)
+
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
@@ -18,7 +25,10 @@ from tests.utils import Payload, get_npu_stream, randn_strided
         (16, 2, 128, 8, 64),
     ),
 )
-@pytest.mark.parametrize("implementation_index", (0, 1, 2))
+@pytest.mark.parametrize(
+    "implementation_index",
+    (0, pytest.param(1, marks=_SKIP_INDEX_1), 2),
+)
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -45,7 +55,9 @@ def test_reshape_and_cache_contiguous(
     active_indices = infini.ops.ReshapeAndCache.active_implementation_indices(device)
 
     if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
+        pytest.skip(
+            f"implementation `{implementation_index}` not active on `{device}`"
+        )
 
     key = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
@@ -83,7 +95,10 @@ def test_reshape_and_cache_contiguous(
         (8, 4, 64, 8, 32),
     ),
 )
-@pytest.mark.parametrize("implementation_index", (0, 1, 2))
+@pytest.mark.parametrize(
+    "implementation_index",
+    (0, pytest.param(1, marks=_SKIP_INDEX_1), 2),
+)
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -110,7 +125,9 @@ def test_reshape_and_cache_noncontiguous_slots(
     active_indices = infini.ops.ReshapeAndCache.active_implementation_indices(device)
 
     if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
+        pytest.skip(
+            f"implementation `{implementation_index}` not active on `{device}`"
+        )
 
     key = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
@@ -140,26 +157,17 @@ def test_reshape_and_cache_noncontiguous_slots(
     )
 
 
-def _reshape_and_cache(
-    key, value, kv_cache, slot_mapping, kv_cache_out, implementation_index=0
-):
+def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out,
+                       implementation_index=0):
     if key.device.type == "npu":
         infini.ops.reshape_and_cache(
-            key,
-            value,
-            kv_cache,
-            slot_mapping,
-            kv_cache_out,
+            key, value, kv_cache, slot_mapping, kv_cache_out,
             implementation_index=implementation_index,
             stream=get_npu_stream(key),
         )
     else:
         infini.ops.reshape_and_cache(
-            key,
-            value,
-            kv_cache,
-            slot_mapping,
-            kv_cache_out,
+            key, value, kv_cache, slot_mapping, kv_cache_out,
             implementation_index=implementation_index,
         )
 

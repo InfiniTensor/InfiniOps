@@ -99,7 +99,6 @@ def _find_optional_tensor_params(op_name):
     source text.
     """
     source = (_BASE_DIR / f"{op_name}.h").read_text()
-
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
 
@@ -107,8 +106,9 @@ def _find_vector_tensor_params(op_name):
     """Return a set of parameter names declared as `std::vector<Tensor>` in
     the base header.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    import re
 
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
 
@@ -171,11 +171,18 @@ def _generate_pybind11(operator):
       }}))"""
 
     def _generate_py_args(node):
-        return ", ".join(
-            f'py::arg("{arg.spelling}")'
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
+        parts = []
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            if _is_optional_tensor(arg):
+                parts.append(f'py::arg("{arg.spelling}") = py::none()')
+            else:
+                parts.append(f'py::arg("{arg.spelling}")')
+
+        return ", ".join(parts)
 
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
@@ -240,7 +247,8 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
         return Self::active_implementation_indices(DeviceTypeFromString(device));
-      }});
+      }})
+      .def_static("clear_cache", &Self::clear_cache);
 
 {callers}
 }}
