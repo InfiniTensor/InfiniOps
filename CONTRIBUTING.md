@@ -91,7 +91,7 @@ pytest
 ## Adding an Operator
 
 1. **Base class** in `src/base/`: the class must inherit from `Operator<Op>` (e.g. `class Gemm : public Operator<Gemm>`). See `src/base/gemm.h`.
-2. **Platform implementation** in `src/<platform>/`: the class must inherit from the base (e.g. `class Blas : public Gemm`). See `src/cuda/gemm/blas.h` and `src/nvidia/gemm/cublas.h`.
+2. **Platform implementation** in `src/<category>/<platform>/`: the class must inherit from the base (e.g. `class Blas : public Gemm`). See `src/cuda/gemm/blas.h` and `src/cuda/nvidia/gemm/cublas.h`.
 3. **Tests** in `tests/`:
    - Use `pytest.mark.parametrize` for parameterization. Dependent parameters go in one decorator (e.g. `@pytest.mark.parametrize("dtype, rtol, atol", ...)`); independent parameters use separate decorators, ordered by parameter declaration.
    - `dtype` and `device` parameterization is included by default. Override with explicit `pytest.mark.parametrize` if needed.
