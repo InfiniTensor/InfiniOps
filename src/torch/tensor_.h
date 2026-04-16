@@ -11,21 +11,30 @@ namespace infini::ops {
 
 namespace detail {
 
+// Introduces a dependent type alias for `c10::ScalarType`, allowing
+// `if constexpr` to discard branches that reference enum values absent
+// in older PyTorch versions.  Without this indirection the enum member
+// names (e.g. `UInt16`) are non-dependent and looked up at definition
+// time, causing a hard error on PyTorch < 2.4.
+template <int>
+struct DependentScalarType {
+  using type = c10::ScalarType;
+};
+
 constexpr int kTorchVersion = TORCH_VERSION_MAJOR * 100 + TORCH_VERSION_MINOR;
 
 // Unsigned integer scalar types are only available in PyTorch >= 2.4.
-// The template parameter makes `if constexpr` discard the branch that
-// references enum values absent in older PyTorch versions.
 template <int kVersion = kTorchVersion>
 inline at::ScalarType ToAtenUnsignedDataType(DataType dtype) {
   if constexpr (kVersion >= 204) {
+    using ST = typename DependentScalarType<kVersion>::type;
     switch (dtype) {
       case DataType::kUInt16:
-        return c10::ScalarType::UInt16;
+        return ST::UInt16;
       case DataType::kUInt32:
-        return c10::ScalarType::UInt32;
+        return ST::UInt32;
       case DataType::kUInt64:
-        return c10::ScalarType::UInt64;
+        return ST::UInt64;
       default:
         assert(false && "not an unsigned integer dtype");
         return at::kFloat;
