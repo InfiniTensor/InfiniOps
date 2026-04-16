@@ -3,7 +3,6 @@
 
 #include "cuda/gemm/blas.h"
 #include "nvidia/blas.h"
-#include "nvidia/gemm/registry.h"
 
 namespace infini::ops {
 

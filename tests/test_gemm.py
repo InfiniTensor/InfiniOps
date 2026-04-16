@@ -20,7 +20,9 @@ from tests.utils import Payload, get_stream, randn_strided
 @pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
-@pytest.mark.parametrize("implementation_index", (0, 1))
+# TODO: Generate implementation indices dynamically from
+# `Gemm.active_implementation_indices` instead of hardcoding.
+@pytest.mark.parametrize("implementation_index", (0, 1, 2))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -61,6 +63,13 @@ def test_gemm(
 
     if implementation_index == 1 and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("cuBLASLt half-precision exceeds current tolerances")
+
+    if (
+        implementation_index == 2
+        and device == "cpu"
+        and dtype in (torch.float16, torch.bfloat16)
+    ):
+        pytest.skip("ATen CPU `addmm`/`baddbmm` does not support half-precision")
 
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
