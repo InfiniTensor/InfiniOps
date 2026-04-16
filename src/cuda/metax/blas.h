@@ -9,8 +9,8 @@
 
 #include "cuda/blas.h"
 #include "data_type.h"
-#include "metax/blas_utils.h"
-#include "metax/runtime_.h"
+#include "cuda/metax/blas_utils.h"
+#include "cuda/metax/runtime_.h"
 
 namespace infini::ops {
 

@@ -9,8 +9,8 @@
 
 #include "cuda/blas.h"
 #include "data_type.h"
-#include "nvidia/blas_utils.h"
-#include "nvidia/runtime_.h"
+#include "cuda/nvidia/blas_utils.h"
+#include "cuda/nvidia/runtime_.h"
 
 namespace infini::ops {
 

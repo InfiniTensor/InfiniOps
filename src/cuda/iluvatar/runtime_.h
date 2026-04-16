@@ -8,8 +8,8 @@
 // clang-format on
 
 #include "cuda/runtime.h"
-#include "iluvatar/device_.h"
-#include "iluvatar/runtime_utils.h"
+#include "cuda/iluvatar/device_.h"
+#include "cuda/iluvatar/runtime_utils.h"
 
 namespace infini::ops {
 

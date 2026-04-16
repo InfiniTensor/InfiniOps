@@ -2,7 +2,7 @@
 #define INFINI_OPS_NVIDIA_CASTER__H_
 
 #include "cuda/caster.cuh"
-#include "nvidia/data_type_.h"
+#include "cuda/nvidia/data_type_.h"
 
 namespace infini::ops {
 

@@ -4,8 +4,8 @@
 #include <mcr/mc_runtime.h>
 
 #include "cuda/runtime.h"
-#include "metax/device_.h"
-#include "metax/runtime_utils.h"
+#include "cuda/metax/device_.h"
+#include "cuda/metax/runtime_utils.h"
 
 namespace infini::ops {
 

@@ -2,7 +2,7 @@
 #define INFINI_OPS_METAX_CASTER__H_
 
 #include "cuda/caster.cuh"
-#include "metax/data_type_.h"
+#include "cuda/metax/data_type_.h"
 
 namespace infini::ops {
 

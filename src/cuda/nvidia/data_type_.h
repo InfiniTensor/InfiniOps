@@ -7,7 +7,7 @@
 // clang-format on
 
 #include "data_type.h"
-#include "nvidia/device_.h"
+#include "cuda/nvidia/device_.h"
 
 namespace infini::ops {
 

@@ -8,8 +8,8 @@
 // clang-format on
 
 #include "cuda/runtime.h"
-#include "nvidia/device_.h"
-#include "nvidia/runtime_utils.h"
+#include "cuda/nvidia/device_.h"
+#include "cuda/nvidia/runtime_utils.h"
 
 namespace infini::ops {
 

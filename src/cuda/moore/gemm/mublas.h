@@ -2,7 +2,7 @@
 #define INFINI_OPS_MOORE_GEMM_MUBLAS_H_
 
 #include "cuda/gemm/blas.h"
-#include "moore/blas.h"
+#include "cuda/moore/blas.h"
 
 namespace infini::ops {
 

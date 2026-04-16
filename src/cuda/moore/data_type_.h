@@ -5,7 +5,7 @@
 #include <musa_fp16.h>
 
 #include "data_type.h"
-#include "moore/device_.h"
+#include "cuda/moore/device_.h"
 
 namespace infini::ops {
 

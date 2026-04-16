@@ -9,8 +9,8 @@
 // clang-format on
 
 #include "base/gemm.h"
-#include "nvidia/blas_utils.h"
-#include "nvidia/runtime_.h"
+#include "cuda/nvidia/blas_utils.h"
+#include "cuda/nvidia/runtime_.h"
 
 namespace infini::ops {
 

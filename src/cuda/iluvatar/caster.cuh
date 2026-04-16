@@ -2,7 +2,7 @@
 #define INFINI_OPS_ILUVATAR_CASTER__H_
 
 #include "cuda/caster.cuh"
-#include "iluvatar/data_type_.h"
+#include "cuda/iluvatar/data_type_.h"
 
 namespace infini::ops {
 

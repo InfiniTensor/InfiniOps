@@ -6,12 +6,12 @@
 // clang-format on
 
 // clang-format off
-#include "moore/device_.h"
+#include "cuda/moore/device_.h"
 // clang-format on
 
 #include "cuda/causal_softmax/kernel.h"
-#include "moore/caster.cuh"
-#include "moore/runtime_.h"
+#include "cuda/moore/caster.cuh"
+#include "cuda/moore/runtime_.h"
 
 namespace infini::ops {
 

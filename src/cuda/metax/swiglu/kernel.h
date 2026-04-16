@@ -4,8 +4,8 @@
 #include <utility>
 
 #include "cuda/swiglu/kernel.h"
-#include "metax/caster.cuh"
-#include "metax/runtime_.h"
+#include "cuda/metax/caster.cuh"
+#include "cuda/metax/runtime_.h"
 
 namespace infini::ops {
 

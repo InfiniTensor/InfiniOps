@@ -7,7 +7,7 @@
 // clang-format on
 
 #include "data_type.h"
-#include "iluvatar/device_.h"
+#include "cuda/iluvatar/device_.h"
 
 namespace infini::ops {
 

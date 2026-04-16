@@ -2,7 +2,7 @@
 #define INFINI_OPS_ILUVATAR_GEMM_CUBLAS_H_
 
 #include "cuda/gemm/blas.h"
-#include "iluvatar/blas.h"
+#include "cuda/iluvatar/blas.h"
 
 namespace infini::ops {
 

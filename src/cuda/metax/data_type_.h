@@ -6,7 +6,7 @@
 #include <mcr/mc_runtime.h>
 
 #include "data_type.h"
-#include "metax/device_.h"
+#include "cuda/metax/device_.h"
 
 namespace infini::ops {
 

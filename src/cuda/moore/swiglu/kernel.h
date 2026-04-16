@@ -4,13 +4,13 @@
 #include <utility>
 
 // clang-format off
-#include "moore/polyfills.cuh"
+#include "cuda/moore/polyfills.cuh"
 // clang-format on
 
 #include "cuda/swiglu/kernel.h"
-#include "moore/caster.cuh"
-#include "moore/polyfills.cuh"
-#include "moore/runtime_.h"
+#include "cuda/moore/caster.cuh"
+#include "cuda/moore/polyfills.cuh"
+#include "cuda/moore/runtime_.h"
 
 namespace infini::ops {
 

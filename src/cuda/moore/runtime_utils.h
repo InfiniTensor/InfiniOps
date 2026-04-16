@@ -2,7 +2,7 @@
 #define INFINI_OPS_MOORE_RUNTIME_UTILS_H_
 
 #include "cuda/runtime_utils.h"
-#include "moore/device_property.h"
+#include "cuda/moore/device_property.h"
 
 namespace infini::ops {
 
