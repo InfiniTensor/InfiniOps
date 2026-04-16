@@ -64,6 +64,13 @@ def test_gemm(
     if implementation_index == 1 and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("cuBLASLt half-precision exceeds current tolerances")
 
+    if (
+        implementation_index == 2
+        and device == "cpu"
+        and dtype in (torch.float16, torch.bfloat16)
+    ):
+        pytest.skip("ATen CPU `addmm`/`baddbmm` does not support half-precision")
+
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
