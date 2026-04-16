@@ -30,9 +30,11 @@ namespace infini::ops {
 // [batch, num_heads, head_size] matching vLLM's convention.
 //
 // ATB internally constructs `aclIntArray*` from the `hostData` field
-// of `block_table` and `context_lens` tensors.  The operator performs
-// synchronous D2H copies for these two small tensors in each call.
-// All other tensors are device-only.
+// of `block_table` and `context_lens` tensors.  By default the operator
+// performs synchronous D2H copies for these two small tensors each call.
+// When the caller provides `seq_lens_host` and `block_table_host` (CPU
+// pinned tensors), the D2H copies are skipped entirely — enabling full
+// NPUGraph capture of the decode attention path.
 //
 // ATB VariantPack layout (BSND with S=1):
 //   inTensors[0] = query         [B, N, D]
@@ -48,10 +50,12 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
   Operator(const Tensor query, const Tensor key_cache,
            const Tensor value_cache, const Tensor seq_lens,
            const Tensor block_table, int64_t num_heads, int64_t num_kv_heads,
-           int64_t head_size, double scale, int64_t block_size, Tensor output)
+           int64_t head_size, double scale, int64_t block_size, Tensor output,
+           std::optional<Tensor> seq_lens_host = std::nullopt,
+           std::optional<Tensor> block_table_host = std::nullopt)
       : PagedAttention(query, key_cache, value_cache, seq_lens, block_table,
                        num_heads, num_kv_heads, head_size, scale, block_size,
-                       output) {
+                       output, seq_lens_host, block_table_host) {
     int64_t B = static_cast<int64_t>(batch_size_);
     int64_t N = num_heads_;
     int64_t Nkv = num_kv_heads_;
@@ -84,11 +88,20 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     // Pre-allocate pinned host buffers for D2H copies.
     // ATB PA reads `hostData` from block_table and context_lens to
     // construct internal `aclIntArray*` parameters.
+    // When caller provides host tensors, skip allocation — the caller's
+    // pinned buffers will be used directly in `operator()`.
     bt_host_bytes_ = static_cast<uint64_t>(B * max_blocks) * bt_elem_size_;
     sl_host_bytes_ = static_cast<uint64_t>(B) * sl_elem_size_;
-    bt_host_ = std::malloc(bt_host_bytes_);
-    sl_host_ = std::malloc(sl_host_bytes_);
-    assert(bt_host_ && sl_host_ && "Host buffer allocation failed");
+
+    if (!has_block_table_host_) {
+      bt_host_ = std::malloc(bt_host_bytes_);
+      assert(bt_host_ && "Host buffer allocation for `block_table` failed");
+    }
+
+    if (!has_seq_lens_host_) {
+      sl_host_ = std::malloc(sl_host_bytes_);
+      assert(sl_host_ && "Host buffer allocation for `seq_lens` failed");
+    }
 
     // Create the ATB operation (reused across calls).
     atb::infer::PagedAttentionParam param;
@@ -106,8 +119,13 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
       atb::DestroyOperation(op_);
     }
 
-    std::free(bt_host_);
-    std::free(sl_host_);
+    if (!has_block_table_host_) {
+      std::free(bt_host_);
+    }
+
+    if (!has_seq_lens_host_) {
+      std::free(sl_host_);
+    }
   }
 
   Operator(const Operator&) = delete;
@@ -118,23 +136,38 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
                   const Tensor value_cache, const Tensor seq_lens,
                   const Tensor block_table, int64_t num_heads,
                   int64_t num_kv_heads, int64_t head_size, double scale,
-                  int64_t block_size, Tensor output) const override {
+                  int64_t block_size, Tensor output,
+                  std::optional<Tensor> seq_lens_host,
+                  std::optional<Tensor> block_table_host) const override {
     auto stream = static_cast<aclrtStream>(stream_);
     atb::Context* ctx = ascend::getAtbContext(stream);
 
-    // D2H copy for block_table and context_lens.
+    // Use caller-provided host data or perform synchronous D2H copy.
     // ATB reads `hostData` to construct internal `aclIntArray*`.
-    aclrtMemcpy(bt_host_, bt_host_bytes_, block_table.data(),
-                bt_host_bytes_, ACL_MEMCPY_DEVICE_TO_HOST);
-    aclrtMemcpy(sl_host_, sl_host_bytes_, seq_lens.data(),
-                sl_host_bytes_, ACL_MEMCPY_DEVICE_TO_HOST);
+    void* bt_host_ptr = bt_host_;
+    void* sl_host_ptr = sl_host_;
+
+    if (block_table_host.has_value()) {
+      bt_host_ptr = const_cast<void*>(block_table_host.value().data());
+    } else {
+      aclrtMemcpy(bt_host_, bt_host_bytes_, block_table.data(),
+                  bt_host_bytes_, ACL_MEMCPY_DEVICE_TO_HOST);
+    }
+
+    if (seq_lens_host.has_value()) {
+      sl_host_ptr = const_cast<void*>(seq_lens_host.value().data());
+    } else {
+      aclrtMemcpy(sl_host_, sl_host_bytes_, seq_lens.data(),
+                  sl_host_bytes_, ACL_MEMCPY_DEVICE_TO_HOST);
+    }
 
     atb::VariantPack vp = buildVariantPack(
         const_cast<void*>(query.data()),
         const_cast<void*>(key_cache.data()),
         const_cast<void*>(value_cache.data()),
         const_cast<void*>(block_table.data()),
-        const_cast<void*>(seq_lens.data()), output.data());
+        const_cast<void*>(seq_lens.data()), output.data(),
+        bt_host_ptr, sl_host_ptr);
 
     // Setup computes workspace requirements and binds tensor descriptors.
     uint64_t ws_size = 0;
@@ -165,8 +198,9 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
   atb::VariantPack buildVariantPack(void* query_data, void* key_cache_data,
                                     void* value_cache_data,
                                     void* block_table_data,
-                                    void* seq_lens_data,
-                                    void* output_data) const {
+                                    void* seq_lens_data, void* output_data,
+                                    void* bt_host_ptr,
+                                    void* sl_host_ptr) const {
     int64_t B = query_tnd_shape_[0];
     int64_t N = query_tnd_shape_[1];
     int64_t D = query_tnd_shape_[2];
@@ -190,12 +224,12 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     // Block table [B, max_blocks] — with hostData for `aclIntArray*`.
     atb::Tensor t_block_table = ascend::toAtbTensor(
         block_table_shape_, bt_dt_, block_table_data, bt_host_bytes_);
-    t_block_table.hostData = bt_host_;
+    t_block_table.hostData = bt_host_ptr;
 
     // Context lens [B] — with hostData for `aclIntArray*`.
     atb::Tensor t_context_lens = ascend::toAtbTensor(
         context_lens_shape_, sl_dt_, seq_lens_data, sl_host_bytes_);
-    t_context_lens.hostData = sl_host_;
+    t_context_lens.hostData = sl_host_ptr;
 
     // Output [B, N, D] — 3D (BSND with S=1).
     atb::Tensor t_output =

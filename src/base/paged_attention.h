@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "operator.h"
 
@@ -37,7 +38,9 @@ class PagedAttention : public Operator<PagedAttention> {
                  const Tensor value_cache, const Tensor seq_lens,
                  const Tensor block_table, int64_t num_heads,
                  int64_t num_kv_heads, int64_t head_size, double scale,
-                 int64_t block_size, Tensor output)
+                 int64_t block_size, Tensor output,
+                 std::optional<Tensor> seq_lens_host = std::nullopt,
+                 std::optional<Tensor> block_table_host = std::nullopt)
       : batch_size_{query.size(0)},
         num_heads_{num_heads},
         num_kv_heads_{num_kv_heads},
@@ -50,7 +53,9 @@ class PagedAttention : public Operator<PagedAttention> {
         value_cache_shape_{value_cache.shape()},
         seq_lens_shape_{seq_lens.shape()},
         block_table_shape_{block_table.shape()},
-        output_shape_{output.shape()} {
+        output_shape_{output.shape()},
+        has_seq_lens_host_{seq_lens_host.has_value()},
+        has_block_table_host_{block_table_host.has_value()} {
     assert(num_heads % num_kv_heads == 0 &&
            "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`.");
     assert(query.ndim() == 3 &&
@@ -70,7 +75,10 @@ class PagedAttention : public Operator<PagedAttention> {
                           const Tensor value_cache, const Tensor seq_lens,
                           const Tensor block_table, int64_t num_heads,
                           int64_t num_kv_heads, int64_t head_size, double scale,
-                          int64_t block_size, Tensor output) const = 0;
+                          int64_t block_size, Tensor output,
+                          std::optional<Tensor> seq_lens_host = std::nullopt,
+                          std::optional<Tensor> block_table_host = std::nullopt)
+      const = 0;
 
  protected:
   Tensor::Size batch_size_{0};
@@ -98,6 +106,10 @@ class PagedAttention : public Operator<PagedAttention> {
   Tensor::Shape block_table_shape_;
 
   Tensor::Shape output_shape_;
+
+  bool has_seq_lens_host_{false};
+
+  bool has_block_table_host_{false};
 };
 
 }  // namespace infini::ops

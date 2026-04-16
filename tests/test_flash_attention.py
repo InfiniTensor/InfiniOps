@@ -268,6 +268,105 @@ def test_flash_attention_decode(
     )
 
 
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "num_heads, num_kv_heads, head_size, block_size",
+    ((32, 8, 128, 128),),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    ((torch.float16, 1e-3, 1e-3),),
+)
+@pytest.mark.parametrize("device", ("npu",))
+def test_flash_attention_decode_cpu_cuseqlens(
+    num_heads,
+    num_kv_heads,
+    head_size,
+    block_size,
+    dtype,
+    rtol,
+    atol,
+    device,
+):
+    """Decode with CPU cu_seqlens_kv — exercises the D2H-free code path."""
+    if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    num_reqs = 3
+    kv_len = 16
+    num_blocks_per_req = (kv_len + block_size - 1) // block_size
+    num_blocks = num_reqs * num_blocks_per_req
+    scale = 1.0 / head_size**0.5
+
+    query = randn_strided(
+        (num_reqs, num_heads, head_size), None, dtype=dtype, device=device
+    )
+    kv_cache = randn_strided(
+        (num_blocks, block_size, num_kv_heads, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    output = torch.empty(
+        (num_reqs, num_heads, head_size), dtype=dtype, device=device
+    )
+
+    block_table = torch.zeros(
+        (num_reqs, num_blocks_per_req), dtype=torch.int32, device=device
+    )
+
+    for i in range(num_reqs):
+        for j in range(num_blocks_per_req):
+            block_table[i, j] = i * num_blocks_per_req + j
+
+    cu_seqlens_q = torch.arange(
+        0, num_reqs + 1, dtype=torch.int64, device=device
+    )
+
+    # CPU cu_seqlens_kv — exercises `detail::extractSeqLengths` host path
+    # (direct pointer read, no D2H copy).
+    cu_seqlens_kv = torch.tensor(
+        [i * kv_len for i in range(num_reqs + 1)], dtype=torch.int64
+    )
+
+    return Payload(
+        lambda q, k, v, o: _flash_attention(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_kv,
+            block_table,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            True,
+            -1,
+            0,
+            block_size,
+            o,
+        ),
+        lambda q, k, v, o: _ref_flash_attention_paged(
+            q,
+            k,
+            block_table,
+            cu_seqlens_q,
+            cu_seqlens_kv,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            block_size,
+            scale,
+            causal=True,
+        ),
+        (query, kv_cache, kv_cache, output),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
 def _flash_attention(
     query,
     key,

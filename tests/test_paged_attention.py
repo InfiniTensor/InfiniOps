@@ -338,6 +338,143 @@ def test_paged_attention_single_request(
     )
 
 
+@_skip_no_atb_pa
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "num_heads, num_kv_heads, head_size, block_size",
+    ((32, 8, 128, 128),),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    ((torch.float16, 1e-3, 1e-3),),
+)
+@pytest.mark.parametrize("device", ("npu",))
+def test_paged_attention_host_tensors(
+    num_heads,
+    num_kv_heads,
+    head_size,
+    block_size,
+    dtype,
+    rtol,
+    atol,
+    device,
+):
+    """Paged decode with caller-provided host tensors (D2H-free path)."""
+    if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    num_reqs = 4
+    kv_len = 16
+    num_blocks_per_req = (kv_len + block_size - 1) // block_size
+    num_blocks = num_reqs * num_blocks_per_req
+    scale = 1.0 / head_size**0.5
+
+    query = randn_strided(
+        (num_reqs, num_heads, head_size), None, dtype=dtype, device=device
+    )
+    key_cache = randn_strided(
+        (num_blocks, block_size, num_kv_heads, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    value_cache = randn_strided(
+        (num_blocks, block_size, num_kv_heads, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    output = torch.empty(
+        (num_reqs, num_heads, head_size), dtype=dtype, device=device
+    )
+
+    block_table = torch.zeros(
+        (num_reqs, num_blocks_per_req), dtype=torch.int32, device=device
+    )
+
+    for i in range(num_reqs):
+        for j in range(num_blocks_per_req):
+            block_table[i, j] = i * num_blocks_per_req + j
+
+    seq_lens = torch.full(
+        (num_reqs,), kv_len, dtype=torch.int32, device=device
+    )
+
+    # CPU copies for the D2H-free path.
+    seq_lens_cpu = seq_lens.cpu().contiguous()
+    block_table_cpu = block_table.cpu().contiguous()
+
+    return Payload(
+        lambda q, kc, vc, sl, bt, o: _paged_attention_with_host(
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
+            o,
+            seq_lens_cpu,
+            block_table_cpu,
+        ),
+        lambda q, kc, vc, sl, bt, o: _ref_paged_attention(
+            q,
+            kc,
+            vc,
+            sl,
+            bt,
+            num_heads,
+            num_kv_heads,
+            head_size,
+            scale,
+            block_size,
+        ),
+        (query, key_cache, value_cache, seq_lens, block_table, output),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
+def _paged_attention_with_host(
+    query,
+    key_cache,
+    value_cache,
+    seq_lens,
+    block_table,
+    num_heads,
+    num_kv_heads,
+    head_size,
+    scale,
+    block_size,
+    output,
+    seq_lens_host,
+    block_table_host,
+):
+    """Call paged attention with caller-provided host tensors."""
+    infini.ops.paged_attention(
+        query,
+        key_cache,
+        value_cache,
+        seq_lens,
+        block_table,
+        num_heads,
+        num_kv_heads,
+        head_size,
+        scale,
+        block_size,
+        output,
+        seq_lens_host=seq_lens_host,
+        block_table_host=block_table_host,
+        stream=get_npu_stream(query),
+    )
+
+    return output
+
+
 def _paged_attention(
     query,
     key_cache,
