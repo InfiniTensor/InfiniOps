@@ -110,5 +110,66 @@ Likely per-op output allocation. vllm-ascend doesn't show this; their kernels re
 
 - `/tmp/cprof_infini_3b_graph.pstats`
 - `/tmp/cprof_ascend_3b_graph.pstats`
+- `/tmp/cprof_infini_0p5b_graph.pstats`
+- `/tmp/cprof_ascend_0p5b_graph.pstats`
+- `/tmp/cprof_infini_0p5b_graph_cached.pstats` (with stream cache prototype — see below)
 
 Both files are inside container `infiniops-bench-ascend-v2` (mounted at `/tmp`). The harness that produced them is `/tmp/cprofile_runner.py`; the diff tool is `/tmp/cprof_compare.py`.
+
+## 0.5B canary confirms the same signal
+
+Same analysis on Qwen2.5-0.5B (expected to amplify host-side overhead on small kernels):
+
+| Metric | infini | ascend | Ratio |
+| --- | ---: | ---: | ---: |
+| Total wall time (cProfile) | 4.908 s | 1.907 s | 2.57x |
+| `_ops.__call__` ncalls | 20,096 | 4,672 | 4.30x |
+| `current_stream_ptr` ncalls / cumtime | 13,952 / 1.317 s | N/A | 26.8% of host wall |
+
+0.5B ratio (2.57x) is basically identical to 3B (2.53x), confirming the per-op Python-dispatch overhead dominates and the fix target is robust across model sizes.
+
+## Stream-cache prototype — correctness REGRESSION, reverted
+
+Prototype: cache the resolved pointer in `_stream.py`, invalidate via a wrapper around `torch.npu.set_stream` in `_patches.py`. Gated behind `INFINI_CACHE_STREAM` env var (default on).
+
+cProfile impact: 0.5B host wall dropped from 4.908 s → 3.568 s (**-27.3%**, matches prediction).
+
+**Throughput impact** (measured with full `vllm bench throughput`, 256 prompts, 128/128):
+
+| Model | Mode | Before | After cache | Ratio | Delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 0.5B | graph | 7,940 tok/s | **9,624 tok/s** | 62.0% of ascend | +21.2% |
+| 3B   | graph | 5,299 tok/s | **6,091 tok/s** | 60.0% of ascend | +15.0% |
+| 3B   | eager | 5,291 tok/s | **5,835 tok/s** | 87.2% of ascend | **+10.3%, passes 80% target** |
+
+**BUT**: `/tmp/correctness_check.py` with `VLLM_PLUGINS=infini` on Qwen2.5-3B-Instruct fails:
+
+| Config | Token-match vs vllm-ascend |
+| --- | --- |
+| baseline (no cache)            | 6/6 exact match |
+| with cache, MP=1 (default)     | 5/6 — prompt 0 produces `!!!!!…` x64 (all `token_id=0`) |
+| with cache, MP=0               | **0/6 — all prompts produce garbage** |
+
+The throughput benches use `ignore_eos=True` and don't verify outputs, which is why they didn't flag the regression. Only the correctness diff script caught it.
+
+**Root cause** (hypothesised, not yet verified): some code path switches streams without going through `torch.npu.set_stream`. Candidates not yet ruled out:
+
+- `torch_npu._C._npu_setStream` called directly, bypassing the Python wrapper.
+- A `StreamContext.__enter__/__exit__` path that uses a different entry point.
+- A graph-capture / compile hook that briefly switches streams during a dummy forward.
+- `forward_context.set_forward_context` establishing a stream via a different mechanism.
+
+The MP=0 case (0/6 broken) is worse than MP=1 (5/6) — likely because MP=0 runs more init/warmup in the same process, filling the cache with a "wrong" pointer earlier in the lifecycle.
+
+**Revert state**: both `_stream.py` and `_patches.py` are back to clean (no cache committed).
+
+## Next steps for the stream-cache lever
+
+Do NOT land the `_stream.py`-level cache without first nailing down the bug. Safer designs to investigate:
+
+1. **Bracket-style cache per forward**: the model-runner explicitly calls `_stream.begin_forward()` at the top of `execute_model` and `_stream.end_forward()` after, which set/clear the cache. No reliance on `set_stream` hooks. Needs a tiny hook in the model-runner's execute path (pluggable via `_patches.py`).
+2. **Invalidate on every `set_forward_context` / forward-end boundary**: wrap `vllm.forward_context.set_forward_context` (a contextmanager) so entering/exiting a forward pass invalidates the cache. Keeps `_stream.py` standalone. Probably the safest and simplest option.
+
+Option 2 expected savings: still ~1.8 s of 7.1 s = ~25% host time (one resolve and reuse per forward, not per op). Essentially the same win as the naive cache, but correctness-safe because each forward starts fresh.
+
+Pending team-lead decision on whether to invest in option 2 or pivot to a different lever (e.g., the fused attention block that eliminates several per-layer dispatches and side-steps the `current_stream_ptr` question).
