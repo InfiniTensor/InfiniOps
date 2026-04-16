@@ -48,7 +48,7 @@ inline at::ScalarType ToAtenUnsignedDataType(DataType dtype) {
 
 }  // namespace detail
 
-inline at::ScalarType ToAtenDtype(DataType dtype) {
+inline at::ScalarType ToAtenDataType(DataType dtype) {
   switch (dtype) {
     case DataType::kInt8:
       return at::kChar;
@@ -88,7 +88,7 @@ inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
   std::vector<int64_t> at_shape(shape.begin(), shape.end());
   std::vector<int64_t> at_strides(strides.begin(), strides.end());
 
-  auto options = at::TensorOptions().dtype(ToAtenDtype(dtype));
+  auto options = at::TensorOptions().dtype(ToAtenDataType(dtype));
 
   if constexpr (kDev != Device::Type::kCpu) {
     std::string device_str =
