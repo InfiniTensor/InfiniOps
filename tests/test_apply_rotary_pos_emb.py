@@ -85,7 +85,10 @@ def _assert_close(actual, expected, rtol, atol):
 @pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
-    ((torch.float16, 1e-3, 0.01),),
+    (
+        (torch.float16, 1e-3, 0.01),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
 )
 @pytest.mark.parametrize("device", ("npu",))
 def test_apply_rotary_pos_emb(
