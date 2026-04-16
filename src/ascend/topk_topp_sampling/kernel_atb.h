@@ -7,14 +7,14 @@
 #include <cstdint>
 
 #include "acl/acl.h"
-#include "atb/context.h"
-#include "atb/infer_op_params.h"
-#include "atb/operation.h"
-#include "atb/types.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
 #include "ascend/topk_topp_sampling/registry.h"
 #include "ascend/workspace_pool_.h"
+#include "atb/context.h"
+#include "atb/infer_op_params.h"
+#include "atb/operation.h"
+#include "atb/types.h"
 #include "base/topk_topp_sampling.h"
 #include "operator.h"
 
@@ -92,7 +92,7 @@ class Operator<TopkToppSampling, Device::Type::kAscend, 0>
 
     // Build tensors using raw descriptors.
     auto mk2d = [](aclDataType dt, int64_t d0, int64_t d1, void* data,
-                    uint64_t elem_sz) -> atb::Tensor {
+                   uint64_t elem_sz) -> atb::Tensor {
       atb::Tensor t;
       t.desc.dtype = dt;
       t.desc.format = ACL_FORMAT_ND;
@@ -128,8 +128,7 @@ class Operator<TopkToppSampling, Device::Type::kAscend, 0>
     atb::Status s = op_->Setup(vp, ws_size, ctx);
 
     if (s != atb::NO_ERROR) {
-      fprintf(stderr,
-              "[TopkToppSampling] Setup failed (status=%d)\n",
+      fprintf(stderr, "[TopkToppSampling] Setup failed (status=%d)\n",
               static_cast<int>(s));
 
       return;
@@ -161,8 +160,7 @@ class Operator<TopkToppSampling, Device::Type::kAscend, 0>
       s = op_->Setup(vp, ws_size, ctx);
 
       if (s != atb::NO_ERROR) {
-        fprintf(stderr,
-                "[TopkToppSampling] Setup (retry) failed (status=%d)\n",
+        fprintf(stderr, "[TopkToppSampling] Setup (retry) failed (status=%d)\n",
                 static_cast<int>(s));
 
         return;
@@ -172,8 +170,7 @@ class Operator<TopkToppSampling, Device::Type::kAscend, 0>
     s = op_->Execute(vp, ws_ptr, ws_size, ctx);
 
     if (s != atb::NO_ERROR) {
-      fprintf(stderr,
-              "[TopkToppSampling] Execute failed (status=%d)\n",
+      fprintf(stderr, "[TopkToppSampling] Execute failed (status=%d)\n",
               static_cast<int>(s));
     }
   }

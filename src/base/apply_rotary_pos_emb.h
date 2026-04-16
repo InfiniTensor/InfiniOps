@@ -37,10 +37,12 @@ class ApplyRotaryPosEmb : public Operator<ApplyRotaryPosEmb> {
            "`ApplyRotaryPosEmb` requires query to be 2D or 3D");
     assert((key.ndim() == 2 || key.ndim() == 3) &&
            "`ApplyRotaryPosEmb` requires key to be 2D or 3D");
-    assert(cos.ndim() == 2 && "`ApplyRotaryPosEmb` requires cos to be 2D "
-                              "`[T, D]`");
-    assert(sin.ndim() == 2 && "`ApplyRotaryPosEmb` requires sin to be 2D "
-                              "`[T, D]`");
+    assert(cos.ndim() == 2 &&
+           "`ApplyRotaryPosEmb` requires cos to be 2D "
+           "`[T, D]`");
+    assert(sin.ndim() == 2 &&
+           "`ApplyRotaryPosEmb` requires sin to be 2D "
+           "`[T, D]`");
     assert(cos.size(0) == num_tokens_ &&
            "`ApplyRotaryPosEmb` requires cos.size(0) == T");
     assert(cos.size(1) == head_size &&
@@ -48,9 +50,9 @@ class ApplyRotaryPosEmb : public Operator<ApplyRotaryPosEmb> {
   }
 
   virtual void operator()(const Tensor query, const Tensor key,
-                          const Tensor cos, const Tensor sin,
-                          int64_t head_size, bool is_neox_style,
-                          Tensor query_out, Tensor key_out) const = 0;
+                          const Tensor cos, const Tensor sin, int64_t head_size,
+                          bool is_neox_style, Tensor query_out,
+                          Tensor key_out) const = 0;
 
  protected:
   Tensor::Size num_tokens_{0};

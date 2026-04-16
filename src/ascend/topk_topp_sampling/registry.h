@@ -5,7 +5,8 @@
 
 namespace infini::ops {
 
-// Implementation 0: ATB `TopkToppSamplingParam` (BATCH_TOPK_EXPONENTIAL_SAMPLING).
+// Implementation 0: ATB `TopkToppSamplingParam`
+// (BATCH_TOPK_EXPONENTIAL_SAMPLING).
 template <>
 struct ActiveImplementationsImpl<TopkToppSampling, Device::Type::kAscend> {
 #ifdef INFINI_HAS_ATB

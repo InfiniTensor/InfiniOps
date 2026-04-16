@@ -56,8 +56,9 @@ class PagedAttention : public Operator<PagedAttention> {
         output_shape_{output.shape()},
         has_seq_lens_host_{seq_lens_host.has_value()},
         has_block_table_host_{block_table_host.has_value()} {
-    assert(num_heads % num_kv_heads == 0 &&
-           "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`.");
+    assert(
+        num_heads % num_kv_heads == 0 &&
+        "`PagedAttention` requires `num_heads` divisible by `num_kv_heads`.");
     assert(query.ndim() == 3 &&
            "`PagedAttention` requires query to be 3D [batch, num_heads, "
            "head_size].");
@@ -71,14 +72,12 @@ class PagedAttention : public Operator<PagedAttention> {
            "max_num_blocks].");
   }
 
-  virtual void operator()(const Tensor query, const Tensor key_cache,
-                          const Tensor value_cache, const Tensor seq_lens,
-                          const Tensor block_table, int64_t num_heads,
-                          int64_t num_kv_heads, int64_t head_size, double scale,
-                          int64_t block_size, Tensor output,
-                          std::optional<Tensor> seq_lens_host = std::nullopt,
-                          std::optional<Tensor> block_table_host = std::nullopt)
-      const = 0;
+  virtual void operator()(
+      const Tensor query, const Tensor key_cache, const Tensor value_cache,
+      const Tensor seq_lens, const Tensor block_table, int64_t num_heads,
+      int64_t num_kv_heads, int64_t head_size, double scale, int64_t block_size,
+      Tensor output, std::optional<Tensor> seq_lens_host = std::nullopt,
+      std::optional<Tensor> block_table_host = std::nullopt) const = 0;
 
  protected:
   Tensor::Size batch_size_{0};

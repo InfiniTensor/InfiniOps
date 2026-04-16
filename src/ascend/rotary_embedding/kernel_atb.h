@@ -12,14 +12,14 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_index_select.h"
+#include "ascend/atb_common_.h"
 #include "ascend/common.h"
+#include "ascend/rotary_embedding/registry.h"
+#include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
 #include "atb/operation.h"
 #include "atb/types.h"
-#include "ascend/atb_common_.h"
-#include "ascend/rotary_embedding/registry.h"
-#include "ascend/workspace_pool_.h"
 #include "base/rotary_embedding.h"
 #include "operator.h"
 
@@ -100,12 +100,12 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                 ACL_MEMCPY_HOST_TO_DEVICE);
 
     // IndexSelect descriptor caches: table ptrs stable, positions ptr varies.
-    cos_table_cache_ = ascend::AclTensorCache(
-        {max_seq_len_, D}, acl_dt_, cos_table_dev_);
-    sin_table_cache_ = ascend::AclTensorCache(
-        {max_seq_len_, D}, acl_dt_, sin_table_dev_);
-    idx_cache_ = ascend::AclTensorCache(
-        {T}, ACL_INT64, const_cast<void*>(positions.data()));
+    cos_table_cache_ =
+        ascend::AclTensorCache({max_seq_len_, D}, acl_dt_, cos_table_dev_);
+    sin_table_cache_ =
+        ascend::AclTensorCache({max_seq_len_, D}, acl_dt_, sin_table_dev_);
+    idx_cache_ = ascend::AclTensorCache({T}, ACL_INT64,
+                                        const_cast<void*>(positions.data()));
     cos_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, cos_dev_);
     sin_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, sin_dev_);
 
@@ -217,9 +217,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                                             cos_dev_, gathered_bytes);
     atb::Tensor t_sin = ascend::toAtbTensor(cos_sin_gathered_shape_, acl_dt_,
                                             sin_dev_, gathered_bytes);
-    atb::Tensor t_seqlen = ascend::toAtbTensor(
-        seqlen_shape_, ACL_INT32, seqlen_dev_,
-        static_cast<uint64_t>(sizeof(int32_t)));
+    atb::Tensor t_seqlen =
+        ascend::toAtbTensor(seqlen_shape_, ACL_INT32, seqlen_dev_,
+                            static_cast<uint64_t>(sizeof(int32_t)));
 
     atb::VariantPack vp;
     vp.inTensors = {t_q, t_k, t_cos, t_sin, t_seqlen};
@@ -263,23 +263,18 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       for (int64_t j = 0; j < half_D; ++j) {
         const auto* c_src =
             cache_host.data() + static_cast<size_t>(p * D + j) * elem_sz;
-        const auto* s_src =
-            cache_host.data() +
-            static_cast<size_t>(p * D + half_D + j) * elem_sz;
+        const auto* s_src = cache_host.data() +
+                            static_cast<size_t>(p * D + half_D + j) * elem_sz;
 
+        std::memcpy(cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+                    c_src, elem_sz);
         std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz, c_src,
-            elem_sz);
-        std::memcpy(
-            cos_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
             c_src, elem_sz);
+        std::memcpy(sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+                    s_src, elem_sz);
         std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz, s_src,
-            elem_sz);
-        std::memcpy(
-            sin_host.data() +
-                static_cast<size_t>(p * D + half_D + j) * elem_sz,
+            sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
             s_src, elem_sz);
       }
     }
