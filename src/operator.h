@@ -223,6 +223,10 @@ class Operator : public OperatorBase {
   static constexpr std::size_t implementation_index_{implementation_index};
 };
 
+// Maximum number of implementation slots per (operator, device) pair.
+// Increase this value when adding operators with more implementations.
+constexpr std::size_t kMaxImplementations = 16;
+
 // SFINAE-based implementation detection. A partial specialization
 // `Operator<Key, kDev, N>` inherits from `Key` (the operator base class),
 // while the unspecialized primary template inherits only from `OperatorBase`.
@@ -239,13 +243,23 @@ struct ActiveImplementationsImpl<Key, kDev, N, true> {
   using type = List<N>;
 };
 
+namespace detail {
+
+template <typename Key, Device::Type kDev, typename Seq>
+struct ActiveImplementationsHelper;
+
+template <typename Key, Device::Type kDev, std::size_t... ns>
+struct ActiveImplementationsHelper<Key, kDev, std::index_sequence<ns...>> {
+  using type = typename Flatten<
+      typename ActiveImplementationsImpl<Key, kDev, ns>::type...>::type;
+};
+
+}  // namespace detail
+
 template <typename Key, Device::Type kDev>
 struct ActiveImplementations {
-  using type = typename Flatten<
-      typename ActiveImplementationsImpl<Key, kDev, 0>::type,
-      typename ActiveImplementationsImpl<Key, kDev, 1>::type,
-      typename ActiveImplementationsImpl<Key, kDev, 2>::type,
-      typename ActiveImplementationsImpl<Key, kDev, 3>::type>::type;
+  using type = typename detail::ActiveImplementationsHelper<
+      Key, kDev, std::make_index_sequence<kMaxImplementations>>::type;
 };
 
 }  // namespace infini::ops
