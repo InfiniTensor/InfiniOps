@@ -55,9 +55,7 @@ def test_reshape_and_cache_contiguous(
     active_indices = infini.ops.ReshapeAndCache.active_implementation_indices(device)
 
     if implementation_index not in active_indices:
-        pytest.skip(
-            f"implementation `{implementation_index}` not active on `{device}`"
-        )
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     key = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
@@ -125,9 +123,7 @@ def test_reshape_and_cache_noncontiguous_slots(
     active_indices = infini.ops.ReshapeAndCache.active_implementation_indices(device)
 
     if implementation_index not in active_indices:
-        pytest.skip(
-            f"implementation `{implementation_index}` not active on `{device}`"
-        )
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     key = randn_strided(
         (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
@@ -157,17 +153,26 @@ def test_reshape_and_cache_noncontiguous_slots(
     )
 
 
-def _reshape_and_cache(key, value, kv_cache, slot_mapping, kv_cache_out,
-                       implementation_index=0):
+def _reshape_and_cache(
+    key, value, kv_cache, slot_mapping, kv_cache_out, implementation_index=0
+):
     if key.device.type == "npu":
         infini.ops.reshape_and_cache(
-            key, value, kv_cache, slot_mapping, kv_cache_out,
+            key,
+            value,
+            kv_cache,
+            slot_mapping,
+            kv_cache_out,
             implementation_index=implementation_index,
             stream=get_npu_stream(key),
         )
     else:
         infini.ops.reshape_and_cache(
-            key, value, kv_cache, slot_mapping, kv_cache_out,
+            key,
+            value,
+            kv_cache,
+            slot_mapping,
+            kv_cache_out,
             implementation_index=implementation_index,
         )
 

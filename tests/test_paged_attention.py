@@ -384,9 +384,7 @@ def test_paged_attention_host_tensors(
         dtype=dtype,
         device=device,
     )
-    output = torch.empty(
-        (num_reqs, num_heads, head_size), dtype=dtype, device=device
-    )
+    output = torch.empty((num_reqs, num_heads, head_size), dtype=dtype, device=device)
 
     block_table = torch.zeros(
         (num_reqs, num_blocks_per_req), dtype=torch.int32, device=device
@@ -396,9 +394,7 @@ def test_paged_attention_host_tensors(
         for j in range(num_blocks_per_req):
             block_table[i, j] = i * num_blocks_per_req + j
 
-    seq_lens = torch.full(
-        (num_reqs,), kv_len, dtype=torch.int32, device=device
-    )
+    seq_lens = torch.full((num_reqs,), kv_len, dtype=torch.int32, device=device)
 
     # CPU copies for the D2H-free path.
     seq_lens_cpu = seq_lens.cpu().contiguous()

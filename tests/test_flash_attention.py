@@ -307,9 +307,7 @@ def test_flash_attention_decode_cpu_cuseqlens(
         dtype=dtype,
         device=device,
     )
-    output = torch.empty(
-        (num_reqs, num_heads, head_size), dtype=dtype, device=device
-    )
+    output = torch.empty((num_reqs, num_heads, head_size), dtype=dtype, device=device)
 
     block_table = torch.zeros(
         (num_reqs, num_blocks_per_req), dtype=torch.int32, device=device
@@ -319,9 +317,7 @@ def test_flash_attention_decode_cpu_cuseqlens(
         for j in range(num_blocks_per_req):
             block_table[i, j] = i * num_blocks_per_req + j
 
-    cu_seqlens_q = torch.arange(
-        0, num_reqs + 1, dtype=torch.int64, device=device
-    )
+    cu_seqlens_q = torch.arange(0, num_reqs + 1, dtype=torch.int64, device=device)
 
     # CPU cu_seqlens_kv — exercises `detail::extractSeqLengths` host path
     # (direct pointer read, no D2H copy).
