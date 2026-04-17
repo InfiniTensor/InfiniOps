@@ -163,7 +163,7 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto call(const Handle& handle, const Config& config, Args&&... args) {
+  static auto Call(const Handle& handle, const Config& config, Args&&... args) {
     static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
         cache;
 
@@ -184,8 +184,8 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto call(const Tensor tensor, Args&&... args) {
-    return call({}, {}, tensor, std::forward<Args>(args)...);
+  static auto Call(const Tensor tensor, Args&&... args) {
+    return Call({}, {}, tensor, std::forward<Args>(args)...);
   }
 
   static std::vector<std::size_t> active_implementation_indices(

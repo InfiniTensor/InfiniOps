@@ -80,7 +80,7 @@ inline at::ScalarType ToAtenDataType(DataType dtype) {
 
 // Build an ATen tensor from explicit metadata. Use this instead of reading
 // shape/strides from the `Tensor` parameter, which may have been moved-from
-// by the `call()` dispatch path (see `operator.h`).
+// by the `Call()` dispatch path (see `operator.h`).
 template <Device::Type kDev>
 inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
                                const Tensor::Strides& strides, DataType dtype,

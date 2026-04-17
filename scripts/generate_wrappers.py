@@ -182,7 +182,7 @@ def _generate_pybind11(operator):
                 f"    }}\n"
                 f"    Config config;\n"
                 f"    config.set_implementation_index(implementation_index);\n"
-                f"    return Self::call(handle, config, {call_args});\n"
+                f"    return Self::Call(handle, config, {call_args});\n"
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
