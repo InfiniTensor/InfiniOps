@@ -32,6 +32,19 @@ namespace infini::ops {
 //
 // Output layout:
 //   output      : [batch, num_heads, head_size]
+//
+// Optional host tensors: `seq_lens_host` and `block_table_host` are CPU
+// mirrors of `seq_lens` and `block_table`.  They exist because CANN's
+// paged-attention APIs mandate CPU-resident metadata — aclnn declares
+// `qSeqLens` as a CPU tensor in its signature, and ATB
+// `PagedAttentionParam` reads `aclIntArray*` parameters from the
+// `hostData` field at `aclnnRunner::Setup()` time.  Without caller-
+// provided host tensors, the kernel must synchronously D2H-copy both
+// each call, which (a) blocks the stream and (b) prevents NPUGraph
+// capture (sync copies are not capturable).  When the caller already
+// has CPU-pinned copies (e.g. vLLM's `optimistic_seq_lens_cpu` and
+// `BlockTable.get_cpu_tensor()`), passing them through lets the kernel
+// skip both D2H copies and be captured into a full NPUGraph.
 class PagedAttention : public Operator<PagedAttention> {
  public:
   PagedAttention(const Tensor query, const Tensor key_cache,
