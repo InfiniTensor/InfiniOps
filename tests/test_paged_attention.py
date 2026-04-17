@@ -18,14 +18,6 @@ def _atb_pa_unsupported_reason():
     if not infini.ops.PagedAttention.active_implementation_indices("ascend"):
         return "ATB PagedAttention implementation not registered for Ascend"
 
-    # ATB PA crashes during `Setup` on Ascend 910B (CANN 8.5.x).  Other
-    # SoCs (Atlas A5 SoC 260) are known to work.  Extend the blacklist as
-    # more bad SoCs are identified.
-    name = torch.npu.get_device_name(0)
-
-    if "910B" in name:
-        return f"ATB PagedAttention crashes on {name} with CANN 8.5.x"
-
     return ""
 
 
