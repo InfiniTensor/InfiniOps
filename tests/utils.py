@@ -82,11 +82,22 @@ def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     return output
 
 
+_STREAM_ACCESSORS = {
+    "npu": ("npu", "npu_stream"),
+    "cuda": ("cuda", "cuda_stream"),
+    "mlu": ("mlu", "mlu_stream"),
+    "musa": ("musa", "musa_stream"),
+}
+
+
 def get_stream(device):
     """Return the raw stream handle for `device`, or 0 for CPU.
 
-    Uses `torch.accelerator.current_stream` when available, falling back to
-    device-specific APIs for older PyTorch versions.
+    Prefers the device-specific API (e.g. `torch.npu.current_stream`) over
+    `torch.accelerator.current_stream`: on torch 2.9 + `torch_npu`, the two
+    return different stream handles, and kernels submitted on one race
+    against PyTorch work on the other when an operator caches its executor
+    (observed on `Gemm`/`Linear`).
     """
     if isinstance(device, torch.device):
         device = device.type
@@ -97,30 +108,19 @@ def get_stream(device):
     if device == "cpu":
         return 0
 
-    if hasattr(torch, "accelerator") and hasattr(torch.accelerator, "current_stream"):
-        stream = torch.accelerator.current_stream()
-
-        # Each backend exposes the raw handle under a different attribute name.
-        for attr in ("npu_stream", "cuda_stream", "mlu_stream", "musa_stream"):
-            if hasattr(stream, attr):
-                return getattr(stream, attr)
-
-        return 0
-
-    # Fallback for older PyTorch builds without `torch.accelerator`.
-    _STREAM_ACCESSORS = {
-        "npu": ("npu", "npu_stream"),
-        "cuda": ("cuda", "cuda_stream"),
-        "mlu": ("mlu", "mlu_stream"),
-        "musa": ("musa", "musa_stream"),
-    }
-
     if device in _STREAM_ACCESSORS:
         mod_name, attr = _STREAM_ACCESSORS[device]
         mod = getattr(torch, mod_name, None)
 
         if mod is not None and hasattr(mod, "current_stream"):
             return getattr(mod.current_stream(), attr)
+
+    if hasattr(torch, "accelerator") and hasattr(torch.accelerator, "current_stream"):
+        stream = torch.accelerator.current_stream()
+
+        for attr in ("npu_stream", "cuda_stream", "mlu_stream", "musa_stream"):
+            if hasattr(stream, attr):
+                return getattr(stream, attr)
 
     return 0
 
