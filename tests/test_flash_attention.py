@@ -537,3 +537,80 @@ def _ref_flash_attention_paged(
         outputs.append(out)
 
     return torch.cat(outputs, dim=0).to(query.device)
+
+
+@pytest.mark.parametrize("sliding_window", (4, 16))
+@pytest.mark.parametrize("device", ("npu",))
+def test_flash_attention_sliding_window_equivalence(sliding_window, device):
+    """The vLLM-style `sliding_window=N` entry must produce the same output
+    as the native `window_left=N-1, window_right=0` pair.
+    """
+    if not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    num_tokens = 32
+    num_heads = 8
+    num_kv_heads = 8
+    head_size = 64
+    scale = 1.0 / head_size**0.5
+    dtype = torch.float16
+
+    query = randn_strided(
+        (num_tokens, num_heads, head_size), None, dtype=dtype, device=device
+    )
+    key = randn_strided(
+        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
+    )
+    value = randn_strided(
+        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
+    )
+
+    cu_seqlens_q = torch.tensor([0, num_tokens], dtype=torch.int64, device=device)
+    cu_seqlens_kv = torch.tensor([0, num_tokens], dtype=torch.int64, device=device)
+
+    # Pair-form call.
+    out_pair = torch.empty_like(query)
+    infini.ops.flash_attention(
+        query,
+        key,
+        value,
+        cu_seqlens_q,
+        cu_seqlens_kv,
+        None,
+        num_heads,
+        num_kv_heads,
+        head_size,
+        scale,
+        True,
+        sliding_window - 1,
+        0,
+        0,
+        out_pair,
+        stream=get_npu_stream(query),
+    )
+
+    # vLLM-style single-parameter call.
+    out_sw = torch.empty_like(query)
+    infini.ops.flash_attention(
+        query,
+        key,
+        value,
+        cu_seqlens_q,
+        cu_seqlens_kv,
+        None,
+        num_heads,
+        num_kv_heads,
+        head_size,
+        scale,
+        True,
+        -1,
+        -1,
+        0,
+        out_sw,
+        sliding_window=sliding_window,
+        stream=get_npu_stream(query),
+    )
+
+    assert torch.equal(out_pair, out_sw), (
+        f"Max diff: {(out_pair.float() - out_sw.float()).abs().max().item()}"
+    )

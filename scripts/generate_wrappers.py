@@ -121,6 +121,9 @@ def _generate_pybind11(operator):
             return True
         return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
 
+    def _is_optional(arg):
+        return "std::optional" in arg.type.spelling
+
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
             return True
@@ -177,7 +180,7 @@ def _generate_pybind11(operator):
             if arg.spelling == "stream":
                 continue
 
-            if _is_optional_tensor(arg):
+            if _is_optional(arg):
                 parts.append(f'py::arg("{arg.spelling}") = py::none()')
             else:
                 parts.append(f'py::arg("{arg.spelling}")')

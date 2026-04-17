@@ -114,10 +114,12 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
            std::optional<Tensor> block_table, int64_t num_heads,
            int64_t num_kv_heads, int64_t head_size, double scale, bool causal,
            int64_t window_left, int64_t window_right, int64_t block_size,
-           Tensor output)
+           Tensor output,
+           std::optional<int64_t> sliding_window = std::nullopt)
       : FlashAttention(query, key, value, cu_seqlens_q, cu_seqlens_kv,
                        block_table, num_heads, num_kv_heads, head_size, scale,
-                       causal, window_left, window_right, block_size, output) {
+                       causal, window_left, window_right, block_size, output,
+                       sliding_window) {
     paged_ = block_table.has_value() && block_size > 0;
     aclDataType acl_dt = ascend::toAclDtype(query.dtype());
 
@@ -126,9 +128,11 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
       prefill_q_cache_ = ascend::AclTensorCache(query);
       prefill_out_cache_ = ascend::AclTensorCache(output);
 
-      // Pre-compute causal mask once (sparse_mode >= 2).
+      // Pre-compute causal mask once (sparse_mode >= 2).  Read the
+      // resolved pair from base-class members so `sliding_window`
+      // normalization is honored at cache-key construction.
       if (causal) {
-        int64_t sm = (window_left >= 0) ? 4 : 3;
+        int64_t sm = (window_left_ >= 0) ? 4 : 3;
         if (sm >= 2) {
           causal_mask_ = detail::makeCausalMask(&causal_mask_buf_, nullptr);
         }
@@ -169,17 +173,27 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
                   std::optional<Tensor> block_table, int64_t num_heads,
                   int64_t num_kv_heads, int64_t head_size, double scale,
                   bool causal, int64_t window_left, int64_t window_right,
-                  int64_t block_size, Tensor output) const override {
+                  int64_t block_size, Tensor output,
+                  std::optional<int64_t> sliding_window) const override {
     auto stream = static_cast<aclrtStream>(stream_);
     const bool paged = paged_;
+
+    // The base class stored the resolved window pair in `window_left_` /
+    // `window_right_` at construction; prefer those over the call-site
+    // args so that `sliding_window` is honored here as well.
+    int64_t wl = window_left_;
+    int64_t wr = window_right_;
+    (void)window_left;
+    (void)window_right;
+    (void)sliding_window;
 
     int64_t sparse_mode;
     int64_t pre_tokens = 2147483647;
     int64_t next_tokens = 2147483647;
     if (causal) {
-      if (window_left >= 0) {
+      if (wl >= 0) {
         sparse_mode = 4;
-        pre_tokens = window_left;
+        pre_tokens = wl;
         next_tokens = 0;
       } else {
         sparse_mode = 3;
@@ -187,8 +201,8 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
       }
     } else {
       sparse_mode = 0;
-      if (window_left >= 0) pre_tokens = window_left;
-      if (window_right >= 0) next_tokens = window_right;
+      if (wl >= 0) pre_tokens = wl;
+      if (wr >= 0) next_tokens = wr;
     }
 
     if (!paged) {
