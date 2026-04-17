@@ -9,14 +9,6 @@
 
 namespace infini::ops {
 
-// Fused multi-head / grouped-query attention.
-//
-// Interface follows vLLM v1 `AttentionImpl.forward()`:
-//   `vllm.v1.attention.backends.abstract.AttentionImpl`
-//
-// Layout: `query` / `key` / `value` are `[T, N, D]` (TND).
-// Prefill uses `cu_seqlens_q` / `cu_seqlens_kv` for variable-length packing.
-// Decode uses `block_table` for paged KV cache lookup.
 class FlashAttention : public Operator<FlashAttention> {
  public:
   FlashAttention(const Tensor query, const Tensor key, const Tensor value,
@@ -48,7 +40,7 @@ class FlashAttention : public Operator<FlashAttention> {
         has_cu_seqlens_kv_{cu_seqlens_kv.has_value()},
         has_block_table_{block_table.has_value()} {
     assert(num_heads % num_kv_heads == 0 &&
-           "`FlashAttention` requires num_heads divisible by num_kv_heads");
+           "`FlashAttention` requires `num_heads` divisible by `num_kv_heads`");
     assert(query.ndim() == 3 &&
            "`FlashAttention` requires query to be 3D [T, N, D]");
   }
