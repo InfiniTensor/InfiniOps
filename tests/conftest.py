@@ -16,7 +16,7 @@ def pytest_addoption(parser):
         "--devices",
         nargs="+",
         default=None,
-        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
+        help="Device(s) to test on (e.g., --devices ascend cpu). Accepts platform names (ascend, nvidia, cambricon, metax, moore, iluvatar) or PyTorch device types (npu, cuda, mlu, musa). Defaults to all available devices.",
     )
 
 
@@ -44,10 +44,34 @@ def set_seed_per_test(request):
     _set_random_seed(_hash(_test_case_path_from_request(request)))
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _clear_operator_caches():
+    """Clear the C++ operator cache between test modules.
+
+    The ``Operator::call()`` cache keys on tensor geometry (shape, strides,
+    dtype) but not data pointers.  When different test modules create tensors
+    with identical geometry but different data content (e.g., random
+    ``cos_sin_cache`` tables), a stale cached operator from a prior module
+    silently returns wrong results.  Clearing the cache at module boundaries
+    ensures each module starts with a cold cache.
+    """
+    yield
+
+    try:
+        import infini.ops as ops
+
+        for name in dir(ops):
+            cls = getattr(ops, name)
+
+            if hasattr(cls, "clear_cache"):
+                cls.clear_cache()
+    except ImportError:
+        pass
+
+
 _NPU_UNSUPPORTED_DTYPES = {torch.float64}
 
-# `torch_npu` does not implement random number generation for
-# `uint16`/`uint32`/`uint64`.
+# `torch_npu` does not implement random number generation for `uint16`/`uint32`/`uint64`.
 for _bits in (16, 32, 64):
     _t = getattr(torch, f"uint{_bits}", None)
     if _t is not None:
@@ -55,7 +79,7 @@ for _bits in (16, 32, 64):
 
 
 @pytest.fixture(autouse=True)
-def skip_unsupported_dtypes(request):
+def skip_unsupported_dtype(request):
     if not hasattr(request.node, "callspec"):
         return
 
@@ -72,16 +96,16 @@ def _set_random_seed(seed):
 
 _PLATFORM_TO_TORCH_DEVICE = {
     "nvidia": "cuda",
-    "metax": "cuda",
     "iluvatar": "cuda",
-    "moore": "musa",
+    "metax": "cuda",
     "cambricon": "mlu",
+    "moore": "musa",
     "ascend": "npu",
 }
 
 
 def _resolve_device(name):
-    """Map a platform name (e.g., `ascend`) to a PyTorch device type (e.g., `npu`)."""
+    """Map a platform name (e.g., ``ascend``) to a PyTorch device type (e.g., ``npu``)."""
     return _PLATFORM_TO_TORCH_DEVICE.get(name, name)
 
 
