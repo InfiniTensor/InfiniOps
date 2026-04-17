@@ -71,6 +71,11 @@ def test_gemm(
     ):
         pytest.skip("ATen CPU `addmm`/`baddbmm` does not support half-precision")
 
+    # `torch_npu` converts NPU tensors to a private format that `at::addmm` /
+    # `at::baddbmm` do not recognize, surfacing as `unknown format type:49`.
+    if implementation_index == 2 and device == "npu":
+        pytest.skip("`torch_npu` format conversion unsupported by ATen `addmm`")
+
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
