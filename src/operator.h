@@ -37,6 +37,14 @@ struct CacheKey {
     tensors.push_back(t);
   }
 
+  void Absorb(const std::vector<Tensor>& ts) {
+    HashCombine(hash, ts.size());
+    for (const auto& t : ts) {
+      HashCombine(hash, t);
+      tensors.push_back(t);
+    }
+  }
+
   template <typename T>
   void Absorb(const T& v) {
     HashCombine(hash, v);
@@ -121,7 +129,16 @@ class OperatorBase {
 template <typename Key, Device::Type device_type = Device::Type::kCount,
           std::size_t implementation_index = 0>
 class Operator : public OperatorBase {
+  // Generation counter for lazy cache invalidation.  Bumped by
+  // `clear_cache()`; the next `call()` detects the mismatch and
+  // destroys all cached operator instances.
+  static inline std::size_t cache_generation_{0};
+
  public:
+  // Invalidate the operator cache.  Cached operators are destroyed on the
+  // next `call()` invocation.  Intended for test isolation — production
+  // code should never call this.
+  static void clear_cache() { ++cache_generation_; }
   template <typename... Args>
   static auto Make(const Config& config, const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
@@ -166,6 +183,12 @@ class Operator : public OperatorBase {
   static auto Call(const Handle& handle, const Config& config, Args&&... args) {
     static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
         cache;
+    static std::size_t generation{0};
+
+    if (generation != cache_generation_) {
+      cache.clear();
+      generation = cache_generation_;
+    }
 
     auto key = detail::CacheKey::Build(config.implementation_index(), args...);
 
@@ -174,7 +197,7 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       // Pass args as lvalue refs so they remain valid for the `operator()` call
       // below. Forwarding rvalue temporaries into `Make()` would leave the args
-      // in a moved-from (empty) state before operator() can use them.
+      // in a moved-from (empty) state before `operator()` can use them.
       it = cache.emplace(std::move(key), Make(config, args...)).first;
     }
 

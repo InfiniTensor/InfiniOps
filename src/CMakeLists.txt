@@ -178,8 +178,10 @@ if(WITH_ASCEND)
         "ascend/*.cc"
         "ascend/*.cpp"
     )
-    # Exclude `kernel_impl.cpp` — AscendC device code, not compiled by the host C++ compiler.
+    # Exclude kernel_impl.cpp — AscendC device code, not compiled by the host C++ compiler.
     list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
+    # Exclude custom_kernel/ — standalone PyTorch extension, built separately.
+    list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*/custom_kernel/.*")
 
     target_compile_definitions(infiniops PUBLIC WITH_ASCEND=1)
     target_sources(infiniops PRIVATE ${ASCEND_SOURCES})
@@ -215,7 +217,38 @@ if(WITH_ASCEND)
         "${ASCEND_HOME}/lib64/libopapi.so"
         "${ASCEND_HAL_LIB}")
 
+    # ATB (Ascend Transformer Boost) — provides fused operators like
+    # PagedAttention and ReshapeAndCache that are graph-capture safe.
+    set(ATB_HOME_DIR "$ENV{ATB_HOME_PATH}")
+    if(NOT ATB_HOME_DIR)
+        # Default search path under CANN nnal directory.
+        file(GLOB ATB_SEARCH_DIRS "/usr/local/Ascend/nnal/atb/*/atb/cxx_abi_1")
+        if(ATB_SEARCH_DIRS)
+            list(SORT ATB_SEARCH_DIRS ORDER DESCENDING)
+            list(GET ATB_SEARCH_DIRS 0 ATB_HOME_DIR)
+        endif()
+    endif()
+
+    if(ATB_HOME_DIR AND EXISTS "${ATB_HOME_DIR}/include/atb/operation.h")
+        message(STATUS "ATB found: ${ATB_HOME_DIR}")
+        target_compile_definitions(infiniops PUBLIC INFINI_HAS_ATB=1)
+        target_include_directories(infiniops PUBLIC "${ATB_HOME_DIR}/include")
+        target_link_libraries(infiniops PUBLIC "${ATB_HOME_DIR}/lib/libatb.so")
+    else()
+        message(STATUS "ATB not found — ATB-based operators disabled")
+    endif()
+
     list(APPEND DEVICE_LIST "ascend")
+
+    # Custom AscendC kernels (PyTorch extension, requires torch_npu).
+    if(BUILD_CUSTOM_KERNEL)
+        add_subdirectory(ascend/custom_kernel)
+
+        # Link the compiled AscendC kernel objects into infiniops so that
+        # custom kernel implementations (e.g. RmsNorm index 1) can call
+        # them via the generated launch functions.
+        target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
+    endif()
 endif()
 
 if(WITH_TORCH)
@@ -339,6 +372,17 @@ if(GENERATE_PYTHON_BINDINGS)
 
     target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
     target_link_libraries(ops PRIVATE infiniops)
+
+    # Custom AscendC kernel objects must be linked directly into ops
+    # because the AscendC toolchain compiles host stubs with hidden
+    # visibility — `libinfiniops.so` cannot re-export those symbols.
+    # The `Operator<..., 1>` template instantiations that call
+    # `aclrtlaunch_*` live in `ops.cc`, so link here with
+    # `--whole-archive` to ensure all launch functions are available.
+    if(BUILD_CUSTOM_KERNEL)
+        target_link_libraries(ops PRIVATE
+            -Wl,--whole-archive no_workspace_kernel -Wl,--no-whole-archive)
+    endif()
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "$ORIGIN")
     set_target_properties(ops PROPERTIES INSTALL_RPATH "$ORIGIN")
