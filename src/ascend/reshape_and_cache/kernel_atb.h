@@ -8,6 +8,8 @@
 #include <cstdint>
 
 #include "acl/acl.h"
+#include "aclnn/aclnn_base.h"
+#include "aclnnop/aclnn_cast.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
@@ -31,13 +33,15 @@ namespace infini::ops {
 // before each Execute to bind the VariantPack.
 //
 // NOTE: `ReshapeAndCacheParam` requires int32 `slot_mapping`.  When the
-// caller passes int64 (the default in PyTorch / vLLM), this operator casts
-// to int32 via a pre-allocated device buffer — matching the pattern used in
-// the ATB rotary_embedding operator.
+// caller passes int64 (the PyTorch / vLLM default), this operator issues an
+// async `aclnnCast` to a pre-allocated int32 device buffer.  The cast
+// executor is cached across calls and the whole step stays on the stream
+// with no D2H/H2D round-trip, so the int64 path is NPUGraph-capturable and
+// roughly on par with the int32 fast path.
 //
 // Input layout:
 //   key, value : [num_tokens, num_kv_heads, head_size]
-//   slot_mapping: [num_tokens] (int32 or int64; int64 is cast internally)
+//   slot_mapping: [num_tokens] (int32 or int64)
 //
 // KV cache layout:
 //   kv_cache: [2, num_blocks, block_size, num_kv_heads, head_size]
@@ -78,6 +82,16 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
 
     slot_is_int32_ = (slot_mapping.element_size() == sizeof(int32_t));
 
+    // Prepare aclnnCast descriptors for the int64 → int32 path.  Source
+    // descriptor's data pointer is refreshed per call; destination is the
+    // pre-allocated `slot32_buf_`.
+    if (!slot_is_int32_) {
+      slot_i64_cache_ = ascend::AclTensorCache(
+          {T}, ACL_INT64, const_cast<void*>(slot_mapping.data()));
+      slot_i32_cache_ =
+          ascend::AclTensorCache({T}, ACL_INT32, slot32_buf_);
+    }
+
     // Create the ATB operation (reused across calls).
     atb::infer::ReshapeAndCacheParam param;
     atb::Status s = atb::CreateOperation(param, &op_);
@@ -88,6 +102,8 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
   ~Operator() {
     if (!ascend::isAclRuntimeAlive()) return;
     if (op_) atb::DestroyOperation(op_);
+    slot_i64_cache_.release();
+    slot_i32_cache_.release();
     if (slot32_buf_) aclrtFree(slot32_buf_);
   }
 
@@ -101,29 +117,31 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
     auto stream = static_cast<aclrtStream>(stream_);
 
     // `ReshapeAndCacheParam` requires int32 `slot_mapping`.  When the
-    // caller provides int64 (the PyTorch/vLLM default), cast to int32 via
-    // a pre-allocated device buffer.
+    // caller provides int64 (the PyTorch/vLLM default), issue an async
+    // `aclnnCast` to the pre-allocated int32 device buffer — keeps the
+    // whole step on-stream and NPUGraph-capturable.
     void* slot32_ptr;
 
     if (slot_is_int32_) {
       // Already int32 — pass through directly.
       slot32_ptr = const_cast<void*>(slot_mapping.data());
     } else {
-      // int64 → int32: D2H, CPU cast, H2D.
-      auto T = static_cast<size_t>(num_tokens_);
-      std::vector<int64_t> i64(T);
-      aclrtMemcpyAsync(i64.data(), T * sizeof(int64_t), slot_mapping.data(),
-                       T * sizeof(int64_t), ACL_MEMCPY_DEVICE_TO_HOST, stream);
-      aclrtSynchronizeStream(stream);
+      auto t_src =
+          slot_i64_cache_.get(const_cast<void*>(slot_mapping.data()));
+      auto t_dst = slot_i32_cache_.get(slot32_buf_);
 
-      std::vector<int32_t> i32(T);
-
-      for (size_t i = 0; i < T; ++i) {
-        i32[i] = static_cast<int32_t>(i64[i]);
+      if (!cast_exec_) {
+        aclnnCastGetWorkspaceSize(t_src, ACL_INT32, t_dst, &cast_ws_,
+                                  &cast_exec_);
+        aclSetAclOpExecutorRepeatable(cast_exec_);
+      } else {
+        aclSetInputTensorAddr(cast_exec_, 0, t_src,
+                              const_cast<void*>(slot_mapping.data()));
+        aclSetOutputTensorAddr(cast_exec_, 0, t_dst, slot32_buf_);
       }
 
-      aclrtMemcpyAsync(slot32_buf_, slot32_bytes_, i32.data(), slot32_bytes_,
-                       ACL_MEMCPY_HOST_TO_DEVICE, stream);
+      auto& cast_arena = ascend::GetWorkspacePool().Ensure(stream, cast_ws_);
+      aclnnCast(cast_arena.buf, cast_ws_, cast_exec_, stream);
       slot32_ptr = slot32_buf_;
     }
 
@@ -223,6 +241,15 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
 
   // True if the caller already provides int32 `slot_mapping`.
   bool slot_is_int32_ = false;
+
+  // Cached aclnnCast descriptors (int64 slot_mapping → int32 buffer).
+  mutable ascend::AclTensorCache slot_i64_cache_;
+
+  mutable ascend::AclTensorCache slot_i32_cache_;
+
+  mutable aclOpExecutor* cast_exec_ = nullptr;
+
+  mutable uint64_t cast_ws_ = 0;
 };
 
 }  // namespace infini::ops
