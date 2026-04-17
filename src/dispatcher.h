@@ -84,7 +84,7 @@ template <typename ValueType, typename Functor, auto head, auto... tail,
           typename... Args>
 struct DispatchFuncUnwrap<ValueType, Functor, List<head, tail...>,
                           std::tuple<Args...>> {
-  static auto call(ValueType value, Functor&& func,
+  static auto Call(ValueType value, Functor&& func,
                    std::string_view context_str, Args&&... args) {
     return DispatchFuncImpl(value, std::forward<Functor>(func), context_str,
                             List<head, tail...>{}, std::forward<Args>(args)...);
@@ -94,7 +94,7 @@ struct DispatchFuncUnwrap<ValueType, Functor, List<head, tail...>,
 // Empty-list specialization
 template <typename ValueType, typename Functor, typename... Args>
 struct DispatchFuncUnwrap<ValueType, Functor, List<>, std::tuple<Args...>> {
-  static auto call(ValueType value, Functor&&, std::string_view context_str,
+  static auto Call(ValueType value, Functor&&, std::string_view context_str,
                    Args&&...) {
     // TODO(lzm): change to logging.
     std::cerr << "dispatch error: no allowed values registered for value "
@@ -116,7 +116,7 @@ auto DispatchFunc(ValueType value, Functor&& func,
 
   return detail::DispatchFuncUnwrap<
       ValueType, Functor, FilteredPack,
-      std::tuple<Args...>>::call(value, std::forward<Functor>(func),
+      std::tuple<Args...>>::Call(value, std::forward<Functor>(func),
                                  context_str, std::forward<Args>(args)...);
 }
 
