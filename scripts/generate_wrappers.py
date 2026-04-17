@@ -94,23 +94,37 @@ class _Operator:
 
 def _find_optional_tensor_params(op_name):
     """Return a set of parameter names declared as `std::optional<Tensor>` in
-    the base header. `libclang` resolves the type to `int` when the STL
+    the base header.  libclang resolves the type to ``int`` when the STL
     headers are not fully available, so we fall back to a regex scan of the
     source text.
     """
     source = (_BASE_DIR / f"{op_name}.h").read_text()
-
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
+
+
+def _find_vector_tensor_params(op_name):
+    """Return a set of parameter names declared as `std::vector<Tensor>` in
+    the base header.
+    """
+    import re
+
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
 
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
+    vector_tensor_params = _find_vector_tensor_params(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
             return True
-
         return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+
+    def _is_vector_tensor(arg):
+        if arg.spelling in vector_tensor_params:
+            return True
+        return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
     def _generate_params(node):
         parts = []
@@ -118,9 +132,10 @@ def _generate_pybind11(operator):
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
-
             if _is_optional_tensor(arg):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
+            elif _is_vector_tensor(arg):
+                parts.append(f"std::vector<py::object> {arg.spelling}")
             else:
                 param = arg.type.spelling.replace("const Tensor", "py::object").replace(
                     "Tensor", "py::object"
@@ -135,9 +150,10 @@ def _generate_pybind11(operator):
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
-
             if _is_optional_tensor(arg):
                 args.append(f"OptionalTensorFromPybind11Handle({arg.spelling})")
+            elif _is_vector_tensor(arg):
+                args.append(f"VectorTensorFromPybind11Handle({arg.spelling})")
             elif "Tensor" in arg.type.spelling:
                 args.append(f"TensorFromPybind11Handle({arg.spelling})")
             else:
@@ -155,11 +171,18 @@ def _generate_pybind11(operator):
       }}))"""
 
     def _generate_py_args(node):
-        return ", ".join(
-            f'py::arg("{arg.spelling}")'
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
+        parts = []
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            if _is_optional_tensor(arg):
+                parts.append(f'py::arg("{arg.spelling}") = py::none()')
+            else:
+                parts.append(f'py::arg("{arg.spelling}")')
+
+        return ", ".join(parts)
 
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
@@ -167,23 +190,23 @@ def _generate_pybind11(operator):
 
         if not method:
             params = (
-                f"{call_params}, std::uintptr_t stream, std::size_t implementation_index"
+                f"{call_params}, std::size_t implementation_index, std::uintptr_t stream"
                 if call_params
-                else "std::uintptr_t stream, std::size_t implementation_index"
+                else "std::size_t implementation_index, std::uintptr_t stream"
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
 
             return (
                 f'  m.def("{op_name}", []({params}) {{\n'
+                f"    Config config;\n"
+                f"    config.set_implementation_index(implementation_index);\n"
                 f"    Handle handle;\n"
                 f"    if (stream) {{\n"
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
                 f"    }}\n"
-                f"    Config config;\n"
-                f"    config.set_implementation_index(implementation_index);\n"
                 f"    return Self::call(handle, config, {call_args});\n"
-                f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
+                f'  }}, {py_args_str}py::kw_only(), py::arg("implementation_index") = 0, py::arg("stream") = 0);'
             )
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
@@ -224,7 +247,8 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
         return Self::active_implementation_indices(DeviceTypeFromString(device));
-      }});
+      }})
+      .def_static("clear_cache", &Self::clear_cache);
 
 {callers}
 }}
@@ -447,7 +471,7 @@ if __name__ == "__main__":
         nargs="+",
         default="cpu",
         type=str,
-        help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `moore`, `iluvatar`, `kunlun`, `hygon`, and `qy`. (default: `cpu`)",
+        help="Devices to use. Please pick from cpu, nvidia, cambricon, ascend, metax, moore, iluvatar, kunlun, hygon, and qy. (default: cpu)",
     )
 
     parser.add_argument(
