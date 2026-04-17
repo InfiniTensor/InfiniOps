@@ -89,6 +89,56 @@ def skip_unsupported_dtype(request):
         pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
 
 
+_TORCH_DEVICE_TO_PLATFORM = {
+    "npu": "ascend",
+    "cuda": "nvidia",
+    "mlu": "cambricon",
+    "musa": "moore",
+}
+
+
+@pytest.fixture(autouse=True)
+def skip_op_without_platform_impl(request):
+    """Skip `device=npu/cuda/...` parametrizations when the op has no impl on
+    that platform.
+
+    Derives the InfiniOps class name from the test module filename
+    (`tests/test_<snake>.py` → `<Snake>`) and checks
+    `infini.ops.<Op>.active_implementation_indices(<platform>)`. Skips when
+    empty — avoids `Fatal Python error: Aborted` from dispatching through
+    a base class that has no backend specialization on the current branch.
+    """
+    if not hasattr(request.node, "callspec"):
+        return
+
+    device = request.node.callspec.params.get("device")
+    platform = _TORCH_DEVICE_TO_PLATFORM.get(device)
+
+    if platform is None:
+        return
+
+    module_name = request.node.module.__name__.rsplit(".", 1)[-1]
+
+    if not module_name.startswith("test_"):
+        return
+
+    op_snake = module_name[len("test_") :]
+    op_pascal = "".join(part.capitalize() for part in op_snake.split("_"))
+
+    try:
+        import infini.ops as _ops
+    except ImportError:
+        return
+
+    op_cls = getattr(_ops, op_pascal, None)
+
+    if op_cls is None or not hasattr(op_cls, "active_implementation_indices"):
+        return
+
+    if not op_cls.active_implementation_indices(platform):
+        pytest.skip(f"{op_pascal} has no {platform} implementation on this build")
+
+
 def _set_random_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
