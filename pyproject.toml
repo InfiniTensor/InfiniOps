@@ -14,7 +14,7 @@ install-dir = "infini"
 
 [tool.scikit-build.cmake.define]
 AUTO_DETECT_DEVICES = "ON"
-AUTO_DETECT_BACKENDS = "OFF"
+AUTO_DETECT_BACKENDS = "ON"
 GENERATE_PYTHON_BINDINGS = "ON"
 
 [tool.pytest.ini_options]
