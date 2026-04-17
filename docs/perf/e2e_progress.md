@@ -26,6 +26,7 @@ Columns: total tokens per second (infini / ascend), ratio, and notes.
 | 2026-04-17 | `e05f613` | 0.5B | piecewise | 10,445.0 | 15,525.2 | 67.28% | Same. `_ops.__call__` ncalls: 30,080 → 2,368 (12.7x). |
 | 2026-04-17 | `e05f613` | 3B   | eager     |  6,370.3 |  6,690.4 | **95.22%** | Same. |
 | 2026-04-17 | `e05f613` | 3B   | piecewise |  7,257.6 | 10,147.6 | **71.51%** | Same. +7.7 pp graph-mode vs stream-cache alone. |
+| 2026-04-17 | `9b91b3f` | — | — | — | — | — | Scaffolding only: `vllm_infini/compilation/` pass-manager + `INFINI_FUSION_PASSES` env var. Zero passes registered. P-3 evaluated and deferred (zero noop candidates on Qwen2.5-3B). Correctness 6/6 unchanged. |
 
 ## Status vs target
 
