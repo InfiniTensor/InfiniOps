@@ -53,6 +53,8 @@ vllm-ascend closes that gap with a **custom inductor-like compile backend plus 8
 
 On Qwen2.5 specifically: `qknorm_rope_fusion` misses (no QK-norm), `allreduce_*` / `sequence_parallelism*` / `allgather_*` miss (TP=1), `norm_quant_fusion` misses (no quant), `noop_elimination` / `muls_add_pass` are genuine noops. The passes that *do* fire on Qwen2.5 in vllm-ascend are the ones targeting `rms_norm + qkv_proj` / `rms_norm + gate_up_proj` / `rope + reshape_and_cache` — and every one of them requires a fused kernel on the far side of the pass. No public aclnn/ATB API covers these fusions; we don't have the kernels, and the passes without kernels to call are not useful.
 
+Task #29 (operator, 2026-04-16) closed out the last candidate kernel-level gap: GatherV3 is already at parity — infini 1.12 ms / 100 calls vs ascend 1.06 ms / 92 calls. The ~30.9 ms figure that floated in earlier baseline docs was pre-hoist-stale data; the weakref cache in `ops/rotary_embedding.py` had already collapsed per-layer gather to once-per-step. Graph host overhead therefore remains the only addressable lever, and it is gated on the fusion-pass infrastructure described above.
+
 ## Decision matrix for graph ≥80%
 
 If the target remains binding, the work is:
