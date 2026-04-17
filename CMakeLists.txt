@@ -137,6 +137,28 @@ if(WITH_TORCH)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
+    # `auditwheel`-repaired `torch` wheels bundle transitive dependencies
+    # (e.g. `libgfortran-<hash>.so`, `libopenblasp-<hash>.so`) in a sibling
+    # `torch.libs/` directory that `library_paths()` does not return.  When
+    # building against such a wheel, the linker needs this path to resolve
+    # the bundled NEEDED entries (otherwise: `undefined reference to
+    # _gfortran_etime@GFORTRAN_8` etc.).
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "import os, torch; d = os.path.dirname(torch.__file__); p = os.path.join(os.path.dirname(d), 'torch.libs'); print(p if os.path.isdir(p) else '')"
+        OUTPUT_VARIABLE TORCH_BUNDLED_LIBS_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    if(TORCH_BUNDLED_LIBS_DIR)
+        list(APPEND CMAKE_BUILD_RPATH "${TORCH_BUNDLED_LIBS_DIR}")
+        list(APPEND CMAKE_INSTALL_RPATH "${TORCH_BUNDLED_LIBS_DIR}")
+        # `rpath-link` is linker-only: lets `ld` resolve the bundled
+        # transitive NEEDED entries at link time without adding them to our
+        # own binary's direct NEEDED list.
+        add_link_options("-Wl,-rpath-link,${TORCH_BUNDLED_LIBS_DIR}")
+        message(STATUS "PyTorch bundled libs: ${TORCH_BUNDLED_LIBS_DIR}")
+    endif()
+
     # Query the `CXX11` ABI setting that `torch` was compiled with.
     # A mismatch causes linker errors (e.g. undefined reference to
     # `c10::Device::Device(std::string const&)`).
