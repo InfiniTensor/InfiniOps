@@ -2,6 +2,7 @@
 #define INFINI_OPS_CUDA_CASTER_CUH_
 
 #include "caster.h"
+#include "data_type.h"
 
 namespace infini::ops {
 
