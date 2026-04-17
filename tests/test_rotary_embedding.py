@@ -483,18 +483,26 @@ def test_rotary_embedding_partial(
     atol,
     device,
 ):
-    """Partial rotary: ``rotary_dim < head_size``."""
+    """Partial rotary: ``rotary_dim < head_size`` via implementation_index=2.
+
+    Only `aclnnRopeWithSinCosCache` (impl=2) supports partial rotary among
+    the Ascend fused APIs — V2 (impl=0) and ATB `RopeParam` (impl=1) both
+    require `cos.D == sin.D == x.D`.
+    """
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
     if device == "npu":
-        pytest.skip(
-            "Partial rotary (`rotary_dim < head_size`) is not supported by "
-            "any Ascend fused API: `aclnnApplyRotaryPosEmbV2`, "
-            "`aclnnRotaryPositionEmbedding`, and ATB `RopeParam` all require "
-            "`cos.D == sin.D == x.D`.  A decomposed implementation is "
-            "forbidden by project policy."
+        active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(
+            device
         )
+
+        if 2 not in active_indices:
+            pytest.skip(
+                "`aclnnRopeWithSinCosCache` (implementation_index=2) not "
+                "active on this build; it is the only Ascend fused API "
+                "that supports partial rotary (`rotary_dim < head_size`)."
+            )
 
     num_tokens = 16
     max_seq_len = 64
@@ -539,6 +547,7 @@ def test_rotary_embedding_partial(
         query_out,
         key_out,
         device,
+        implementation_index=2,
     )
 
     ref_q, ref_k = _ref_rotary_embedding(
