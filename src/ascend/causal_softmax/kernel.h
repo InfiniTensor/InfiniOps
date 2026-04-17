@@ -123,7 +123,8 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     } else {
       aclSetOutputTensorAddr(softmax_exec_, 0, t_out, out.data());
     }
-    auto& softmax_arena = ascend::GetWorkspacePool().Ensure(stream, softmax_ws_);
+    auto& softmax_arena =
+        ascend::GetWorkspacePool().Ensure(stream, softmax_ws_);
     aclnnSoftmax(softmax_arena.buf, softmax_ws_, softmax_exec_, stream);
   }
 

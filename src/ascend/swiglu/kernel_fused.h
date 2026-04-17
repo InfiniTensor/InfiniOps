@@ -79,7 +79,8 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Obtain shared temp buffer for the concatenated tensor.
-    auto& cat_arena = ascend::GetWorkspacePool().Ensure(stream, cat_size_, "temp");
+    auto& cat_arena =
+        ascend::GetWorkspacePool().Ensure(stream, cat_size_, "temp");
 
     // Lazily build the cat output tensor cache on first call.
     if (!cat_out_cache_) {
@@ -112,8 +113,8 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     void* swiglu_out_data = out.data();
 
     if (needs_copy_) {
-      auto& staging =
-          ascend::GetWorkspacePool().Ensure(stream, out_staging_size_, "staging");
+      auto& staging = ascend::GetWorkspacePool().Ensure(
+          stream, out_staging_size_, "staging");
 
       if (!out_staging_cache_) {
         std::vector<int64_t> out_shape(out_shape_.begin(), out_shape_.end());

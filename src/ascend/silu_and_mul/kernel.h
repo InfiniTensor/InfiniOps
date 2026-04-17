@@ -52,8 +52,8 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
     void* swiglu_out_data = out.data();
 
     if (needs_copy_) {
-      auto& staging =
-          ascend::GetWorkspacePool().Ensure(stream, out_staging_size_, "staging");
+      auto& staging = ascend::GetWorkspacePool().Ensure(
+          stream, out_staging_size_, "staging");
 
       if (!out_staging_cache_) {
         std::vector<int64_t> out_shape(out_shape_.begin(), out_shape_.end());
