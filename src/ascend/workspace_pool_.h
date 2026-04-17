@@ -18,7 +18,7 @@ struct WorkspaceArena {
 
 class WorkspacePool {
  public:
-  WorkspaceArena& ensure(aclrtStream stream, uint64_t needed) {
+  WorkspaceArena& Ensure(aclrtStream stream, uint64_t needed) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto& arena = arenas_[stream];
     if (needed <= arena.capacity) return arena;

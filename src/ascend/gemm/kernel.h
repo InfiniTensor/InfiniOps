@@ -53,7 +53,7 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
                                  t_out, 0, &ws_needed, &executor);
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_needed);
+    auto& arena = ascend::workspacePool().Ensure(stream, ws_needed);
 
     if (batched_) {
       aclnnBaddbmm(arena.buf, ws_needed, executor, stream);
