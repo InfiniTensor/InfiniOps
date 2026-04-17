@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <optional>
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
@@ -41,10 +42,17 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
  public:
   Operator(const Tensor positions, const Tensor query, const Tensor key,
            const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
-           bool is_neox_style, Tensor query_out, Tensor key_out)
+           bool is_neox_style,
+           std::optional<Tensor> query_out = std::nullopt,
+           std::optional<Tensor> key_out = std::nullopt)
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out),
         max_seq_len_{cos_sin_cache.size(0)} {
+    // Resolve optional out buffers (inplace on `query` / `key` when omitted).
+    // Non-const so `.data()` returns a writable `void*`.
+    Tensor q_out = query_out.value_or(query);
+    Tensor k_out = key_out.value_or(key);
+
     const int64_t T = num_tokens_;
     const int64_t Nq = num_heads_;
     const int64_t Nkv = num_kv_heads_;
@@ -61,9 +69,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
         {max_seq_len_, rotary_dim_}, acl_dt,
         const_cast<void*>(cos_sin_cache.data()));
     q_out_cache_ =
-        ascend::AclTensorCache({T, Nq * D}, acl_dt, query_out.data());
+        ascend::AclTensorCache({T, Nq * D}, acl_dt, q_out.data());
     k_out_cache_ =
-        ascend::AclTensorCache({T, Nkv * D}, acl_dt, key_out.data());
+        ascend::AclTensorCache({T, Nkv * D}, acl_dt, k_out.data());
   }
 
   ~Operator() {
@@ -83,9 +91,14 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
 
   void operator()(const Tensor positions, const Tensor query, const Tensor key,
                   const Tensor cos_sin_cache, int64_t head_size,
-                  int64_t rotary_dim, bool is_neox_style, Tensor query_out,
-                  Tensor key_out) const override {
+                  int64_t rotary_dim, bool is_neox_style,
+                  std::optional<Tensor> query_out,
+                  std::optional<Tensor> key_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
+
+    // Resolve optional out buffers (inplace on `query` / `key` when omitted).
+    Tensor q_out = query_out.value_or(query);
+    Tensor k_out = key_out.value_or(key);
 
     // Refresh cached descriptors with the current-call data pointers —
     // `Operator::call()` cache matches on shape/stride/dtype, so one
@@ -95,8 +108,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
     auto t_k = k_in_cache_.get(const_cast<void*>(key.data()));
     auto t_cache =
         cos_sin_cache_cache_.get(const_cast<void*>(cos_sin_cache.data()));
-    auto t_q_out = q_out_cache_.get(query_out.data());
-    auto t_k_out = k_out_cache_.get(key_out.data());
+    auto t_q_out = q_out_cache_.get(const_cast<void*>(q_out.data()));
+    auto t_k_out = k_out_cache_.get(const_cast<void*>(k_out.data()));
 
     uint64_t ws_size = 0;
     aclOpExecutor* executor = nullptr;

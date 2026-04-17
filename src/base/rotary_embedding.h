@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_ROTARY_EMBEDDING_H_
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 #include "operator.h"
@@ -13,10 +14,17 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
   // Accepts 2D `[T, N*D]` (vLLM convention) or 3D `[T, N, D]`.
   // `num_heads_` and `num_kv_heads_` are derived from `numel / (T *
   // head_size)`.
+  //
+  // `query_out` / `key_out` are optional.  When omitted, the kernel writes
+  // back into `query` / `key` — matching vLLM's inplace
+  // `RotaryEmbedding.forward(positions, query, key)` signature.  Pass
+  // explicit out buffers only when the caller needs a separate
+  // destination.
   RotaryEmbedding(const Tensor positions, const Tensor query, const Tensor key,
                   const Tensor cos_sin_cache, int64_t head_size,
-                  int64_t rotary_dim, bool is_neox_style, Tensor query_out,
-                  Tensor key_out)
+                  int64_t rotary_dim, bool is_neox_style,
+                  std::optional<Tensor> query_out = std::nullopt,
+                  std::optional<Tensor> key_out = std::nullopt)
       : num_tokens_{query.size(0)},
         num_heads_{static_cast<int64_t>(query.numel()) /
                    (static_cast<int64_t>(query.size(0)) * head_size)},
@@ -28,12 +36,12 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
         query_shape_{query.shape()},
         key_shape_{key.shape()},
         cos_sin_cache_shape_{cos_sin_cache.shape()},
-        query_out_shape_{query_out.shape()},
-        key_out_shape_{key_out.shape()},
+        query_out_shape_{query_out.value_or(query).shape()},
+        key_out_shape_{key_out.value_or(key).shape()},
         query_strides_{query.strides()},
         key_strides_{key.strides()},
-        query_out_strides_{query_out.strides()},
-        key_out_strides_{key_out.strides()} {
+        query_out_strides_{query_out.value_or(query).strides()},
+        key_out_strides_{key_out.value_or(key).strides()} {
     assert(
         (query.ndim() == 2 || query.ndim() == 3) &&
         "`RotaryEmbedding` requires query to be 2D [T, N*D] or 3D [T, N, D]");
@@ -47,8 +55,10 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
   virtual void operator()(const Tensor positions, const Tensor query,
                           const Tensor key, const Tensor cos_sin_cache,
                           int64_t head_size, int64_t rotary_dim,
-                          bool is_neox_style, Tensor query_out,
-                          Tensor key_out) const = 0;
+                          bool is_neox_style,
+                          std::optional<Tensor> query_out = std::nullopt,
+                          std::optional<Tensor> key_out = std::nullopt)
+      const = 0;
 
  protected:
   Tensor::Size num_tokens_{0};

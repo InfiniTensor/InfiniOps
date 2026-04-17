@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <optional>
 #include <vector>
 
 #include "acl/acl.h"
@@ -38,11 +39,17 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
  public:
   Operator(const Tensor positions, const Tensor query, const Tensor key,
            const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
-           bool is_neox_style, Tensor query_out, Tensor key_out)
+           bool is_neox_style,
+           std::optional<Tensor> query_out = std::nullopt,
+           std::optional<Tensor> key_out = std::nullopt)
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out),
         max_seq_len_{cos_sin_cache.size(0)},
         elem_sz_{cos_sin_cache.element_size()} {
+    // Resolve optional out buffers; when omitted, RoPE writes back in place
+    // on `query` / `key` — vLLM-style inplace semantics.
+    Tensor q_out = query_out.value_or(query);
+    Tensor k_out = key_out.value_or(key);
     assert(rotary_dim == head_size &&
            "Ascend `RotaryEmbedding` requires rotary_dim == head_size "
            "(partial rotation not implemented in this wrapper)");
@@ -85,9 +92,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     cos_v2_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt, cos_dev_);
     sin_v2_cache_ = ascend::AclTensorCache({T, 1, D}, acl_dt, sin_dev_);
     q_cache_ = ascend::AclTensorCache({T, Nq, D}, acl_dt,
-                                      const_cast<void*>(query_out.data()));
+                                      const_cast<void*>(q_out.data()));
     k_cache_ = ascend::AclTensorCache({T, Nkv, D}, acl_dt,
-                                      const_cast<void*>(key_out.data()));
+                                      const_cast<void*>(k_out.data()));
   }
 
   ~Operator() {
@@ -112,9 +119,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
 
   void operator()(const Tensor positions, const Tensor query, const Tensor key,
                   const Tensor cos_sin_cache, int64_t head_size,
-                  int64_t rotary_dim, bool is_neox_style, Tensor query_out,
-                  Tensor key_out) const override {
+                  int64_t rotary_dim, bool is_neox_style,
+                  std::optional<Tensor> query_out,
+                  std::optional<Tensor> key_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
+
+    // Resolve optional out buffers (inplace on `query` / `key` when omitted).
+    // Non-const so `.data()` returns a writable `void*`.
+    Tensor q_out = query_out.value_or(query);
+    Tensor k_out = key_out.value_or(key);
 
     const int64_t T = query.size(0);
     const int64_t Nq = num_heads_;
@@ -162,15 +175,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     // Step 2: Copy q→q_out, k→k_out if not inplace (V2 operates inplace).
     size_t elem_sz = query.element_size();
 
-    if (query.data() != query_out.data()) {
-      aclrtMemcpyAsync(query_out.data(),
+    if (query.data() != q_out.data()) {
+      aclrtMemcpyAsync(q_out.data(),
                        static_cast<size_t>(T * Nq * D) * elem_sz, query.data(),
                        static_cast<size_t>(T * Nq * D) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
 
-    if (key.data() != key_out.data()) {
-      aclrtMemcpyAsync(key_out.data(),
+    if (key.data() != k_out.data()) {
+      aclrtMemcpyAsync(k_out.data(),
                        static_cast<size_t>(T * Nkv * D) * elem_sz, key.data(),
                        static_cast<size_t>(T * Nkv * D) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
@@ -179,8 +192,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     // Step 3: Apply V2 RoPE inplace on q_out and k_out.
     auto t_cos = cos_v2_cache_.get(cos_dev_);
     auto t_sin = sin_v2_cache_.get(sin_dev_);
-    auto t_q = q_cache_.get(query_out.data());
-    auto t_k = k_cache_.get(key_out.data());
+    auto t_q = q_cache_.get(q_out.data());
+    auto t_k = k_cache_.get(k_out.data());
 
     if (!v2_exec_) {
       aclnnApplyRotaryPosEmbV2GetWorkspaceSize(
@@ -188,8 +201,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
           &v2_ws_, &v2_exec_);
       aclSetAclOpExecutorRepeatable(v2_exec_);
     } else {
-      aclSetInputTensorAddr(v2_exec_, 0, t_q, query_out.data());
-      aclSetInputTensorAddr(v2_exec_, 1, t_k, key_out.data());
+      aclSetInputTensorAddr(v2_exec_, 0, t_q, q_out.data());
+      aclSetInputTensorAddr(v2_exec_, 1, t_k, k_out.data());
     }
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, v2_ws_);

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <vector>
 
 #include "acl/acl.h"
@@ -58,7 +59,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
  public:
   Operator(const Tensor positions, const Tensor query, const Tensor key,
            const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
-           bool is_neox_style, Tensor query_out, Tensor key_out)
+           bool is_neox_style,
+           std::optional<Tensor> query_out = std::nullopt,
+           std::optional<Tensor> key_out = std::nullopt)
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out),
         is_neox_style_{is_neox_style} {
@@ -149,9 +152,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
   void operator()(const Tensor positions, const Tensor query, const Tensor key,
                   const Tensor cos_sin_cache, int64_t head_size,
-                  int64_t rotary_dim, bool is_neox_style, Tensor query_out,
-                  Tensor key_out) const override {
+                  int64_t rotary_dim, bool is_neox_style,
+                  std::optional<Tensor> query_out,
+                  std::optional<Tensor> key_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
+
+    // Resolve optional out buffers (inplace on `query` / `key` when omitted).
+    // Non-const so `.data()` returns a writable `void*`.
+    Tensor q_out = query_out.value_or(query);
+    Tensor k_out = key_out.value_or(key);
 
     int64_t T = query.size(0);
     int64_t D = head_size;
@@ -202,15 +211,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     // Step 2: Copy q->q_out, k->k_out if not in-place.
     size_t elem_sz = query.element_size();
 
-    if (query.data() != query_out.data()) {
-      aclrtMemcpyAsync(query_out.data(),
+    if (query.data() != q_out.data()) {
+      aclrtMemcpyAsync(q_out.data(),
                        static_cast<size_t>(T * hiddenQ) * elem_sz, query.data(),
                        static_cast<size_t>(T * hiddenQ) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
 
-    if (key.data() != key_out.data()) {
-      aclrtMemcpyAsync(key_out.data(),
+    if (key.data() != k_out.data()) {
+      aclrtMemcpyAsync(k_out.data(),
                        static_cast<size_t>(T * hiddenK) * elem_sz, key.data(),
                        static_cast<size_t>(T * hiddenK) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
@@ -227,9 +236,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     uint64_t gathered_bytes = static_cast<uint64_t>(T * D) * elem_size_;
 
     atb::Tensor t_q =
-        ascend::toAtbTensor(q_2d_shape_, acl_dt_, query_out.data(), q_bytes);
+        ascend::toAtbTensor(q_2d_shape_, acl_dt_, q_out.data(), q_bytes);
     atb::Tensor t_k =
-        ascend::toAtbTensor(k_2d_shape_, acl_dt_, key_out.data(), k_bytes);
+        ascend::toAtbTensor(k_2d_shape_, acl_dt_, k_out.data(), k_bytes);
     atb::Tensor t_cos = ascend::toAtbTensor(cos_sin_gathered_shape_, acl_dt_,
                                             cos_dev_, gathered_bytes);
     atb::Tensor t_sin = ascend::toAtbTensor(cos_sin_gathered_shape_, acl_dt_,

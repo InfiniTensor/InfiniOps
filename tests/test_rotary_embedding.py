@@ -562,3 +562,78 @@ def test_rotary_embedding_partial(
 
     _assert_close(q_out, ref_q, rtol, atol)
     _assert_close(k_out, ref_k, rtol, atol)
+
+
+@pytest.mark.parametrize("implementation_index", (0, 1))
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        # V2 accumulates ~4 ULP error in fp16 (kernel.h doc: max diff ~0.008);
+        # ATB `RopeParam` is similar.  Use atol=5e-3 for honest headroom.
+        (torch.float16, 1e-2, 5e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+@pytest.mark.parametrize("device", ("npu",))
+def test_rotary_embedding_inplace(implementation_index, dtype, rtol, atol, device):
+    """Verify the inplace path (`query_out` / `key_out` omitted).
+
+    Matches vLLM's `RotaryEmbedding.forward(positions, query, key)`
+    convention where the op mutates `query` / `key` directly.
+    """
+    if not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(
+            f"Implementation index={implementation_index} not active on this build"
+        )
+
+    num_tokens = 4
+    num_heads = 8
+    num_kv_heads = 8
+    head_size = 64
+    rotary_dim = head_size
+    max_seq_len = 32
+
+    positions = randint_strided(
+        0, max_seq_len, (num_tokens,), None, dtype=torch.int64, device=device
+    )
+    query = randn_strided(
+        (num_tokens, num_heads, head_size), None, dtype=dtype, device=device
+    )
+    key = randn_strided(
+        (num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device
+    )
+    cos_sin_cache = randn_strided(
+        (max_seq_len, rotary_dim), None, dtype=dtype, device=device
+    )
+
+    # Reference: apply RoPE to clones of the original inputs.
+    ref_q, ref_k = _ref_rotary_embedding(
+        positions,
+        query.clone(),
+        key.clone(),
+        cos_sin_cache,
+        head_size,
+        rotary_dim,
+        is_neox_style=True,
+    )
+
+    # Inplace call — no `query_out` / `key_out` supplied.
+    infini.ops.rotary_embedding(
+        positions,
+        query,
+        key,
+        cos_sin_cache,
+        head_size,
+        rotary_dim,
+        True,
+        implementation_index=implementation_index,
+        stream=get_npu_stream(query),
+    )
+
+    _assert_close(query, ref_q, rtol, atol)
+    _assert_close(key, ref_k, rtol, atol)
