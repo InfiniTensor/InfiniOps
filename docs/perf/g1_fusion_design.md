@@ -166,6 +166,59 @@ Fused kernel needs that operator team must confirm:
 
 If the operator survey reports "no fused API, custom kernel required", the design decision becomes: (a) G1 is no longer a 3-day probe — scope slips multi-day into operator's critical path; revisit G3 ship. (b) Ship P-3 alone (not blocked on new kernels), measure, and only commission the custom kernel if it would move the remaining needle.
 
+## De-risk: FX graph inspection (read-only, uncommitted)
+
+Dumped the compiled FX graph for Qwen2.5-3B under our
+`_compile_passthrough` path (harness `/tmp/dump_fx_graph.py`, ran with
+`INFINI_DIRECT_DISPATCH=0` so `torch.ops.vllm.*` targets are still present).
+
+**37 graphs captured** (1 embedding piece + 36 attention pieces). Each
+attention piece has a structurally identical node sequence containing
+**exactly one `infini_rotary_embedding_v2`** — confirms the P-1 pattern
+matches 36 times per forward.
+
+Concrete node pattern from piece 0 (first attention layer):
+
+```
+view      = call_method[target=view](gemm_out, (s72, 2560))
+split     = call_method[target=split](view, [2048, 256, 256], dim=-1)
+getitem_0 = getitem(split, 0)    # q, shape [s72, 2048]
+getitem_1 = getitem(split, 1)    # k, shape [s72, 256]
+getitem_2 = getitem(split, 2)    # v, shape [s72, 256]
+to        = call_method[target=to](cos_sin_cache, torch.float16)
+rope_out  = call_function[target=torch.ops.vllm.infini_rotary_embedding_v2](
+                positions, getitem_0, getitem_1, to, 128, True)
+getitem_3 = getitem(rope_out, 0)  # q_rope
+getitem_4 = getitem(rope_out, 1)  # k_rope
+# (downstream view reshapes: q_rope->(-1,16,128), k_rope->(-1,2,128), v->(-1,2,128))
+```
+
+For Qwen2.5-3B: `q_hidden=2048, kv_hidden=256, head_dim=128, num_q_heads=16, num_kv_heads=2, is_neox=True`.
+
+**Refined P-1 match + replace** (node-level):
+
+- Match the chain `view → split → 3 getitem → to → rope → 2 getitem`.
+- Replace with one fused node:
+
+```
+qkv_split_rope = call_function[target=torch.ops.vllm.infini_qkv_split_rope](
+    gemm_out, positions, cos_sin_cache, 2048, 256, 128, True
+)  # returns tuple (q_rope, k_rope, v)
+```
+
+Node reduction per piece: 8 nodes → 1 node + 3 getitems. Net across 36 pieces: `-4 call_function nodes × 36 = -144` FX nodes per forward (scales `_ops.__call__` roughly linearly). Same or slightly bigger reduction than the design-doc initial estimate.
+
+**Pass ordering constraint (new finding)**: the G1 fusion pass must run **BEFORE** the existing G2 `_direct_dispatch.maybe_rewrite_infini_dispatches`. G2 swaps `torch.ops.vllm.infini_*` targets for plain Python shims; if G1 matches after G2, the targets are no longer `torch.ops.vllm.infini_rotary_embedding_v2` and the match fails. Wire order in `_compile_passthrough`:
+
+```python
+graph = copy.deepcopy(graph)
+graph = apply_fusion_passes(graph)               # G1 (new) — runs on canonical torch.ops.vllm.* targets
+graph = maybe_rewrite_infini_dispatches(graph)   # G2 (shipped) — runs after; rewrites remaining hops
+return graph, None
+```
+
+Additionally, G2's `_OVERLOAD_MAP` must learn the new `torch.ops.vllm.infini_qkv_split_rope` so the fused op's Python wrapper also gets the dispatcher-hop rewrite treatment. Trivial to add.
+
 ## Risk summary
 
 - **Biggest unknown**: whether `torch._inductor.pattern_matcher.PatternMatcherPass` plays cleanly with our `_compile_passthrough` (non-aot_autograd) path. Ascend uses it inside an inductor-like backend; we might need to wrap our graph in a compatible interface. If this turns into a rabbit hole, time-box the wire-up separately.
