@@ -151,7 +151,7 @@ def _generate_pybind11(operator):
         constructor_params = _generate_params(constructor)
 
         return f"""      .def(py::init([]({constructor_params}) {{
-        return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_arguments(constructor)}).release())}};
+        return std::unique_ptr<Self>{{static_cast<Self*>(Self::Make({_generate_arguments(constructor)}).release())}};
       }}))"""
 
     def _generate_py_args(node):
@@ -320,7 +320,7 @@ __C __export {_generate_destroy_func_decl(operator)};
         constructor = operator.constructors[-1]
 
         return f"""{_generate_create_func_decl(operator)} {{
-    *desc_ptr = infini::ops::Operator<infini::ops::{name}>::make({_generate_arguments(constructor)}).release();
+    *desc_ptr = infini::ops::Operator<infini::ops::{name}>::Make({_generate_arguments(constructor)}).release();
 
     return INFINI_STATUS_SUCCESS;
 }}"""

@@ -123,7 +123,7 @@ template <typename Key, Device::Type device_type = Device::Type::kCount,
 class Operator : public OperatorBase {
  public:
   template <typename... Args>
-  static auto make(const Config& config, const Tensor tensor, Args&&... args) {
+  static auto Make(const Config& config, const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
 
     DispatchFunc<ActiveDevices<Key>>(
@@ -147,10 +147,10 @@ class Operator : public OperatorBase {
                          "implementation index");
                 }
               },
-              "Operator::make(implementation_index)",
+              "Operator::Make(implementation_index)",
               typename ActiveImplementations<Key, kDev>::type{});
         },
-        "Operator::make");
+        "Operator::Make");
 
     op_ptr->set_config(config);
 
@@ -158,8 +158,8 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto make(const Tensor tensor, Args&&... args) {
-    return make({}, tensor, std::forward<Args>(args)...);
+  static auto Make(const Tensor tensor, Args&&... args) {
+    return Make({}, tensor, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
@@ -173,9 +173,9 @@ class Operator : public OperatorBase {
 
     if (it == cache.end()) {
       // Pass args as lvalue refs so they remain valid for the `operator()` call
-      // below. Forwarding rvalue temporaries into `make()` would leave the args
+      // below. Forwarding rvalue temporaries into `Make()` would leave the args
       // in a moved-from (empty) state before operator() can use them.
-      it = cache.emplace(std::move(key), make(config, args...)).first;
+      it = cache.emplace(std::move(key), Make(config, args...)).first;
     }
 
     auto& op{it->second};

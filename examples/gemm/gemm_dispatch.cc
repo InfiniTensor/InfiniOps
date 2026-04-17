@@ -88,8 +88,8 @@ int main() {
                                    device_dev, c0_host.strides()}};
   const auto c1_make_device{Tensor{c1_ptr, c1_host.shape(), c1_host.dtype(),
                                    device_dev, c1_host.strides()}};
-  auto op0 = Gemm::make(cublas_config, a_device, b_device, c0_make_device);
-  auto op1 = Gemm::make(cublaslt_config, a_device, b_device, c1_make_device);
+  auto op0 = Gemm::Make(cublas_config, a_device, b_device, c0_make_device);
+  auto op1 = Gemm::Make(cublaslt_config, a_device, b_device, c1_make_device);
   const auto* op0_ptr = op0.get();
   const auto* op1_ptr = op1.get();
 
