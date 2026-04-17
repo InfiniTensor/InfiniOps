@@ -8,7 +8,6 @@
 #include "aclnn_copy.h"
 #include "aclnnop/aclnn_swi_glu.h"
 #include "ascend/common.h"
-#include "ascend/silu_and_mul/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/silu_and_mul.h"
 #include "operator.h"

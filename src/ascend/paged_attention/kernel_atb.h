@@ -12,7 +12,6 @@
 #include "acl/acl.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
-#include "ascend/paged_attention/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"

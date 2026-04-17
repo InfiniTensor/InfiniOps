@@ -6,7 +6,6 @@
 #include "aclnn_mul.h"
 #include "aclnn_silu.h"
 #include "ascend/common.h"
-#include "ascend/swiglu/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/swiglu.h"
 #include "data_type.h"

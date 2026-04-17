@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "ascend/apply_rotary_pos_emb/registry.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"

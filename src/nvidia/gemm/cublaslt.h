@@ -10,7 +10,6 @@
 
 #include "base/gemm.h"
 #include "nvidia/blas_utils.h"
-#include "nvidia/gemm/registry.h"
 #include "nvidia/runtime_.h"
 
 namespace infini::ops {

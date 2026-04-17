@@ -5,65 +5,13 @@
 #include <pybind11/stl.h>
 
 #include "tensor.h"
+#include "torch/device_.h"
 
 namespace py = pybind11;
 
 namespace infini::ops {
 
 namespace detail {
-
-template <Device::Type kDev>
-struct TorchDeviceName;
-
-template <>
-struct TorchDeviceName<Device::Type::kCpu> {
-  static constexpr std::string_view kValue{"cpu"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kNvidia> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kMetax> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kIluvatar> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kKunlun> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kHygon> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kQy> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kCambricon> {
-  static constexpr std::string_view kValue{"mlu"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kAscend> {
-  static constexpr std::string_view kValue{"npu"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kMoore> {
-  static constexpr std::string_view kValue{"musa"};
-};
 
 template <Device::Type... kDevs>
 std::unordered_map<std::string, Device::Type> BuildTorchNameMap(

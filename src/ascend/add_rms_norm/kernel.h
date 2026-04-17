@@ -7,9 +7,9 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnn_add.h"
 #include "aclnn_rms_norm.h"
-#include "ascend/add_rms_norm/registry.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
+#include "base/add_rms_norm.h"
 #include "operator.h"
 
 namespace infini::ops {

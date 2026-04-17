@@ -9,7 +9,6 @@
 #include "aclnnop/aclnn_cat.h"
 #include "aclnnop/aclnn_swi_glu.h"
 #include "ascend/common.h"
-#include "ascend/swiglu/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/swiglu.h"
 #include "operator.h"

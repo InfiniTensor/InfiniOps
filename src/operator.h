@@ -92,14 +92,9 @@ struct std::equal_to<infini::ops::detail::CacheKey> {
 
 namespace infini::ops {
 
+// Forward declaration — defined after `Operator` using SFINAE auto-detection.
 template <typename Key, Device::Type kDev>
-struct ActiveImplementationsImpl {
-  using type = List<0>;
-};
-
-template <typename Key, Device::Type kDev>
-using ActiveImplementations =
-    typename ActiveImplementationsImpl<Key, kDev>::type;
+struct ActiveImplementations;
 
 class OperatorBase {
  public:
@@ -170,7 +165,7 @@ class Operator : public OperatorBase {
                 }
               },
               "Operator::make(implementation_index)",
-              ActiveImplementations<Key, kDev>{});
+              typename ActiveImplementations<Key, kDev>::type{});
         },
         "Operator::make");
 
@@ -223,7 +218,8 @@ class Operator : public OperatorBase {
         dev_type,
         [&](auto device_tag) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
-          result = detail::ListToVector(ActiveImplementations<Key, kDev>{});
+          result = detail::ListToVector(
+              typename ActiveImplementations<Key, kDev>::type{});
         },
         "Operator::active_implementation_indices");
     return result;
@@ -248,6 +244,45 @@ class Operator : public OperatorBase {
   static constexpr Device::Type device_type_{device_type};
 
   static constexpr std::size_t implementation_index_{implementation_index};
+};
+
+// Maximum number of implementation slots per (operator, device) pair.
+// Increase this value when adding operators with more implementations.
+constexpr std::size_t kMaxImplementations = 16;
+
+// SFINAE-based implementation detection. A partial specialization
+// `Operator<Key, kDev, N>` inherits from `Key` (the operator base class),
+// while the unspecialized primary template inherits only from `OperatorBase`.
+// `std::is_base_of` distinguishes the two at compile time, eliminating the
+// need for manual `registry.h` files.
+template <typename Key, Device::Type kDev, std::size_t N,
+          bool = std::is_base_of_v<Key, Operator<Key, kDev, N>>>
+struct ActiveImplementationsImpl {
+  using type = List<>;
+};
+
+template <typename Key, Device::Type kDev, std::size_t N>
+struct ActiveImplementationsImpl<Key, kDev, N, true> {
+  using type = List<N>;
+};
+
+namespace detail {
+
+template <typename Key, Device::Type kDev, typename Seq>
+struct ActiveImplementationsHelper;
+
+template <typename Key, Device::Type kDev, std::size_t... ns>
+struct ActiveImplementationsHelper<Key, kDev, std::index_sequence<ns...>> {
+  using type = typename Flatten<
+      typename ActiveImplementationsImpl<Key, kDev, ns>::type...>::type;
+};
+
+}  // namespace detail
+
+template <typename Key, Device::Type kDev>
+struct ActiveImplementations {
+  using type = typename detail::ActiveImplementationsHelper<
+      Key, kDev, std::make_index_sequence<kMaxImplementations>>::type;
 };
 
 }  // namespace infini::ops

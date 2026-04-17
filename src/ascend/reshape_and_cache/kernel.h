@@ -8,7 +8,6 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_index_copy.h"
 #include "ascend/common.h"
-#include "ascend/reshape_and_cache/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/reshape_and_cache.h"
 #include "operator.h"

@@ -16,7 +16,7 @@ if(WITH_CPU)
 
     target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
-    find_package(OpenMP REQUIRED)
+    find_package(OpenMP REQUIRED COMPONENTS CXX)
     target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
 
     list(APPEND DEVICE_LIST "cpu")
@@ -251,6 +251,69 @@ if(WITH_ASCEND)
     endif()
 endif()
 
+if(WITH_TORCH)
+    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS "torch/*.cc" "torch/*.cpp")
+
+    target_compile_definitions(infiniops PUBLIC WITH_TORCH=1)
+    target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
+    target_include_directories(infiniops PUBLIC ${TORCH_INCLUDE_DIRS})
+
+    if(WITH_METAX OR WITH_MOORE)
+        # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
+        # headers. Compile `torch` sources with the system C++ compiler instead.
+        find_program(SYSTEM_CXX NAMES g++ c++)
+
+        if(NOT SYSTEM_CXX)
+            message(FATAL_ERROR "Could not find system `g++` for `torch` compilation.")
+        endif()
+
+        set(_torch_include_flags "")
+        foreach(_dir ${TORCH_INCLUDE_DIRS})
+            list(APPEND _torch_include_flags "-isystem" "${_dir}")
+        endforeach()
+
+        # Vendor-specific defines required by forked `torch` headers.
+        set(_torch_extra_flags "")
+        if(WITH_METAX)
+            list(APPEND _torch_extra_flags "-DUSE_MACA=1")
+        endif()
+        if(DEFINED TORCH_CXX11_ABI)
+            list(APPEND _torch_extra_flags "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
+        endif()
+
+        set(TORCH_OBJECT_DIR "${CMAKE_CURRENT_BINARY_DIR}/torch_objs")
+        file(MAKE_DIRECTORY "${TORCH_OBJECT_DIR}")
+
+        set(TORCH_OBJECT_FILES)
+        foreach(_src ${TORCH_SOURCES})
+            file(RELATIVE_PATH _rel ${CMAKE_CURRENT_SOURCE_DIR} ${_src})
+            string(REPLACE "/" "_" _obj_name "${_rel}")
+            string(REPLACE ".cc" ".o" _obj_name "${_obj_name}")
+            string(REPLACE ".cpp" ".o" _obj_name "${_obj_name}")
+            set(_obj "${TORCH_OBJECT_DIR}/${_obj_name}")
+
+            add_custom_command(
+                OUTPUT "${_obj}"
+                COMMAND ${SYSTEM_CXX}
+                    -std=c++17 -fPIC -O2
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}"
+                    ${_torch_include_flags}
+                    ${_torch_extra_flags}
+                    -c "${_src}" -o "${_obj}"
+                DEPENDS "${_src}"
+                COMMENT "Compiling ${_rel} with system C++ compiler"
+            )
+            list(APPEND TORCH_OBJECT_FILES "${_obj}")
+        endforeach()
+
+        set_source_files_properties(${TORCH_OBJECT_FILES}
+            PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        target_sources(infiniops PRIVATE ${TORCH_OBJECT_FILES})
+    else()
+        target_sources(infiniops PRIVATE ${TORCH_SOURCES})
+    endif()
+endif()
+
 target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(GENERATE_PYTHON_BINDINGS)
@@ -259,8 +322,14 @@ if(GENERATE_PYTHON_BINDINGS)
     # active device list.  Stale generated files (e.g., committed for one
     # platform) would omit specializations for other enabled backends,
     # causing link-time or runtime failures.
+
+    set(GENERATOR_ARGS --devices ${DEVICE_LIST})
+    if(WITH_TORCH)
+        list(APPEND GENERATOR_ARGS --with-torch)
+    endif()
+
     execute_process(
-        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py --devices ${DEVICE_LIST}
+        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py ${GENERATOR_ARGS}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )
@@ -279,6 +348,20 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
 
     find_package(Python COMPONENTS Interpreter Development)
+
+    if(NOT pybind11_DIR)
+        execute_process(
+            COMMAND ${Python_EXECUTABLE} -m pybind11 --cmakedir
+            OUTPUT_VARIABLE _pybind11_cmake_dir
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _pybind11_result
+        )
+
+        if(_pybind11_result EQUAL 0)
+            set(pybind11_DIR "${_pybind11_cmake_dir}" CACHE PATH "pybind11 CMake directory")
+        endif()
+    endif()
+
     find_package(pybind11 CONFIG)
 
     if(PYBIND11_ENABLE_EXTRAS)
