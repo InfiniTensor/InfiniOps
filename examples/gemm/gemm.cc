@@ -60,7 +60,7 @@ int main() {
   Tensor c_device{c_ptr, c_host.shape(), c_host.dtype(), device_dev,
                   c_host.strides()};
 
-  Gemm::call(a_device, b_device, c_device);
+  Gemm::Call(a_device, b_device, c_device);
 
   DefaultRuntimeUtils::Memcpy(c_vec.data(), c_ptr, c_size,
                               DefaultRuntimeUtils::MemcpyDeviceToHost);

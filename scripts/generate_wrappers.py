@@ -151,7 +151,7 @@ def _generate_pybind11(operator):
         constructor_params = _generate_params(constructor)
 
         return f"""      .def(py::init([]({constructor_params}) {{
-        return std::unique_ptr<Self>{{static_cast<Self*>(Self::make({_generate_arguments(constructor)}).release())}};
+        return std::unique_ptr<Self>{{static_cast<Self*>(Self::Make({_generate_arguments(constructor)}).release())}};
       }}))"""
 
     def _generate_py_args(node):
@@ -182,7 +182,7 @@ def _generate_pybind11(operator):
                 f"    }}\n"
                 f"    Config config;\n"
                 f"    config.set_implementation_index(implementation_index);\n"
-                f"    return Self::call(handle, config, {call_args});\n"
+                f"    return Self::Call(handle, config, {call_args});\n"
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
@@ -320,7 +320,7 @@ __C __export {_generate_destroy_func_decl(operator)};
         constructor = operator.constructors[-1]
 
         return f"""{_generate_create_func_decl(operator)} {{
-    *desc_ptr = infini::ops::Operator<infini::ops::{name}>::make({_generate_arguments(constructor)}).release();
+    *desc_ptr = infini::ops::Operator<infini::ops::{name}>::Make({_generate_arguments(constructor)}).release();
 
     return INFINI_STATUS_SUCCESS;
 }}"""
