@@ -57,9 +57,10 @@ class FlashAttention : public Operator<FlashAttention> {
   virtual void operator()(
       const Tensor query, const Tensor key, const Tensor value,
       std::optional<Tensor> cu_seqlens_q, std::optional<Tensor> cu_seqlens_kv,
-      std::optional<Tensor> block_table, int64_t num_heads, int64_t num_kv_heads,
-      int64_t head_size, double scale, bool causal, int64_t window_left,
-      int64_t window_right, int64_t block_size, Tensor output,
+      std::optional<Tensor> block_table, int64_t num_heads,
+      int64_t num_kv_heads, int64_t head_size, double scale, bool causal,
+      int64_t window_left, int64_t window_right, int64_t block_size,
+      Tensor output,
       std::optional<int64_t> sliding_window = std::nullopt) const = 0;
 
  private:
@@ -70,22 +71,23 @@ class FlashAttention : public Operator<FlashAttention> {
                                    std::optional<int64_t> sliding_window) {
     if (!sliding_window.has_value()) return window_left;
     int64_t derived = sliding_window.value() - 1;
-    assert((window_left == -1 || window_left == derived) &&
-           "`FlashAttention`: `window_left` inconsistent with `sliding_window`");
+    assert(
+        (window_left == -1 || window_left == derived) &&
+        "`FlashAttention`: `window_left` inconsistent with `sliding_window`");
     return derived;
   }
 
   static int64_t resolveWindowRight(int64_t window_right,
                                     std::optional<int64_t> sliding_window) {
     if (!sliding_window.has_value()) return window_right;
-    assert((window_right == -1 || window_right == 0) &&
-           "`FlashAttention`: `window_right` inconsistent with `sliding_window` "
-           "(vLLM sliding_window implies right=0)");
+    assert(
+        (window_right == -1 || window_right == 0) &&
+        "`FlashAttention`: `window_right` inconsistent with `sliding_window` "
+        "(vLLM sliding_window implies right=0)");
     return 0;
   }
 
  public:
-
  protected:
   Tensor::Size num_tokens_{0};
 

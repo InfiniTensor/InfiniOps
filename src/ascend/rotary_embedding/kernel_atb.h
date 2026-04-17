@@ -59,8 +59,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
  public:
   Operator(const Tensor positions, const Tensor query, const Tensor key,
            const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
-           bool is_neox_style,
-           std::optional<Tensor> query_out = std::nullopt,
+           bool is_neox_style, std::optional<Tensor> query_out = std::nullopt,
            std::optional<Tensor> key_out = std::nullopt)
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out),
@@ -119,9 +118,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     // pattern: 2 for neox (split-then-rotate halves), `head_size` for
     // interleave (pair-wise rotate adjacent elements).
     atb::infer::RopeParam param;
-    param.rotaryCoeff = is_neox_style
-                            ? 2
-                            : static_cast<int32_t>(D);
+    param.rotaryCoeff = is_neox_style ? 2 : static_cast<int32_t>(D);
     param.cosFormat = 0;  // Inference mode.
     atb::Status s = atb::CreateOperation(param, &op_);
 
@@ -212,16 +209,14 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     size_t elem_sz = query.element_size();
 
     if (query.data() != q_out.data()) {
-      aclrtMemcpyAsync(q_out.data(),
-                       static_cast<size_t>(T * hiddenQ) * elem_sz, query.data(),
-                       static_cast<size_t>(T * hiddenQ) * elem_sz,
+      aclrtMemcpyAsync(q_out.data(), static_cast<size_t>(T * hiddenQ) * elem_sz,
+                       query.data(), static_cast<size_t>(T * hiddenQ) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
 
     if (key.data() != k_out.data()) {
-      aclrtMemcpyAsync(k_out.data(),
-                       static_cast<size_t>(T * hiddenK) * elem_sz, key.data(),
-                       static_cast<size_t>(T * hiddenK) * elem_sz,
+      aclrtMemcpyAsync(k_out.data(), static_cast<size_t>(T * hiddenK) * elem_sz,
+                       key.data(), static_cast<size_t>(T * hiddenK) * elem_sz,
                        ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
     }
 
@@ -303,31 +298,31 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
         if (is_neox_style_) {
           // Neox layout: [c_j ... , c_j ...] front/back duplication.
           std::memcpy(
-              cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-              c_src, elem_sz);
+              cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz, c_src,
+              elem_sz);
+          std::memcpy(cos_host.data() +
+                          static_cast<size_t>(p * D + half_D + j) * elem_sz,
+                      c_src, elem_sz);
           std::memcpy(
-              cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
-              c_src, elem_sz);
-          std::memcpy(
-              sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-              s_src, elem_sz);
-          std::memcpy(
-              sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
-              s_src, elem_sz);
+              sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz, s_src,
+              elem_sz);
+          std::memcpy(sin_host.data() +
+                          static_cast<size_t>(p * D + half_D + j) * elem_sz,
+                      s_src, elem_sz);
         } else {
           // Interleave layout: each value repeated pair-wise.
           std::memcpy(
               cos_host.data() + static_cast<size_t>(p * D + 2 * j) * elem_sz,
               c_src, elem_sz);
-          std::memcpy(
-              cos_host.data() + static_cast<size_t>(p * D + 2 * j + 1) * elem_sz,
-              c_src, elem_sz);
+          std::memcpy(cos_host.data() +
+                          static_cast<size_t>(p * D + 2 * j + 1) * elem_sz,
+                      c_src, elem_sz);
           std::memcpy(
               sin_host.data() + static_cast<size_t>(p * D + 2 * j) * elem_sz,
               s_src, elem_sz);
-          std::memcpy(
-              sin_host.data() + static_cast<size_t>(p * D + 2 * j + 1) * elem_sz,
-              s_src, elem_sz);
+          std::memcpy(sin_host.data() +
+                          static_cast<size_t>(p * D + 2 * j + 1) * elem_sz,
+                      s_src, elem_sz);
         }
       }
     }

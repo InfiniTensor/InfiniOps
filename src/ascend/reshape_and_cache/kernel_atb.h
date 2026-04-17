@@ -88,8 +88,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
     if (!slot_is_int32_) {
       slot_i64_cache_ = ascend::AclTensorCache(
           {T}, ACL_INT64, const_cast<void*>(slot_mapping.data()));
-      slot_i32_cache_ =
-          ascend::AclTensorCache({T}, ACL_INT32, slot32_buf_);
+      slot_i32_cache_ = ascend::AclTensorCache({T}, ACL_INT32, slot32_buf_);
     }
 
     // Create the ATB operation (reused across calls).
@@ -126,8 +125,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend, 2>
       // Already int32 — pass through directly.
       slot32_ptr = const_cast<void*>(slot_mapping.data());
     } else {
-      auto t_src =
-          slot_i64_cache_.get(const_cast<void*>(slot_mapping.data()));
+      auto t_src = slot_i64_cache_.get(const_cast<void*>(slot_mapping.data()));
       auto t_dst = slot_i32_cache_.get(slot32_buf_);
 
       if (!cast_exec_) {

@@ -114,8 +114,7 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
            std::optional<Tensor> block_table, int64_t num_heads,
            int64_t num_kv_heads, int64_t head_size, double scale, bool causal,
            int64_t window_left, int64_t window_right, int64_t block_size,
-           Tensor output,
-           std::optional<int64_t> sliding_window = std::nullopt)
+           Tensor output, std::optional<int64_t> sliding_window = std::nullopt)
       : FlashAttention(query, key, value, cu_seqlens_q, cu_seqlens_kv,
                        block_table, num_heads, num_kv_heads, head_size, scale,
                        causal, window_left, window_right, block_size, output,

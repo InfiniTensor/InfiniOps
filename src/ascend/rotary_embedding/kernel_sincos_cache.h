@@ -42,8 +42,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
  public:
   Operator(const Tensor positions, const Tensor query, const Tensor key,
            const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
-           bool is_neox_style,
-           std::optional<Tensor> query_out = std::nullopt,
+           bool is_neox_style, std::optional<Tensor> query_out = std::nullopt,
            std::optional<Tensor> key_out = std::nullopt)
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         rotary_dim, is_neox_style, query_out, key_out),
@@ -61,17 +60,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
 
     positions_cache_ = ascend::AclTensorCache(
         {T}, ACL_INT64, const_cast<void*>(positions.data()));
-    q_in_cache_ = ascend::AclTensorCache(
-        {T, Nq * D}, acl_dt, const_cast<void*>(query.data()));
-    k_in_cache_ = ascend::AclTensorCache(
-        {T, Nkv * D}, acl_dt, const_cast<void*>(key.data()));
-    cos_sin_cache_cache_ = ascend::AclTensorCache(
-        {max_seq_len_, rotary_dim_}, acl_dt,
-        const_cast<void*>(cos_sin_cache.data()));
-    q_out_cache_ =
-        ascend::AclTensorCache({T, Nq * D}, acl_dt, q_out.data());
-    k_out_cache_ =
-        ascend::AclTensorCache({T, Nkv * D}, acl_dt, k_out.data());
+    q_in_cache_ = ascend::AclTensorCache({T, Nq * D}, acl_dt,
+                                         const_cast<void*>(query.data()));
+    k_in_cache_ = ascend::AclTensorCache({T, Nkv * D}, acl_dt,
+                                         const_cast<void*>(key.data()));
+    cos_sin_cache_cache_ =
+        ascend::AclTensorCache({max_seq_len_, rotary_dim_}, acl_dt,
+                               const_cast<void*>(cos_sin_cache.data()));
+    q_out_cache_ = ascend::AclTensorCache({T, Nq * D}, acl_dt, q_out.data());
+    k_out_cache_ = ascend::AclTensorCache({T, Nkv * D}, acl_dt, k_out.data());
   }
 
   ~Operator() {

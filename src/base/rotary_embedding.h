@@ -52,13 +52,11 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
            "`RotaryEmbedding` requires rotary_dim <= head_size");
   }
 
-  virtual void operator()(const Tensor positions, const Tensor query,
-                          const Tensor key, const Tensor cos_sin_cache,
-                          int64_t head_size, int64_t rotary_dim,
-                          bool is_neox_style,
-                          std::optional<Tensor> query_out = std::nullopt,
-                          std::optional<Tensor> key_out = std::nullopt)
-      const = 0;
+  virtual void operator()(
+      const Tensor positions, const Tensor query, const Tensor key,
+      const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
+      bool is_neox_style, std::optional<Tensor> query_out = std::nullopt,
+      std::optional<Tensor> key_out = std::nullopt) const = 0;
 
  protected:
   Tensor::Size num_tokens_{0};
