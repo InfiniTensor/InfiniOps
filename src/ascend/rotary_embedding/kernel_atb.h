@@ -44,11 +44,14 @@ namespace infini::ops {
 // gathered `[T, D]` tensors to ATB Rope.  The `seqlen` input is a single
 // int32 element equal to T (all tokens treated as one batch).
 //
-// Restrictions (implementation choices, not ATB API limits):
+// Restrictions:
 //   - `rotary_dim` must equal `head_size` (full rotation only).  ATB
 //     RopeParam supports `rotaryCoeff=2/4/head_size/head_size_2` per the
-//     CANN 8.5 ATB docs; this wrapper plumbs only `rotaryCoeff=2`.
-//   - `is_neox_style` must be true.
+//     CANN 8.5 ATB docs.  This wrapper plumbs:
+//       * `rotaryCoeff=2` when `is_neox_style=true`  (half split + cat)
+//       * `rotaryCoeff=head_size` when `is_neox_style=false` (interleave)
+//     Partial rotary (`rotary_dim < head_size`) is not supported by either
+//     the aclnn or ATB fused APIs; callers must pad to `head_size` upstream.
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     : public RotaryEmbedding {
@@ -57,11 +60,10 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
            const Tensor cos_sin_cache, int64_t head_size, int64_t rotary_dim,
            bool is_neox_style, Tensor query_out, Tensor key_out)
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
-                        rotary_dim, is_neox_style, query_out, key_out) {
+                        rotary_dim, is_neox_style, query_out, key_out),
+        is_neox_style_{is_neox_style} {
     assert(rotary_dim == head_size &&
            "ATB `RotaryEmbedding` requires rotary_dim == head_size");
-    assert(is_neox_style &&
-           "ATB `RotaryEmbedding` requires neox style (rotaryCoeff=2)");
 
     const int64_t D = head_size_;
     const size_t elem_sz = cos_sin_cache.element_size();
@@ -110,10 +112,14 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     cos_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, cos_dev_);
     sin_out_cache_ = ascend::AclTensorCache({T, D}, acl_dt_, sin_dev_);
 
-    // Create the ATB Rope operation.
+    // Create the ATB Rope operation.  `rotaryCoeff` selects the rotation
+    // pattern: 2 for neox (split-then-rotate halves), `head_size` for
+    // interleave (pair-wise rotate adjacent elements).
     atb::infer::RopeParam param;
-    param.rotaryCoeff = 2;  // Neox half-rotation.
-    param.cosFormat = 0;    // Inference mode.
+    param.rotaryCoeff = is_neox_style
+                            ? 2
+                            : static_cast<int32_t>(D);
+    param.cosFormat = 0;  // Inference mode.
     atb::Status s = atb::CreateOperation(param, &op_);
 
     assert(s == atb::NO_ERROR && "atb::CreateOperation(Rope) failed");
@@ -254,8 +260,16 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
   }
 
  private:
-  // D2H copy cos_sin_cache, split into cos/sin, neox-expand, and upload to
-  // device.  Called once at construction.
+  // D2H copy cos_sin_cache, split into cos/sin, expand to `[max_seq_len, D]`
+  // in the layout that ATB Rope expects for the chosen `rotaryCoeff`, and
+  // upload to device.  Called once at construction.
+  //
+  // For `rotaryCoeff=2` (neox): cos tensor holds the same `half_D` values
+  // duplicated front/back — `[c0 .. c_{half-1}, c0 .. c_{half-1}]`.
+  //
+  // For `rotaryCoeff=head_size` (interleave): cos tensor holds each of the
+  // `half_D` values repeated pair-wise —
+  // `[c0, c0, c1, c1, .., c_{half-1}, c_{half-1}]`.
   void uploadCosSinCache(const Tensor cos_sin_cache) const {
     const int64_t D = head_size_;
     const int64_t half_D = D / 2;
@@ -277,16 +291,35 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
         const auto* s_src = cache_host.data() +
                             static_cast<size_t>(p * D + half_D + j) * elem_sz;
 
-        std::memcpy(cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-                    c_src, elem_sz);
-        std::memcpy(
-            cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
-            c_src, elem_sz);
-        std::memcpy(sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
-                    s_src, elem_sz);
-        std::memcpy(
-            sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
-            s_src, elem_sz);
+        if (is_neox_style_) {
+          // Neox layout: [c_j ... , c_j ...] front/back duplication.
+          std::memcpy(
+              cos_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+              c_src, elem_sz);
+          std::memcpy(
+              cos_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
+              c_src, elem_sz);
+          std::memcpy(
+              sin_host.data() + static_cast<size_t>(p * D + j) * elem_sz,
+              s_src, elem_sz);
+          std::memcpy(
+              sin_host.data() + static_cast<size_t>(p * D + half_D + j) * elem_sz,
+              s_src, elem_sz);
+        } else {
+          // Interleave layout: each value repeated pair-wise.
+          std::memcpy(
+              cos_host.data() + static_cast<size_t>(p * D + 2 * j) * elem_sz,
+              c_src, elem_sz);
+          std::memcpy(
+              cos_host.data() + static_cast<size_t>(p * D + 2 * j + 1) * elem_sz,
+              c_src, elem_sz);
+          std::memcpy(
+              sin_host.data() + static_cast<size_t>(p * D + 2 * j) * elem_sz,
+              s_src, elem_sz);
+          std::memcpy(
+              sin_host.data() + static_cast<size_t>(p * D + 2 * j + 1) * elem_sz,
+              s_src, elem_sz);
+        }
       }
     }
 
@@ -295,6 +328,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     aclrtMemcpy(sin_table_dev_, table_bytes, sin_host.data(), table_bytes,
                 ACL_MEMCPY_HOST_TO_DEVICE);
   }
+
+  bool is_neox_style_;
 
   atb::Operation* op_ = nullptr;
 

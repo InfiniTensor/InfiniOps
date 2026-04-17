@@ -164,10 +164,12 @@ def test_rotary_embedding_full(
                 f"Implementation index={implementation_index} not active on this build"
             )
 
-    if device == "npu" and not is_neox_style:
+    # Only implementation 0 (`aclnnApplyRotaryPosEmbV2`) is still limited to
+    # `rotaryMode="half"`; implementation 1 (ATB `RopeParam`) plumbs
+    # `rotaryCoeff=head_size` for the non-neox (interleave) case.
+    if device == "npu" and not is_neox_style and implementation_index == 0:
         pytest.skip(
-            'Ascend `RotaryEmbedding` wrappers only plumb `rotaryMode="half"` '
-            "through the underlying V2/ATB APIs."
+            'Ascend `aclnnApplyRotaryPosEmbV2` only supports `rotaryMode="half"`'
         )
 
     # `aclnnApplyRotaryPosEmbV2` accumulates with ~4 ULP error for float16.
@@ -486,7 +488,13 @@ def test_rotary_embedding_partial(
         pytest.skip("NPU not available")
 
     if device == "npu":
-        pytest.skip("Ascend aclnnApplyRotaryPosEmbV2 requires rotary_dim == head_size")
+        pytest.skip(
+            "Partial rotary (`rotary_dim < head_size`) is not supported by "
+            "any Ascend fused API: `aclnnApplyRotaryPosEmbV2`, "
+            "`aclnnRotaryPositionEmbedding`, and ATB `RopeParam` all require "
+            "`cos.D == sin.D == x.D`.  A decomposed implementation is "
+            "forbidden by project policy."
+        )
 
     num_tokens = 16
     max_seq_len = 64
