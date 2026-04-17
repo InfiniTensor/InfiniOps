@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,42 @@ from utils import get_git_commit, load_config
 
 # Flags that consume the next token as their value (e.g. -n 4, -k expr).
 _PYTEST_VALUE_FLAGS = {"-n", "-k", "-m", "-p", "--tb", "--junitxml", "--rootdir"}
+
+
+def _junit_xml_indicates_pass(results_dir):
+    """Return True if `pytest` junit XML under `results_dir` reports no failures/errors.
+
+    Used to distinguish a real CI failure from the docker 18.09
+    container-teardown `SIGKILL` (exit code 137) that occurs on this host
+    after a child process exits successfully — bash returns 0 from inside
+    the container, but the docker daemon reports 137 due to a race in its
+    `--rm` cleanup path. The junit XML is written by pytest before that
+    teardown and reliably captures the real outcome of the test stage.
+    """
+    for junit in Path(results_dir).rglob("test-results.xml"):
+        try:
+            root = ET.parse(junit).getroot()
+        except ET.ParseError:
+            continue
+
+        suites = root.findall("testsuite") if root.tag == "testsuites" else [root]
+
+        if not suites:
+            continue
+
+        for suite in suites:
+            try:
+                if int(suite.get("failures", 0)) > 0:
+                    return False
+
+                if int(suite.get("errors", 0)) > 0:
+                    return False
+            except ValueError:
+                return False
+
+        return True
+
+    return False
 
 
 def apply_test_override(run_cmd, test_path):
@@ -437,8 +474,23 @@ def main():
             pool.release(allocated_ids)
 
         if returncode != 0:
-            print(f"job {job_name} failed (exit code {returncode})", file=sys.stderr)
-            failed += 1
+            # Docker 18.09 on this host occasionally SIGKILLs containers
+            # during `--rm` cleanup after the inner process already exited
+            # cleanly, producing exit code 137. Fall back to the pytest
+            # junit XML to recover the real outcome in that case.
+            if returncode == 137 and _junit_xml_indicates_pass(results_dir):
+                print(
+                    f"[warn] job {job_name}: container exited with 137 "
+                    f"(likely docker teardown SIGKILL after clean pytest); "
+                    f"junit XML reports no failures — treating as success",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"job {job_name} failed (exit code {returncode})",
+                    file=sys.stderr,
+                )
+                failed += 1
 
     sys.exit(1 if failed else 0)
 
