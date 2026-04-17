@@ -6,9 +6,9 @@
 #include <utility>
 
 #include "cuda/blas.h"
-#include "data_type.h"
 #include "cuda/moore/blas_utils.h"
 #include "cuda/moore/runtime_.h"
+#include "data_type.h"
 
 namespace infini::ops {
 

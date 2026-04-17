@@ -5,9 +5,9 @@
 
 #include <utility>
 
-#include "cuda/runtime.h"
 #include "cuda/moore/device_.h"
 #include "cuda/moore/runtime_utils.h"
+#include "cuda/runtime.h"
 
 namespace infini::ops {
 

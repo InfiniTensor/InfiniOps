@@ -7,9 +7,9 @@
 #include <cuda_runtime.h>
 // clang-format on
 
-#include "cuda/runtime.h"
 #include "cuda/iluvatar/device_.h"
 #include "cuda/iluvatar/runtime_utils.h"
+#include "cuda/runtime.h"
 
 namespace infini::ops {
 

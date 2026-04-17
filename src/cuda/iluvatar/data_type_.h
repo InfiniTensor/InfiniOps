@@ -6,8 +6,8 @@
 #include <cuda_fp16.h>
 // clang-format on
 
-#include "data_type.h"
 #include "cuda/iluvatar/device_.h"
+#include "data_type.h"
 
 namespace infini::ops {
 

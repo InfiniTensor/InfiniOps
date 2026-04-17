@@ -8,9 +8,9 @@
 // clang-format on
 
 #include "cuda/blas.h"
-#include "data_type.h"
 #include "cuda/metax/blas_utils.h"
 #include "cuda/metax/runtime_.h"
+#include "data_type.h"
 
 namespace infini::ops {
 

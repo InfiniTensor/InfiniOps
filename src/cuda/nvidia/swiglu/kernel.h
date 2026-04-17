@@ -3,9 +3,9 @@
 
 #include <utility>
 
-#include "cuda/swiglu/kernel.h"
 #include "cuda/nvidia/caster.cuh"
 #include "cuda/nvidia/runtime_.h"
+#include "cuda/swiglu/kernel.h"
 
 namespace infini::ops {
 

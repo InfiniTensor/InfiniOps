@@ -7,10 +7,10 @@
 #include "cuda/moore/polyfills.cuh"
 // clang-format on
 
-#include "cuda/swiglu/kernel.h"
 #include "cuda/moore/caster.cuh"
 #include "cuda/moore/polyfills.cuh"
 #include "cuda/moore/runtime_.h"
+#include "cuda/swiglu/kernel.h"
 
 namespace infini::ops {
 
