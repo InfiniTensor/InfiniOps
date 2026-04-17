@@ -27,9 +27,9 @@ if(WITH_NVIDIA)
         "cuda/*.cc"
         "cuda/*.cpp"
         "cuda/*.cu"
-        "nvidia/*.cc"
-        "nvidia/*.cpp"
-        "nvidia/*.cu"
+        "cuda/nvidia/*.cc"
+        "cuda/nvidia/*.cpp"
+        "cuda/nvidia/*.cu"
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
@@ -54,9 +54,9 @@ if(WITH_ILUVATAR)
         "cuda/*.cc"
         "cuda/*.cpp"
         "cuda/*.cu"
-        "iluvatar/*.cc"
-        "iluvatar/*.cpp"
-        "iluvatar/*.cu"
+        "cuda/iluvatar/*.cc"
+        "cuda/iluvatar/*.cpp"
+        "cuda/iluvatar/*.cu"
     )
 
     file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
@@ -81,8 +81,8 @@ if(WITH_METAX)
     set(METAX_PATTERNS
         "cuda/*.cc"
         "cuda/*.cpp"
-        "metax/*.cc"
-        "metax/*.maca"
+        "cuda/metax/*.cc"
+        "cuda/metax/*.maca"
     )
 
     file(GLOB_RECURSE METAX_SOURCES CONFIGURE_DEPENDS ${METAX_PATTERNS})
@@ -107,9 +107,9 @@ if(WITH_MOORE)
     set(MOORE_PATTERNS
         "cuda/*.cc"
         "cuda/*.cpp"
-        "moore/*.cc"
-        "moore/*.cpp"
-        "moore/*.mu"
+        "cuda/moore/*.cc"
+        "cuda/moore/*.cpp"
+        "cuda/moore/*.mu"
     )
 
     file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
