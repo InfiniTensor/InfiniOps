@@ -7,9 +7,9 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnn_add.h"
 #include "aclnn_rms_norm.h"
-#include "ascend/add_rms_norm/registry.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
+#include "base/add_rms_norm.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -74,12 +74,12 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
       aclSetInputTensorAddr(add_exec_, 1, t_x2, const_cast<void*>(x2.data()));
       aclSetOutputTensorAddr(add_exec_, 0, t_x_out, x_out.data());
     }
-    auto& add_arena = ascend::workspacePool().ensure(stream, add_ws_);
+    auto& add_arena = ascend::GetWorkspacePool().Ensure(stream, add_ws_);
     aclnnAdd(add_arena.buf, add_ws_, add_exec_, stream);
 
     // Obtain shared rstd buffer from pool.
     auto& rstd_arena =
-        ascend::workspacePool().ensure(stream, rstd_size_, "temp");
+        ascend::GetWorkspacePool().Ensure(stream, rstd_size_, "temp");
 
     // Lazily create rstd tensor descriptor on first call.
     if (!rstd_tensor_) {
@@ -102,7 +102,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
       aclSetOutputTensorAddr(norm_exec_, 0, t_y_out, y_out.data());
       aclSetOutputTensorAddr(norm_exec_, 1, rstd_tensor_, rstd_arena.buf);
     }
-    auto& norm_arena = ascend::workspacePool().ensure(stream, norm_ws_);
+    auto& norm_arena = ascend::GetWorkspacePool().Ensure(stream, norm_ws_);
     aclnnRmsNorm(norm_arena.buf, norm_ws_, norm_exec_, stream);
   }
 

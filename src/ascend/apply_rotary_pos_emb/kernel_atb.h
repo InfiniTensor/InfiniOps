@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "acl/acl.h"
-#include "ascend/apply_rotary_pos_emb/registry.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
@@ -141,7 +140,7 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend, 1>
     uint8_t* ws_ptr = nullptr;
 
     if (ws_size > 0) {
-      auto& arena = ascend::workspacePool().ensure(stream, ws_size);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size);
       ws_ptr = static_cast<uint8_t*>(arena.buf);
     }
 

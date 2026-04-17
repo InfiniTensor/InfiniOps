@@ -249,7 +249,7 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
           gws == ACL_SUCCESS &&
           "aclnnFusedInferAttentionScoreV4GetWorkspaceSize failed (prefill)");
 
-      auto& arena = ascend::workspacePool().ensure(stream, ws_needed);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_needed);
       aclError ret = aclnnFusedInferAttentionScoreV4(arena.buf, ws_needed,
                                                      executor, stream);
       assert(ret == ACL_SUCCESS &&
@@ -318,7 +318,7 @@ class Operator<FlashAttention, Device::Type::kAscend> : public FlashAttention {
     assert(gws == ACL_SUCCESS &&
            "aclnnFusedInferAttentionScoreV4GetWorkspaceSize failed (decode)");
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_needed);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_needed);
     aclError ret =
         aclnnFusedInferAttentionScoreV4(arena.buf, ws_needed, executor, stream);
     assert(ret == ACL_SUCCESS &&

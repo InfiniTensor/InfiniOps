@@ -9,7 +9,6 @@
 #include "acl/acl.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
-#include "ascend/topk_topp_sampling/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
@@ -106,7 +105,7 @@ class Operator<TopkToppSampling, Device::Type::kAscend, 0>
     };
 
     // Ensure workspace covers both auxiliary buffers and ATB's own workspace.
-    auto& arena = ascend::workspacePool().ensure(stream, aux_bytes);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, aux_bytes);
     auto* base = static_cast<uint8_t*>(arena.buf);
     void* seeds_ptr = base;
     void* in2_ptr = base + seeds_bytes;
@@ -139,7 +138,7 @@ class Operator<TopkToppSampling, Device::Type::kAscend, 0>
 
     if (ws_size > 0) {
       auto& ws_arena =
-          ascend::workspacePool().ensure(stream, aux_bytes + ws_size);
+          ascend::GetWorkspacePool().Ensure(stream, aux_bytes + ws_size);
 
       // Re-derive auxiliary pointers from the (possibly reallocated) arena.
       base = static_cast<uint8_t*>(ws_arena.buf);

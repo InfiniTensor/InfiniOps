@@ -47,7 +47,7 @@ class Operator<Matmul, Device::Type::kAscend> : public Matmul {
       aclSetOutputTensorAddr(executor_, 0, t_out, c.data());
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
     aclnnMatmul(arena.buf, ws_size_, executor_, stream);
   }
 

@@ -9,7 +9,6 @@
 #include "aclnnop/aclnn_cat.h"
 #include "aclnnop/aclnn_swi_glu.h"
 #include "ascend/common.h"
-#include "ascend/swiglu/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/swiglu.h"
 #include "operator.h"
@@ -80,7 +79,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Obtain shared temp buffer for the concatenated tensor.
-    auto& cat_arena = ascend::workspacePool().ensure(stream, cat_size_, "temp");
+    auto& cat_arena = ascend::GetWorkspacePool().Ensure(stream, cat_size_, "temp");
 
     // Lazily build the cat output tensor cache on first call.
     if (!cat_out_cache_) {
@@ -105,7 +104,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
       aclSetOutputTensorAddr(cat_exec_, 0, t_cat, cat_arena.buf);
     }
 
-    auto& cat_ws_arena = ascend::workspacePool().ensure(stream, cat_ws_);
+    auto& cat_ws_arena = ascend::GetWorkspacePool().Ensure(stream, cat_ws_);
     aclnnCat(cat_ws_arena.buf, cat_ws_, cat_exec_, stream);
 
     // Step 2: swiglu(cat_buf, dim=-1) -> out (or staging buffer).
@@ -114,7 +113,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
 
     if (needs_copy_) {
       auto& staging =
-          ascend::workspacePool().ensure(stream, out_staging_size_, "staging");
+          ascend::GetWorkspacePool().Ensure(stream, out_staging_size_, "staging");
 
       if (!out_staging_cache_) {
         std::vector<int64_t> out_shape(out_shape_.begin(), out_shape_.end());
@@ -135,7 +134,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
       aclSetOutputTensorAddr(swiglu_exec_, 0, t_swiglu_out, swiglu_out_data);
     }
 
-    auto& swiglu_arena = ascend::workspacePool().ensure(stream, swiglu_ws_);
+    auto& swiglu_arena = ascend::GetWorkspacePool().Ensure(stream, swiglu_ws_);
     aclnnSwiGlu(swiglu_arena.buf, swiglu_ws_, swiglu_exec_, stream);
 
     // Step 3 (non-contiguous output only): copy staging -> out.
@@ -149,7 +148,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
         aclSetInputTensorAddr(copy_exec_, 1, t_swiglu_out, swiglu_out_data);
       }
 
-      auto& copy_arena = ascend::workspacePool().ensure(stream, copy_ws_);
+      auto& copy_arena = ascend::GetWorkspacePool().Ensure(stream, copy_ws_);
       aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream);
     }
   }

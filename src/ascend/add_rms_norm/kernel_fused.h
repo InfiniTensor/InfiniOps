@@ -6,9 +6,9 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_add_rms_norm.h"
-#include "ascend/add_rms_norm/registry.h"
 #include "ascend/common.h"
 #include "ascend/workspace_pool_.h"
+#include "base/add_rms_norm.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -98,7 +98,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
       aclSetOutputTensorAddr(executor_, 2, t_x_out, x_out.data());
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
     aclnnAddRmsNorm(arena.buf, ws_size_, executor_, stream);
   }
 

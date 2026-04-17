@@ -77,7 +77,7 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
     aclnnCat(arena.buf, ws_size_, executor_, stream);
   }
 

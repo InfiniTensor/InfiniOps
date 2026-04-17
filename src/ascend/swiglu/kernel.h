@@ -6,7 +6,6 @@
 #include "aclnn_mul.h"
 #include "aclnn_silu.h"
 #include "ascend/common.h"
-#include "ascend/swiglu/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/swiglu.h"
 #include "data_type.h"
@@ -53,7 +52,7 @@ class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Obtain shared temp buffer from pool.
-    auto& temp = ascend::workspacePool().ensure(stream, temp_size_, "temp");
+    auto& temp = ascend::GetWorkspacePool().Ensure(stream, temp_size_, "temp");
     auto t_temp = temp_cache_.get(temp.buf);
 
     // Step 1: silu(gate) -> temp.
@@ -65,7 +64,7 @@ class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
                             const_cast<void*>(gate.data()));
       aclSetOutputTensorAddr(silu_exec_, 0, t_temp, temp.buf);
     }
-    auto& silu_arena = ascend::workspacePool().ensure(stream, silu_ws_);
+    auto& silu_arena = ascend::GetWorkspacePool().Ensure(stream, silu_ws_);
     aclnnSilu(silu_arena.buf, silu_ws_, silu_exec_, stream);
 
     // Step 2: mul(input, temp) -> out.
@@ -78,7 +77,7 @@ class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
       aclSetInputTensorAddr(mul_exec_, 1, t_temp, temp.buf);
       aclSetOutputTensorAddr(mul_exec_, 0, t_out, out.data());
     }
-    auto& mul_arena = ascend::workspacePool().ensure(stream, mul_ws_);
+    auto& mul_arena = ascend::GetWorkspacePool().Ensure(stream, mul_ws_);
     aclnnMul(mul_arena.buf, mul_ws_, mul_exec_, stream);
   }
 

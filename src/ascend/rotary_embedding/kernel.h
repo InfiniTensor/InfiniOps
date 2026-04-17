@@ -153,7 +153,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       }
 
       uint64_t ws_max = idx_cos_ws_ > idx_sin_ws_ ? idx_cos_ws_ : idx_sin_ws_;
-      auto& arena = ascend::workspacePool().ensure(stream, ws_max);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_max);
 
       aclnnIndexSelect(arena.buf, idx_cos_ws_, idx_cos_exec_, stream);
       aclnnIndexSelect(arena.buf, idx_sin_ws_, idx_sin_exec_, stream);
@@ -192,7 +192,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       aclSetInputTensorAddr(v2_exec_, 1, t_k, key_out.data());
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, v2_ws_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, v2_ws_);
     aclnnApplyRotaryPosEmbV2(arena.buf, v2_ws_, v2_exec_, stream);
   }
 

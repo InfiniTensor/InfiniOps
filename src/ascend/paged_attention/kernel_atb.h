@@ -12,7 +12,6 @@
 #include "acl/acl.h"
 #include "ascend/atb_common_.h"
 #include "ascend/common.h"
-#include "ascend/paged_attention/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "atb/context.h"
 #include "atb/infer_op_params.h"
@@ -181,7 +180,7 @@ class Operator<PagedAttention, Device::Type::kAscend, 0>
     uint8_t* ws_ptr = nullptr;
 
     if (ws_size > 0) {
-      auto& arena = ascend::workspacePool().ensure(stream, ws_size);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size);
       ws_ptr = static_cast<uint8_t*>(arena.buf);
     }
 

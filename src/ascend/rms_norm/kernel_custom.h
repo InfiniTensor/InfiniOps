@@ -11,7 +11,6 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_cast.h"
 #include "ascend/common.h"
-#include "ascend/rms_norm/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/rms_norm.h"
 #include "operator.h"
@@ -114,7 +113,7 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
         aclSetOutputTensorAddr(cast_exec_, 0, t_dst, weight_fp32_data_);
       }
 
-      auto& arena = ascend::workspacePool().ensure(stream, cast_ws_);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, cast_ws_);
       aclnnCast(arena.buf, cast_ws_, cast_exec_, stream);
       weight_fp32 = weight_fp32_data_;
     } else {

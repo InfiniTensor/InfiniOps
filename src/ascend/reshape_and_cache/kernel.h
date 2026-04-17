@@ -8,7 +8,6 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_index_copy.h"
 #include "ascend/common.h"
-#include "ascend/reshape_and_cache/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/reshape_and_cache.h"
 #include "operator.h"
@@ -79,7 +78,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend>
     aclOpExecutor* k_exec = nullptr;
     aclnnInplaceIndexCopyGetWorkspaceSize(t_kv_k, 0, t_slot, t_key, &k_ws,
                                           &k_exec);
-    auto& k_arena = ascend::workspacePool().ensure(stream, k_ws);
+    auto& k_arena = ascend::GetWorkspacePool().Ensure(stream, k_ws);
     aclnnInplaceIndexCopy(k_arena.buf, k_ws, k_exec, stream);
 
     // V cache scatter: kv_v[slot_mapping[i]] = value[i] along dim 0.
@@ -87,7 +86,7 @@ class Operator<ReshapeAndCache, Device::Type::kAscend>
     aclOpExecutor* v_exec = nullptr;
     aclnnInplaceIndexCopyGetWorkspaceSize(t_kv_v, 0, t_slot, t_value, &v_ws,
                                           &v_exec);
-    auto& v_arena = ascend::workspacePool().ensure(stream, v_ws);
+    auto& v_arena = ascend::GetWorkspacePool().Ensure(stream, v_ws);
     aclnnInplaceIndexCopy(v_arena.buf, v_ws, v_exec, stream);
   }
 

@@ -47,7 +47,7 @@ class Operator<Mul, Device::Type::kAscend> : public Mul {
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
     aclnnMul(arena.buf, ws_size_, executor_, stream);
   }
 

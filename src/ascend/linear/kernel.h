@@ -72,7 +72,7 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
         aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       }
 
-      auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
 
       if (batched_) {
         aclnnBaddbmm(arena.buf, ws_size_, executor_, stream);
@@ -91,7 +91,7 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
         aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       }
 
-      auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
       aclnnMatmul(arena.buf, ws_size_, executor_, stream);
     }
   }

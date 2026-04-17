@@ -7,7 +7,6 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnn_rms_norm.h"
 #include "ascend/common.h"
-#include "ascend/rms_norm/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/rms_norm.h"
 #include "operator.h"
@@ -48,7 +47,7 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
 
     // Obtain shared rstd buffer from pool.
     auto& rstd_arena =
-        ascend::workspacePool().ensure(stream, rstd_size_, "temp");
+        ascend::GetWorkspacePool().Ensure(stream, rstd_size_, "temp");
 
     // Lazily create rstd tensor descriptor on first call.
     if (!rstd_tensor_) {
@@ -72,7 +71,7 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
       aclSetOutputTensorAddr(executor_, 1, rstd_tensor_, rstd_arena.buf);
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, ws_size_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
     aclnnRmsNorm(arena.buf, ws_size_, executor_, stream);
   }
 

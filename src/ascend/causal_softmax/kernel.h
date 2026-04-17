@@ -89,7 +89,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Obtain shared temp buffer from pool.
-    auto& temp = ascend::workspacePool().ensure(stream, temp_size_, "temp");
+    auto& temp = ascend::GetWorkspacePool().Ensure(stream, temp_size_, "temp");
     auto t_temp = temp_cache_.get(temp.buf);
 
     // Step 1: copy input (possibly non-contiguous) into contiguous temp.
@@ -101,7 +101,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
       aclSetInputTensorAddr(copy_exec_, 1, t_in,
                             const_cast<void*>(input.data()));
     }
-    auto& copy_arena = ascend::workspacePool().ensure(stream, copy_ws_);
+    auto& copy_arena = ascend::GetWorkspacePool().Ensure(stream, copy_ws_);
     aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream);
 
     // Step 2: mask upper-triangle positions with -inf in-place.
@@ -111,7 +111,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
           t_temp, mask_tensor_, neg_inf_, &fill_ws_, &fill_exec_);
       aclSetAclOpExecutorRepeatable(fill_exec_);
     }
-    auto& fill_arena = ascend::workspacePool().ensure(stream, fill_ws_);
+    auto& fill_arena = ascend::GetWorkspacePool().Ensure(stream, fill_ws_);
     aclnnInplaceMaskedFillScalar(fill_arena.buf, fill_ws_, fill_exec_, stream);
 
     // Step 3: softmax over the last dimension -> out.
@@ -123,7 +123,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     } else {
       aclSetOutputTensorAddr(softmax_exec_, 0, t_out, out.data());
     }
-    auto& softmax_arena = ascend::workspacePool().ensure(stream, softmax_ws_);
+    auto& softmax_arena = ascend::GetWorkspacePool().Ensure(stream, softmax_ws_);
     aclnnSoftmax(softmax_arena.buf, softmax_ws_, softmax_exec_, stream);
   }
 

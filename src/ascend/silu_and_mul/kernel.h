@@ -8,7 +8,6 @@
 #include "aclnn_copy.h"
 #include "aclnnop/aclnn_swi_glu.h"
 #include "ascend/common.h"
-#include "ascend/silu_and_mul/registry.h"
 #include "ascend/workspace_pool_.h"
 #include "base/silu_and_mul.h"
 #include "operator.h"
@@ -54,7 +53,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
 
     if (needs_copy_) {
       auto& staging =
-          ascend::workspacePool().ensure(stream, out_staging_size_, "staging");
+          ascend::GetWorkspacePool().Ensure(stream, out_staging_size_, "staging");
 
       if (!out_staging_cache_) {
         std::vector<int64_t> out_shape(out_shape_.begin(), out_shape_.end());
@@ -76,7 +75,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
       aclSetOutputTensorAddr(swiglu_exec_, 0, t_swiglu_out, swiglu_out_data);
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, swiglu_ws_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, swiglu_ws_);
     aclnnSwiGlu(arena.buf, swiglu_ws_, swiglu_exec_, stream);
 
     // Copy staging buffer back to non-contiguous output if needed.
@@ -90,7 +89,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
         aclSetInputTensorAddr(copy_exec_, 1, t_swiglu_out, swiglu_out_data);
       }
 
-      auto& copy_arena = ascend::workspacePool().ensure(stream, copy_ws_);
+      auto& copy_arena = ascend::GetWorkspacePool().Ensure(stream, copy_ws_);
       aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream);
     }
   }

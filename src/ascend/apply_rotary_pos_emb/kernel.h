@@ -117,7 +117,7 @@ class Operator<ApplyRotaryPosEmb, Device::Type::kAscend>
       aclSetInputTensorAddr(v2_exec_, 3, t_sin, const_cast<void*>(sin.data()));
     }
 
-    auto& arena = ascend::workspacePool().ensure(stream, v2_ws_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, v2_ws_);
     auto exec_ret =
         aclnnApplyRotaryPosEmbV2(arena.buf, v2_ws_, v2_exec_, stream);
     assert(exec_ret == 0 && "aclnnApplyRotaryPosEmbV2 failed");
