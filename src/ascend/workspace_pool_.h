@@ -46,7 +46,7 @@ class WorkspacePool {
   std::mutex mutex_;
 };
 
-inline WorkspacePool& workspacePool() {
+inline WorkspacePool& GetWorkspacePool() {
   static WorkspacePool pool;
   return pool;
 }
