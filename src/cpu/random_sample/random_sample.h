@@ -33,13 +33,15 @@ class Operator<RandomSample, Device::Type::kCpu>
                   std::optional<Tensor> min_p, float min_p_val,
                   std::uint64_t seed, std::uint64_t offset,
                   bool deterministic) const override {
-    DispatchFunc<ConcatType<FloatTypes, ReducedFloatTypes>>(
-        logits.dtype(),
-        [&](auto tag) {
-          using T = typename decltype(tag)::type;
-          Compute<T>(logits, out, valid, temperature, temperature_val, top_k,
-                     top_k_val, top_p, top_p_val, min_p, min_p_val, seed,
-                     offset);
+    DispatchFunc<ConcatType<FloatTypes, ReducedFloatTypes>,
+                 List<DataType::kInt32, DataType::kInt64>>(
+        {logits_dtype_, out_dtype_},
+        [&](auto tag1, auto tag2) {
+          using T = typename decltype(tag1)::type;
+          using OutT = typename decltype(tag2)::type;
+          Compute<T, OutT>(logits, out, valid, temperature, temperature_val,
+                           top_k, top_k_val, top_p, top_p_val, min_p, min_p_val,
+                           seed, offset, deterministic);
         },
         "`Operator<RandomSample, Device::Type::kCpu>::operator()`");
   }
@@ -51,7 +53,7 @@ class Operator<RandomSample, Device::Type::kCpu>
                       std::nullopt, top_k_val_,
                       std::nullopt, top_p_val_,
                       std::nullopt, min_p_val_,
-                      seed, offset);
+                      seed, offset, deterministic_);
   }
 
  private:
@@ -66,66 +68,88 @@ class Operator<RandomSample, Device::Type::kCpu>
     return scalar_val;
   }
 
-  // Specialization for float temperature from a typed tensor.
-  float GetTemperature(std::optional<Tensor> tensor, float scalar_val,
-                       Tensor::Size batch_idx) const {
+  // Resolve a per-batch float parameter, handling float16/bfloat16/float32.
+  float GetFloatParam(std::optional<Tensor> tensor, float scalar_val,
+                      Tensor::Size batch_idx) const {
     if (tensor.has_value()) {
-      // Temperature tensor may be float16/bfloat16/float32.
       const auto& t = tensor.value();
       if (t.dtype() == DataType::kFloat32) {
         return static_cast<const float*>(t.data())[batch_idx];
       } else if (t.dtype() == DataType::kFloat16) {
-        auto v = static_cast<const Float16*>(t.data())[batch_idx];
-        return v.ToFloat();
+        return static_cast<const Float16*>(t.data())[batch_idx].ToFloat();
       } else if (t.dtype() == DataType::kBFloat16) {
-        auto v = static_cast<const BFloat16*>(t.data())[batch_idx];
-        return v.ToFloat();
+        return static_cast<const BFloat16*>(t.data())[batch_idx].ToFloat();
       }
     }
     return scalar_val;
   }
 
-  template <typename T>
+  template <typename T, typename OutT>
   void Compute(const Tensor logits, Tensor out, Tensor valid,
                std::optional<Tensor> temperature, float temperature_val,
                std::optional<Tensor> top_k, int top_k_val,
                std::optional<Tensor> top_p, float top_p_val,
                std::optional<Tensor> min_p, float min_p_val,
-               std::uint64_t seed, std::uint64_t offset) const {
+               std::uint64_t seed, std::uint64_t offset,
+               bool deterministic) const {
     const auto* logits_ptr = static_cast<const T*>(logits.data());
-    auto* out_ptr = static_cast<std::int32_t*>(out.data());
+    auto* out_ptr = static_cast<OutT*>(out.data());
     auto* valid_ptr = static_cast<bool*>(valid.data());
 
     auto vocab_size = static_cast<Tensor::Size>(vocab_size_);
 
-    // Working buffer for one row of float probabilities.
-    std::vector<float> probs(vocab_size);
+    // Stride-based indexing — matching CausalSoftmax pattern.
+    auto batch_stride = ndim_ == 2 ? logits_strides_[0] : 0;
+    auto col_stride = logits_strides_[ndim_ - 1];
 
-#pragma omp parallel for firstprivate(probs)
-    for (Tensor::Size b = 0; b < batch_size_; ++b) {
-      const T* logits_row = logits_ptr + b * vocab_size;
+    // Resolved sampling parameters from operator() args.
+    auto resolve_temperature = [&](std::optional<Tensor> t, float v,
+                                  Tensor::Size b) {
+      return t.has_value() ? GetFloatParam(t, v, b)
+                           : GetFloatParam(temperature_, v, b);
+    };
+    auto resolve_top_k = [&](std::optional<Tensor> t, int v,
+                             Tensor::Size b) {
+      return t.has_value() ? GetParam<int>(*t, v, b)
+                           : GetParam<int>(top_k_, v, b);
+    };
+    auto resolve_top_p = [&](std::optional<Tensor> t, float v,
+                             Tensor::Size b) {
+      return t.has_value() ? GetFloatParam(t, v, b)
+                           : GetFloatParam(top_p_, v, b);
+    };
+    auto resolve_min_p = [&](std::optional<Tensor> t, float v,
+                             Tensor::Size b) {
+      return t.has_value() ? GetFloatParam(t, v, b)
+                           : GetFloatParam(min_p_, v, b);
+    };
+
+    auto sample_batch = [&](Tensor::Size b, std::vector<float>& probs) {
+      const T* logits_row = logits_ptr + b * batch_stride;
 
       // --- Step 1: Temperature scaling + Softmax ---
-      float temp = GetTemperature(temperature, temperature_val, b);
+      float temp =
+          resolve_temperature(temperature, temperature_val, b);
       float inv_temp = (temp > 0.f) ? (1.f / temp) : 0.f;
 
-      float max_val = Cast<float>(logits_row[0]) * inv_temp;
+      float max_val = Cast<float>(logits_row[0 * col_stride]) * inv_temp;
       for (Tensor::Size j = 1; j < vocab_size; ++j) {
-        float v = Cast<float>(logits_row[j]) * inv_temp;
+        float v = Cast<float>(logits_row[j * col_stride]) * inv_temp;
         if (v > max_val) max_val = v;
       }
 
       float sum = 0.f;
       for (Tensor::Size j = 0; j < vocab_size; ++j) {
-        float v = std::exp(Cast<float>(logits_row[j]) * inv_temp - max_val);
+        float v = std::exp(
+            Cast<float>(logits_row[j * col_stride]) * inv_temp - max_val);
         probs[j] = v;
         sum += v;
       }
 
       if (sum <= 0.f) {
-        out_ptr[b] = 0;
+        out_ptr[b] = static_cast<OutT>(0);
         valid_ptr[b] = false;
-        continue;
+        return;
       }
 
       for (Tensor::Size j = 0; j < vocab_size; ++j) {
@@ -133,7 +157,7 @@ class Operator<RandomSample, Device::Type::kCpu>
       }
 
       // --- Step 2: top_k filtering ---
-      int k = GetParam<int>(top_k, top_k_val, b);
+      int k = resolve_top_k(top_k, top_k_val, b);
       if (k > 0 && static_cast<Tensor::Size>(k) < vocab_size) {
         // Find the k-th largest value using nth_element.
         std::vector<std::pair<float, Tensor::Size>> indexed(vocab_size);
@@ -164,7 +188,7 @@ class Operator<RandomSample, Device::Type::kCpu>
       }
 
       // --- Step 3: top_p filtering ---
-      float p = GetParam<float>(top_p, top_p_val, b);
+      float p = resolve_top_p(top_p, top_p_val, b);
       if (p > 0.f && p < 1.f) {
         // Sort indices by probability descending.
         std::vector<Tensor::Size> sorted_idx(vocab_size);
@@ -201,7 +225,7 @@ class Operator<RandomSample, Device::Type::kCpu>
       }
 
       // --- Step 4: min_p filtering ---
-      float mp = GetParam<float>(min_p, min_p_val, b);
+      float mp = resolve_min_p(min_p, min_p_val, b);
       if (mp > 0.f) {
         // Find max probability.
         float max_prob = *std::max_element(probs.begin(), probs.end());
@@ -254,8 +278,21 @@ class Operator<RandomSample, Device::Type::kCpu>
         }
       }
 
-      out_ptr[b] = static_cast<std::int32_t>(sampled);
+      out_ptr[b] = static_cast<OutT>(sampled);
       valid_ptr[b] = found;
+    };
+
+    if (deterministic) {
+      std::vector<float> probs(vocab_size);
+      for (Tensor::Size b = 0; b < batch_size_; ++b) {
+        sample_batch(b, probs);
+      }
+    } else {
+      std::vector<float> probs(vocab_size);
+#pragma omp parallel for firstprivate(probs)
+      for (Tensor::Size b = 0; b < batch_size_; ++b) {
+        sample_batch(b, probs);
+      }
     }
   }
 };

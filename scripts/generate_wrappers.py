@@ -104,13 +104,18 @@ def _generate_pybind11(operator):
         )
 
     def _generate_arguments(node):
-        return ", ".join(
-            f"TensorFromPybind11Handle({arg.spelling})"
-            if "Tensor" in arg.type.spelling
-            else arg.spelling
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
+        args = []
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+            type_spelling = arg.type.spelling
+            if "optional" in type_spelling and "Tensor" in type_spelling:
+                args.append(f"OptionalTensorFromPybind11({arg.spelling})")
+            elif "Tensor" in type_spelling:
+                args.append(f"TensorFromPybind11Handle({arg.spelling})")
+            else:
+                args.append(arg.spelling)
+        return ", ".join(args)
 
     op_name = operator.name
 
@@ -141,6 +146,28 @@ def _generate_pybind11(operator):
 
     pascal_case_op_name = _snake_to_pascal(op_name)
 
+    def _has_optional_tensor():
+        all_nodes = list(operator.constructors) + list(operator.calls)
+        for node in all_nodes:
+            for arg in node.get_arguments():
+                ts = arg.type.spelling
+                if "optional" in ts and "Tensor" in ts:
+                    return True
+        return False
+
+    optional_tensor_helper = ""
+    if _has_optional_tensor():
+        optional_tensor_helper = """
+inline std::optional<Tensor> OptionalTensorFromPybind11(
+    const std::optional<py::object>& obj) {
+  if (obj.has_value() && !obj->is_none()) {
+    return TensorFromPybind11Handle(*obj);
+  }
+  return std::nullopt;
+}
+
+"""
+
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 
@@ -153,7 +180,7 @@ def _generate_pybind11(operator):
 namespace py = pybind11;
 
 namespace infini::ops {{
-
+{optional_tensor_helper}
 void Bind{pascal_case_op_name}(py::module& m) {{
   using Self = {pascal_case_op_name};
 

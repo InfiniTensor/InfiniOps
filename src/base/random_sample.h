@@ -55,6 +55,8 @@ class RandomSample : public Operator<RandomSample> {
            "`RandomSample` requires 1D output [batch_size]");
     assert(valid.ndim() == 1 && valid.size(0) == batch_size_ &&
            "`RandomSample` requires 1D valid [batch_size]");
+    assert((out_dtype_ == DataType::kInt32 || out_dtype_ == DataType::kInt64) &&
+           "`RandomSample` requires int32 or int64 output");
   }
 
   // Simplified constructor: no filtering, default temperature.
