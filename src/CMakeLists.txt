@@ -180,8 +180,8 @@ if(WITH_ASCEND)
     )
     # Exclude kernel_impl.cpp — AscendC device code, not compiled by the host C++ compiler.
     list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
-    # Exclude custom_kernel/ — standalone PyTorch extension, built separately.
-    list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*/custom_kernel/.*")
+    # Exclude custom/ — standalone PyTorch extension, built separately.
+    list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*/custom/.*")
 
     target_compile_definitions(infiniops PUBLIC WITH_ASCEND=1)
     target_sources(infiniops PRIVATE ${ASCEND_SOURCES})
@@ -242,7 +242,7 @@ if(WITH_ASCEND)
 
     # Custom AscendC kernels (PyTorch extension, requires torch_npu).
     if(BUILD_CUSTOM_KERNEL)
-        add_subdirectory(ascend/custom_kernel)
+        add_subdirectory(ascend/custom)
 
         # Link the compiled AscendC kernel objects into infiniops so that
         # custom kernel implementations (e.g. RmsNorm index 1) can call
