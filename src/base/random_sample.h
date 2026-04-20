@@ -57,6 +57,7 @@ class RandomSample : public Operator<RandomSample> {
            "`RandomSample` requires 1D valid [batch_size]");
     assert((out_dtype_ == DataType::kInt32 || out_dtype_ == DataType::kInt64) &&
            "`RandomSample` requires int32 or int64 output");
+    ValidateParams(temperature, top_k, top_p, min_p);
   }
 
   // Simplified constructor: no filtering, default temperature.
@@ -89,6 +90,36 @@ class RandomSample : public Operator<RandomSample> {
   }
 
  protected:
+  static void ValidateIntParam(std::optional<Tensor> t, Tensor::Size batch_size) {
+    if (!t.has_value()) return;
+    const auto& tensor = *t;
+    assert(tensor.ndim() == 1 && tensor.size(0) == batch_size &&
+           "per-batch int param must be 1D [batch_size]");
+    assert((tensor.dtype() == DataType::kInt32 ||
+            tensor.dtype() == DataType::kInt64) &&
+           "per-batch int param must be int32 or int64");
+  }
+
+  static void ValidateFloatParam(std::optional<Tensor> t, Tensor::Size batch_size) {
+    if (!t.has_value()) return;
+    const auto& tensor = *t;
+    assert(tensor.ndim() == 1 && tensor.size(0) == batch_size &&
+           "per-batch float param must be 1D [batch_size]");
+    assert((tensor.dtype() == DataType::kFloat32 ||
+            tensor.dtype() == DataType::kFloat64 ||
+            tensor.dtype() == DataType::kFloat16 ||
+            tensor.dtype() == DataType::kBFloat16) &&
+           "per-batch float param must be float16/bfloat16/float32/float64");
+  }
+
+  void ValidateParams(std::optional<Tensor> temperature, std::optional<Tensor> top_k,
+                      std::optional<Tensor> top_p, std::optional<Tensor> min_p) const {
+    ValidateFloatParam(temperature, batch_size_);
+    ValidateIntParam(top_k, batch_size_);
+    ValidateFloatParam(top_p, batch_size_);
+    ValidateFloatParam(min_p, batch_size_);
+  }
+
   const DataType logits_dtype_;
 
   const DataType out_dtype_;
