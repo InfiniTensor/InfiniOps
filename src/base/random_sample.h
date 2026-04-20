@@ -14,7 +14,7 @@ class RandomSample : public Operator<RandomSample> {
   //
   // logits:  [batch_size, vocab_size] or [vocab_size] (batch_size=1)
   // out:     [batch_size]  sampled token ids (int32/int64)
-  // valid:   [batch_size]  bool, whether sample is valid
+  // valid:   [batch_size]  uint8 (0 or 1), whether sample is valid
   //
   // Per-batch parameters support two modes:
   //   - optional<Tensor> has value: per-batch tensor of shape [batch_size]
@@ -82,10 +82,10 @@ class RandomSample : public Operator<RandomSample> {
   virtual void operator()(const Tensor logits, Tensor out, Tensor valid,
                           std::uint64_t seed, std::uint64_t offset) const {
     return operator()(logits, out, valid,
-                      std::nullopt, temperature_val_,
-                      std::nullopt, top_k_val_,
-                      std::nullopt, top_p_val_,
-                      std::nullopt, min_p_val_,
+                      temperature_, temperature_val_,
+                      top_k_, top_k_val_,
+                      top_p_, top_p_val_,
+                      min_p_, min_p_val_,
                       seed, offset, deterministic_);
   }
 

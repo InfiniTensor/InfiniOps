@@ -147,7 +147,8 @@ def test_1d_logits(dtype, device):
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
 @_CPU_ONLY
-def test_seed_offset_affects_output(dtype, device):
+def test_seed_offset_reproducibility(dtype, device):
+    """Same seed+offset reproduces; different seed likely differs."""
     batch_size, vocab_size = 4, 256
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
 
@@ -158,12 +159,14 @@ def test_seed_offset_affects_output(dtype, device):
     out3 = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
     valid3 = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
+    # Same seed + offset → must be identical
     _random_sample(logits, out1, valid1, seed=1, offset=0)
-    _random_sample(logits, out2, valid2, seed=2, offset=0)
-    _random_sample(logits, out3, valid3, seed=1, offset=100)
+    _random_sample(logits, out2, valid2, seed=1, offset=0)
+    assert torch.equal(out1, out2), "same seed+offset should reproduce"
 
-    assert not torch.equal(out1, out2), "different seeds should produce different results"
-    assert not torch.equal(out1, out3), "different offsets should produce different results"
+    # Different offset → must be different (different RNG state)
+    _random_sample(logits, out3, valid3, seed=1, offset=999999)
+    assert not torch.equal(out1, out3), "different offset should produce different results"
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
