@@ -23,7 +23,7 @@ inline bool isAclRuntimeAlive() {
   return aclrtGetDevice(&dev_id) == ACL_SUCCESS;
 }
 
-// Build an aclTensor descriptor from an InfiniOps Tensor.
+// Build an `aclTensor` descriptor from an InfiniOps `Tensor`.
 //
 // When `transpose_last2` is true the last two dimensions are swapped in the
 // descriptor (shape and strides) without copying data.  This is used by GEMM
@@ -66,8 +66,8 @@ inline aclTensor* buildAclTensor(const Tensor& t,
 // Pre-computed tensor metadata for descriptor reuse.
 //
 // Stores shape, strides, storage_shape, and dtype once (avoiding per-call heap
-// allocations).  The aclTensor descriptor is created on the first `get()` call
-// and its data pointer is updated in-place via `aclSetRawTensorAddr` on
+// allocations).  The `aclTensor` descriptor is created on the first `get()`
+// call and its data pointer is updated in-place via `aclSetRawTensorAddr` on
 // subsequent calls.
 class AclTensorCache {
  public:

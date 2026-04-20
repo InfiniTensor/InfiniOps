@@ -126,6 +126,7 @@ def get_stream(device):
         return 0
 
     stream = mod.current_stream()
+
     return getattr(stream, attr, 0)
 
 
