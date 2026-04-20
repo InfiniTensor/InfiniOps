@@ -71,7 +71,7 @@ class TorchNpuHelper {
   do {                                                                  \
     auto acl_stream = c10_npu::getCurrentNPUStream().stream(false);     \
     auto converted_params =                                             \
-        ascend::detail::TorchNpuHelper::ConvertTypes(__VA_ARGS__);       \
+        ascend::detail::TorchNpuHelper::ConvertTypes(__VA_ARGS__);      \
     auto acl_call = [acl_stream, blockdim, converted_params]() -> int { \
       std::apply(                                                       \
           [&](auto&&... params) {                                       \
