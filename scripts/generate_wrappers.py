@@ -197,9 +197,9 @@ def _generate_pybind11(operator):
 
         if not method:
             params = (
-                f"{call_params}, std::size_t implementation_index, std::uintptr_t stream"
+                f"{call_params}, std::uintptr_t stream, std::size_t implementation_index"
                 if call_params
-                else "std::size_t implementation_index, std::uintptr_t stream"
+                else "std::uintptr_t stream, std::size_t implementation_index"
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
@@ -213,7 +213,7 @@ def _generate_pybind11(operator):
                 f"    Config config;\n"
                 f"    config.set_implementation_index(implementation_index);\n"
                 f"    return Self::Call(handle, config, {call_args});\n"
-                f'  }}, {py_args_str}py::kw_only(), py::arg("implementation_index") = 0, py::arg("stream") = 0);'
+                f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
@@ -478,7 +478,7 @@ if __name__ == "__main__":
         nargs="+",
         default="cpu",
         type=str,
-        help="Devices to use. Please pick from cpu, nvidia, cambricon, ascend, metax, moore, iluvatar, kunlun, hygon, and qy. (default: cpu)",
+        help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `moore`, `iluvatar`, `kunlun`, `hygon`, and `qy`. (default: `cpu`)",
     )
 
     parser.add_argument(

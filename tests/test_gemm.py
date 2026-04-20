@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, get_npu_stream, randn_strided
+from tests.utils import Payload, get_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -71,6 +71,18 @@ def test_gemm(
     ):
         pytest.skip("ATen CPU `addmm`/`baddbmm` does not support half-precision")
 
+    if implementation_index == 2 and device == "npu":
+        # `src/torch/gemm/gemm.h` partial-specializes `Operator<Gemm, kDev, 2>`
+        # for every `kDev` including `kAscend`, so the SFINAE-based
+        # `active_implementation_indices` reports `2` as active even though
+        # `torch/gemm/gemm.cc` only instantiates it for CPU/NVIDIA.
+        # Dispatching through the unused Ascend specialization reads from an
+        # uninitialized vtable and crashes. See PR #64 discussion.
+        pytest.skip(
+            "Gemm impl=2 on Ascend is a torch-fallback stub without an "
+            "instantiated specialization"
+        )
+
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
@@ -93,28 +105,17 @@ def test_gemm(
 
 
 def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
-    if a.device.type == "npu":
-        infini.ops.gemm(
-            a,
-            b,
-            alpha,
-            beta,
-            trans_a,
-            trans_b,
-            c,
-            stream=get_npu_stream(a),
-        )
-    else:
-        infini.ops.gemm(
-            a,
-            b,
-            alpha,
-            beta,
-            trans_a,
-            trans_b,
-            c,
-            implementation_index=implementation_index,
-        )
+    infini.ops.gemm(
+        a,
+        b,
+        alpha,
+        beta,
+        trans_a,
+        trans_b,
+        c,
+        stream=get_stream(a.device),
+        implementation_index=implementation_index,
+    )
 
     return c
 

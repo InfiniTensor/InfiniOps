@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_npu_stream, rand_strided
+from tests.utils import Payload, empty_strided, get_stream, rand_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -61,21 +61,13 @@ def test_swiglu(
 
 
 def _swiglu(input, gate, out, implementation_index=0):
-    if input.device.type == "npu":
-        infini.ops.swiglu(
-            input,
-            gate,
-            out,
-            implementation_index=implementation_index,
-            stream=get_npu_stream(input),
-        )
-    else:
-        infini.ops.swiglu(
-            input,
-            gate,
-            out,
-            implementation_index=implementation_index,
-        )
+    infini.ops.swiglu(
+        input,
+        gate,
+        out,
+        implementation_index=implementation_index,
+        stream=get_stream(input.device),
+    )
 
     return out
 

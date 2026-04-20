@@ -2,13 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import (
-    Payload,
-    empty_strided,
-    get_npu_stream,
-    randint_strided,
-    randn_strided,
-)
+from tests.utils import Payload, empty_strided, get_stream, randint_strided, randn_strided
 
 _INT_DTYPES = (torch.int16, torch.int32, torch.int64)
 
@@ -95,16 +89,13 @@ def test_add(
 
 
 def _add(input, other, out, implementation_index=0):
-    if input.device.type == "npu":
-        infini.ops.add(
-            input,
-            other,
-            out,
-            stream=get_npu_stream(input),
-            implementation_index=implementation_index,
-        )
-    else:
-        infini.ops.add(input, other, out, implementation_index=implementation_index)
+    infini.ops.add(
+        input,
+        other,
+        out,
+        stream=get_stream(input.device),
+        implementation_index=implementation_index,
+    )
 
     return out
 

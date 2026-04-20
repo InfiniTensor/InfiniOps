@@ -82,14 +82,6 @@ def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     return output
 
 
-def get_npu_stream(tensor):
-    """Return the current NPU stream handle for `tensor`, or 0 on other devices."""
-    if tensor.device.type != "npu":
-        return 0
-
-    return torch.npu.current_stream().npu_stream
-
-
 _STREAM_ACCESSORS = {
     "npu": ("npu", "npu_stream"),
     "cuda": ("cuda", "cuda_stream"),
