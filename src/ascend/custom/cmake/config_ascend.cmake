@@ -30,7 +30,7 @@ elseif(EXISTS ${ASCEND_HOME_PATH}/compiler/tikcpp/ascendc_kernel_cmake)
 elseif(EXISTS ${ASCEND_HOME_PATH}/ascendc_devkit/tikcpp/samples/cmake)
     set(ASCENDC_CMAKE_DIR ${ASCEND_HOME_PATH}/ascendc_devkit/tikcpp/samples/cmake)
 else()
-    message(FATAL_ERROR "ascendc_kernel_cmake does not exist, please check whether the cann package is installed.")
+    message(FATAL_ERROR "`ascendc_kernel_cmake` does not exist; please check whether the `CANN` package is installed.")
 endif()
 
 include(${ASCENDC_CMAKE_DIR}/ascendc.cmake)

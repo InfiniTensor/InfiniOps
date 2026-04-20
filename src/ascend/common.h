@@ -26,8 +26,8 @@ inline bool IsAclRuntimeAlive() {
 // Build an `aclTensor` descriptor from an InfiniOps `Tensor`.
 //
 // When `transpose_last2` is true the last two dimensions are swapped in the
-// descriptor (shape and strides) without copying data.  This is used by GEMM
-// and Matmul to express a transpose via the view.
+// descriptor (shape and strides) without copying data.  This is used by `Gemm`
+// and `MatMul` to express a transpose via the view.
 inline aclTensor* BuildAclTensor(const Tensor& t,
                                  bool transpose_last2 = false) {
   std::vector<int64_t> shape(t.shape().begin(), t.shape().end());
