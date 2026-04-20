@@ -18,11 +18,11 @@
 #ifndef OPS_H
 #define OPS_H
 
-namespace ascend_kernel {
+namespace ascend::detail {
 
 at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
                     double eps);
 
-}  // namespace ascend_kernel
+}  // namespace ascend::detail
 
 #endif  // OPS_H

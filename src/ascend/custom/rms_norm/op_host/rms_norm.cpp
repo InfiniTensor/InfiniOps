@@ -9,7 +9,7 @@
 #include "tiling/platform/platform_ascendc.h"
 #include "torch_kernel_helper.h"
 
-namespace ascend_kernel {
+namespace ascend::detail {
 
 at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
                     double eps) {
@@ -25,86 +25,91 @@ at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
               weight.size(0), ") must match input last dim (", input.size(-1),
               ")");
 
-  int64_t dimLength = input.size(-1);
-  int64_t totalRows = input.numel() / dimLength;
+  int64_t dim_length = input.size(-1);
+  int64_t total_rows = input.numel() / dim_length;
 
-  if (totalRows == 0 || dimLength == 0) {
+  if (total_rows == 0 || dim_length == 0) {
     return at::empty_like(input);
   }
 
   at::Tensor x = input.contiguous();
-  int64_t dtypeSize = x.element_size();
+  int64_t dtype_size = x.element_size();
 
   // Hardware parameters.
   auto ascendc_platform =
       platform_ascendc::PlatformAscendCManager::GetInstance();
-  int64_t coreNum = static_cast<int64_t>(ascendc_platform->GetCoreNumAiv());
-  uint64_t ubSize;
-  ascendc_platform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize);
-  int64_t ubSizeLimit = static_cast<int64_t>(ubSize);
+  int64_t core_num = static_cast<int64_t>(ascendc_platform->GetCoreNumAiv());
+  uint64_t ub_size;
+  ascendc_platform->GetCoreMemSize(platform_ascendc::CoreMemType::UB, ub_size);
+  int64_t ub_size_limit = static_cast<int64_t>(ub_size);
 
   // Alignment (32-byte boundary).
-  int64_t alignElements = 32 / dtypeSize;
-  int64_t dimLengthAlign =
-      ((dimLength + alignElements - 1) / alignElements) * alignElements;
+  int64_t align_elements = 32 / dtype_size;
+  int64_t dim_length_align =
+      ((dim_length + align_elements - 1) / align_elements) * align_elements;
 
   // UB capacity check.
-  // fp32: inQ(×2) + outQ(×2) + weight = 5 × dimLenAlign × 4 = coeff 20
-  // fp16: inQ(×2) + outQ(×2) + xFp32 + tmpFp32 + weight
-  //       = 2×dimLenAlign×2 ×2  + 3×dimLenAlign×4 = 8 + 12 = coeff 20
-  int64_t bufferCoefficient = 20;
-  int64_t maxDimLength =
-      (ubSizeLimit - 1024) / bufferCoefficient;  // 1024 for reduce bufs.
-  int64_t fpAlignElements = 32 / 4;              // fp32 alignment.
-  maxDimLength = (maxDimLength / fpAlignElements) * fpAlignElements;
-  TORCH_CHECK(dimLengthAlign <= maxDimLength, "rms_norm: dimLength ", dimLength,
-              " (aligned ", dimLengthAlign, ") exceeds UB capacity (max ",
-              maxDimLength, ")");
+  //
+  // - `fp32`: `inQ` (*2) + `outQ` (*2) + `weight` = 5 * `dim_length_align`
+  //   * 4 = coeff 20.
+  // - `fp16`: `inQ` (*2) + `outQ` (*2) + `x_fp32` + `tmp_fp32` + `weight`
+  //   = 2 * `dim_length_align` * 2 * 2 + 3 * `dim_length_align` * 4 =
+  //   8 + 12 = coeff 20.
+  int64_t buffer_coefficient = 20;
+  // Reserve 1024 bytes for reduce buffers.
+  int64_t max_dim_length = (ub_size_limit - 1024) / buffer_coefficient;
+  // `fp32` alignment.
+  int64_t fp_align_elements = 32 / 4;
+  max_dim_length = (max_dim_length / fp_align_elements) * fp_align_elements;
+  TORCH_CHECK(dim_length_align <= max_dim_length, "rms_norm: dim_length ",
+              dim_length, " (aligned ", dim_length_align,
+              ") exceeds UB capacity (max ", max_dim_length, ")");
 
   // Padding.
-  at::Tensor kernelInput;
+  at::Tensor kernel_input;
 
-  if (dimLength != dimLengthAlign) {
-    kernelInput = x.reshape({totalRows, dimLength});
-    kernelInput =
-        at::constant_pad_nd(kernelInput, {0, dimLengthAlign - dimLength}, 0.0);
-    kernelInput = kernelInput.contiguous();
+  if (dim_length != dim_length_align) {
+    kernel_input = x.reshape({total_rows, dim_length});
+    kernel_input = at::constant_pad_nd(
+        kernel_input, {0, dim_length_align - dim_length}, 0.0);
+    kernel_input = kernel_input.contiguous();
   } else {
-    kernelInput = x.reshape({totalRows, dimLengthAlign}).contiguous();
+    kernel_input = x.reshape({total_rows, dim_length_align}).contiguous();
   }
 
-  at::Tensor kernelOutput = at::empty_like(kernelInput);
+  at::Tensor kernel_output = at::empty_like(kernel_input);
 
-  // Weight: always pass as fp32, padded to `dimLengthAlign`.
-  at::Tensor weightFloat = weight.contiguous().to(at::kFloat);
+  // Weight: always pass as fp32, padded to `dim_length_align`.
+  at::Tensor weight_float = weight.contiguous().to(at::kFloat);
 
-  if (dimLength != dimLengthAlign) {
-    weightFloat =
-        at::constant_pad_nd(weightFloat, {0, dimLengthAlign - dimLength}, 0.0);
+  if (dim_length != dim_length_align) {
+    weight_float = at::constant_pad_nd(
+        weight_float, {0, dim_length_align - dim_length}, 0.0);
   }
 
-  weightFloat = weightFloat.contiguous();
+  weight_float = weight_float.contiguous();
 
   // Block-level tiling (distribute rows across cores).
-  int64_t usedCoreNum = std::min(totalRows, coreNum);
-  int64_t formerLength = (totalRows + usedCoreNum - 1) / usedCoreNum;
-  int64_t tailLength = formerLength - 1;
-  int64_t formerNum = totalRows - tailLength * usedCoreNum;
-  uint32_t blockDim = static_cast<uint32_t>(usedCoreNum);
+  int64_t used_core_num = std::min(total_rows, core_num);
+  int64_t former_length = (total_rows + used_core_num - 1) / used_core_num;
+  int64_t tail_length = former_length - 1;
+  int64_t former_num = total_rows - tail_length * used_core_num;
+  uint32_t block_dim = static_cast<uint32_t>(used_core_num);
 
-  // All EXEC_KERNEL_CMD args must be lvalues.
-  float epsFloat = static_cast<float>(eps);
-  int64_t dtypeSizeVal = dtypeSize;
+  // All `EXEC_KERNEL_CMD` args must be lvalues.
+  float eps_float = static_cast<float>(eps);
+  int64_t dtype_size_val = dtype_size;
 
-  EXEC_KERNEL_CMD(rms_norm, blockDim, kernelInput, weightFloat, kernelOutput,
-                  totalRows, dimLength, dimLengthAlign, formerNum, formerLength,
-                  tailLength, epsFloat, dtypeSizeVal);
+  EXEC_KERNEL_CMD(rms_norm, block_dim, kernel_input, weight_float,
+                  kernel_output, total_rows, dim_length, dim_length_align,
+                  former_num, former_length, tail_length, eps_float,
+                  dtype_size_val);
 
   // Remove padding and reshape back to original shape.
-  at::Tensor output = kernelOutput;
+  at::Tensor output = kernel_output;
 
-  if (dimLength != dimLengthAlign) {
-    output = output.narrow(-1, 0, dimLength).contiguous();
+  if (dim_length != dim_length_align) {
+    output = output.narrow(-1, 0, dim_length).contiguous();
   }
 
   output = output.reshape(input.sizes());
@@ -112,4 +117,4 @@ at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
   return output;
 }
 
-}  // namespace ascend_kernel
+}  // namespace ascend::detail

@@ -24,7 +24,7 @@
 #include "torch_npu/csrc/core/npu/NPUStream.h"
 #include "torch_npu/csrc/framework/OpCommand.h"
 
-namespace ascend_kernel {
+namespace ascend::detail {
 
 #define DEVICE_TYPE c10::DeviceType::PrivateUse1
 
@@ -59,7 +59,7 @@ class TorchNpuHelper {
     return std::make_tuple(ConvertType(args)...);
   }
 };
-}  // namespace ascend_kernel
+}  // namespace ascend::detail
 
 /**
  * @brief Launch real kernel function on NPU
@@ -71,7 +71,7 @@ class TorchNpuHelper {
   do {                                                                  \
     auto acl_stream = c10_npu::getCurrentNPUStream().stream(false);     \
     auto converted_params =                                             \
-        ascend_kernel::TorchNpuHelper::ConvertTypes(__VA_ARGS__);       \
+        ascend::detail::TorchNpuHelper::ConvertTypes(__VA_ARGS__);       \
     auto acl_call = [acl_stream, blockdim, converted_params]() -> int { \
       std::apply(                                                       \
           [&](auto&&... params) {                                       \
