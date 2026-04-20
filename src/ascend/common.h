@@ -65,10 +65,10 @@ inline aclTensor* buildAclTensor(const Tensor& t,
 
 // Pre-computed tensor metadata for descriptor reuse.
 //
-// Stores shape, strides, storage_shape, and dtype once (avoiding per-call heap
-// allocations).  The `aclTensor` descriptor is created on the first `get()`
-// call and its data pointer is updated in-place via `aclSetRawTensorAddr` on
-// subsequent calls.
+// Stores `shape`, `strides`, `storage_shape`, and `dtype` once (avoiding
+// per-call heap allocations).  The `aclTensor` descriptor is created on the
+// first `get()` call and its data pointer is updated in-place via
+// `aclSetRawTensorAddr` on subsequent calls.
 class AclTensorCache {
  public:
   AclTensorCache() = default;

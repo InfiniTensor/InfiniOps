@@ -4,7 +4,7 @@ project(InfiniOps LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Internal variable to control pybind11's automatic optimization flags (like `-flto`).
+# Internal variable to control `pybind11`'s automatic optimization flags (like `-flto`).
 set(PYBIND11_ENABLE_EXTRAS ON)
 
 # Options for backends.

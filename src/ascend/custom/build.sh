@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build custom AscendC kernels into libascend_kernel.so.
+# Build custom `AscendC` kernels into `libascend_kernel.so`.
 set -e
 
 SOC_VERSION="${1:-Ascend910_9382}"

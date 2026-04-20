@@ -6,8 +6,8 @@ endif()
 
 set(ASCEND_CANN_PACKAGE_PATH ${ASCEND_HOME_PATH})
 
-# Auto-detect SOC_VERSION from `npu-smi info` if not set externally.  Required
-# by CANN's `ascendc.cmake` for AscendC kernel compilation.
+# Auto-detect `SOC_VERSION` from `npu-smi info` if not set externally.
+# Required by `CANN`'s `ascendc.cmake` for `AscendC` kernel compilation.
 if(NOT DEFINED SOC_VERSION OR "${SOC_VERSION}" STREQUAL "")
     execute_process(
         COMMAND bash -c "npu-smi info 2>/dev/null | awk '/910B|910A|310/ {for (i=1;i<=NF;i++) if ($i ~ /^(910|310)/) {print \"Ascend\" $i; exit}}'"

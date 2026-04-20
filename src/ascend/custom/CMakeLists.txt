@@ -56,7 +56,7 @@ file(GLOB OP_SRCS
 # Python side via `import ascend_kernel`.
 set(OP_PLUGIN_NAME ascend_kernel)
 
-# Kernel side files (device code compiled by AscendC toolchain).
+# Kernel side files (device code compiled by `AscendC` toolchain).
 ascendc_library(no_workspace_kernel STATIC
     ${PROJECT_OP_SRC_BASE}/rms_norm/op_kernel/rms_norm.cpp
 )

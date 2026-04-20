@@ -178,7 +178,7 @@ if(WITH_ASCEND)
         "ascend/*.cc"
         "ascend/*.cpp"
     )
-    # Exclude kernel_impl.cpp — AscendC device code, not compiled by the host C++ compiler.
+    # Exclude `kernel_impl.cpp` — `AscendC` device code, not compiled by the host C++ compiler.
     list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
     # Exclude custom/ — standalone PyTorch extension, built separately.
     list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*/custom/.*")
@@ -218,7 +218,7 @@ if(WITH_ASCEND)
         "${ASCEND_HAL_LIB}")
 
     # ATB (Ascend Transformer Boost) — provides fused operators like
-    # PagedAttention and ReshapeAndCache that are graph-capture safe.
+    # `PagedAttention` and `ReshapeAndCache` that are graph-capture safe.
     set(ATB_HOME_DIR "$ENV{ATB_HOME_PATH}")
     if(NOT ATB_HOME_DIR)
         # Default search path under CANN nnal directory.
@@ -240,12 +240,12 @@ if(WITH_ASCEND)
 
     list(APPEND DEVICE_LIST "ascend")
 
-    # Custom AscendC kernels (PyTorch extension, requires torch_npu).
+    # Custom `AscendC` kernels (PyTorch extension, requires `torch_npu`).
     if(BUILD_CUSTOM_KERNEL)
         add_subdirectory(ascend/custom)
 
-        # Link the compiled AscendC kernel objects into infiniops so that
-        # custom kernel implementations (e.g. RmsNorm index 1) can call
+        # Link the compiled `AscendC` kernel objects into `infiniops` so that
+        # custom kernel implementations (e.g. `RmsNorm` index 1) can call
         # them via the generated launch functions.
         target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
     endif()
@@ -373,8 +373,8 @@ if(GENERATE_PYTHON_BINDINGS)
     target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
     target_link_libraries(ops PRIVATE infiniops)
 
-    # Custom AscendC kernel objects must be linked directly into ops
-    # because the AscendC toolchain compiles host stubs with hidden
+    # Custom `AscendC` kernel objects must be linked directly into ops
+    # because the `AscendC` toolchain compiles host stubs with hidden
     # visibility — `libinfiniops.so` cannot re-export those symbols.
     # The `Operator<..., 1>` template instantiations that call
     # `aclrtlaunch_*` live in `ops.cc`, so link here with
