@@ -59,7 +59,7 @@ def _torch_argmax_sample(logits):
 def test_greedy_topk1(batch_size, vocab_size, dtype, device):
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
     out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out, valid, top_k_val=1, seed=42)
 
@@ -75,9 +75,9 @@ def test_reproducibility(batch_size, vocab_size, dtype, device):
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
 
     out1 = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid1 = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid1 = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
     out2 = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid2 = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid2 = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out1, valid1, seed=123, offset=0, deterministic=True)
     _random_sample(logits, out2, valid2, seed=123, offset=0, deterministic=True)
@@ -92,7 +92,7 @@ def test_reproducibility(batch_size, vocab_size, dtype, device):
 def test_output_valid(batch_size, vocab_size, dtype, device):
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
     out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out, valid, seed=42)
 
@@ -108,7 +108,7 @@ def test_topp_filtering(dtype, device):
     logits[:, 0] = 10.0
 
     out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out, valid, top_p_val=0.5, seed=42)
 
@@ -123,7 +123,7 @@ def test_minp_filtering(dtype, device):
     logits[:, 3] = 10.0
 
     out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out, valid, min_p_val=0.5, seed=42)
 
@@ -136,11 +136,11 @@ def test_1d_logits(dtype, device):
     vocab_size = 32
     logits = randn_strided((vocab_size,), None, dtype=dtype, device=device)
     out = empty_strided((1,), None, dtype=torch.int32, device=device)
-    valid = empty_strided((1,), None, dtype=torch.bool, device=device)
+    valid = empty_strided((1,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out, valid, top_k_val=1, seed=42)
 
-    expected = _torch_argmax_sample(logits.unsqueeze(0)).squeeze(0)
+    expected = _torch_argmax_sample(logits.unsqueeze(0))
     assert torch.equal(out, expected)
     assert valid.all()
 
@@ -148,18 +148,22 @@ def test_1d_logits(dtype, device):
 @pytest.mark.parametrize("dtype", (torch.float32,))
 @_CPU_ONLY
 def test_seed_offset_affects_output(dtype, device):
-    batch_size, vocab_size = 4, 64
+    batch_size, vocab_size = 4, 256
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
 
     out1 = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid1 = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid1 = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
     out2 = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
-    valid2 = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid2 = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
+    out3 = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
+    valid3 = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out1, valid1, seed=1, offset=0)
     _random_sample(logits, out2, valid2, seed=2, offset=0)
+    _random_sample(logits, out3, valid3, seed=1, offset=100)
 
     assert not torch.equal(out1, out2), "different seeds should produce different results"
+    assert not torch.equal(out1, out3), "different offsets should produce different results"
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
@@ -168,10 +172,48 @@ def test_int64_output(dtype, device):
     batch_size, vocab_size = 2, 32
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
     out = empty_strided((batch_size,), None, dtype=torch.int64, device=device)
-    valid = empty_strided((batch_size,), None, dtype=torch.bool, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
 
     _random_sample(logits, out, valid, top_k_val=1, seed=42)
 
     expected = _torch_argmax_sample(logits)
     assert out.dtype == torch.int64
     assert torch.equal(out, expected)
+
+
+@pytest.mark.parametrize("dtype", (torch.float32,))
+@_CPU_ONLY
+def test_per_batch_tensor_params(dtype, device):
+    """Per-batch tensor parameters (int64 top_k, float32 temperature) should work."""
+    batch_size, vocab_size = 4, 32
+    logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
+    out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
+
+    # top_k as int64 tensor: batch 0 uses top_k=1 (greedy), others use top_k=0 (no filter).
+    top_k_tensor = torch.tensor([1, 0, 0, 0], dtype=torch.int64, device=device)
+
+    _random_sample(logits, out, valid, top_k=top_k_tensor, seed=42)
+
+    # Batch 0 must be argmax (top_k=1).
+    assert out[0].item() == torch.argmax(logits[0]).item()
+    assert valid.all()
+
+
+@pytest.mark.parametrize("dtype", (torch.float32,))
+@_CPU_ONLY
+def test_per_batch_temperature_tensor(dtype, device):
+    """Per-batch float32 temperature tensor should work."""
+    batch_size, vocab_size = 4, 32
+    logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
+    out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
+    valid = empty_strided((batch_size,), None, dtype=torch.uint8, device=device)
+
+    # Very low temperature → near-deterministic for all batches.
+    temp_tensor = torch.full((batch_size,), 0.01, dtype=torch.float32, device=device)
+
+    _random_sample(logits, out, valid, temperature=temp_tensor, seed=42)
+
+    expected = _torch_argmax_sample(logits)
+    assert torch.equal(out, expected), "near-zero temperature should give argmax"
+    assert valid.all()

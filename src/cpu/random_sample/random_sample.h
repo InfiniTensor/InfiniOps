@@ -58,27 +58,47 @@ class Operator<RandomSample, Device::Type::kCpu>
 
  private:
   // Resolve a per-batch parameter: use tensor if provided, else scalar.
+  // Handles dtype conversion (int32/int64) and stride-based indexing.
   template <typename ValType>
   ValType GetParam(std::optional<Tensor> tensor, ValType scalar_val,
                    Tensor::Size batch_idx) const {
     if (tensor.has_value()) {
-      const auto* ptr = static_cast<const ValType*>(tensor->data());
-      return ptr[batch_idx];
+      const auto& t = *tensor;
+      auto stride = t.strides().empty() ? 1 : t.strides()[0];
+      auto offset = batch_idx * stride;
+      switch (t.dtype()) {
+        case DataType::kInt32:
+          return static_cast<ValType>(
+              static_cast<const int32_t*>(t.data())[offset]);
+        case DataType::kInt64:
+          return static_cast<ValType>(
+              static_cast<const int64_t*>(t.data())[offset]);
+        default:
+          return static_cast<const ValType*>(t.data())[offset];
+      }
     }
     return scalar_val;
   }
 
-  // Resolve a per-batch float parameter, handling float16/bfloat16/float32.
+  // Resolve a per-batch float parameter, handling dtype and strides.
   float GetFloatParam(std::optional<Tensor> tensor, float scalar_val,
                       Tensor::Size batch_idx) const {
     if (tensor.has_value()) {
-      const auto& t = tensor.value();
-      if (t.dtype() == DataType::kFloat32) {
-        return static_cast<const float*>(t.data())[batch_idx];
-      } else if (t.dtype() == DataType::kFloat16) {
-        return static_cast<const Float16*>(t.data())[batch_idx].ToFloat();
-      } else if (t.dtype() == DataType::kBFloat16) {
-        return static_cast<const BFloat16*>(t.data())[batch_idx].ToFloat();
+      const auto& t = *tensor;
+      auto stride = t.strides().empty() ? 1 : t.strides()[0];
+      auto offset = batch_idx * stride;
+      switch (t.dtype()) {
+        case DataType::kFloat32:
+          return static_cast<const float*>(t.data())[offset];
+        case DataType::kFloat64:
+          return static_cast<float>(
+              static_cast<const double*>(t.data())[offset]);
+        case DataType::kFloat16:
+          return static_cast<const Float16*>(t.data())[offset].ToFloat();
+        case DataType::kBFloat16:
+          return static_cast<const BFloat16*>(t.data())[offset].ToFloat();
+        default:
+          return scalar_val;
       }
     }
     return scalar_val;
@@ -92,6 +112,9 @@ class Operator<RandomSample, Device::Type::kCpu>
                std::optional<Tensor> min_p, float min_p_val,
                std::uint64_t seed, std::uint64_t offset,
                bool deterministic) const {
+    assert(valid.dtype() == DataType::kUInt8 &&
+           "`RandomSample` requires uint8 valid tensor");
+
     const auto* logits_ptr = static_cast<const T*>(logits.data());
     auto* out_ptr = static_cast<OutT*>(out.data());
     auto* valid_ptr = static_cast<bool*>(valid.data());
