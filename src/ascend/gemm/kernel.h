@@ -36,10 +36,10 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
                   std::optional<int> trans_b, Tensor c) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
-    auto t_self = ascend::buildAclTensor(c);
-    auto t_a = ascend::buildAclTensor(a, trans_a_);
-    auto t_b = ascend::buildAclTensor(b, trans_b_);
-    auto t_out = ascend::buildAclTensor(c);
+    auto t_self = ascend::BuildAclTensor(c);
+    auto t_a = ascend::BuildAclTensor(a, trans_a_);
+    auto t_b = ascend::BuildAclTensor(b, trans_b_);
+    auto t_out = ascend::BuildAclTensor(c);
 
     uint64_t ws_needed = 0;
     aclOpExecutor* executor = nullptr;

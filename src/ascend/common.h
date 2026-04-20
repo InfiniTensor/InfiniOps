@@ -17,7 +17,7 @@ namespace infini::ops::ascend {
 // static destructors run.  Calling `aclrtGetDevice` is the cheapest
 // probe — it fails once the runtime is gone.  Destructors that call
 // ACL/ATB APIs must guard with this to avoid use-after-finalize crashes.
-inline bool isAclRuntimeAlive() {
+inline bool IsAclRuntimeAlive() {
   int32_t dev_id = -1;
 
   return aclrtGetDevice(&dev_id) == ACL_SUCCESS;
@@ -28,7 +28,7 @@ inline bool isAclRuntimeAlive() {
 // When `transpose_last2` is true the last two dimensions are swapped in the
 // descriptor (shape and strides) without copying data.  This is used by GEMM
 // and Matmul to express a transpose via the view.
-inline aclTensor* buildAclTensor(const Tensor& t,
+inline aclTensor* BuildAclTensor(const Tensor& t,
                                  bool transpose_last2 = false) {
   std::vector<int64_t> shape(t.shape().begin(), t.shape().end());
   std::vector<int64_t> strides(t.strides().begin(), t.strides().end());
@@ -57,7 +57,7 @@ inline aclTensor* buildAclTensor(const Tensor& t,
   std::vector<int64_t> storage_shape = {storage_elems};
 
   return aclCreateTensor(
-      shape.data(), static_cast<int64_t>(shape.size()), toAclDtype(t.dtype()),
+      shape.data(), static_cast<int64_t>(shape.size()), ToAclDtype(t.dtype()),
       strides.data(),
       /*storageOffset=*/0, ACL_FORMAT_ND, storage_shape.data(),
       static_cast<int64_t>(storage_shape.size()), const_cast<void*>(t.data()));
@@ -95,7 +95,7 @@ class AclTensorCache {
   }
 
   explicit AclTensorCache(const Tensor& t, bool transpose_last2 = false)
-      : dtype_{toAclDtype(t.dtype())} {
+      : dtype_{ToAclDtype(t.dtype())} {
     shape_.assign(t.shape().begin(), t.shape().end());
     strides_.assign(t.strides().begin(), t.strides().end());
 
@@ -119,7 +119,7 @@ class AclTensorCache {
   }
 
   ~AclTensorCache() {
-    if (tensor_ && isAclRuntimeAlive()) {
+    if (tensor_ && IsAclRuntimeAlive()) {
       aclDestroyTensor(tensor_);
     }
   }
@@ -158,7 +158,7 @@ class AclTensorCache {
   // referenced by a Repeatable `aclOpExecutor` which would be destroyed
   // alongside the tensor, and per CANN 8.5 docs that destruction is our
   // responsibility.  In practice `aclDestroyAclOpExecutor` during process
-  // shutdown crashes even with `isAclRuntimeAlive()` true — see `64c367c` —
+  // shutdown crashes even with `IsAclRuntimeAlive()` true — see `64c367c` —
   // so operators leak the executor at shutdown; skipping `aclDestroyTensor`
   // here keeps `~AclTensorCache` from double-freeing a descriptor the
   // executor still holds.

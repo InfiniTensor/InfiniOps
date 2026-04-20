@@ -9,7 +9,7 @@
 
 namespace infini::ops::ascend {
 
-inline aclDataType toAclDtype(DataType dt) {
+inline aclDataType ToAclDtype(DataType dt) {
   switch (dt) {
     case DataType::kFloat16:
       return ACL_FLOAT16;
@@ -40,7 +40,7 @@ inline aclDataType toAclDtype(DataType dt) {
 }
 
 // Returns true for integer (signed or unsigned) DataType values.
-inline bool isIntegerDtype(DataType dt) {
+inline bool IsIntegerDtype(DataType dt) {
   switch (dt) {
     case DataType::kInt8:
     case DataType::kInt16:

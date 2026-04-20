@@ -23,14 +23,14 @@ namespace infini::ops::ascend {
 // expensive (internal tiling buffer allocation), so we cache one per thread.
 // `SetExecuteStream` is called before every `Execute` to match the caller's
 // stream.
-inline atb::Context*& threadLocalAtbContext() {
+inline atb::Context*& ThreadLocalAtbContext() {
   thread_local atb::Context* ctx = nullptr;
 
   return ctx;
 }
 
-inline atb::Context* getAtbContext(aclrtStream stream) {
-  auto*& ctx = threadLocalAtbContext();
+inline atb::Context* GetAtbContext(aclrtStream stream) {
+  auto*& ctx = ThreadLocalAtbContext();
 
   if (!ctx) {
     atb::Status s = atb::CreateContext(&ctx);
@@ -48,9 +48,9 @@ inline atb::Context* getAtbContext(aclrtStream stream) {
 // Sets dtype, ND format, shape dimensions, and the device data pointer.
 // The caller must keep the InfiniOps Tensor alive for the duration of the
 // ATB operation.
-inline atb::Tensor toAtbTensor(const Tensor& t) {
+inline atb::Tensor ToAtbTensor(const Tensor& t) {
   atb::Tensor out;
-  out.desc.dtype = toAclDtype(t.dtype());
+  out.desc.dtype = ToAclDtype(t.dtype());
   out.desc.format = ACL_FORMAT_ND;
   out.desc.shape.dimNum = t.ndim();
   assert(t.ndim() <= atb::MAX_DIM);
@@ -69,7 +69,7 @@ inline atb::Tensor toAtbTensor(const Tensor& t) {
 //
 // Useful for sub-views of a larger buffer (e.g. K-cache and V-cache halves
 // of a fused KV cache tensor).
-inline atb::Tensor toAtbTensor(const std::vector<int64_t>& shape,
+inline atb::Tensor ToAtbTensor(const std::vector<int64_t>& shape,
                                aclDataType dtype, void* data,
                                uint64_t data_size) {
   atb::Tensor out;
