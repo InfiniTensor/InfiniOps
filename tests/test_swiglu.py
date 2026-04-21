@@ -19,6 +19,9 @@ from tests.utils import Payload, empty_strided, rand_strided
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
+# TODO: Generate implementation indices dynamically from
+# `Swiglu.active_implementation_indices` instead of hardcoding.
+@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -28,17 +31,37 @@ from tests.utils import Payload, empty_strided, rand_strided
     ),
 )
 def test_swiglu(
-    shape, input_strides, gate_strides, out_strides, dtype, device, rtol, atol
+    shape,
+    input_strides,
+    gate_strides,
+    out_strides,
+    implementation_index,
+    dtype,
+    device,
+    rtol,
+    atol,
 ):
+    active_indices = infini.ops.Swiglu.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
+
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(_swiglu, _torch_swiglu, (input, gate, out), {}, rtol=rtol, atol=atol)
+    return Payload(
+        lambda *args: _swiglu(*args, implementation_index=implementation_index),
+        _torch_swiglu,
+        (input, gate, out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
 
 
-def _swiglu(input, gate, out):
-    infini.ops.swiglu(input, gate, out)
+def _swiglu(input, gate, out, implementation_index=0):
+    infini.ops.swiglu(input, gate, out, implementation_index=implementation_index)
 
     return out
 
