@@ -85,11 +85,12 @@ void Operator<MhaVarlen, kDev, 1>::operator()(
     auto k_b = at_k_cache.index({phys_blocks, within, Slice(), Slice()});
     auto v_b = at_v_cache.index({phys_blocks, within, Slice(), Slice()});
 
-    // `scaled_dot_product_attention` expects `[B, H, S, D]`. Promote this
-    // single sequence to batch 1.
-    auto q_sdpa = q_b.transpose(0, 1).unsqueeze(0);
-    auto k_sdpa = k_b.transpose(0, 1).unsqueeze(0);
-    auto v_sdpa = v_b.transpose(0, 1).unsqueeze(0);
+    // `scaled_dot_product_attention` expects `[B, H, S, D]` with a
+    // contiguous layout; flash-attention rejects the transposed view we
+    // get from `q_b.transpose(0, 1)` directly.
+    auto q_sdpa = q_b.transpose(0, 1).unsqueeze(0).contiguous();
+    auto k_sdpa = k_b.transpose(0, 1).unsqueeze(0).contiguous();
+    auto v_sdpa = v_b.transpose(0, 1).unsqueeze(0).contiguous();
 
     at::Tensor result;
     if (seqlen_k == seqlen_q) {

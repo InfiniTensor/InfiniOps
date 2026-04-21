@@ -6,6 +6,7 @@
 #include <ATen/ops/scaled_dot_product_attention.h>
 
 #include <limits>
+#include <vector>
 
 namespace infini::ops {
 
@@ -42,59 +43,57 @@ void Operator<MhaKvcache, kDev, 1>::operator()(
                                    out_type_, device_index_);
 
   const auto batch_size = at_q.size(0);
+  const auto seqlen_q = at_q.size(1);
+  const auto num_kv_heads = at_k_cache.size(2);
+  const auto head_size = at_k_cache.size(3);
   const auto block_size = at_k_cache.size(1);
 
-  // Gather the first `max_len` key/value positions from the paged cache into
-  // a dense `[B, max_len, H_k, D]` tensor. Positions beyond `seqlens_k[b]`
-  // are masked out below, so their contents are irrelevant.
-  const auto max_len = at_seqlens_k.max().template item<int64_t>();
-  if (max_len == 0) {
-    at_out.zero_();
-    return;
-  }
-
-  auto pos = at::arange(max_len,
-                        at::TensorOptions().device(at_q.device()).dtype(at::kLong));
-  auto block_idx = pos.div(block_size, "floor");
-  auto within = pos.remainder(block_size);
-  auto block_idx_b = block_idx.unsqueeze(0).expand({batch_size, max_len});
-  auto within_b = within.unsqueeze(0).expand({batch_size, max_len});
-
-  // `block_table` may be narrower than `max_len / block_size`; clamp to
-  // avoid out-of-range gathers for padding positions.
+  // Read per-sequence KV lengths to the host once (one `cudaMemcpyAsync` +
+  // sync). Looping over the batch on the host is cheap — in return, each
+  // sequence's SDPA call sees contiguous K/V with no attention mask, which
+  // lets ATen dispatch to flash-attention instead of the dense math backend.
+  auto seqlens_k_cpu = at_seqlens_k.to(at::kCPU).to(at::kLong);
+  const auto* seqlens_k_host = seqlens_k_cpu.template data_ptr<int64_t>();
   auto block_table_long = at_block_table.to(at::kLong);
-  auto clamped_block_idx =
-      at::clamp(block_idx_b, 0, at_block_table.size(1) - 1);
-  auto phys_blocks = block_table_long.gather(1, clamped_block_idx);
 
   using at::indexing::Slice;
-  auto k = at_k_cache.index({phys_blocks, within_b, Slice(), Slice()});
-  auto v = at_v_cache.index({phys_blocks, within_b, Slice(), Slice()});
+  for (int64_t b = 0; b < batch_size; ++b) {
+    const auto seqlen_k = seqlens_k_host[b];
+    if (seqlen_k == 0) {
+      at_out.select(0, b).zero_();
+      continue;
+    }
 
-  // Build a `[B, max_len]` validity mask and promote it to `[B, 1, 1,
-  // max_len]` for `scaled_dot_product_attention`.
-  auto seqlens_k_long = at_seqlens_k.to(at::kLong);
-  auto key_mask =
-      at::arange(max_len,
-                 at::TensorOptions().device(at_q.device()).dtype(at::kLong))
-          .unsqueeze(0)
-          .lt(seqlens_k_long.unsqueeze(1));
-  auto attn_mask = at::zeros({batch_size, 1, 1, max_len}, at_q.options());
-  attn_mask = attn_mask.masked_fill(
-      ~key_mask.unsqueeze(1).unsqueeze(1),
-      -std::numeric_limits<float>::infinity());
+    // Gather exactly `seqlen_k` positions for sequence `b` from the paged
+    // cache. Shape: `[seqlen_k, H_k, D]`.
+    auto pos = at::arange(
+        seqlen_k,
+        at::TensorOptions().device(at_q.device()).dtype(at::kLong));
+    auto block_idx = pos.div(block_size, "floor");
+    auto within = pos.remainder(block_size);
+    auto clamped_block_idx =
+        at::clamp(block_idx, 0, at_block_table.size(1) - 1);
+    auto phys_blocks =
+        block_table_long.select(0, b).gather(0, clamped_block_idx);
 
-  // `scaled_dot_product_attention` expects `[B, H, S, D]` layout.
-  auto q_sdpa = at_q.transpose(1, 2);
-  auto k_sdpa = k.transpose(1, 2);
-  auto v_sdpa = v.transpose(1, 2);
+    auto k_b = at_k_cache.index({phys_blocks, within, Slice(), Slice()});
+    auto v_b = at_v_cache.index({phys_blocks, within, Slice(), Slice()});
 
-  auto result = at::scaled_dot_product_attention(
-      q_sdpa, k_sdpa, v_sdpa, attn_mask, /*dropout_p=*/0.0,
-      /*is_causal=*/false, /*scale=*/static_cast<double>(scale),
-      /*enable_gqa=*/true);
+    // `scaled_dot_product_attention` expects `[B, H, S, D]`. Promote this
+    // single sequence to batch 1 so flash-attention can be selected.
+    auto q_sdpa = at_q.select(0, b).transpose(0, 1).unsqueeze(0);
+    auto k_sdpa = k_b.transpose(0, 1).unsqueeze(0).contiguous();
+    auto v_sdpa = v_b.transpose(0, 1).unsqueeze(0).contiguous();
 
-  at_out.copy_(result.transpose(1, 2));
+    auto result = at::scaled_dot_product_attention(
+        q_sdpa, k_sdpa, v_sdpa, /*attn_mask=*/std::nullopt,
+        /*dropout_p=*/0.0, /*is_causal=*/false,
+        /*scale=*/static_cast<double>(scale),
+        /*enable_gqa=*/true);
+
+    // `result`: `[1, H_q, seqlen_q, D]` -> write as `[seqlen_q, H_q, D]`.
+    at_out.select(0, b).copy_(result.squeeze(0).transpose(0, 1));
+  }
 }
 
 template class Operator<MhaKvcache, Device::Type::kCpu, 1>;
