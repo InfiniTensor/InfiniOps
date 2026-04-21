@@ -2,6 +2,7 @@
 
 #include "torch/tensor_.h"
 
+#include <ATen/core/Tensor.h>
 #include <ATen/ops/empty.h>
 #include <ATen/ops/scaled_dot_product_attention.h>
 
@@ -13,7 +14,29 @@
 #include "cuda/nvidia/paged_gather_launcher.h"
 #endif
 
+namespace {
+
+thread_local const std::int64_t* g_host_seqlens_ptr = nullptr;
+
+}  // namespace
+
 namespace infini::ops {
+
+MhaKvcacheHostSeqlensHint::MhaKvcacheHostSeqlensHint(
+    const std::int64_t* host_ptr) noexcept
+    : previous_(g_host_seqlens_ptr) {
+  g_host_seqlens_ptr = host_ptr;
+}
+
+MhaKvcacheHostSeqlensHint::~MhaKvcacheHostSeqlensHint() noexcept {
+  g_host_seqlens_ptr = previous_;
+}
+
+namespace mha_kvcache_internal {
+const std::int64_t* current_host_seqlens_ptr() noexcept {
+  return g_host_seqlens_ptr;
+}
+}  // namespace mha_kvcache_internal
 
 template <Device::Type kDev>
 Operator<MhaKvcache, kDev, 1>::Operator(const Tensor q, const Tensor k_cache,
@@ -43,8 +66,20 @@ void Operator<MhaKvcache, kDev, 1>::operator()(
   const auto head_size = static_cast<int64_t>(k_cache_shape_[3]);
   const auto block_size = static_cast<int64_t>(k_cache_shape_[1]);
 
-  auto seqlens_k_cpu = at_seqlens_k.to(at::kCPU).to(at::kLong);
-  const auto* seqlens_k_host = seqlens_k_cpu.template data_ptr<int64_t>();
+  // If the caller has already set a `MhaKvcacheHostSeqlensHint`, use its host
+  // buffer; otherwise fall back to a per-call D2H of `seqlens_k`. The D2H
+  // forces a stream sync, which is why callers dispatching this op many
+  // times per step (e.g. 32-layer transformer decode) should prefer the
+  // hint.
+  const auto* hint_host_ptr = mha_kvcache_internal::current_host_seqlens_ptr();
+  at::Tensor seqlens_k_cpu;
+  const int64_t* seqlens_k_host = nullptr;
+  if (hint_host_ptr != nullptr) {
+    seqlens_k_host = hint_host_ptr;
+  } else {
+    seqlens_k_cpu = at_seqlens_k.to(at::kCPU).to(at::kLong);
+    seqlens_k_host = seqlens_k_cpu.template data_ptr<int64_t>();
+  }
 
   void *stream = nullptr;
 #if defined(WITH_NVIDIA)
