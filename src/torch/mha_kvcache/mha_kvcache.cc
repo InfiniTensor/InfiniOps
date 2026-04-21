@@ -61,16 +61,15 @@ void Operator<MhaKvcache, kDev, 1>::operator()(
       continue;
     }
 
-    // Allocate a dense `[seqlen_k, num_kv_heads, head_size]` scratch for
-    // both `k` and `v` — ATen's allocator is pooled so this is near-free.
-    auto k_b = at::empty({seqlen_k, num_kv_heads, head_size}, at_q.options());
-    auto v_b = at::empty({seqlen_k, num_kv_heads, head_size}, at_q.options());
-
 #if defined(WITH_NVIDIA)
     if constexpr (kDev == Device::Type::kNvidia) {
+      // Allocate dense scratch in `[H_k, seqlen_k, head_size]` layout so the
+      // SDPA-ready view is `k_b.unsqueeze(0)` with no `.contiguous()` copy.
+      auto k_b = at::empty({num_kv_heads, seqlen_k, head_size}, at_q.options());
+      auto v_b = at::empty({num_kv_heads, seqlen_k, head_size}, at_q.options());
       // Native CUDA paged gather: one launch replaces the
       // `arange / div_floor / remainder / gather / advanced-index` ATen
-      // chain that previously cost ~150 us per call.
+      // chain.
       const auto *k_cache_ptr = reinterpret_cast<const std::byte *>(
           k_cache.data());
       const auto *v_cache_ptr = reinterpret_cast<const std::byte *>(
@@ -87,48 +86,53 @@ void Operator<MhaKvcache, kDev, 1>::operator()(
           static_cast<std::size_t>(head_size),
           static_cast<std::size_t>(block_size), k_cache_strides_[0],
           v_cache_strides_[0], k_cache_strides_[1], v_cache_strides_[1],
-          k_cache_strides_[2], v_cache_strides_[2],
-          static_cast<std::ptrdiff_t>(num_kv_heads) * head_size, head_size,
-          stream);
-    } else
-#endif
-    {
-      // Fallback for non-NVIDIA devices: the original ATen gather chain.
-      auto at_k_cache = ToAtenTensor<kDev>(const_cast<void*>(k_cache.data()),
-                                           k_cache_shape_, k_cache_strides_,
-                                           k_cache_type_, device_index_);
-      auto at_v_cache = ToAtenTensor<kDev>(const_cast<void*>(v_cache.data()),
-                                           v_cache_shape_, v_cache_strides_,
-                                           v_cache_type_, device_index_);
-      auto at_block_table = ToAtenTensor<kDev>(
-          const_cast<void*>(block_table.data()), block_table_shape_,
-          block_table_strides_, block_table_type_, device_index_);
-      auto pos = at::arange(
-          seqlen_k,
-          at::TensorOptions().device(at_q.device()).dtype(at::kLong));
-      auto block_idx = pos.div(block_size, "floor");
-      auto within = pos.remainder(block_size);
-      auto clamped_block_idx =
-          at::clamp(block_idx, 0, at_block_table.size(1) - 1);
-      auto phys_blocks = at_block_table.to(at::kLong).select(0, b).gather(
-          0, clamped_block_idx);
-      using at::indexing::Slice;
-      k_b = at_k_cache.index({phys_blocks, within, Slice(), Slice()});
-      v_b = at_v_cache.index({phys_blocks, within, Slice(), Slice()});
+          k_cache_strides_[2], v_cache_strides_[2], head_size,
+          seqlen_k * head_size, stream);
+
+      auto q_sdpa = at_q.select(0, b).transpose(0, 1).unsqueeze(0);
+      auto k_sdpa = k_b.unsqueeze(0);
+      auto v_sdpa = v_b.unsqueeze(0);
+      auto result = at::scaled_dot_product_attention(
+          q_sdpa, k_sdpa, v_sdpa, /*attn_mask=*/std::nullopt,
+          /*dropout_p=*/0.0, /*is_causal=*/false,
+          /*scale=*/static_cast<double>(scale),
+          /*enable_gqa=*/true);
+      at_out.select(0, b).copy_(result.squeeze(0).transpose(0, 1));
+      continue;
     }
+#endif
 
-    // `scaled_dot_product_attention` wants `[B, H, S, D]` contiguous so
-    // flash-attention can be selected.
+    // Fallback for non-NVIDIA devices: the original ATen gather chain.
+    auto at_k_cache = ToAtenTensor<kDev>(const_cast<void*>(k_cache.data()),
+                                         k_cache_shape_, k_cache_strides_,
+                                         k_cache_type_, device_index_);
+    auto at_v_cache = ToAtenTensor<kDev>(const_cast<void*>(v_cache.data()),
+                                         v_cache_shape_, v_cache_strides_,
+                                         v_cache_type_, device_index_);
+    auto at_block_table = ToAtenTensor<kDev>(
+        const_cast<void*>(block_table.data()), block_table_shape_,
+        block_table_strides_, block_table_type_, device_index_);
+    auto pos = at::arange(
+        seqlen_k,
+        at::TensorOptions().device(at_q.device()).dtype(at::kLong));
+    auto block_idx = pos.div(block_size, "floor");
+    auto within = pos.remainder(block_size);
+    auto clamped_block_idx =
+        at::clamp(block_idx, 0, at_block_table.size(1) - 1);
+    auto phys_blocks = at_block_table.to(at::kLong).select(0, b).gather(
+        0, clamped_block_idx);
+    using at::indexing::Slice;
+    auto k_b_seq = at_k_cache.index({phys_blocks, within, Slice(), Slice()});
+    auto v_b_seq = at_v_cache.index({phys_blocks, within, Slice(), Slice()});
+
     auto q_sdpa = at_q.select(0, b).transpose(0, 1).unsqueeze(0);
-    auto k_sdpa = k_b.transpose(0, 1).unsqueeze(0).contiguous();
-    auto v_sdpa = v_b.transpose(0, 1).unsqueeze(0).contiguous();
-
+    auto k_sdpa = k_b_seq.transpose(0, 1).unsqueeze(0).contiguous();
+    auto v_sdpa = v_b_seq.transpose(0, 1).unsqueeze(0).contiguous();
     auto result = at::scaled_dot_product_attention(
         q_sdpa, k_sdpa, v_sdpa, /*attn_mask=*/std::nullopt,
         /*dropout_p=*/0.0, /*is_causal=*/false,
         /*scale=*/static_cast<double>(scale),
         /*enable_gqa=*/true);
-
     at_out.select(0, b).copy_(result.squeeze(0).transpose(0, 1));
   }
 }
