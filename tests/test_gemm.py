@@ -2,7 +2,12 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, get_stream, randn_strided
+from tests.utils import (
+    Payload,
+    all_active_implementation_indices,
+    get_stream,
+    randn_strided,
+)
 
 
 @pytest.mark.auto_act_and_assert
@@ -20,9 +25,9 @@ from tests.utils import Payload, get_stream, randn_strided
 @pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
-# TODO: Generate implementation indices dynamically from
-# `Gemm.active_implementation_indices` instead of hardcoding.
-@pytest.mark.parametrize("implementation_index", (0, 1, 2))
+@pytest.mark.parametrize(
+    "implementation_index", all_active_implementation_indices(infini.ops.Gemm)
+)
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (

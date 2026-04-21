@@ -2,7 +2,13 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_stream, rand_strided
+from tests.utils import (
+    Payload,
+    all_active_implementation_indices,
+    empty_strided,
+    get_stream,
+    rand_strided,
+)
 
 
 @pytest.mark.auto_act_and_assert
@@ -19,7 +25,9 @@ from tests.utils import Payload, empty_strided, get_stream, rand_strided
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
-@pytest.mark.parametrize("implementation_index", (0, 1))
+@pytest.mark.parametrize(
+    "implementation_index", all_active_implementation_indices(infini.ops.Swiglu)
+)
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
