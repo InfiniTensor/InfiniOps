@@ -1,29 +1,22 @@
-/*
- * Copyright (c) 2025, InfiniTensor.
- * All rights reserved.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
-
 #include "aclrtlaunch_rms_norm.h"
 #include "tiling/platform/platform_ascendc.h"
 #include "torch_kernel_helper.h"
 
 namespace ascend::detail {
 
-at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
-                    double eps) {
+at::Tensor RmsNorm(const at::Tensor& input, const at::Tensor& weight,
+                   double eps) {
   // Input validation.
   TORCH_CHECK(input.dim() > 0,
-              "rms_norm: input must have at least 1 dimension");
+              "`RmsNorm`: `input` must have at least 1 dimension.");
   TORCH_CHECK(
       input.scalar_type() == at::kHalf || input.scalar_type() == at::kFloat,
-      "rms_norm: only float16 and float32 are supported, got ",
-      input.scalar_type());
-  TORCH_CHECK(weight.dim() == 1, "rms_norm: weight must be 1-dimensional");
-  TORCH_CHECK(weight.size(0) == input.size(-1), "rms_norm: weight size (",
+      "`RmsNorm`: only `float16` and `float32` are supported; got ",
+      input.scalar_type(), ".");
+  TORCH_CHECK(weight.dim() == 1, "`RmsNorm`: `weight` must be 1-dimensional.");
+  TORCH_CHECK(weight.size(0) == input.size(-1), "`RmsNorm`: `weight` size (",
               weight.size(0), ") must match input last dim (", input.size(-1),
-              ")");
+              ").");
 
   int64_t dim_length = input.size(-1);
   int64_t total_rows = input.numel() / dim_length;
@@ -61,9 +54,10 @@ at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
   // `fp32` alignment.
   int64_t fp_align_elements = 32 / 4;
   max_dim_length = (max_dim_length / fp_align_elements) * fp_align_elements;
-  TORCH_CHECK(dim_length_align <= max_dim_length, "rms_norm: dim_length ",
-              dim_length, " (aligned ", dim_length_align,
-              ") exceeds UB capacity (max ", max_dim_length, ")");
+  TORCH_CHECK(dim_length_align <= max_dim_length,
+              "`RmsNorm`: `dim_length` ", dim_length, " (aligned ",
+              dim_length_align, ") exceeds UB capacity (max ", max_dim_length,
+              ").");
 
   // Padding.
   at::Tensor kernel_input;
@@ -100,6 +94,12 @@ at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
   float eps_float = static_cast<float>(eps);
   int64_t dtype_size_val = dtype_size;
 
+  // The first arg `rms_norm` is the AscendC kernel entry-point name — it
+  // must match `ascendc_add_operator(OP_NAME rms_norm)` in `CMakeLists.txt`,
+  // the `__global__ __aicore__ void rms_norm(...)` definition in `op_kernel/`,
+  // and the generated `aclrtlaunch_rms_norm.h` header.  Google C++ Style's
+  // PascalCase rule does NOT apply: this identifier is dictated by the
+  // AscendC toolchain's symbol convention.
   EXEC_KERNEL_CMD(rms_norm, block_dim, kernel_input, weight_float,
                   kernel_output, total_rows, dim_length, dim_length_align,
                   former_num, former_length, tail_length, eps_float,

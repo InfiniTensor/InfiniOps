@@ -26,6 +26,6 @@ TORCH_LIBRARY_FRAGMENT(npu, m) {
 }
 
 TORCH_LIBRARY_IMPL(npu, PrivateUse1, m) {
-  m.impl("rms_norm", TORCH_FN(ascend::detail::rms_norm));
+  m.impl("rms_norm", TORCH_FN(ascend::detail::RmsNorm));
 }
 }  // namespace

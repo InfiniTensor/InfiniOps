@@ -1,10 +1,3 @@
-/*
- * Copyright (c) 2025, InfiniTensor.
- * All rights reserved.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
-
 #include "kernel_operator.h"
 
 constexpr int32_t BUFFER_NUM = 2;

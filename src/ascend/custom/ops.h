@@ -20,8 +20,8 @@
 
 namespace ascend::detail {
 
-at::Tensor rms_norm(const at::Tensor& input, const at::Tensor& weight,
-                    double eps);
+at::Tensor RmsNorm(const at::Tensor& input, const at::Tensor& weight,
+                   double eps);
 
 }  // namespace ascend::detail
 
