@@ -18,6 +18,13 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
+# Link flash-attention's `mha_fwd_kvcache` into the Torch backend.
+# Pass an absolute path to `libflash-attn-nvidia.so` via `FLASH_ATTN_LIB`
+# (e.g. the one built by InfiniCore at
+# `$INFINICORE/build/linux/x86_64/release/libflash-attn-nvidia.so`).
+set(FLASH_ATTN_LIB "" CACHE FILEPATH
+    "Path to a flash-attention shared library exporting `flash::mha_fwd_kvcache`")
+
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)

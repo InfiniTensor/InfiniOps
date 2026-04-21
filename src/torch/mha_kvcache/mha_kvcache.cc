@@ -14,6 +14,32 @@
 #include "cuda/nvidia/paged_gather_launcher.h"
 #endif
 
+#if defined(WITH_NVIDIA) && defined(WITH_FLASH_ATTN)
+#include <optional>
+#include <vector>
+
+// Minimal forward declaration of flash-attention's paged kvcache entry
+// point. Mirrors the signature in
+// `InfiniCore/include/infinicore/adaptor/flash_attention_adaptor.hpp`. We
+// declare it here rather than pulling the adaptor header to keep InfiniOps
+// independent of InfiniCore's include tree.
+namespace flash {
+std::vector<at::Tensor> mha_fwd_kvcache(
+    at::Tensor &q, const at::Tensor &kcache, const at::Tensor &vcache,
+    std::optional<const at::Tensor> &k_, std::optional<const at::Tensor> &v_,
+    std::optional<const at::Tensor> &seqlens_k_,
+    std::optional<const at::Tensor> &rotary_cos_,
+    std::optional<const at::Tensor> &rotary_sin_,
+    std::optional<const at::Tensor> &cache_batch_idx_,
+    std::optional<const at::Tensor> &leftpad_k_,
+    std::optional<at::Tensor> &block_table_,
+    std::optional<at::Tensor> &alibi_slopes_,
+    std::optional<at::Tensor> &out_, float softmax_scale, bool is_causal,
+    int window_size_left, int window_size_right, float softcap,
+    bool is_rotary_interleaved, int num_splits);
+}  // namespace flash
+#endif
+
 namespace {
 
 thread_local const std::int64_t* g_host_seqlens_ptr = nullptr;
@@ -86,6 +112,87 @@ void Operator<MhaKvcache, kDev, 1>::operator()(
   if constexpr (kDev == Device::Type::kNvidia) {
     stream = static_cast<void *>(
         c10::cuda::getCurrentCUDAStream(device_index_).stream());
+  }
+#endif
+
+#if defined(WITH_NVIDIA) && defined(WITH_FLASH_ATTN)
+  // Flash's `mha_fwd_kvcache` requires fp16/bf16 weights, `head_size % 8 == 0`,
+  // and `block_size % 256 == 0`. Other shapes stay on the ATen fallback below.
+  const bool flash_eligible =
+      (at_q.scalar_type() == at::kHalf ||
+       at_q.scalar_type() == at::kBFloat16) &&
+      head_size % 8 == 0 && block_size % 256 == 0;
+  if constexpr (kDev == Device::Type::kNvidia) {
+   if (flash_eligible) {
+    // Flash-attention fast path: one `mha_fwd_kvcache` call replaces the
+    // per-batch gather + SDPA + final `.copy_()` chain. Writes directly into
+    // `at_out` via the `out_` parameter, so no extra copy.
+    auto at_k_cache = ToAtenTensor<kDev>(const_cast<void*>(k_cache.data()),
+                                         k_cache_shape_, k_cache_strides_,
+                                         k_cache_type_, device_index_);
+    auto at_v_cache = ToAtenTensor<kDev>(const_cast<void*>(v_cache.data()),
+                                         v_cache_shape_, v_cache_strides_,
+                                         v_cache_type_, device_index_);
+    auto at_block_table = ToAtenTensor<kDev>(
+        const_cast<void*>(block_table.data()), block_table_shape_,
+        block_table_strides_, block_table_type_, device_index_);
+
+    // Flash requires int32 for `seqlens_k` and `block_table`.
+    auto seqlens_i32 = at_seqlens_k.scalar_type() == at::kInt
+                           ? at_seqlens_k
+                           : at_seqlens_k.to(at::kInt);
+    auto block_table_i32 = at_block_table.scalar_type() == at::kInt
+                               ? at_block_table
+                               : at_block_table.to(at::kInt);
+
+    std::optional<const at::Tensor> none_const{std::nullopt};
+    std::optional<at::Tensor> none_mut{std::nullopt};
+    std::optional<const at::Tensor> seqlens_opt{seqlens_i32};
+    std::optional<at::Tensor> block_table_opt{block_table_i32};
+    at::Tensor q_mut = at_q;
+
+    // Flash's `mha_fwd_kvcache` rewrites q as `[B, ngroups, H_kv, D]` (the
+    // "ngroups swap") whenever `seqlen_q == 1` and `num_heads > num_heads_k`,
+    // and then checks that `out` has the swapped shape. Hand it a pre-swapped
+    // view of `at_out` so flash's writes land directly in our caller's buffer
+    // — no extra `.copy_()` afterward.
+    const auto num_heads = static_cast<int64_t>(at_q.size(2));
+    const int64_t seqlen_q = at_q.size(1);
+    const bool swap_gqa = seqlen_q == 1 && num_heads > num_kv_heads;
+    at::Tensor out_view = at_out;
+    if (swap_gqa) {
+      const auto ngroups = num_heads / num_kv_heads;
+      out_view = at_out.squeeze(1)
+                     .view({batch_size, num_kv_heads, ngroups, head_size})
+                     .transpose(1, 2);
+    }
+    std::optional<at::Tensor> out_opt{out_view};
+
+    flash::mha_fwd_kvcache(
+        q_mut, at_k_cache, at_v_cache,
+        /*k_new=*/none_const, /*v_new=*/none_const,
+        /*seqlens_k=*/seqlens_opt,
+        /*rotary_cos=*/none_const, /*rotary_sin=*/none_const,
+        /*cache_batch_idx=*/none_const, /*leftpad_k=*/none_const,
+        /*block_table=*/block_table_opt,
+        /*alibi_slopes=*/none_mut,
+        /*out=*/out_opt,
+        /*softmax_scale=*/scale,
+        /*is_causal=*/false,
+        /*window_size_left=*/-1, /*window_size_right=*/-1,
+        /*softcap=*/0.0f,
+        /*is_rotary_interleaved=*/false,
+        /*num_splits=*/0);
+
+    // Zero rows whose `seqlen_k == 0` — flash skips those sequences rather
+    // than writing zeros. Rare in practice but preserves the prior contract.
+    for (int64_t b = 0; b < batch_size; ++b) {
+      if (seqlens_k_host[b] == 0) {
+        at_out.select(0, b).zero_();
+      }
+    }
+    return;
+   }
   }
 #endif
 

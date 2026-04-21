@@ -225,6 +225,23 @@ if(WITH_TORCH)
     target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
     target_include_directories(infiniops PUBLIC ${TORCH_INCLUDE_DIRS})
 
+    if(FLASH_ATTN_LIB)
+        if(NOT EXISTS "${FLASH_ATTN_LIB}")
+            message(FATAL_ERROR "FLASH_ATTN_LIB points to non-existent file: ${FLASH_ATTN_LIB}")
+        endif()
+        target_compile_definitions(infiniops PRIVATE WITH_FLASH_ATTN=1)
+        target_link_libraries(infiniops PUBLIC "${FLASH_ATTN_LIB}")
+        # Flash-attn and `libtorch_python` both reference Python C-API
+        # symbols; defer resolution to the hosting process (`python`). Apply
+        # to both the library and anything that links it (`ops`).
+        target_link_options(infiniops PUBLIC "LINKER:--allow-shlib-undefined")
+        # Persist the directory on rpath so downstream loaders can resolve it.
+        get_filename_component(_flash_attn_dir "${FLASH_ATTN_LIB}" DIRECTORY)
+        set_property(TARGET infiniops APPEND PROPERTY INSTALL_RPATH "${_flash_attn_dir}")
+        set_property(TARGET infiniops APPEND PROPERTY BUILD_RPATH "${_flash_attn_dir}")
+        message(STATUS "InfiniOps: using flash-attention at ${FLASH_ATTN_LIB}")
+    endif()
+
     if(WITH_METAX OR WITH_MOORE)
         # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
         # headers. Compile `torch` sources with the system C++ compiler instead.
