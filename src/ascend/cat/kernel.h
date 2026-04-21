@@ -31,7 +31,14 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
-    // Null cached descriptors — see `AclTensorCache::release()`.
+    // Null cached descriptors — see `AclTensorCache::release()`.  The input
+    // descriptors are referenced by the Repeatable `executor_` via
+    // `tensor_list_`, so every `in_caches_[i]` must be released alongside
+    // `out_cache_`; otherwise `~AclTensorCache()` double-frees them when the
+    // vector destructs.
+    for (auto& c : in_caches_) {
+      c.release();
+    }
     out_cache_.release();
 
     if (tensor_list_) aclDestroyTensorList(tensor_list_);

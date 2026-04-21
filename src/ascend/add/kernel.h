@@ -34,15 +34,14 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
-    // Destroy cached tensors and the executor, then the scalar.
-    // Historical note: this active-destroy pattern works for `Add` at
-    // process exit but crashed for most other operators — see `64c367c`
-    // and the rest of `src/ascend/*/kernel.h` which use `release()` only.
-    in_cache_.destroy();
-    oth_cache_.destroy();
-    out_cache_.destroy();
+    // Null cached descriptors — see `AclTensorCache::release()`.  The
+    // descriptors are still referenced by the Repeatable `executor_`, so
+    // skipping `aclDestroyTensor` (and leaking the executor at shutdown)
+    // avoids a double-free; see `64c367c`.
+    in_cache_.release();
+    oth_cache_.release();
+    out_cache_.release();
 
-    if (executor_) aclDestroyAclOpExecutor(executor_);
     if (alpha_) aclDestroyScalar(alpha_);
   }
 
@@ -80,10 +79,12 @@ class Operator<Add, Device::Type::kAscend> : public Add {
 
   mutable uint64_t ws_size_ = 0;
 
-  float alpha_float_storage_ =
-      1.0f;  // Stable address for `aclCreateScalar` (float).
-  int64_t alpha_int_storage_ =
-      1;  // Stable address for `aclCreateScalar` (int).
+  // Stable address for `aclCreateScalar` (float).
+  float alpha_float_storage_ = 1.0f;
+
+  // Stable address for `aclCreateScalar` (int).
+  int64_t alpha_int_storage_ = 1;
+
   aclScalar* alpha_ = nullptr;
 };
 
