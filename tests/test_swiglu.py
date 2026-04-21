@@ -2,13 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import (
-    Payload,
-    all_active_implementation_indices,
-    empty_strided,
-    get_stream,
-    rand_strided,
-)
+from tests.utils import Payload, empty_strided, get_stream, rand_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -24,9 +18,6 @@ from tests.utils import (
         ((4, 4, 5632), None, None, None),
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
-)
-@pytest.mark.parametrize(
-    "implementation_index", all_active_implementation_indices(infini.ops.Swiglu)
 )
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
@@ -47,11 +38,6 @@ def test_swiglu(
     rtol,
     atol,
 ):
-    active_indices = infini.ops.Swiglu.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
-
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)

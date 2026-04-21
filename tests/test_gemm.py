@@ -2,12 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import (
-    Payload,
-    all_active_implementation_indices,
-    get_stream,
-    randn_strided,
-)
+from tests.utils import Payload, get_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -25,9 +20,6 @@ from tests.utils import (
 @pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
-@pytest.mark.parametrize(
-    "implementation_index", all_active_implementation_indices(infini.ops.Gemm)
-)
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -60,11 +52,6 @@ def test_gemm(
     # `cnnlBatchMatMulEx` does not accept `bfloat16` inputs on MLU.
     if device == "mlu" and dtype == torch.bfloat16:
         pytest.skip("`bfloat16` is not supported by `cnnlBatchMatMulEx`")
-
-    active_indices = infini.ops.Gemm.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     if implementation_index == 1 and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("cuBLASLt half-precision exceeds current tolerances")

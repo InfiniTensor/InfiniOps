@@ -4,7 +4,6 @@ import torch
 
 from tests.utils import (
     Payload,
-    all_active_implementation_indices,
     empty_strided,
     get_stream,
     randint_strided,
@@ -37,9 +36,6 @@ _UINT_DTYPES = tuple(
     ),
 )
 @pytest.mark.parametrize(
-    "implementation_index", all_active_implementation_indices(infini.ops.Add)
-)
-@pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
         (torch.float32, 1e-7, 1e-7),
@@ -63,11 +59,6 @@ def test_add(
         pytest.skip(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
-
-    active_indices = infini.ops.Add.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     if implementation_index == 1 and dtype in _UINT_DTYPES:
         pytest.skip("ATen `add` does not support unsigned integer types")

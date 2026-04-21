@@ -191,7 +191,65 @@ def pytest_generate_tests(metafunc):
         else:
             devices = ()
 
-        metafunc.parametrize("device", devices or available)
+        devices = devices or available
+
+        # Joint `(device, implementation_index)` parametrize: generate only
+        # pairs where the op has an active implementation on that device.
+        # Avoids cross-device pollution — an impl active on `cpu` but not on
+        # `npu` no longer appears as a runtime skip in the npu column.
+        if (
+            "implementation_index" in metafunc.fixturenames
+            and "implementation_index" not in already_parametrized
+        ):
+            op_cls = _op_class_from_module(metafunc.module)
+
+            if op_cls is not None and hasattr(op_cls, "active_implementation_indices"):
+                pairs = [
+                    (dev, idx)
+                    for dev in devices
+                    for idx in op_cls.active_implementation_indices(dev)
+                ]
+
+                if not pairs:
+                    # Emit one skipped placeholder so test IDs read
+                    # `[skip-dtype0-...]` instead of `[NOTSET-...]`.
+                    pairs = [
+                        pytest.param(
+                            devices[0] if devices else "cpu",
+                            0,
+                            marks=pytest.mark.skip(
+                                reason=(
+                                    f"{op_cls.__name__} has no active "
+                                    "implementation on any available device"
+                                )
+                            ),
+                            id="skip",
+                        )
+                    ]
+
+                metafunc.parametrize("device, implementation_index", pairs)
+
+                return
+
+        metafunc.parametrize("device", devices)
+
+
+def _op_class_from_module(module):
+    """Derive the `infini.ops.<Op>` class from a `tests/test_<snake>.py` module."""
+    module_name = module.__name__.rsplit(".", 1)[-1]
+
+    if not module_name.startswith("test_"):
+        return None
+
+    op_snake = module_name[len("test_") :]
+    op_pascal = "".join(part.capitalize() for part in op_snake.split("_"))
+
+    try:
+        import infini.ops as _ops
+    except ImportError:
+        return None
+
+    return getattr(_ops, op_pascal, None)
 
 
 @pytest.hookimpl(tryfirst=True)

@@ -122,28 +122,6 @@ def get_stream(device):
     return getattr(stream, attr, 0)
 
 
-def all_active_implementation_indices(op_cls):
-    """Union of `op_cls.active_implementation_indices(device)` across every
-    locally-available torch device type.
-
-    Use as the `@pytest.mark.parametrize("implementation_index", ...)` value so
-    the test matrix grows automatically when a new backend implementation is
-    added.  Per-device filtering (skipping indices not active on the currently
-    selected device) stays the test body's responsibility — see the `skip`
-    pattern in `test_gemm.py`.
-
-    Limited to `get_available_devices()` to avoid `DispatchFunc::std::abort`
-    for device types outside the build's `ActiveDevices` set (e.g., querying
-    `"cuda"` on an Ascend-only build).
-    """
-    indices = set()
-
-    for device in get_available_devices():
-        indices.update(op_cls.active_implementation_indices(device))
-
-    return tuple(sorted(indices))
-
-
 def clone_strided(input):
     output = empty_strided(
         input.size(), input.stride(), dtype=input.dtype, device=input.device
