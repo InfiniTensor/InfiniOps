@@ -82,11 +82,21 @@ def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     return output
 
 
+_STREAM_ACCESSORS = {
+    "npu": ("npu", "npu_stream"),
+    "cuda": ("cuda", "cuda_stream"),
+    "mlu": ("mlu", "mlu_stream"),
+    "musa": ("musa", "musa_stream"),
+}
+
+
 def get_stream(device):
     """Return the raw stream handle for `device`, or 0 for CPU.
 
-    Uses `torch.accelerator.current_stream` when available, falling back to
-    device-specific APIs for older PyTorch versions.
+    Uses the device-specific `torch.<dev>.current_stream()` API rather than
+    `torch.accelerator.current_stream()` — the latter returns a different
+    stream object on torch 2.9 + vllm-ascend, producing cross-stream data
+    hazards on cached-executor ops.
     """
     if isinstance(device, torch.device):
         device = device.type
@@ -97,32 +107,19 @@ def get_stream(device):
     if device == "cpu":
         return 0
 
-    if hasattr(torch, "accelerator") and hasattr(torch.accelerator, "current_stream"):
-        stream = torch.accelerator.current_stream()
+    mod_name, attr = _STREAM_ACCESSORS.get(device, (None, None))
 
-        # Each backend exposes the raw handle under a different attribute name.
-        for attr in ("npu_stream", "cuda_stream", "mlu_stream", "musa_stream"):
-            if hasattr(stream, attr):
-                return getattr(stream, attr)
-
+    if mod_name is None:
         return 0
 
-    # Fallback for older PyTorch builds without `torch.accelerator`.
-    _STREAM_ACCESSORS = {
-        "npu": ("npu", "npu_stream"),
-        "cuda": ("cuda", "cuda_stream"),
-        "mlu": ("mlu", "mlu_stream"),
-        "musa": ("musa", "musa_stream"),
-    }
+    mod = getattr(torch, mod_name, None)
 
-    if device in _STREAM_ACCESSORS:
-        mod_name, attr = _STREAM_ACCESSORS[device]
-        mod = getattr(torch, mod_name, None)
+    if mod is None:
+        return 0
 
-        if mod is not None and hasattr(mod, "current_stream"):
-            return getattr(mod.current_stream(), attr)
+    stream = mod.current_stream()
 
-    return 0
+    return getattr(stream, attr, 0)
 
 
 def clone_strided(input):

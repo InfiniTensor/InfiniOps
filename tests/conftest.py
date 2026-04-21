@@ -44,6 +44,31 @@ def set_seed_per_test(request):
     _set_random_seed(_hash(_test_case_path_from_request(request)))
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _clear_operator_caches():
+    """Clear the C++ operator cache between test modules.
+
+    The `Operator::call()` cache keys on tensor geometry (shape, strides,
+    dtype) but not data pointers. When different test modules create tensors
+    with identical geometry but different data content (e.g., random
+    `cos_sin_cache` tables), a stale cached operator from a prior module
+    silently returns wrong results. Clearing the cache at module boundaries
+    ensures each module starts with a cold cache.
+    """
+    yield
+
+    try:
+        import infini.ops as ops
+
+        for name in dir(ops):
+            cls = getattr(ops, name)
+
+            if hasattr(cls, "clear_cache"):
+                cls.clear_cache()
+    except ImportError:
+        pass
+
+
 _NPU_UNSUPPORTED_DTYPES = {torch.float64}
 
 # `torch_npu` does not implement random number generation for
@@ -63,6 +88,63 @@ def skip_unsupported_dtypes(request):
 
     if params.get("device") == "npu" and params.get("dtype") in _NPU_UNSUPPORTED_DTYPES:
         pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
+
+
+# PyTorch device type → InfiniOps platform names. A single torch device type
+# can map to several platforms (e.g., `cuda` is shared by `nvidia`, `metax`,
+# and `iluvatar`); at most one is actually available at runtime.
+_TORCH_DEVICE_TO_PLATFORMS = {
+    "cuda": ("nvidia", "metax", "iluvatar"),
+    "mlu": ("cambricon",),
+    "musa": ("moore",),
+    "npu": ("ascend",),
+}
+
+
+@pytest.fixture(autouse=True)
+def skip_op_without_platform_impl(request):
+    """Skip `device=<torch_type>` parametrizations when the op has no
+    implementation on any of the corresponding platforms.
+
+    Derives the InfiniOps class name from the test module filename
+    (`tests/test_<snake>.py` → `<Snake>`) and checks
+    `infini.ops.<Op>.active_implementation_indices(<platform>)` for every
+    platform that maps to the test's torch device type. Skips only when
+    every mapped platform reports no active implementation — avoids
+    `Fatal Python error: Aborted` from dispatching through a base class
+    that has no backend specialization on the current branch.
+    """
+    if not hasattr(request.node, "callspec"):
+        return
+
+    device = request.node.callspec.params.get("device")
+    platforms = _TORCH_DEVICE_TO_PLATFORMS.get(device)
+
+    if not platforms:
+        return
+
+    module_name = request.node.module.__name__.rsplit(".", 1)[-1]
+
+    if not module_name.startswith("test_"):
+        return
+
+    op_snake = module_name[len("test_") :]
+    op_pascal = "".join(part.capitalize() for part in op_snake.split("_"))
+
+    try:
+        import infini.ops as _ops
+    except ImportError:
+        return
+
+    op_cls = getattr(_ops, op_pascal, None)
+
+    if op_cls is None or not hasattr(op_cls, "active_implementation_indices"):
+        return
+
+    if not any(op_cls.active_implementation_indices(p) for p in platforms):
+        pytest.skip(
+            f"{op_pascal} has no implementation on any `{device}`-mapped platform"
+        )
 
 
 def _set_random_seed(seed):

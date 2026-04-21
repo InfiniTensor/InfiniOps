@@ -103,14 +103,33 @@ def _find_optional_tensor_params(op_name):
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
 
+def _find_vector_tensor_params(op_name):
+    """Return a set of parameter names declared as `std::vector<Tensor>` in
+    the base header.
+    """
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
+
+    return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
+
+
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
+    vector_tensor_params = _find_vector_tensor_params(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
             return True
 
         return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+
+    def _is_optional(arg):
+        return "std::optional" in arg.type.spelling
+
+    def _is_vector_tensor(arg):
+        if arg.spelling in vector_tensor_params:
+            return True
+
+        return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
     def _generate_params(node):
         parts = []
@@ -121,6 +140,8 @@ def _generate_pybind11(operator):
 
             if _is_optional_tensor(arg):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
+            elif _is_vector_tensor(arg):
+                parts.append(f"std::vector<py::object> {arg.spelling}")
             else:
                 param = arg.type.spelling.replace("const Tensor", "py::object").replace(
                     "Tensor", "py::object"
@@ -138,6 +159,8 @@ def _generate_pybind11(operator):
 
             if _is_optional_tensor(arg):
                 args.append(f"OptionalTensorFromPybind11Handle({arg.spelling})")
+            elif _is_vector_tensor(arg):
+                args.append(f"VectorTensorFromPybind11Handle({arg.spelling})")
             elif "Tensor" in arg.type.spelling:
                 args.append(f"TensorFromPybind11Handle({arg.spelling})")
             else:
@@ -155,11 +178,18 @@ def _generate_pybind11(operator):
       }}))"""
 
     def _generate_py_args(node):
-        return ", ".join(
-            f'py::arg("{arg.spelling}")'
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
+        parts = []
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            if _is_optional(arg):
+                parts.append(f'py::arg("{arg.spelling}") = py::none()')
+            else:
+                parts.append(f'py::arg("{arg.spelling}")')
+
+        return ", ".join(parts)
 
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
@@ -224,7 +254,8 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
         return Self::active_implementation_indices(DeviceTypeFromString(device));
-      }});
+      }})
+      .def_static("clear_cache", &Self::clear_cache);
 
 {callers}
 }}
