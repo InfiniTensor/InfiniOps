@@ -14,6 +14,8 @@ from tests.utils import Payload, randn_strided
         (64, 8, 64, 32, 16, 0),
     ),
 )
+# TODO: Generate implementation indices dynamically.
+@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -29,6 +31,7 @@ def test_paged_caching(
     num_blocks,
     block_size,
     num_padding,
+    implementation_index,
     dtype,
     device,
     rtol,
@@ -36,8 +39,8 @@ def test_paged_caching(
 ):
     active_indices = infini.ops.PagedCaching.active_implementation_indices(device)
 
-    if 1 not in active_indices:
-        pytest.skip(f"implementation `1` not active on `{device}`")
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     k = randn_strided((num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device)
     v = randn_strided((num_tokens, num_kv_heads, head_size), None, dtype=dtype, device=device)
@@ -52,7 +55,7 @@ def test_paged_caching(
     slot_mapping = torch.cat((slot_values.to(torch.int64), padding)).to(device)
 
     return Payload(
-        _paged_caching,
+        lambda *args: _paged_caching(*args, implementation_index=implementation_index),
         _torch_paged_caching,
         (k_cache, v_cache, k, v, slot_mapping),
         {},
@@ -61,8 +64,10 @@ def test_paged_caching(
     )
 
 
-def _paged_caching(k_cache, v_cache, k, v, slot_mapping):
-    infini.ops.paged_caching(k_cache, v_cache, k, v, slot_mapping, implementation_index=1)
+def _paged_caching(k_cache, v_cache, k, v, slot_mapping, *, implementation_index):
+    infini.ops.paged_caching(
+        k_cache, v_cache, k, v, slot_mapping, implementation_index=implementation_index
+    )
 
     # Return a flattened concatenation so `auto_act_and_assert` can compare.
     return torch.cat((k_cache.reshape(-1), v_cache.reshape(-1)))
