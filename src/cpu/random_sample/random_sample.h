@@ -20,9 +20,8 @@
 namespace infini::ops {
 
 template <>
-class Operator<RandomSample, Device::Type::kCpu>
-    : public RandomSample,
-      Caster<Device::Type::kCpu> {
+class Operator<RandomSample, Device::Type::kCpu> : public RandomSample,
+                                                   Caster<Device::Type::kCpu> {
  public:
   using RandomSample::RandomSample;
 
@@ -33,8 +32,7 @@ class Operator<RandomSample, Device::Type::kCpu>
                   std::optional<Tensor> min_p, float min_p_val,
                   std::uint64_t seed, std::uint64_t offset,
                   bool deterministic) const override {
-    DispatchFunc<Device::Type::kCpu,
-                 ConcatType<FloatTypes, ReducedFloatTypes>,
+    DispatchFunc<Device::Type::kCpu, ConcatType<FloatTypes, ReducedFloatTypes>,
                  List<DataType::kInt32, DataType::kInt64>>(
         {logits_dtype_, out_dtype_},
         [&](auto tag1, auto tag2) {
@@ -49,12 +47,9 @@ class Operator<RandomSample, Device::Type::kCpu>
 
   void operator()(const Tensor logits, Tensor out, Tensor valid,
                   std::uint64_t seed, std::uint64_t offset) const override {
-    return operator()(logits, out, valid,
-                      std::nullopt, temperature_val_,
-                      std::nullopt, top_k_val_,
-                      std::nullopt, top_p_val_,
-                      std::nullopt, min_p_val_,
-                      seed, offset, deterministic_);
+    return operator()(logits, out, valid, std::nullopt, temperature_val_,
+                      std::nullopt, top_k_val_, std::nullopt, top_p_val_,
+                      std::nullopt, min_p_val_, seed, offset, deterministic_);
   }
 
  private:
@@ -112,9 +107,8 @@ class Operator<RandomSample, Device::Type::kCpu>
                std::optional<Tensor> temperature, float temperature_val,
                std::optional<Tensor> top_k, int top_k_val,
                std::optional<Tensor> top_p, float top_p_val,
-               std::optional<Tensor> min_p, float min_p_val,
-               std::uint64_t seed, std::uint64_t offset,
-               bool deterministic) const {
+               std::optional<Tensor> min_p, float min_p_val, std::uint64_t seed,
+               std::uint64_t offset, bool deterministic) const {
     assert(valid.dtype() == DataType::kUInt8 &&
            "`RandomSample` requires uint8 valid tensor");
 
@@ -143,8 +137,8 @@ class Operator<RandomSample, Device::Type::kCpu>
 
       float sum = 0.f;
       for (Tensor::Size j = 0; j < vocab_size; ++j) {
-        float v = std::exp(
-            Cast<float>(logits_row[j * col_stride]) * inv_temp - max_val);
+        float v = std::exp(Cast<float>(logits_row[j * col_stride]) * inv_temp -
+                           max_val);
         probs[j] = v;
         sum += v;
       }

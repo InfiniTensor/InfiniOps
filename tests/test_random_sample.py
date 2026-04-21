@@ -64,7 +64,9 @@ def test_greedy_topk1(batch_size, vocab_size, dtype, device):
     _random_sample(logits, out, valid, top_k_val=1, seed=42)
 
     expected = _torch_argmax_sample(logits)
-    assert torch.equal(out, expected), f"top_k=1 should give argmax, got {out}, expected {expected}"
+    assert torch.equal(out, expected), (
+        f"top_k=1 should give argmax, got {out}, expected {expected}"
+    )
     assert valid.all(), "all samples should be valid"
 
 
@@ -166,7 +168,9 @@ def test_seed_offset_reproducibility(dtype, device):
 
     # Different offset → must be different (different RNG state)
     _random_sample(logits, out3, valid3, seed=1, offset=999999)
-    assert not torch.equal(out1, out3), "different offset should produce different results"
+    assert not torch.equal(out1, out3), (
+        "different offset should produce different results"
+    )
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))

@@ -35,9 +35,8 @@ class RandomSample : public Operator<RandomSample> {
                std::optional<Tensor> temperature, float temperature_val,
                std::optional<Tensor> top_k, int top_k_val,
                std::optional<Tensor> top_p, float top_p_val,
-               std::optional<Tensor> min_p, float min_p_val,
-               std::uint64_t seed, std::uint64_t offset,
-               bool deterministic)
+               std::optional<Tensor> min_p, float min_p_val, std::uint64_t seed,
+               std::uint64_t offset, bool deterministic)
       : logits_dtype_{logits.dtype()},
         out_dtype_{out.dtype()},
         ndim_{logits.ndim()},
@@ -70,34 +69,29 @@ class RandomSample : public Operator<RandomSample> {
   // Simplified constructor: no filtering, default temperature.
   RandomSample(const Tensor logits, Tensor out, Tensor valid,
                std::uint64_t seed, std::uint64_t offset)
-      : RandomSample{logits, out, valid,
-                     std::nullopt, 1.0f,
-                     std::nullopt, 0,
-                     std::nullopt, 1.0f,
-                     std::nullopt, 0.0f,
-                     seed, offset, false} {}
+      : RandomSample{logits, out,          valid, std::nullopt,
+                     1.0f,   std::nullopt, 0,     std::nullopt,
+                     1.0f,   std::nullopt, 0.0f,  seed,
+                     offset, false} {}
 
   virtual void operator()(const Tensor logits, Tensor out, Tensor valid,
                           std::optional<Tensor> temperature,
-                          float temperature_val,
-                          std::optional<Tensor> top_k, int top_k_val,
-                          std::optional<Tensor> top_p, float top_p_val,
-                          std::optional<Tensor> min_p, float min_p_val,
-                          std::uint64_t seed, std::uint64_t offset,
-                          bool deterministic) const = 0;
+                          float temperature_val, std::optional<Tensor> top_k,
+                          int top_k_val, std::optional<Tensor> top_p,
+                          float top_p_val, std::optional<Tensor> min_p,
+                          float min_p_val, std::uint64_t seed,
+                          std::uint64_t offset, bool deterministic) const = 0;
 
   virtual void operator()(const Tensor logits, Tensor out, Tensor valid,
                           std::uint64_t seed, std::uint64_t offset) const {
-    return operator()(logits, out, valid,
-                      temperature_, temperature_val_,
-                      top_k_, top_k_val_,
-                      top_p_, top_p_val_,
-                      min_p_, min_p_val_,
-                      seed, offset, deterministic_);
+    return operator()(logits, out, valid, temperature_, temperature_val_,
+                      top_k_, top_k_val_, top_p_, top_p_val_, min_p_,
+                      min_p_val_, seed, offset, deterministic_);
   }
 
  protected:
-  static void ValidateIntParam(std::optional<Tensor> t, Tensor::Size batch_size) {
+  static void ValidateIntParam(std::optional<Tensor> t,
+                               Tensor::Size batch_size) {
     if (!t.has_value()) return;
     const auto& tensor = *t;
     assert(tensor.ndim() == 1 && tensor.size(0) == batch_size &&
@@ -107,7 +101,8 @@ class RandomSample : public Operator<RandomSample> {
            "per-batch int param must be int32 or int64");
   }
 
-  static void ValidateFloatParam(std::optional<Tensor> t, Tensor::Size batch_size) {
+  static void ValidateFloatParam(std::optional<Tensor> t,
+                                 Tensor::Size batch_size) {
     if (!t.has_value()) return;
     const auto& tensor = *t;
     assert(tensor.ndim() == 1 && tensor.size(0) == batch_size &&
@@ -119,8 +114,9 @@ class RandomSample : public Operator<RandomSample> {
            "per-batch float param must be float16/bfloat16/float32/float64");
   }
 
-  void ValidateParams(std::optional<Tensor> temperature, std::optional<Tensor> top_k,
-                      std::optional<Tensor> top_p, std::optional<Tensor> min_p) const {
+  void ValidateParams(std::optional<Tensor> temperature,
+                      std::optional<Tensor> top_k, std::optional<Tensor> top_p,
+                      std::optional<Tensor> min_p) const {
     ValidateFloatParam(temperature, batch_size_);
     ValidateIntParam(top_k, batch_size_);
     ValidateFloatParam(top_p, batch_size_);
