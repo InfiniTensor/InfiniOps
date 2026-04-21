@@ -17,6 +17,9 @@ from tests.utils import Payload, empty_strided, randn_strided
         ((4, 48, 64), (64,), (3072, 64, 1), (1,), (3072, 64, 1)),
     ),
 )
+# TODO: Generate implementation indices dynamically from
+# `RmsNorm.active_implementation_indices` instead of hardcoding.
+@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize("eps", (1e-6, 1e-5))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
@@ -32,18 +35,24 @@ def test_rms_norm(
     input_strides,
     weight_strides,
     out_strides,
+    implementation_index,
     eps,
     dtype,
     device,
     rtol,
     atol,
 ):
+    active_indices = infini.ops.RmsNorm.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
+
     input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
     out = empty_strided(input_shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
-        _rms_norm,
+        lambda *args, **kwargs: _rms_norm(*args, implementation_index=implementation_index, **kwargs),
         _torch_rms_norm,
         (input, weight),
         {"eps": eps, "out": out},
@@ -52,8 +61,8 @@ def test_rms_norm(
     )
 
 
-def _rms_norm(input, weight, *, eps=1e-6, out=None):
-    infini.ops.rms_norm(input, weight, eps, out)
+def _rms_norm(input, weight, *, eps=1e-6, out=None, implementation_index=0):
+    infini.ops.rms_norm(input, weight, eps, out, implementation_index=implementation_index)
 
     return out
 
