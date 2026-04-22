@@ -62,7 +62,14 @@ def test_add_rms_norm(
 
 
 def _add_rms_norm(
-    input, other, weight, *, eps=1e-6, out=None, residual_out=None, implementation_index=0
+    input,
+    other,
+    weight,
+    *,
+    eps=1e-6,
+    out=None,
+    residual_out=None,
+    implementation_index=0,
 ):
     infini.ops.add_rms_norm(
         input,
