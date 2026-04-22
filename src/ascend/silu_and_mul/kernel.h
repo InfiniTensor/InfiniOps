@@ -37,9 +37,16 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
-    // Null cached descriptors — see `AclTensorCache::release()`.
+    // Null cached descriptors — see `AclTensorCache::release()`.  Inputs and
+    // outputs are referenced by the Repeatable executors (`swiglu_exec_`,
+    // `copy_exec_`); releasing them here prevents `~AclTensorCache()` from
+    // double-freeing at shutdown.
     x_cache_.release();
     out_cache_.release();
+
+    // The staging cache is held by `swiglu_exec_` / `copy_exec_`; release to
+    // avoid double-free on destruction.
+    if (out_staging_cache_) out_staging_cache_->release();
   }
 
   void operator()(const Tensor x, int64_t dim, Tensor out) const override {

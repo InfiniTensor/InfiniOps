@@ -63,12 +63,20 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
-    // Null cached descriptors — see `AclTensorCache::release()`.
+    // Null cached descriptors — see `AclTensorCache::release()`.  The inputs
+    // and outputs are referenced by the Repeatable executors (`cat_exec_`,
+    // `swiglu_exec_`, `copy_exec_`) via `cat_tensor_list_`; releasing them
+    // here prevents `~AclTensorCache()` from double-freeing at shutdown.
     gate_cache_.release();
     in_cache_.release();
     out_cache_.release();
 
-    if (cat_tensor_list_) aclDestroyTensorList(cat_tensor_list_);
+    // Optional caches are held by `swiglu_exec_` / `copy_exec_`; release to
+    // avoid double-free on destruction.
+    if (cat_out_cache_) cat_out_cache_->release();
+    if (out_staging_cache_) out_staging_cache_->release();
+
+    // `cat_tensor_list_` leaks with `cat_exec_` at shutdown (see `64c367c`).
   }
 
   void operator()(const Tensor input, const Tensor gate,
