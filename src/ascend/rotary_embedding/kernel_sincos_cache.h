@@ -41,13 +41,13 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
     : public RotaryEmbedding {
  public:
   Operator(const Tensor positions, const Tensor query,
-           std::optional<Tensor> key, const Tensor cos_sin_cache,
-           int64_t head_size, int64_t rotary_dim, bool is_neox_style,
+           std::optional<Tensor> key, int64_t head_size,
+           const Tensor cos_sin_cache, bool is_neox_style, int64_t rotary_dim,
            std::optional<Tensor> query_out = std::nullopt,
            std::optional<Tensor> key_out = std::nullopt,
            bool pre_gathered = false)
-      : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
-                        rotary_dim, is_neox_style, query_out, key_out,
+      : RotaryEmbedding(positions, query, key, head_size, cos_sin_cache,
+                        is_neox_style, rotary_dim, query_out, key_out,
                         pre_gathered),
         max_seq_len_{cos_sin_cache.size(0)} {
     assert(has_key_ &&
@@ -102,9 +102,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
   Operator& operator=(const Operator&) = delete;
 
   void operator()(const Tensor positions, const Tensor query,
-                  std::optional<Tensor> key, const Tensor cos_sin_cache,
-                  int64_t head_size, int64_t rotary_dim, bool is_neox_style,
-                  std::optional<Tensor> query_out,
+                  std::optional<Tensor> key, int64_t head_size,
+                  const Tensor cos_sin_cache, bool is_neox_style,
+                  int64_t rotary_dim, std::optional<Tensor> query_out,
                   std::optional<Tensor> key_out,
                   bool pre_gathered) const override {
     auto stream = static_cast<aclrtStream>(stream_);

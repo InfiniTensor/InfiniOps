@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "data_type.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -28,24 +29,31 @@ namespace infini::ops {
 // `pre_gathered == false` (the default).
 class RotaryEmbedding : public Operator<RotaryEmbedding> {
  public:
-  // `positions`        — `[T]` position indices (`int64`).
-  // `query`            — `[T, Nq * head_size]` or `[T, Nq, head_size]`.
-  // `key`              — same layout as `query`; `nullopt` for MLA.
-  // `cos_sin_cache`    — default layout `[max_pos, rotary_dim * 2]` (cos
-  //                      columns followed by sin columns).  When
-  //                      `pre_gathered == true` the caller passes
-  //                      `[T, head_size * 2]` already neox-expanded.
-  // `head_size`        — per-head feature dimension.
-  // `rotary_dim`       — number of features to rotate (`<=` `head_size`).
-  // `is_neox_style`    — `true` for NeoX split-half layout, `false` for
-  //                      GPT-J interleaved.
-  // `query_out`        — optional out buffer for the rotated query.
-  // `key_out`          — optional out buffer for the rotated key.
-  // `pre_gathered`     — `true` when the caller has already gathered and
-  //                      neox-expanded cos/sin per token.
+  // Parameter order mirrors vLLM's
+  // `rotary_embedding(positions, query, key?, head_size, cos_sin_cache, is_neox)`
+  // schema for the first 6 parameters.  Remaining parameters are InfiniOps
+  // extensions:
+  //   `rotary_dim`       — explicit; vLLM infers from
+  //                        `cos_sin_cache.size(-1) / 2`.
+  //   `query_out`        — optional out buffer (inplace when `nullopt`).
+  //   `key_out`          — optional out buffer (inplace when `nullopt`).
+  //   `pre_gathered`     — vendor-specific hint; `true` when the caller has
+  //                        already run `cos_sin_cache.index_select(0, positions)`
+  //                        plus neox expansion.
+  //
+  // Tensor conventions:
+  //   `positions`        — `[T]`, `int64`.
+  //   `query`            — `[T, Nq * head_size]` or `[T, Nq, head_size]`.
+  //   `key`              — same layout as `query`; `nullopt` for MLA.
+  //   `cos_sin_cache`    — default `[max_pos, rotary_dim * 2]` (cos then sin).
+  //                        When `pre_gathered == true` the caller passes
+  //                        `[T, head_size * 2]` already neox-expanded.
+  //   `is_neox_style`    — `true` for NeoX split-half layout, `false` for
+  //                        GPT-J interleaved.
   RotaryEmbedding(const Tensor positions, const Tensor query,
-                  std::optional<Tensor> key, const Tensor cos_sin_cache,
-                  int64_t head_size, int64_t rotary_dim, bool is_neox_style,
+                  std::optional<Tensor> key, int64_t head_size,
+                  const Tensor cos_sin_cache, bool is_neox_style,
+                  int64_t rotary_dim,
                   std::optional<Tensor> query_out = std::nullopt,
                   std::optional<Tensor> key_out = std::nullopt,
                   bool pre_gathered = false)
@@ -61,6 +69,9 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
         is_neox_style_{is_neox_style},
         has_key_{key.has_value()},
         pre_gathered_{pre_gathered} {
+    assert(positions.dtype() == DataType::kInt64 &&
+           "`RotaryEmbedding`: `positions` must be `int64` (vLLM convention).");
+
     assert((query.ndim() == 2 || query.ndim() == 3) &&
            "`RotaryEmbedding`: `query` must be 2D `[T, Nq * head_size]` or 3D "
            "`[T, Nq, head_size]`.");
@@ -76,9 +87,9 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
   }
 
   virtual void operator()(const Tensor positions, const Tensor query,
-                          std::optional<Tensor> key, const Tensor cos_sin_cache,
-                          int64_t head_size, int64_t rotary_dim,
-                          bool is_neox_style,
+                          std::optional<Tensor> key, int64_t head_size,
+                          const Tensor cos_sin_cache, bool is_neox_style,
+                          int64_t rotary_dim,
                           std::optional<Tensor> query_out = std::nullopt,
                           std::optional<Tensor> key_out = std::nullopt,
                           bool pre_gathered = false) const = 0;
