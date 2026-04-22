@@ -31,6 +31,7 @@ def _rotary_embedding(
     key_out,
     device,
     implementation_index=0,
+    pre_gathered=False,
 ):
     if device == "npu":
         infini.ops.rotary_embedding(
@@ -43,6 +44,7 @@ def _rotary_embedding(
             is_neox_style,
             query_out,
             key_out,
+            pre_gathered,
             implementation_index=implementation_index,
             stream=get_stream(query.device),
         )
@@ -57,6 +59,7 @@ def _rotary_embedding(
             is_neox_style,
             query_out,
             key_out,
+            pre_gathered,
         )
 
     return query_out, key_out
@@ -70,7 +73,8 @@ def _ref_rotary_embedding(
     ``cos_sin_cache`` layout: ``[max_seq_len, rotary_dim]`` where the first
     ``rotary_dim // 2`` columns are cos and the rest are sin.
 
-    Accepts both 2D ``[T, N*D]`` and 3D ``[T, N, D]`` inputs.
+    Accepts both 2D ``[T, N*D]`` and 3D ``[T, N, D]`` inputs.  When ``key``
+    is ``None`` only the query is rotated (MLA).
     """
     T = query.size(0)
     R = rotary_dim
@@ -79,7 +83,10 @@ def _ref_rotary_embedding(
     # Reshape to 3D for computation if input is 2D.
     q_is_2d = query.ndim == 2
     q3d = query.view(T, -1, head_size) if q_is_2d else query
-    k3d = key.view(T, -1, head_size) if q_is_2d else key
+    k3d = None
+
+    if key is not None:
+        k3d = key.view(T, -1, head_size) if q_is_2d else key
 
     cos_sin = cos_sin_cache.float()
     cos_half = cos_sin[:, :half_R]
@@ -107,12 +114,14 @@ def _ref_rotary_embedding(
         return out.to(x.dtype)
 
     ref_q = apply_rope(q3d)
-    ref_k = apply_rope(k3d)
+    ref_k = apply_rope(k3d) if k3d is not None else None
 
     # Flatten back to 2D if input was 2D.
     if q_is_2d:
         ref_q = ref_q.view(T, -1)
-        ref_k = ref_k.view(T, -1)
+
+        if ref_k is not None:
+            ref_k = ref_k.view(T, -1)
 
     return ref_q, ref_k
 
@@ -463,7 +472,7 @@ def test_rotary_embedding_2d(
         (16, 4, 64, 32),
     ),
 )
-@pytest.mark.parametrize("is_neox_style", (True,))
+@pytest.mark.parametrize("is_neox_style", (True, False))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -487,7 +496,7 @@ def test_rotary_embedding_partial(
 
     Only `aclnnRopeWithSinCosCache` (impl=2) supports partial rotary among
     the Ascend fused APIs — V2 (impl=0) and ATB `RopeParam` (impl=1) both
-    require `cos.D == sin.D == x.D`.
+    require `cos.D == sin.D == x.D`.  Covers both neox and GPT-J styles.
     """
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
@@ -637,3 +646,229 @@ def test_rotary_embedding_inplace(implementation_index, dtype, rtol, atol, devic
 
     _assert_close(query, ref_q, rtol, atol)
     _assert_close(key, ref_k, rtol, atol)
+
+
+def _expand_cos_sin(cos_sin_cache, positions, head_size):
+    """Gather cos/sin from ``cos_sin_cache`` and neox-expand to ``[T, D]``.
+
+    Mirrors what the caller does in the `apply_rotary_pos_emb` pre-gather
+    fast path: split the cache into cos/sin halves, duplicate each half
+    front/back (neox), and gather by position.
+    """
+    half_D = head_size // 2
+    cos_raw = cos_sin_cache[:, :half_D]
+    sin_raw = cos_sin_cache[:, half_D:]
+
+    cos_full = torch.cat([cos_raw, cos_raw], dim=-1)
+    sin_full = torch.cat([sin_raw, sin_raw], dim=-1)
+
+    return cos_full[positions], sin_full[positions]
+
+
+@pytest.mark.parametrize("num_tokens", (1, 4, 16))
+@pytest.mark.parametrize(
+    "num_heads, num_kv_heads, head_size",
+    (
+        (32, 8, 128),
+        (8, 8, 64),
+    ),
+)
+@pytest.mark.parametrize("implementation_index", (0, 1))
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float16, 1e-3, 0.01),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+@pytest.mark.parametrize("device", ("npu",))
+def test_apply_rotary_pos_emb(
+    num_tokens,
+    num_heads,
+    num_kv_heads,
+    head_size,
+    implementation_index,
+    dtype,
+    rtol,
+    atol,
+    device,
+):
+    """Pre-gathered fast path via the `infini.ops.apply_rotary_pos_emb` shim.
+
+    The shim converts `(cos, sin)` pairs (each `[T, head_size]` neox-expanded)
+    into a `[T, head_size*2]` pre-gathered cache and forwards to the unified
+    `rotary_embedding` op with `pre_gathered=True`.  Asserts numerical parity
+    with the unpacked-cache path.
+    """
+    if not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(
+            f"Implementation index={implementation_index} not active on this build"
+        )
+
+    max_seq_len = 64
+
+    positions = randint_strided(
+        0,
+        max_seq_len,
+        (num_tokens,),
+        None,
+        dtype=torch.int64,
+        device=device,
+    )
+    cos_sin_cache = randn_strided(
+        (max_seq_len, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+
+    cos, sin = _expand_cos_sin(cos_sin_cache, positions, head_size)
+
+    # 2D layout: [T, N*D] (vLLM convention).
+    query = randn_strided(
+        (num_tokens, num_heads * head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    key = randn_strided(
+        (num_tokens, num_kv_heads * head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    query_out = torch.empty_like(query)
+    key_out = torch.empty_like(key)
+
+    infini.ops.apply_rotary_pos_emb(
+        query,
+        key,
+        cos,
+        sin,
+        head_size,
+        True,
+        query_out,
+        key_out,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+
+    # Reference via `rotary_embedding` (full cache path) — they must match
+    # bit-exactly since the shim forwards to the same kernel.
+    ref_q = torch.empty_like(query)
+    ref_k = torch.empty_like(key)
+    infini.ops.rotary_embedding(
+        positions,
+        query,
+        key,
+        cos_sin_cache,
+        head_size,
+        head_size,
+        True,
+        ref_q,
+        ref_k,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+
+    _assert_close(query_out, ref_q, rtol=0, atol=0)
+    _assert_close(key_out, ref_k, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("implementation_index", (0, 1))
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float16, 1e-2, 5e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+@pytest.mark.parametrize("device", ("npu",))
+def test_apply_rotary_pos_emb_3d(implementation_index, dtype, rtol, atol, device):
+    """3D ``[T, N, D]`` query/key layout through the pre-gathered shim."""
+    if not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(device)
+
+    if implementation_index not in active_indices:
+        pytest.skip(
+            f"Implementation index={implementation_index} not active on this build"
+        )
+
+    num_tokens = 8
+    num_heads = 16
+    num_kv_heads = 4
+    head_size = 128
+    max_seq_len = 64
+
+    positions = randint_strided(
+        0,
+        max_seq_len,
+        (num_tokens,),
+        None,
+        dtype=torch.int64,
+        device=device,
+    )
+    cos_sin_cache = randn_strided(
+        (max_seq_len, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+
+    cos, sin = _expand_cos_sin(cos_sin_cache, positions, head_size)
+
+    # 3D layout: [T, N, D].
+    query = randn_strided(
+        (num_tokens, num_heads, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    key = randn_strided(
+        (num_tokens, num_kv_heads, head_size),
+        None,
+        dtype=dtype,
+        device=device,
+    )
+    query_out = torch.empty_like(query)
+    key_out = torch.empty_like(key)
+
+    infini.ops.apply_rotary_pos_emb(
+        query,
+        key,
+        cos,
+        sin,
+        head_size,
+        True,
+        query_out,
+        key_out,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+
+    # Reference via `rotary_embedding` — same kernel, non-pre-gathered path.
+    ref_q = torch.empty_like(query)
+    ref_k = torch.empty_like(key)
+    infini.ops.rotary_embedding(
+        positions,
+        query,
+        key,
+        cos_sin_cache,
+        head_size,
+        head_size,
+        True,
+        ref_q,
+        ref_k,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+
+    _assert_close(query_out, ref_q, rtol=0, atol=0)
+    _assert_close(key_out, ref_k, rtol=0, atol=0)
