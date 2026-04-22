@@ -30,6 +30,7 @@ jobs:
           submodules: recursive
 
       - name: Install converter dependency
+        if: ${{ matrix.platform == 'cambricon' }}
         run: pip install pyyaml
 
       - name: Show stage plan
