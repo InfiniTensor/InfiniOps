@@ -78,9 +78,10 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
   virtual void operator()(const Tensor positions, const Tensor query,
                           std::optional<Tensor> key, const Tensor cos_sin_cache,
                           int64_t head_size, int64_t rotary_dim,
-                          bool is_neox_style, std::optional<Tensor> query_out,
-                          std::optional<Tensor> key_out,
-                          bool pre_gathered) const = 0;
+                          bool is_neox_style,
+                          std::optional<Tensor> query_out = std::nullopt,
+                          std::optional<Tensor> key_out = std::nullopt,
+                          bool pre_gathered = false) const = 0;
 
  protected:
   Tensor::Size num_tokens_{0};
