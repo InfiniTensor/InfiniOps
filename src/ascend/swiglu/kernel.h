@@ -13,10 +13,10 @@
 
 namespace infini::ops {
 
-// Implements SwiGLU as two ACLNN calls: silu(gate) into a temp buffer,
-// then elementwise mul(input, temp) into out.
-// aclnnSiluMul was not used because it fuses silu_AND_mul on the same
-// tensor (x * silu(x)), whereas SwiGLU requires input * silu(gate) —
+// Implements SwiGLU as two ACLNN calls: `aclnnSilu(gate)` into a `temp`
+// buffer, then elementwise `aclnnMul(input, temp)` into `out`.
+// `aclnnSiluMul` was not used because it fuses silu-and-mul on the same
+// tensor (`x * silu(x)`), whereas SwiGLU requires `input * silu(gate)` —
 // two distinct inputs.
 template <>
 class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
@@ -28,8 +28,9 @@ class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
         out_cache_(out) {
     temp_size_ = input.numel() * kDataTypeToSize.at(input.dtype());
 
-    // Build temp cache from gate geometry (contiguous, same shape/dtype).
-    // No data pointer yet — will be set on first `get()` call.
+    // Build the `temp` cache from `gate` geometry (contiguous, same
+    // shape/dtype).  No data pointer yet — it is set on the first `get()`
+    // call.
     Tensor temp_t{nullptr, gate.shape(), gate.dtype(), gate.device()};
     temp_cache_ = ascend::AclTensorCache(temp_t);
   }
@@ -51,11 +52,11 @@ class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
     auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Obtain shared temp buffer from pool.
+    // Obtain shared `temp` buffer from the pool.
     auto& temp = ascend::GetWorkspacePool().Ensure(stream, temp_size_, "temp");
     auto t_temp = temp_cache_.get(temp.buf);
 
-    // Step 1: silu(gate) -> temp.
+    // Step 1: `silu(gate) -> temp`.
     if (!silu_exec_) {
       aclnnSiluGetWorkspaceSize(t_gate, t_temp, &silu_ws_, &silu_exec_);
       aclSetAclOpExecutorRepeatable(silu_exec_);
@@ -67,7 +68,7 @@ class Operator<Swiglu, Device::Type::kAscend, 0> : public Swiglu {
     auto& silu_arena = ascend::GetWorkspacePool().Ensure(stream, silu_ws_);
     aclnnSilu(silu_arena.buf, silu_ws_, silu_exec_, stream);
 
-    // Step 2: mul(input, temp) -> out.
+    // Step 2: `mul(input, temp) -> out`.
     if (!mul_exec_) {
       aclnnMulGetWorkspaceSize(t_in, t_temp, t_out, &mul_ws_, &mul_exec_);
       aclSetAclOpExecutorRepeatable(mul_exec_);
