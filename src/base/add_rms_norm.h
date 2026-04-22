@@ -11,7 +11,7 @@ namespace infini::ops {
 class AddRmsNorm : public Operator<AddRmsNorm> {
  public:
   AddRmsNorm(const Tensor input, const Tensor other, const Tensor weight,
-             float eps, Tensor out, Tensor rstd_out)
+             float eps, Tensor out, Tensor residual_out)
       : input_shape_{input.shape()},
         eps_{eps},
         dim_{input.size(-1)},
@@ -22,13 +22,14 @@ class AddRmsNorm : public Operator<AddRmsNorm> {
            "`AddRmsNorm`: `input` and `other` must have the same dtype.");
     assert(input.dtype() == out.dtype() &&
            "`AddRmsNorm`: `input` and `out` must have the same dtype.");
-    assert(input.dtype() == rstd_out.dtype() &&
-           "`AddRmsNorm`: `input` and `rstd_out` must have the same dtype.");
+    assert(
+        input.dtype() == residual_out.dtype() &&
+        "`AddRmsNorm`: `input` and `residual_out` must have the same dtype.");
   }
 
   virtual void operator()(const Tensor input, const Tensor other,
                           const Tensor weight, float eps, Tensor out,
-                          Tensor rstd_out) const = 0;
+                          Tensor residual_out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

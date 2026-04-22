@@ -29,14 +29,14 @@ namespace infini::ops {
 
 // Custom AscendC fused `AddRmsNorm` kernel (implementation index 2).
 //
-// A single-kernel implementation that computes `rstd_out = input + other`
-// followed by `out = rms_norm(rstd_out, weight, eps)` in one launch,
+// A single-kernel implementation that computes `residual_out = input + other`
+// followed by `out = rms_norm(residual_out, weight, eps)` in one launch,
 // avoiding the decomposed `aclnnAdd` + `aclnnRmsNorm` calls (index 0) or
 // the fused `aclnnAddRmsNorm` call (index 1).  Migrated from the custom
 // `RmsNorm` kernel (index 1 of `RmsNorm`).
 //
 // Select via `implementation_index=2` in Python:
-//   `infini.ops.add_rms_norm(input, other, weight, eps, out, rstd_out,
+//   `infini.ops.add_rms_norm(input, other, weight, eps, out, residual_out,
 //                            implementation_index=2, stream=s)`.
 //
 // Requirements:
@@ -49,8 +49,8 @@ template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
  public:
   Operator(const Tensor input, const Tensor other, const Tensor weight,
-           float eps, Tensor out, Tensor rstd_out)
-      : AddRmsNorm(input, other, weight, eps, out, rstd_out) {
+           float eps, Tensor out, Tensor residual_out)
+      : AddRmsNorm(input, other, weight, eps, out, residual_out) {
     // Dtype size in bytes.
     dtype_size_ = (input.dtype() == DataType::kFloat16) ? 2 : 4;
 
@@ -96,7 +96,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
   }
 
   void operator()(const Tensor input, const Tensor other, const Tensor weight,
-                  float eps, Tensor out, Tensor rstd_out) const override {
+                  float eps, Tensor out, Tensor residual_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
     // Determine `float32` `weight` pointer.
@@ -144,7 +144,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
     // Launch custom AscendC kernel.
     aclrtlaunch_add_rms_norm(block_dim, stream, const_cast<void*>(input.data()),
                              const_cast<void*>(other.data()), weight_fp32,
-                             out.data(), rstd_out.data(), total_rows_,
+                             out.data(), residual_out.data(), total_rows_,
                              static_cast<int64_t>(dim_), dim_length_align_,
                              former_num, former_length, tail_length, eps,
                              dtype_size_);

@@ -24,14 +24,14 @@ template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
  public:
   Operator(const Tensor input, const Tensor other, const Tensor weight,
-           float eps, Tensor out, Tensor rstd_out)
-      : AddRmsNorm(input, other, weight, eps, out, rstd_out),
+           float eps, Tensor out, Tensor residual_out)
+      : AddRmsNorm(input, other, weight, eps, out, residual_out),
         input_cache_(input),
         other_cache_(other),
         weight_cache_(weight),
         out_cache_(out),
-        rstd_out_cache_(rstd_out) {
-    // Alpha scalar for `aclnnAdd` (`rstd_out = input + 1.0 * other`).
+        residual_out_cache_(residual_out) {
+    // Alpha scalar for `aclnnAdd` (`residual_out = input + 1.0 * other`).
     alpha_ = aclCreateScalar(&alpha_storage_, ACL_FLOAT);
 
     // `aclnnRmsNorm` writes `rstd` as a required side output.  Size is
@@ -49,32 +49,32 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
     other_cache_.release();
     weight_cache_.release();
     out_cache_.release();
-    rstd_out_cache_.release();
+    residual_out_cache_.release();
 
     // `rstd_tensor_` leaks with `norm_exec_` at shutdown (see `64c367c`).
     if (alpha_) aclDestroyScalar(alpha_);
   }
 
   void operator()(const Tensor input, const Tensor other, const Tensor weight,
-                  float eps, Tensor out, Tensor rstd_out) const override {
+                  float eps, Tensor out, Tensor residual_out) const override {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_other = other_cache_.get(const_cast<void*>(other.data()));
     auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
     auto t_out = out_cache_.get(out.data());
-    auto t_rstd_out = rstd_out_cache_.get(rstd_out.data());
+    auto t_residual_out = residual_out_cache_.get(residual_out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Step 1: `rstd_out = input + other`.
+    // Step 1: `residual_out = input + other`.
     if (!add_exec_) {
-      aclnnAddGetWorkspaceSize(t_input, t_other, alpha_, t_rstd_out, &add_ws_,
-                               &add_exec_);
+      aclnnAddGetWorkspaceSize(t_input, t_other, alpha_, t_residual_out,
+                               &add_ws_, &add_exec_);
       aclSetAclOpExecutorRepeatable(add_exec_);
     } else {
       aclSetInputTensorAddr(add_exec_, 0, t_input,
                             const_cast<void*>(input.data()));
       aclSetInputTensorAddr(add_exec_, 1, t_other,
                             const_cast<void*>(other.data()));
-      aclSetOutputTensorAddr(add_exec_, 0, t_rstd_out, rstd_out.data());
+      aclSetOutputTensorAddr(add_exec_, 0, t_residual_out, residual_out.data());
     }
     auto& add_arena = ascend::GetWorkspacePool().Ensure(stream, add_ws_);
     aclnnAdd(add_arena.buf, add_ws_, add_exec_, stream);
@@ -92,13 +92,13 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
       aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf);
     }
 
-    // Step 2: `out = rms_norm(rstd_out, weight, eps)`.
+    // Step 2: `out = rms_norm(residual_out, weight, eps)`.
     if (!norm_exec_) {
-      aclnnRmsNormGetWorkspaceSize(t_rstd_out, t_weight, eps, t_out,
+      aclnnRmsNormGetWorkspaceSize(t_residual_out, t_weight, eps, t_out,
                                    rstd_tensor_, &norm_ws_, &norm_exec_);
       aclSetAclOpExecutorRepeatable(norm_exec_);
     } else {
-      aclSetInputTensorAddr(norm_exec_, 0, t_rstd_out, rstd_out.data());
+      aclSetInputTensorAddr(norm_exec_, 0, t_residual_out, residual_out.data());
       aclSetInputTensorAddr(norm_exec_, 1, t_weight,
                             const_cast<void*>(weight.data()));
       aclSetOutputTensorAddr(norm_exec_, 0, t_out, out.data());
@@ -117,7 +117,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
 
   mutable ascend::AclTensorCache out_cache_;
 
-  mutable ascend::AclTensorCache rstd_out_cache_;
+  mutable ascend::AclTensorCache residual_out_cache_;
 
   float alpha_storage_ = 1.0f;
 
