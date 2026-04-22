@@ -29,6 +29,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install converter dependency
+        run: pip install pyyaml
+
       - name: Show stage plan
         env:
           MATRIX_JSON: ${{ inputs.matrix_json }}
