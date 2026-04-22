@@ -44,7 +44,7 @@ namespace infini::ops {
 //     `float16` or 8 for `float32`).  All standard LLM hidden dimensions
 //     satisfy this.
 //   - `weight` must have the same dtype as `input`.
-//   - The custom kernel binary must be linked (`BUILD_CUSTOM_KERNEL=ON`).
+//   - The custom kernel binary must be linked (`BUILD_ASCEND_CUSTOM=ON`).
 template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
  public:
