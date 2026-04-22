@@ -211,7 +211,7 @@ if(WITH_ILUVATAR)
     # `-x ivcore` must not be in `CMAKE_CUDA_FLAGS` — CMake passes those flags
     # to both compile and link steps. During linking, `-x ivcore` causes
     # `clang++` to re-parse `.o` files as source code.
-    set(CMAKE_CUDA_FLAGS "--cuda-gpu-arch=${ILUVATAR_ARCH} -fPIC -Wno-error=unused-variable -Wno-error=unused-private-field -Wno-unused-variable" CACHE STRING "Iluvatar CUDA flags")
+    set(CMAKE_CUDA_FLAGS "--cuda-gpu-arch=${ILUVATAR_ARCH} -fPIC -Wno-error=unused-variable -Wno-error=unused-private-field -Wno-unused-variable -std=c++17" CACHE STRING "Iluvatar CUDA flags")
     set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Iluvatar")
     set(CMAKE_CUDA_ARCHITECTURES OFF CACHE STRING "Iluvatar CUDA architectures (passed via CMAKE_CUDA_FLAGS)")
     # Iluvatar does not ship `libcudadevrt`, which CMake's compiler test
