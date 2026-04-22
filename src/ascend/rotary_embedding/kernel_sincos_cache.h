@@ -124,17 +124,19 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
     auto t_q_out = q_out_cache_.get(const_cast<void*>(q_out.data()));
     auto t_k_out = k_out_cache_.get(const_cast<void*>(k_out.data()));
 
-    // Fresh executor each call: `aclnnRopeWithSinCosCache`'s public header
-    // hides four `REG_OP` attrs (see
-    // `aclnn_rope_with_sin_cos_cache_hidden_attrs` memory).  The official
+    // FIXME: per-call unbounded executor leak.  `aclnnRopeWithSinCosCache`'s
+    // public header hides four `REG_OP` attrs (see
+    // `aclnn_rope_with_sin_cos_cache_hidden_attrs` memory), so the official
     // `aclSetInputTensorAddr` index numbering for this kernel is not
-    // documented, so we cannot safely reuse a Repeatable executor across
-    // calls.  The async stream consumes the executor after enqueue, so
-    // destroying it synchronously here would race with the launch — we
-    // leak for now.
+    // documented — we cannot safely reuse a Repeatable executor across calls.
+    // The async stream consumes the executor after enqueue, so destroying it
+    // synchronously here races with the launch (SIGABRT).  Long-running
+    // persistent workers (e.g. vLLM decode) accumulate one executor per
+    // forward step until the runtime tears down.
     //
-    // TODO: cache + set Repeatable once the input-address index layout is
-    // confirmed for this kernel.
+    // Resolve by obtaining the input-address index layout from the CANN team
+    // (or deriving it from the binary) and switching to the cached-executor
+    // pattern used in `kernel.h` / `kernel_atb.h`.
     uint64_t ws_size = 0;
     aclOpExecutor* executor = nullptr;
 

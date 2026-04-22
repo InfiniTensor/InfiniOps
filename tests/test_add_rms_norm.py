@@ -47,7 +47,7 @@ def test_add_rms_norm(
     other = randn_strided(shape, strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, None, dtype=dtype, device=device)
     out = empty_strided(shape, strides, dtype=dtype, device=device)
-    rstd_out = empty_strided(shape, strides, dtype=dtype, device=device)
+    residual_out = empty_strided(shape, strides, dtype=dtype, device=device)
 
     return Payload(
         lambda *args, **kwargs: _add_rms_norm(
@@ -55,14 +55,14 @@ def test_add_rms_norm(
         ),
         _torch_add_rms_norm,
         (input, other, weight),
-        {"eps": eps, "out": out, "rstd_out": rstd_out},
+        {"eps": eps, "out": out, "residual_out": residual_out},
         rtol=rtol,
         atol=atol,
     )
 
 
 def _add_rms_norm(
-    input, other, weight, *, eps=1e-6, out=None, rstd_out=None, implementation_index=0
+    input, other, weight, *, eps=1e-6, out=None, residual_out=None, implementation_index=0
 ):
     infini.ops.add_rms_norm(
         input,
@@ -70,20 +70,20 @@ def _add_rms_norm(
         weight,
         eps,
         out,
-        rstd_out,
+        residual_out,
         implementation_index=implementation_index,
         stream=get_stream(input.device),
     )
 
     # Concatenate both outputs into a single flat tensor for `allclose` comparison.
-    return torch.cat([out.contiguous().flatten(), rstd_out.contiguous().flatten()])
+    return torch.cat([out.contiguous().flatten(), residual_out.contiguous().flatten()])
 
 
-def _torch_add_rms_norm(input, other, weight, *, eps=1e-6, out=None, rstd_out=None):
+def _torch_add_rms_norm(input, other, weight, *, eps=1e-6, out=None, residual_out=None):
     x_sum = input + other
 
-    if rstd_out is not None:
-        rstd_out.copy_(x_sum)
+    if residual_out is not None:
+        residual_out.copy_(x_sum)
 
     rms = torch.sqrt(
         torch.mean(x_sum.float() * x_sum.float(), dim=-1, keepdim=True) + eps
@@ -93,4 +93,4 @@ def _torch_add_rms_norm(input, other, weight, *, eps=1e-6, out=None, rstd_out=No
     if out is not None:
         out.copy_(y)
 
-    return torch.cat([out.contiguous().flatten(), rstd_out.contiguous().flatten()])
+    return torch.cat([out.contiguous().flatten(), residual_out.contiguous().flatten()])

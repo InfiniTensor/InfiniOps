@@ -15,11 +15,11 @@ namespace infini::ops {
 
 // Fused implementation via `aclnnAddRmsNorm` (implementation index 1).
 //
-// Computes `rstd_out = input + other` and `out = rms_norm(rstd_out, weight,
-// eps)` in a single CANN launch.  The fused API has higher host-side launch
-// overhead (~200 us) compared to the decomposed `aclnnAdd` + `aclnnRmsNorm`
-// path (~39 us), but may offer better NPU-side efficiency for large tensors
-// where kernel fusion reduces memory traffic.
+// Computes `residual_out = input + other` and `out = rms_norm(residual_out,
+// weight, eps)` in a single CANN launch.  The fused API has higher host-side
+// launch overhead (~200 us) compared to the decomposed `aclnnAdd` +
+// `aclnnRmsNorm` path (~39 us), but may offer better NPU-side efficiency for
+// large tensors where kernel fusion reduces memory traffic.
 //
 // Select via `implementation_index=1` in Python:
 //   infini.ops.add_rms_norm(..., implementation_index=1, stream=s)
@@ -27,13 +27,13 @@ template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
  public:
   Operator(const Tensor input, const Tensor other, const Tensor weight,
-           float eps, Tensor out, Tensor rstd_out)
-      : AddRmsNorm(input, other, weight, eps, out, rstd_out),
+           float eps, Tensor out, Tensor residual_out)
+      : AddRmsNorm(input, other, weight, eps, out, residual_out),
         input_cache_(input),
         other_cache_(other),
         weight_cache_(weight),
         out_cache_(out),
-        rstd_out_cache_(rstd_out) {
+        residual_out_cache_(residual_out) {
     // `aclnnAddRmsNorm` requires `rstdOut` to have the same ndim as `input`,
     // with the last `weight.ndim()` dimensions set to 1.  For example:
     //   `input` (2, 32, 128), `weight` (128) -> `rstdOut` (2, 32, 1).
@@ -68,25 +68,25 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
     other_cache_.release();
     weight_cache_.release();
     out_cache_.release();
-    rstd_out_cache_.release();
+    residual_out_cache_.release();
 
     // `rstd_tensor_` leaks with the executor at shutdown (see `64c367c`).
     if (rstd_data_) aclrtFree(rstd_data_);
   }
 
   void operator()(const Tensor input, const Tensor other, const Tensor weight,
-                  float eps, Tensor out, Tensor rstd_out) const override {
+                  float eps, Tensor out, Tensor residual_out) const override {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_other = other_cache_.get(const_cast<void*>(other.data()));
     auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
     auto t_out = out_cache_.get(out.data());
-    auto t_rstd_out = rstd_out_cache_.get(rstd_out.data());
+    auto t_residual_out = residual_out_cache_.get(residual_out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
     if (!executor_) {
       aclnnAddRmsNormGetWorkspaceSize(
           t_input, t_other, t_weight, static_cast<double>(eps), t_out,
-          rstd_tensor_, t_rstd_out, &ws_size_, &executor_);
+          rstd_tensor_, t_residual_out, &ws_size_, &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
       aclSetInputTensorAddr(executor_, 0, t_input,
@@ -97,7 +97,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
                             const_cast<void*>(weight.data()));
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       // `rstd` at output index 1 has a stable address — no update needed.
-      aclSetOutputTensorAddr(executor_, 2, t_rstd_out, rstd_out.data());
+      aclSetOutputTensorAddr(executor_, 2, t_residual_out, residual_out.data());
     }
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
@@ -113,7 +113,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
 
   mutable ascend::AclTensorCache out_cache_;
 
-  mutable ascend::AclTensorCache rstd_out_cache_;
+  mutable ascend::AclTensorCache residual_out_cache_;
 
   std::vector<int64_t> fused_rstd_shape_;
 
