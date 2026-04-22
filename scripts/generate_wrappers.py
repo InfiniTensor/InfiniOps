@@ -318,6 +318,12 @@ def _generate_apply_rotary_pos_emb_shim():
   // the unified `rotary_embedding` binding.  `vllm-infini` calls this
   // symbol; the pre-gathered path (`cos`/`sin` already `[T, head_size]`
   // neox-expanded) forwards into `rotary_embedding` with `pre_gathered=True`.
+  //
+  // Wire format for the `pre_gathered=true` path: the kernel expects
+  // `cos_sin_cache` to be `[2*T, head_size]` contiguous, where the first
+  // `T` rows are the neox-expanded cos table and the next `T` rows are the
+  // neox-expanded sin table.  Stacking along `dim=0` gives the kernel a
+  // contiguous byte offset (`T * head_size * elem_sz`) to split on.
   m.def("apply_rotary_pos_emb",
         [](py::object query, py::object key, py::object cos, py::object sin,
            int64_t head_size, bool is_neox_style, py::object query_out,
@@ -325,22 +331,11 @@ def _generate_apply_rotary_pos_emb_shim():
            std::size_t implementation_index) {
           py::object torch = py::module_::import("torch");
           py::object self_module = py::module_::import("infini.ops");
-          auto half = head_size / 2;
-          // `cos` / `sin` are `[T, head_size]` neox-expanded.  Un-expand by
-          // taking the first `head_size/2` columns, then concat into the
-          // `[T, head_size*2]` layout that `rotary_embedding` expects when
-          // `pre_gathered=True`.
-          py::object cos_raw = cos.attr("__getitem__")(
-              py::make_tuple(py::slice(py::none(), py::none(), py::none()),
-                             py::slice(0, half, 1)));
-          py::object sin_raw = sin.attr("__getitem__")(
-              py::make_tuple(py::slice(py::none(), py::none(), py::none()),
-                             py::slice(0, half, 1)));
           py::list to_cat;
-          to_cat.append(cos_raw);
-          to_cat.append(sin_raw);
+          to_cat.append(cos);
+          to_cat.append(sin);
           py::object cos_sin_cache =
-              torch.attr("cat")(to_cat, py::arg("dim") = -1);
+              torch.attr("cat")(to_cat, py::arg("dim") = 0);
           auto num_tokens = cos.attr("shape")
                                 .attr("__getitem__")(0)
                                 .cast<int64_t>();

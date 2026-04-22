@@ -235,9 +235,10 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       cos_for_rope = cos_dev_;
       sin_for_rope = sin_dev_;
     } else {
-      // Pre-gathered: caller passes `[T, head_size * 2]`.  The first
-      // `head_size` columns are cos, the next `head_size` columns are sin;
-      // neox/interleave layout must already match `is_neox_style`.
+      // Pre-gathered: caller passes `[2 * T, head_size]` — rows 0..T-1 are
+      // expanded cos (neox or interleave per `is_neox_style`), rows T..2T-1
+      // are expanded sin (stacked via `torch.cat([cos, sin], dim=0)` in the
+      // `apply_rotary_pos_emb` shim).
       const auto* base = static_cast<const uint8_t*>(cos_sin_cache.data());
       cos_for_rope = base;
       sin_for_rope =

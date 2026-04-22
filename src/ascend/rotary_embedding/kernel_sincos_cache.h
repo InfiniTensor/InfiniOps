@@ -128,9 +128,13 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
     // hides four `REG_OP` attrs (see
     // `aclnn_rope_with_sin_cos_cache_hidden_attrs` memory).  The official
     // `aclSetInputTensorAddr` index numbering for this kernel is not
-    // documented, so we cannot safely reuse a Repeatable executor across calls.
-    // Destroy after each launch to avoid the leak that a cached-but-not-reused
-    // executor would produce.
+    // documented, so we cannot safely reuse a Repeatable executor across
+    // calls.  The async stream consumes the executor after enqueue, so
+    // destroying it synchronously here would race with the launch — we
+    // leak for now.
+    //
+    // TODO: cache + set Repeatable once the input-address index layout is
+    // confirmed for this kernel.
     uint64_t ws_size = 0;
     aclOpExecutor* executor = nullptr;
 
@@ -148,8 +152,6 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
 
     ret = aclnnRopeWithSinCosCache(ws_buf, ws_size, executor, stream);
     assert(ret == 0 && "`aclnnRopeWithSinCosCache` failed.");
-
-    aclDestroyAclOpExecutor(executor);
   }
 
  private:
