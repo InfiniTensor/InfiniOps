@@ -19,7 +19,7 @@ class SiluAndMul : public Operator<SiluAndMul> {
         is_x_contiguous_{x.IsContiguous()},
         is_out_contiguous_{out.IsContiguous()} {
     assert(x_dtype_ == out_dtype_ &&
-           "operator `SiluAndMul` requires x and out to have the same dtype");
+           "`SiluAndMul`: `x` and `out` must have the same dtype.");
   }
 
   virtual void operator()(const Tensor x, int64_t dim, Tensor out) const = 0;
