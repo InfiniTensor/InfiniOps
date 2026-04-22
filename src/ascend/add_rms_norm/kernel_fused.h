@@ -15,34 +15,34 @@ namespace infini::ops {
 
 // Fused implementation via `aclnnAddRmsNorm` (implementation index 1).
 //
-// Computes x_out = x1 + x2 and y_out = rms_norm(x_out, gamma, eps) in a
-// single CANN launch.  The fused API has higher host-side launch overhead
-// (~200 us) compared to the decomposed `aclnnAdd` + `aclnnRmsNorm` path (~39
-// us), but may offer better NPU-side efficiency for large tensors where kernel
-// fusion reduces memory traffic.
+// Computes `rstd_out = input + other` and `out = rms_norm(rstd_out, weight,
+// eps)` in a single CANN launch.  The fused API has higher host-side launch
+// overhead (~200 us) compared to the decomposed `aclnnAdd` + `aclnnRmsNorm`
+// path (~39 us), but may offer better NPU-side efficiency for large tensors
+// where kernel fusion reduces memory traffic.
 //
 // Select via `implementation_index=1` in Python:
 //   infini.ops.add_rms_norm(..., implementation_index=1, stream=s)
 template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
  public:
-  Operator(const Tensor x1, const Tensor x2, const Tensor gamma, float eps,
-           Tensor y_out, Tensor x_out)
-      : AddRmsNorm(x1, x2, gamma, eps, y_out, x_out),
-        x1_cache_(x1),
-        x2_cache_(x2),
-        gamma_cache_(gamma),
-        y_out_cache_(y_out),
-        x_out_cache_(x_out) {
-    // `aclnnAddRmsNorm` requires `rstdOut` to have the same ndim as x1, with
-    // the last gamma.ndim() dimensions set to 1.  For example:
-    //   x1 shape(2, 32, 128), gamma shape(128) -> rstdOut shape(2, 32, 1)
-    //   x1 shape(64, 128),    gamma shape(128) -> rstdOut shape(64, 1)
+  Operator(const Tensor input, const Tensor other, const Tensor weight,
+           float eps, Tensor out, Tensor rstd_out)
+      : AddRmsNorm(input, other, weight, eps, out, rstd_out),
+        input_cache_(input),
+        other_cache_(other),
+        weight_cache_(weight),
+        out_cache_(out),
+        rstd_out_cache_(rstd_out) {
+    // `aclnnAddRmsNorm` requires `rstdOut` to have the same ndim as `input`,
+    // with the last `weight.ndim()` dimensions set to 1.  For example:
+    //   `input` (2, 32, 128), `weight` (128) -> `rstdOut` (2, 32, 1).
+    //   `input` (64, 128),    `weight` (128) -> `rstdOut` (64, 1).
     fused_rstd_shape_.reserve(ndim_);
-    for (size_t i = 0; i < ndim_ - gamma.ndim(); ++i) {
-      fused_rstd_shape_.push_back(static_cast<int64_t>(x1.size(i)));
+    for (size_t i = 0; i < ndim_ - weight.ndim(); ++i) {
+      fused_rstd_shape_.push_back(static_cast<int64_t>(input.size(i)));
     }
-    for (size_t i = 0; i < gamma.ndim(); ++i) {
+    for (size_t i = 0; i < weight.ndim(); ++i) {
       fused_rstd_shape_.push_back(1);
     }
 
@@ -64,38 +64,40 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
     if (!ascend::IsAclRuntimeAlive()) return;
 
     // Null cached descriptors — see `AclTensorCache::release()`.
-    x1_cache_.release();
-    x2_cache_.release();
-    gamma_cache_.release();
-    y_out_cache_.release();
-    x_out_cache_.release();
+    input_cache_.release();
+    other_cache_.release();
+    weight_cache_.release();
+    out_cache_.release();
+    rstd_out_cache_.release();
 
     // `rstd_tensor_` leaks with the executor at shutdown (see `64c367c`).
     if (rstd_data_) aclrtFree(rstd_data_);
   }
 
-  void operator()(const Tensor x1, const Tensor x2, const Tensor gamma,
-                  float eps, Tensor y_out, Tensor x_out) const override {
-    auto t_x1 = x1_cache_.get(const_cast<void*>(x1.data()));
-    auto t_x2 = x2_cache_.get(const_cast<void*>(x2.data()));
-    auto t_gamma = gamma_cache_.get(const_cast<void*>(gamma.data()));
-    auto t_y_out = y_out_cache_.get(y_out.data());
-    auto t_x_out = x_out_cache_.get(x_out.data());
+  void operator()(const Tensor input, const Tensor other, const Tensor weight,
+                  float eps, Tensor out, Tensor rstd_out) const override {
+    auto t_input = input_cache_.get(const_cast<void*>(input.data()));
+    auto t_other = other_cache_.get(const_cast<void*>(other.data()));
+    auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
+    auto t_out = out_cache_.get(out.data());
+    auto t_rstd_out = rstd_out_cache_.get(rstd_out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
     if (!executor_) {
       aclnnAddRmsNormGetWorkspaceSize(
-          t_x1, t_x2, t_gamma, static_cast<double>(eps), t_y_out, rstd_tensor_,
-          t_x_out, &ws_size_, &executor_);
+          t_input, t_other, t_weight, static_cast<double>(eps), t_out,
+          rstd_tensor_, t_rstd_out, &ws_size_, &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
-      aclSetInputTensorAddr(executor_, 0, t_x1, const_cast<void*>(x1.data()));
-      aclSetInputTensorAddr(executor_, 1, t_x2, const_cast<void*>(x2.data()));
-      aclSetInputTensorAddr(executor_, 2, t_gamma,
-                            const_cast<void*>(gamma.data()));
-      aclSetOutputTensorAddr(executor_, 0, t_y_out, y_out.data());
-      // rstd at output index 1 has a stable address — no update needed.
-      aclSetOutputTensorAddr(executor_, 2, t_x_out, x_out.data());
+      aclSetInputTensorAddr(executor_, 0, t_input,
+                            const_cast<void*>(input.data()));
+      aclSetInputTensorAddr(executor_, 1, t_other,
+                            const_cast<void*>(other.data()));
+      aclSetInputTensorAddr(executor_, 2, t_weight,
+                            const_cast<void*>(weight.data()));
+      aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
+      // `rstd` at output index 1 has a stable address — no update needed.
+      aclSetOutputTensorAddr(executor_, 2, t_rstd_out, rstd_out.data());
     }
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
@@ -103,15 +105,15 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
   }
 
  private:
-  mutable ascend::AclTensorCache x1_cache_;
+  mutable ascend::AclTensorCache input_cache_;
 
-  mutable ascend::AclTensorCache x2_cache_;
+  mutable ascend::AclTensorCache other_cache_;
 
-  mutable ascend::AclTensorCache gamma_cache_;
+  mutable ascend::AclTensorCache weight_cache_;
 
-  mutable ascend::AclTensorCache y_out_cache_;
+  mutable ascend::AclTensorCache out_cache_;
 
-  mutable ascend::AclTensorCache x_out_cache_;
+  mutable ascend::AclTensorCache rstd_out_cache_;
 
   std::vector<int64_t> fused_rstd_shape_;
 

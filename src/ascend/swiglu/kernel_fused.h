@@ -17,20 +17,21 @@ namespace infini::ops {
 
 // Fused implementation via `aclnnSwiGlu` (implementation index 1).
 //
-// Concatenates `[gate, input]` into a temp buffer via `aclnnCat`, then calls
-// `aclnnSwiGlu` which computes `second_half * silu(first_half)` in a single
-// fused kernel, i.e. `input * silu(gate)`.
+// Concatenates `[gate, input]` into a `temp` buffer via `aclnnCat`, then
+// calls `aclnnSwiGlu` which computes `second_half * silu(first_half)` in a
+// single fused kernel, i.e. `input * silu(gate)`.
 //
 // This trades an extra `aclnnCat` launch for a single fused SwiGLU kernel
-// instead of separate `aclnnSilu` + `aclnnMul`.  The net benefit is one fewer
-// intermediate buffer materialised on-device (the silu temp is eliminated).
+// instead of separate `aclnnSilu` + `aclnnMul`.  The net benefit is one
+// fewer intermediate buffer materialised on-device (the `silu` temp is
+// eliminated).
 //
-// `aclnnSwiGlu` requires a contiguous output tensor.  When the caller's output
-// is non-contiguous, a contiguous temp buffer is used and the result is copied
-// back via `aclnnInplaceCopy`.
+// `aclnnSwiGlu` requires a contiguous output tensor.  When the caller's
+// output is non-contiguous, a contiguous staging buffer is used and the
+// result is copied back via `aclnnInplaceCopy`.
 //
 // Select via `implementation_index=1` in Python:
-//   infini.ops.swiglu(..., implementation_index=1, stream=s)
+//   `infini.ops.swiglu(..., implementation_index=1, stream=s)`.
 template <>
 class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
  public:
@@ -63,12 +64,20 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
-    // Null cached descriptors — see `AclTensorCache::release()`.
+    // Null cached descriptors — see `AclTensorCache::release()`.  The inputs
+    // and outputs are referenced by the Repeatable executors (`cat_exec_`,
+    // `swiglu_exec_`, `copy_exec_`) via `cat_tensor_list_`; releasing them
+    // here prevents `~AclTensorCache()` from double-freeing at shutdown.
     gate_cache_.release();
     in_cache_.release();
     out_cache_.release();
 
-    if (cat_tensor_list_) aclDestroyTensorList(cat_tensor_list_);
+    // Optional caches are held by `swiglu_exec_` / `copy_exec_`; release to
+    // avoid double-free on destruction.
+    if (cat_out_cache_) cat_out_cache_->release();
+    if (out_staging_cache_) out_staging_cache_->release();
+
+    // `cat_tensor_list_` leaks with `cat_exec_` at shutdown (see `64c367c`).
   }
 
   void operator()(const Tensor input, const Tensor gate,
@@ -78,11 +87,11 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Obtain shared temp buffer for the concatenated tensor.
+    // Obtain shared `temp` buffer for the concatenated tensor.
     auto& cat_arena =
         ascend::GetWorkspacePool().Ensure(stream, cat_size_, "temp");
 
-    // Lazily build the cat output tensor cache on first call.
+    // Lazily build the `aclnnCat` output tensor cache on first call.
     if (!cat_out_cache_) {
       cat_out_cache_.emplace(cat_shape_, ascend::ToAclDtype(input_type_),
                              cat_arena.buf);
@@ -90,7 +99,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
 
     auto t_cat = cat_out_cache_->get(cat_arena.buf);
 
-    // Step 1: cat([gate, input], dim=-1) -> cat_buf.
+    // Step 1: `aclnnCat([gate, input], dim=-1) -> cat_buf`.
     if (!cat_exec_) {
       aclTensor* tensors[2] = {t_gate, t_in};
       cat_tensor_list_ =
@@ -108,7 +117,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     auto& cat_ws_arena = ascend::GetWorkspacePool().Ensure(stream, cat_ws_);
     aclnnCat(cat_ws_arena.buf, cat_ws_, cat_exec_, stream);
 
-    // Step 2: swiglu(cat_buf, dim=-1) -> out (or staging buffer).
+    // Step 2: `aclnnSwiGlu(cat_buf, dim=-1) -> out` (or staging buffer).
     aclTensor* t_swiglu_out = t_out;
     void* swiglu_out_data = out.data();
 
@@ -138,7 +147,7 @@ class Operator<Swiglu, Device::Type::kAscend, 1> : public Swiglu {
     auto& swiglu_arena = ascend::GetWorkspacePool().Ensure(stream, swiglu_ws_);
     aclnnSwiGlu(swiglu_arena.buf, swiglu_ws_, swiglu_exec_, stream);
 
-    // Step 3 (non-contiguous output only): copy staging -> out.
+    // Step 3 (non-contiguous output only): copy staging -> `out`.
     if (needs_copy_) {
       if (!copy_exec_) {
         aclnnInplaceCopyGetWorkspaceSize(t_out, t_swiglu_out, &copy_ws_,

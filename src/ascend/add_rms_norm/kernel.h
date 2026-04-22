@@ -14,28 +14,28 @@
 
 namespace infini::ops {
 
-// Decomposed implementation: aclnnAdd + aclnnRmsNorm.
+// Decomposed implementation: `aclnnAdd` + `aclnnRmsNorm`.
 //
-// The fused aclnnAddRmsNorm API has ~200 us host-side launch overhead that
+// The fused `aclnnAddRmsNorm` API has ~200 us host-side launch overhead that
 // dominates small-tensor dispatch.  Decomposing into two fast ACLNN calls
 // reduces host dispatch from ~224 us to ~56 us (4x faster) with negligible
 // NPU-side impact for inference tensor sizes.
 template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
  public:
-  Operator(const Tensor x1, const Tensor x2, const Tensor gamma, float eps,
-           Tensor y_out, Tensor x_out)
-      : AddRmsNorm(x1, x2, gamma, eps, y_out, x_out),
-        x1_cache_(x1),
-        x2_cache_(x2),
-        gamma_cache_(gamma),
-        y_out_cache_(y_out),
-        x_out_cache_(x_out) {
-    // Alpha scalar for aclnnAdd (x_out = x1 + 1.0 * x2).
+  Operator(const Tensor input, const Tensor other, const Tensor weight,
+           float eps, Tensor out, Tensor rstd_out)
+      : AddRmsNorm(input, other, weight, eps, out, rstd_out),
+        input_cache_(input),
+        other_cache_(other),
+        weight_cache_(weight),
+        out_cache_(out),
+        rstd_out_cache_(rstd_out) {
+    // Alpha scalar for `aclnnAdd` (`rstd_out = input + 1.0 * other`).
     alpha_ = aclCreateScalar(&alpha_storage_, ACL_FLOAT);
 
-    // aclnnRmsNorm writes rstd as a required side output.
-    // Size computed here; buffer obtained from pool in `operator()`.
+    // `aclnnRmsNorm` writes `rstd` as a required side output.  Size is
+    // computed here; the buffer is obtained from the pool in `operator()`.
     rstd_shape_ = {static_cast<int64_t>(batch_size_),
                    static_cast<int64_t>(nhead_)};
     rstd_size_ = batch_size_ * nhead_ * sizeof(float);
@@ -45,43 +45,45 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
     if (!ascend::IsAclRuntimeAlive()) return;
 
     // Null cached descriptors — see `AclTensorCache::release()`.
-    x1_cache_.release();
-    x2_cache_.release();
-    gamma_cache_.release();
-    y_out_cache_.release();
-    x_out_cache_.release();
+    input_cache_.release();
+    other_cache_.release();
+    weight_cache_.release();
+    out_cache_.release();
+    rstd_out_cache_.release();
 
     // `rstd_tensor_` leaks with `norm_exec_` at shutdown (see `64c367c`).
     if (alpha_) aclDestroyScalar(alpha_);
   }
 
-  void operator()(const Tensor x1, const Tensor x2, const Tensor gamma,
-                  float eps, Tensor y_out, Tensor x_out) const override {
-    auto t_x1 = x1_cache_.get(const_cast<void*>(x1.data()));
-    auto t_x2 = x2_cache_.get(const_cast<void*>(x2.data()));
-    auto t_gamma = gamma_cache_.get(const_cast<void*>(gamma.data()));
-    auto t_y_out = y_out_cache_.get(y_out.data());
-    auto t_x_out = x_out_cache_.get(x_out.data());
+  void operator()(const Tensor input, const Tensor other, const Tensor weight,
+                  float eps, Tensor out, Tensor rstd_out) const override {
+    auto t_input = input_cache_.get(const_cast<void*>(input.data()));
+    auto t_other = other_cache_.get(const_cast<void*>(other.data()));
+    auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
+    auto t_out = out_cache_.get(out.data());
+    auto t_rstd_out = rstd_out_cache_.get(rstd_out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Step 1: x_out = x1 + x2.
+    // Step 1: `rstd_out = input + other`.
     if (!add_exec_) {
-      aclnnAddGetWorkspaceSize(t_x1, t_x2, alpha_, t_x_out, &add_ws_,
+      aclnnAddGetWorkspaceSize(t_input, t_other, alpha_, t_rstd_out, &add_ws_,
                                &add_exec_);
       aclSetAclOpExecutorRepeatable(add_exec_);
     } else {
-      aclSetInputTensorAddr(add_exec_, 0, t_x1, const_cast<void*>(x1.data()));
-      aclSetInputTensorAddr(add_exec_, 1, t_x2, const_cast<void*>(x2.data()));
-      aclSetOutputTensorAddr(add_exec_, 0, t_x_out, x_out.data());
+      aclSetInputTensorAddr(add_exec_, 0, t_input,
+                            const_cast<void*>(input.data()));
+      aclSetInputTensorAddr(add_exec_, 1, t_other,
+                            const_cast<void*>(other.data()));
+      aclSetOutputTensorAddr(add_exec_, 0, t_rstd_out, rstd_out.data());
     }
     auto& add_arena = ascend::GetWorkspacePool().Ensure(stream, add_ws_);
     aclnnAdd(add_arena.buf, add_ws_, add_exec_, stream);
 
-    // Obtain shared rstd buffer from pool.
+    // Obtain shared `rstd` buffer from pool.
     auto& rstd_arena =
         ascend::GetWorkspacePool().Ensure(stream, rstd_size_, "temp");
 
-    // Lazily create rstd tensor descriptor on first call.
+    // Lazily create the `rstd` tensor descriptor on first call.
     if (!rstd_tensor_) {
       rstd_tensor_ = aclCreateTensor(rstd_shape_.data(), 2, ACL_FLOAT,
                                      /*strides=*/nullptr, 0, ACL_FORMAT_ND,
@@ -90,16 +92,16 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
       aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf);
     }
 
-    // Step 2: y_out = rms_norm(x_out, gamma, eps).
+    // Step 2: `out = rms_norm(rstd_out, weight, eps)`.
     if (!norm_exec_) {
-      aclnnRmsNormGetWorkspaceSize(t_x_out, t_gamma, eps, t_y_out, rstd_tensor_,
-                                   &norm_ws_, &norm_exec_);
+      aclnnRmsNormGetWorkspaceSize(t_rstd_out, t_weight, eps, t_out,
+                                   rstd_tensor_, &norm_ws_, &norm_exec_);
       aclSetAclOpExecutorRepeatable(norm_exec_);
     } else {
-      aclSetInputTensorAddr(norm_exec_, 0, t_x_out, x_out.data());
-      aclSetInputTensorAddr(norm_exec_, 1, t_gamma,
-                            const_cast<void*>(gamma.data()));
-      aclSetOutputTensorAddr(norm_exec_, 0, t_y_out, y_out.data());
+      aclSetInputTensorAddr(norm_exec_, 0, t_rstd_out, rstd_out.data());
+      aclSetInputTensorAddr(norm_exec_, 1, t_weight,
+                            const_cast<void*>(weight.data()));
+      aclSetOutputTensorAddr(norm_exec_, 0, t_out, out.data());
       aclSetOutputTensorAddr(norm_exec_, 1, rstd_tensor_, rstd_arena.buf);
     }
     auto& norm_arena = ascend::GetWorkspacePool().Ensure(stream, norm_ws_);
@@ -107,15 +109,15 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
   }
 
  private:
-  mutable ascend::AclTensorCache x1_cache_;
+  mutable ascend::AclTensorCache input_cache_;
 
-  mutable ascend::AclTensorCache x2_cache_;
+  mutable ascend::AclTensorCache other_cache_;
 
-  mutable ascend::AclTensorCache gamma_cache_;
+  mutable ascend::AclTensorCache weight_cache_;
 
-  mutable ascend::AclTensorCache y_out_cache_;
+  mutable ascend::AclTensorCache out_cache_;
 
-  mutable ascend::AclTensorCache x_out_cache_;
+  mutable ascend::AclTensorCache rstd_out_cache_;
 
   float alpha_storage_ = 1.0f;
 

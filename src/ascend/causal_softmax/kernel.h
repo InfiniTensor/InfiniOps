@@ -18,29 +18,33 @@
 namespace infini::ops {
 
 // Implements causal softmax via three ACLNN calls:
-//   1. InplaceCopy(temp, input)   — stride-aware copy to contiguous temp
-//   buffer.
-//   2. InplaceMaskedFillScalar(temp, mask, -inf) — apply upper-triangle mask.
-//   3. Softmax(temp, dim=-1, out) — softmax over the last dimension.
+//   1. `aclnnInplaceCopy(temp, input)` — stride-aware copy to a contiguous
+//      `temp` buffer.
+//   2. `aclnnInplaceMaskedFillScalar(temp, mask, -inf)` — apply the
+//      upper-triangle mask.
+//   3. `aclnnSoftmax(temp, dim=-1, out)` — softmax over the last dimension.
 //
 // The boolean causal mask is pre-computed and uploaded to device once in the
-// constructor. Its shape (seq_len, total_seq_len) broadcasts over the batch.
+// constructor.  Its shape `(seq_len, total_seq_len)` broadcasts over the
+// batch dimension.
 template <>
 class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
  public:
   Operator(const Tensor input, Tensor out)
       : CausalSoftmax(input, out), in_cache_(input), out_cache_(out) {
-    // Compute temp buffer size — allocated lazily from pool in `operator()`.
+    // Compute `temp` buffer size — allocated lazily from the pool in
+    // `operator()`.
     size_t n_elems = input.numel();
     size_t elem_bytes = kDataTypeToSize.at(dtype_);
     temp_size_ = n_elems * elem_bytes;
 
-    // Build a contiguous Tensor descriptor — data pointer set on first use.
+    // Build a contiguous `Tensor` descriptor — data pointer set on first use.
     Tensor temp_t{nullptr, input.shape(), input.dtype(), input.device()};
     temp_cache_ = ascend::AclTensorCache(temp_t);
 
-    // Causal mask: mask[i][j] = 1 when position j must be masked for query i.
-    // Shape (seq_len, total_seq_len) – broadcasts over the batch dimension.
+    // Causal mask: `mask[i][j] = 1` when position `j` must be masked for
+    // query `i`.  Shape `(seq_len, total_seq_len)` broadcasts over the batch
+    // dimension.
     size_t mask_elems = seq_len_ * total_seq_len_;
     std::vector<uint8_t> mask_host(mask_elems, 0);
 
@@ -64,10 +68,11 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
                                    mstrides.data(), 0, ACL_FORMAT_ND,
                                    mshape.data(), mshape.size(), mask_buf_);
 
-    // Scalar -inf for the masked-fill step. aclCreateScalar stores the pointer
-    // rather than copying, so neg_inf_storage_ must stay alive with the object.
+    // Scalar `-inf` for the masked-fill step.  `aclCreateScalar` stores the
+    // pointer rather than copying, so `neg_inf_storage_` must stay alive
+    // with the object.
     neg_inf_ = aclCreateScalar(&neg_inf_storage_, ACL_FLOAT);
-    // Workspaces are allocated lazily on first operator() call.
+    // Workspaces are allocated lazily on the first `operator()` call.
   }
 
   ~Operator() {
@@ -88,11 +93,11 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Obtain shared temp buffer from pool.
+    // Obtain shared `temp` buffer from the pool.
     auto& temp = ascend::GetWorkspacePool().Ensure(stream, temp_size_, "temp");
     auto t_temp = temp_cache_.get(temp.buf);
 
-    // Step 1: copy input (possibly non-contiguous) into contiguous temp.
+    // Step 1: copy `input` (possibly non-contiguous) into a contiguous `temp`.
     if (!copy_exec_) {
       aclnnInplaceCopyGetWorkspaceSize(t_temp, t_in, &copy_ws_, &copy_exec_);
       aclSetAclOpExecutorRepeatable(copy_exec_);
@@ -104,7 +109,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     auto& copy_arena = ascend::GetWorkspacePool().Ensure(stream, copy_ws_);
     aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream);
 
-    // Step 2: mask upper-triangle positions with -inf in-place.
+    // Step 2: mask upper-triangle positions with `-inf` in-place.
     // `mask_tensor_` and `neg_inf_` have stable addresses — first-call only.
     if (!fill_exec_) {
       aclnnInplaceMaskedFillScalarGetWorkspaceSize(
@@ -114,7 +119,7 @@ class Operator<CausalSoftmax, Device::Type::kAscend> : public CausalSoftmax {
     auto& fill_arena = ascend::GetWorkspacePool().Ensure(stream, fill_ws_);
     aclnnInplaceMaskedFillScalar(fill_arena.buf, fill_ws_, fill_exec_, stream);
 
-    // Step 3: softmax over the last dimension -> out.
+    // Step 3: softmax over the last dimension -> `out`.
     if (!softmax_exec_) {
       constexpr int64_t kLastDim = -1;
       aclnnSoftmaxGetWorkspaceSize(t_temp, kLastDim, t_out, &softmax_ws_,

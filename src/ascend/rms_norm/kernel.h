@@ -21,8 +21,8 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
         in_cache_(input),
         weight_cache_(weight),
         out_cache_(out) {
-    // aclnnRmsNorm writes rstd as a required side output.
-    // Size computed here; buffer obtained from pool in `operator()`.
+    // `aclnnRmsNorm` writes `rstd` as a required side output.  Size is
+    // computed here; the buffer is obtained from the pool in `operator()`.
     rstd_shape_ = {static_cast<int64_t>(batch_size_),
                    static_cast<int64_t>(nhead_)};
     rstd_size_ = batch_size_ * nhead_ * sizeof(float);
@@ -45,11 +45,11 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Obtain shared rstd buffer from pool.
+    // Obtain shared `rstd` buffer from pool.
     auto& rstd_arena =
         ascend::GetWorkspacePool().Ensure(stream, rstd_size_, "temp");
 
-    // Lazily create rstd tensor descriptor on first call.
+    // Lazily create the `rstd` tensor descriptor on first call.
     if (!rstd_tensor_) {
       rstd_tensor_ = aclCreateTensor(rstd_shape_.data(), 2, ACL_FLOAT,
                                      /*strides=*/nullptr, 0, ACL_FORMAT_ND,
