@@ -112,9 +112,29 @@ def _find_vector_tensor_params(op_name):
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
 
+def _find_params_with_defaults(op_name):
+    """Return ``{param_name: default_literal}`` for base-header params that
+    carry a `= <literal>` default value.  `libclang`'s cursor API does not
+    expose defaults reliably, so we regex-scan the source.  Only used for
+    plain scalar defaults such as ``bool pre_gathered = false``.
+    """
+    source = (_BASE_DIR / f"{op_name}.h").read_text()
+
+    mapping = {}
+
+    for name, default in re.findall(
+        r"\b(?:bool|int(?:64_t|32_t|8_t|16_t)?|std::size_t|std::uint\w+_t|float|double)\s+(\w+)\s*=\s*([^,\)]+?)\s*(?:,|\))",
+        source,
+    ):
+        mapping[name] = default.strip()
+
+    return mapping
+
+
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
+    params_with_defaults = _find_params_with_defaults(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
@@ -186,6 +206,10 @@ def _generate_pybind11(operator):
 
             if _is_optional(arg):
                 parts.append(f'py::arg("{arg.spelling}") = py::none()')
+            elif arg.spelling in params_with_defaults:
+                parts.append(
+                    f'py::arg("{arg.spelling}") = {params_with_defaults[arg.spelling]}'
+                )
             else:
                 parts.append(f'py::arg("{arg.spelling}")')
 
@@ -230,6 +254,17 @@ def _generate_pybind11(operator):
 
     pascal_case_op_name = _snake_to_pascal(op_name)
 
+    # Emit the `apply_rotary_pos_emb` Python shim alongside the generated
+    # `rotary_embedding` binding.  The shim preserves the old
+    # `apply_rotary_pos_emb(q, k, cos, sin, head_size, is_neox_style, q_out,
+    # k_out, *, implementation_index, stream)` signature (vllm-infini
+    # depends on it) by synthesizing a `[T, head_size*2]` pre-gathered
+    # `cos_sin_cache` from neox-expanded cos/sin halves and forwarding to
+    # the unified `rotary_embedding` op with `pre_gathered=True`.
+    extra_shim = ""
+    if op_name == "rotary_embedding":
+        extra_shim = _generate_apply_rotary_pos_emb_shim()
+
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 
@@ -258,11 +293,66 @@ void Bind{pascal_case_op_name}(py::module& m) {{
       .def_static("clear_cache", &Self::clear_cache);
 
 {callers}
-}}
+{extra_shim}}}
 
 }}  // namespace infini::ops
 
 #endif
+"""
+
+
+def _generate_apply_rotary_pos_emb_shim():
+    """Hand-written Python shim bound alongside `rotary_embedding`.
+
+    Preserves the old `infini.ops.apply_rotary_pos_emb` entry point used by
+    `vllm-infini` after the `ApplyRotaryPosEmb` base op was folded into the
+    unified `RotaryEmbedding` op.  The shim assembles a pre-gathered
+    `[T, head_size*2]` `cos_sin_cache` from the caller's neox-expanded cos
+    and sin halves, synthesizes `positions = arange(T)`, and forwards to the
+    unified op with `pre_gathered=True`.
+
+    The shim is written in Python (not C++) because it only performs tensor
+    reshape / concat plumbing — pure PyTorch, no direct kernel calls.
+    """
+    return """  // Preserve `infini.ops.apply_rotary_pos_emb` as a Python shim around
+  // the unified `rotary_embedding` binding.  `vllm-infini` calls this
+  // symbol; the pre-gathered path (`cos`/`sin` already `[T, head_size]`
+  // neox-expanded) forwards into `rotary_embedding` with `pre_gathered=True`.
+  //
+  // Wire format for the `pre_gathered=true` path: the kernel expects
+  // `cos_sin_cache` to be `[2*T, head_size]` contiguous, where the first
+  // `T` rows are the neox-expanded cos table and the next `T` rows are the
+  // neox-expanded sin table.  Stacking along `dim=0` gives the kernel a
+  // contiguous byte offset (`T * head_size * elem_sz`) to split on.
+  m.def("apply_rotary_pos_emb",
+        [](py::object query, py::object key, py::object cos, py::object sin,
+           int64_t head_size, bool is_neox_style, py::object query_out,
+           py::object key_out, std::uintptr_t stream,
+           std::size_t implementation_index) {
+          py::object torch = py::module_::import("torch");
+          py::object self_module = py::module_::import("infini.ops");
+          py::list to_cat;
+          to_cat.append(cos);
+          to_cat.append(sin);
+          py::object cos_sin_cache =
+              torch.attr("cat")(to_cat, py::arg("dim") = 0);
+          auto num_tokens = cos.attr("shape")
+                                .attr("__getitem__")(0)
+                                .cast<int64_t>();
+          py::object positions = torch.attr("arange")(
+              num_tokens, py::arg("dtype") = torch.attr("int64"),
+              py::arg("device") = cos.attr("device"));
+          self_module.attr("rotary_embedding")(
+              positions, query, key, cos_sin_cache, head_size,
+              py::int_(head_size), is_neox_style, query_out, key_out,
+              /*pre_gathered=*/true,
+              py::arg("implementation_index") = implementation_index,
+              py::arg("stream") = stream);
+        },
+        py::arg("query"), py::arg("key"), py::arg("cos"), py::arg("sin"),
+        py::arg("head_size"), py::arg("is_neox_style"), py::arg("query_out"),
+        py::arg("key_out"), py::kw_only(), py::arg("stream") = 0,
+        py::arg("implementation_index") = 0);
 """
 
 
