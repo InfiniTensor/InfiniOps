@@ -108,14 +108,23 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     }
 
     // V2 descriptors: cos/sin `[T, 1, head_dim]`, Q `[T, Nq, head_dim]`,
-    // K `[T, Nkv, head_dim]`.  When `pre_gathered` is true, cos/sin point at
-    // the caller's `cos_sin_cache` halves directly (see `operator()`).
-    cos_v2_cache_ = ascend::AclTensorCache(
-        {num_tokens, 1, head_dim}, acl_dt,
-        pre_gathered_ ? const_cast<void*>(cos_sin_cache.data()) : cos_dev_);
-    sin_v2_cache_ = ascend::AclTensorCache(
-        {num_tokens, 1, head_dim}, acl_dt,
-        pre_gathered_ ? const_cast<void*>(cos_sin_cache.data()) : sin_dev_);
+    // K `[T, Nkv, head_dim]`.  When `pre_gathered` is true, cos/sin point
+    // into the caller's `cos_sin_cache`: row 0..T-1 is cos, row T..2T-1 is
+    // sin (stacked along dim=0 by the shim).
+    void* cos_init = cos_dev_;
+    void* sin_init = sin_dev_;
+
+    if (pre_gathered_) {
+      auto* base =
+          static_cast<uint8_t*>(const_cast<void*>(cos_sin_cache.data()));
+      cos_init = base;
+      sin_init = base + static_cast<size_t>(num_tokens * head_dim) * elem_sz_;
+    }
+
+    cos_v2_cache_ =
+        ascend::AclTensorCache({num_tokens, 1, head_dim}, acl_dt, cos_init);
+    sin_v2_cache_ =
+        ascend::AclTensorCache({num_tokens, 1, head_dim}, acl_dt, sin_init);
     q_cache_ = ascend::AclTensorCache({num_tokens, num_q_heads, head_dim},
                                       acl_dt, const_cast<void*>(q_out.data()));
     k_cache_ = ascend::AclTensorCache({num_tokens, num_kv_heads, head_dim},
@@ -207,8 +216,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       cos_sin_for_v2 = cos_dev_;
       sin_for_v2 = sin_dev_;
     } else {
-      // Pre-gathered: caller passes `[T, head_size * 2]` already
-      // neox-expanded.  First half is cos, second half is sin.
+      // Pre-gathered: caller passes `[2 * T, head_size]` — rows 0..T-1 are
+      // neox-expanded cos, rows T..2T-1 are neox-expanded sin (stacked via
+      // `torch.cat([cos, sin], dim=0)` in the `apply_rotary_pos_emb` shim).
       const auto* base = static_cast<const uint8_t*>(cos_sin_cache.data());
       cos_sin_for_v2 = base;
       sin_for_v2 = base + static_cast<size_t>(num_tokens * head_dim) * elem_sz_;
