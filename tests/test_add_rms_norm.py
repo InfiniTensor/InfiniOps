@@ -43,54 +43,54 @@ def test_add_rms_norm(
         pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
 
     weight_shape = (shape[-1],)
-    x1 = randn_strided(shape, strides, dtype=dtype, device=device)
-    x2 = randn_strided(shape, strides, dtype=dtype, device=device)
-    gamma = randn_strided(weight_shape, None, dtype=dtype, device=device)
-    y_out = empty_strided(shape, strides, dtype=dtype, device=device)
-    x_out = empty_strided(shape, strides, dtype=dtype, device=device)
+    input = randn_strided(shape, strides, dtype=dtype, device=device)
+    other = randn_strided(shape, strides, dtype=dtype, device=device)
+    weight = randn_strided(weight_shape, None, dtype=dtype, device=device)
+    out = empty_strided(shape, strides, dtype=dtype, device=device)
+    rstd_out = empty_strided(shape, strides, dtype=dtype, device=device)
 
     return Payload(
         lambda *args, **kwargs: _add_rms_norm(
             *args, **kwargs, implementation_index=implementation_index
         ),
         _torch_add_rms_norm,
-        (x1, x2, gamma),
-        {"eps": eps, "y_out": y_out, "x_out": x_out},
+        (input, other, weight),
+        {"eps": eps, "out": out, "rstd_out": rstd_out},
         rtol=rtol,
         atol=atol,
     )
 
 
 def _add_rms_norm(
-    x1, x2, gamma, *, eps=1e-6, y_out=None, x_out=None, implementation_index=0
+    input, other, weight, *, eps=1e-6, out=None, rstd_out=None, implementation_index=0
 ):
     infini.ops.add_rms_norm(
-        x1,
-        x2,
-        gamma,
+        input,
+        other,
+        weight,
         eps,
-        y_out,
-        x_out,
+        out,
+        rstd_out,
         implementation_index=implementation_index,
-        stream=get_stream(x1.device),
+        stream=get_stream(input.device),
     )
 
     # Concatenate both outputs into a single flat tensor for `allclose` comparison.
-    return torch.cat([y_out.contiguous().flatten(), x_out.contiguous().flatten()])
+    return torch.cat([out.contiguous().flatten(), rstd_out.contiguous().flatten()])
 
 
-def _torch_add_rms_norm(x1, x2, gamma, *, eps=1e-6, y_out=None, x_out=None):
-    x_sum = x1 + x2
+def _torch_add_rms_norm(input, other, weight, *, eps=1e-6, out=None, rstd_out=None):
+    x_sum = input + other
 
-    if x_out is not None:
-        x_out.copy_(x_sum)
+    if rstd_out is not None:
+        rstd_out.copy_(x_sum)
 
     rms = torch.sqrt(
         torch.mean(x_sum.float() * x_sum.float(), dim=-1, keepdim=True) + eps
     )
-    y = (x_sum.float() / rms * gamma.float()).to(x1.dtype)
+    y = (x_sum.float() / rms * weight.float()).to(input.dtype)
 
-    if y_out is not None:
-        y_out.copy_(y)
+    if out is not None:
+        out.copy_(y)
 
-    return torch.cat([y_out.contiguous().flatten(), x_out.contiguous().flatten()])
+    return torch.cat([out.contiguous().flatten(), rstd_out.contiguous().flatten()])
