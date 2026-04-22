@@ -19,7 +19,6 @@ from tests.utils import Payload, empty_strided, get_stream, rand_strided
         ((4, 4, 5632), (45056, 5632, 1), (45056, 5632, 1), (45056, 5632, 1)),
     ),
 )
-@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -39,11 +38,6 @@ def test_swiglu(
     rtol,
     atol,
 ):
-    active_indices = infini.ops.Swiglu.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
-
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)

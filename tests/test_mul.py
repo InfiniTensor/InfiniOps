@@ -44,24 +44,13 @@ _UINT_DTYPES = tuple(
     )
     + tuple((dtype, 0, 0) for dtype in _INT_DTYPES + _UINT_DTYPES),
 )
-def test_add(
-    shape,
-    input_strides,
-    other_strides,
-    out_strides,
-    implementation_index,
-    dtype,
-    device,
-    rtol,
-    atol,
+def test_mul(
+    shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
     if device == "musa" and dtype in _UINT_DTYPES:
         pytest.skip(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
-
-    if implementation_index == 1 and dtype in _UINT_DTYPES:
-        pytest.skip("ATen `add` does not support unsigned integer types")
 
     if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
         input = randint_strided(
@@ -76,36 +65,23 @@ def test_add(
 
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(
-        lambda *args: _add(*args, implementation_index=implementation_index),
-        _torch_add,
-        (input, other, out),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )
+    return Payload(_mul, _torch_mul, (input, other, out), {}, rtol=rtol, atol=atol)
 
 
-def _add(input, other, out, implementation_index=0):
-    infini.ops.add(
-        input,
-        other,
-        out,
-        stream=get_stream(input.device),
-        implementation_index=implementation_index,
-    )
+def _mul(input, other, out):
+    infini.ops.mul(input, other, out, stream=get_stream(input.device))
 
     return out
 
 
-def _torch_add(input, other, out):
+def _torch_mul(input, other, out):
     if input.dtype in _UINT_DTYPES:
         input = input.to(torch.int64)
 
     if other.dtype in _UINT_DTYPES:
         other = other.to(torch.int64)
 
-    res = torch.add(input, other)
+    res = torch.mul(input, other)
     out.copy_(res.to(out.dtype))
 
     return out
