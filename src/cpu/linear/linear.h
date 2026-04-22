@@ -37,7 +37,6 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
     auto* out_ptr = static_cast<T*>(out.data());
     const T* bias_ptr = bias ? static_cast<const T*>(bias->data()) : nullptr;
 
-    // Determine `m`, `n`, `k` from shapes and transpose flags.
     auto ndim_a = a_shape_.size();
     auto ndim_b = b_shape_.size();
     auto ndim_out = out_shape_.size();
@@ -72,7 +71,7 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
     // Bias stride: for 1D bias `[n]`, stride is 1. For batched bias, use last
     // stride.
     Tensor::Stride bias_stride = 0;
-    if (bias_ptr && bias) {
+    if (bias_ptr) {
       auto ndim_bias = bias->shape().size();
       bias_stride = bias->strides()[ndim_bias - 1];
     }
