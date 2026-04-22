@@ -8,6 +8,7 @@
 #include "data_type.h"
 #include "device.h"
 #include "hash.h"
+#include "small_vector.h"
 
 namespace infini::ops {
 
@@ -19,9 +20,13 @@ class Tensor {
 
   using Index = Stride;
 
-  using Shape = std::vector<Size>;
+  // Tensors used on the hot path (model decode, elementwise, GEMM) have
+  // 2-4 dims. Storing shape/strides inline up to 6 elements skips the heap
+  // allocation that `std::vector` would do on every `Tensor` copy in the
+  // shim's `to_ops_tensor` / `Operator::Call` plumbing.
+  using Shape = SmallVector<Size, 6>;
 
-  using Strides = std::vector<Stride>;
+  using Strides = SmallVector<Stride, 6>;
 
   template <typename Shape>
   Tensor(void* data, const Shape& shape)

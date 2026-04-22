@@ -45,7 +45,12 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
   auto data{
       reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
 
-  auto shape{obj.attr("shape").cast<typename Tensor::Shape>()};
+  // pybind11 converts Python sequences to `std::vector` via `stl.h`; our
+  // `SmallVector` isn't in that map, so iterate manually.
+  Tensor::Shape shape;
+  for (auto s : obj.attr("shape")) {
+    shape.push_back(s.cast<Tensor::Size>());
+  }
 
   auto dtype_str{py::str(obj.attr("dtype")).cast<std::string>()};
   auto pos{dtype_str.find_last_of('.')};
@@ -59,7 +64,10 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
                                                : device_index_obj.cast<int>()};
   Device device{DeviceTypeFromString(device_type_str), device_index};
 
-  auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
+  Tensor::Strides strides;
+  for (auto s : obj.attr("stride")()) {
+    strides.push_back(s.cast<Tensor::Stride>());
+  }
 
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }
