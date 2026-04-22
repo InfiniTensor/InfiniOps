@@ -106,10 +106,12 @@ def _ref_rotary_embedding(
                 out[t, :, :half_R] = c * x1 - s * x2
                 out[t, :, half_R:R] = c * x2 + s * x1
             else:
-                x1 = x[t, :, 0::2].float()
-                x2 = x[t, :, 1::2].float()
-                out[t, :, 0::2] = c * x1 - s * x2
-                out[t, :, 1::2] = c * x2 + s * x1
+                # GPT-J interleave: only the first `rotary_dim` features
+                # rotate, and within them even/odd indices form the pairs.
+                x1 = x[t, :, 0:R:2].float()
+                x2 = x[t, :, 1:R:2].float()
+                out[t, :, 0:R:2] = c * x1 - s * x2
+                out[t, :, 1:R:2] = c * x2 + s * x1
 
         return out.to(x.dtype)
 
