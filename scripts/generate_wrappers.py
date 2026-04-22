@@ -348,8 +348,8 @@ def _generate_apply_rotary_pos_emb_shim():
           // invoke `rotary_embedding` directly with the correct `rotary_dim`.
           const int64_t rotary_dim_shim = head_size;
           self_module.attr("rotary_embedding")(
-              positions, query, key, cos_sin_cache, head_size, rotary_dim_shim,
-              is_neox_style, query_out, key_out,
+              positions, query, key, head_size, cos_sin_cache,
+              is_neox_style, rotary_dim_shim, query_out, key_out,
               /*pre_gathered=*/true,
               py::arg("implementation_index") = implementation_index,
               py::arg("stream") = stream);

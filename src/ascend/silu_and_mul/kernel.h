@@ -25,8 +25,8 @@ namespace infini::ops {
 template <>
 class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
  public:
-  Operator(const Tensor x, int64_t dim, Tensor out)
-      : SiluAndMul(x, dim, out), x_cache_(x), out_cache_(out) {
+  Operator(const Tensor input, int64_t dim, Tensor out)
+      : SiluAndMul(input, dim, out), input_cache_(input), out_cache_(out) {
     needs_copy_ = !is_out_contiguous_;
 
     if (needs_copy_) {
@@ -41,7 +41,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
     // outputs are referenced by the Repeatable executors (`swiglu_exec_`,
     // `copy_exec_`); releasing them here prevents `~AclTensorCache()` from
     // double-freeing at shutdown.
-    x_cache_.release();
+    input_cache_.release();
     out_cache_.release();
 
     // The staging cache is held by `swiglu_exec_` / `copy_exec_`; release to
@@ -49,8 +49,8 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
     if (out_staging_cache_) out_staging_cache_->release();
   }
 
-  void operator()(const Tensor x, int64_t dim, Tensor out) const override {
-    auto t_x = x_cache_.get(const_cast<void*>(x.data()));
+  void operator()(const Tensor input, int64_t dim, Tensor out) const override {
+    auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
@@ -74,11 +74,12 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
 
     // Call `aclnnSwiGlu`.
     if (!swiglu_exec_) {
-      aclnnSwiGluGetWorkspaceSize(t_x, dim_, t_swiglu_out, &swiglu_ws_,
+      aclnnSwiGluGetWorkspaceSize(t_input, dim_, t_swiglu_out, &swiglu_ws_,
                                   &swiglu_exec_);
       aclSetAclOpExecutorRepeatable(swiglu_exec_);
     } else {
-      aclSetInputTensorAddr(swiglu_exec_, 0, t_x, const_cast<void*>(x.data()));
+      aclSetInputTensorAddr(swiglu_exec_, 0, t_input,
+                            const_cast<void*>(input.data()));
       aclSetOutputTensorAddr(swiglu_exec_, 0, t_swiglu_out, swiglu_out_data);
     }
 
@@ -102,7 +103,7 @@ class Operator<SiluAndMul, Device::Type::kAscend, 0> : public SiluAndMul {
   }
 
  private:
-  mutable ascend::AclTensorCache x_cache_;
+  mutable ascend::AclTensorCache input_cache_;
 
   mutable ascend::AclTensorCache out_cache_;
 

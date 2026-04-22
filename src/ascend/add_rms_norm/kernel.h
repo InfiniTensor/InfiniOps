@@ -23,15 +23,15 @@ namespace infini::ops {
 template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
  public:
-  Operator(const Tensor input, const Tensor other, const Tensor weight,
+  Operator(const Tensor input, const Tensor residual, const Tensor weight,
            float eps, Tensor out, Tensor residual_out)
-      : AddRmsNorm(input, other, weight, eps, out, residual_out),
+      : AddRmsNorm(input, residual, weight, eps, out, residual_out),
         input_cache_(input),
-        other_cache_(other),
+        residual_cache_(residual),
         weight_cache_(weight),
         out_cache_(out),
         residual_out_cache_(residual_out) {
-    // Alpha scalar for `aclnnAdd` (`residual_out = input + 1.0 * other`).
+    // Alpha scalar for `aclnnAdd` (`residual_out = input + 1.0 * residual`).
     alpha_ = aclCreateScalar(&alpha_storage_, ACL_FLOAT);
 
     // `aclnnRmsNorm` writes `rstd` as a required side output.  Size is
@@ -46,7 +46,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
 
     // Null cached descriptors — see `AclTensorCache::release()`.
     input_cache_.release();
-    other_cache_.release();
+    residual_cache_.release();
     weight_cache_.release();
     out_cache_.release();
     residual_out_cache_.release();
@@ -55,25 +55,25 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
     if (alpha_) aclDestroyScalar(alpha_);
   }
 
-  void operator()(const Tensor input, const Tensor other, const Tensor weight,
+  void operator()(const Tensor input, const Tensor residual, const Tensor weight,
                   float eps, Tensor out, Tensor residual_out) const override {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
-    auto t_other = other_cache_.get(const_cast<void*>(other.data()));
+    auto t_residual = residual_cache_.get(const_cast<void*>(residual.data()));
     auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
     auto t_out = out_cache_.get(out.data());
     auto t_residual_out = residual_out_cache_.get(residual_out.data());
     auto stream = static_cast<aclrtStream>(stream_);
 
-    // Step 1: `residual_out = input + other`.
+    // Step 1: `residual_out = input + residual`.
     if (!add_exec_) {
-      aclnnAddGetWorkspaceSize(t_input, t_other, alpha_, t_residual_out,
+      aclnnAddGetWorkspaceSize(t_input, t_residual, alpha_, t_residual_out,
                                &add_ws_, &add_exec_);
       aclSetAclOpExecutorRepeatable(add_exec_);
     } else {
       aclSetInputTensorAddr(add_exec_, 0, t_input,
                             const_cast<void*>(input.data()));
-      aclSetInputTensorAddr(add_exec_, 1, t_other,
-                            const_cast<void*>(other.data()));
+      aclSetInputTensorAddr(add_exec_, 1, t_residual,
+                            const_cast<void*>(residual.data()));
       aclSetOutputTensorAddr(add_exec_, 0, t_residual_out, residual_out.data());
     }
     auto& add_arena = ascend::GetWorkspacePool().Ensure(stream, add_ws_);
@@ -111,7 +111,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
  private:
   mutable ascend::AclTensorCache input_cache_;
 
-  mutable ascend::AclTensorCache other_cache_;
+  mutable ascend::AclTensorCache residual_cache_;
 
   mutable ascend::AclTensorCache weight_cache_;
 

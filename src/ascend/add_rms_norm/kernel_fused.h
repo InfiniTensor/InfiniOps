@@ -15,7 +15,7 @@ namespace infini::ops {
 
 // Fused implementation via `aclnnAddRmsNorm` (implementation index 1).
 //
-// Computes `residual_out = input + other` and `out = rms_norm(residual_out,
+// Computes `residual_out = input + residual` and `out = rms_norm(residual_out,
 // weight, eps)` in a single CANN launch.  The fused API has higher host-side
 // launch overhead (~200 us) compared to the decomposed `aclnnAdd` +
 // `aclnnRmsNorm` path (~39 us), but may offer better NPU-side efficiency for
@@ -26,11 +26,11 @@ namespace infini::ops {
 template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
  public:
-  Operator(const Tensor input, const Tensor other, const Tensor weight,
+  Operator(const Tensor input, const Tensor residual, const Tensor weight,
            float eps, Tensor out, Tensor residual_out)
-      : AddRmsNorm(input, other, weight, eps, out, residual_out),
+      : AddRmsNorm(input, residual, weight, eps, out, residual_out),
         input_cache_(input),
-        other_cache_(other),
+        residual_cache_(residual),
         weight_cache_(weight),
         out_cache_(out),
         residual_out_cache_(residual_out) {
@@ -65,7 +65,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
 
     // Null cached descriptors — see `AclTensorCache::release()`.
     input_cache_.release();
-    other_cache_.release();
+    residual_cache_.release();
     weight_cache_.release();
     out_cache_.release();
     residual_out_cache_.release();
@@ -74,10 +74,11 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
     if (rstd_data_) aclrtFree(rstd_data_);
   }
 
-  void operator()(const Tensor input, const Tensor other, const Tensor weight,
-                  float eps, Tensor out, Tensor residual_out) const override {
+  void operator()(const Tensor input, const Tensor residual,
+                  const Tensor weight, float eps, Tensor out,
+                  Tensor residual_out) const override {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
-    auto t_other = other_cache_.get(const_cast<void*>(other.data()));
+    auto t_residual = residual_cache_.get(const_cast<void*>(residual.data()));
     auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
     auto t_out = out_cache_.get(out.data());
     auto t_residual_out = residual_out_cache_.get(residual_out.data());
@@ -85,14 +86,14 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
 
     if (!executor_) {
       aclnnAddRmsNormGetWorkspaceSize(
-          t_input, t_other, t_weight, static_cast<double>(eps), t_out,
+          t_input, t_residual, t_weight, static_cast<double>(eps), t_out,
           rstd_tensor_, t_residual_out, &ws_size_, &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
       aclSetInputTensorAddr(executor_, 0, t_input,
                             const_cast<void*>(input.data()));
-      aclSetInputTensorAddr(executor_, 1, t_other,
-                            const_cast<void*>(other.data()));
+      aclSetInputTensorAddr(executor_, 1, t_residual,
+                            const_cast<void*>(residual.data()));
       aclSetInputTensorAddr(executor_, 2, t_weight,
                             const_cast<void*>(weight.data()));
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
@@ -107,7 +108,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
  private:
   mutable ascend::AclTensorCache input_cache_;
 
-  mutable ascend::AclTensorCache other_cache_;
+  mutable ascend::AclTensorCache residual_cache_;
 
   mutable ascend::AclTensorCache weight_cache_;
 

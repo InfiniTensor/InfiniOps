@@ -44,7 +44,7 @@ def test_add_rms_norm(
 
     weight_shape = (shape[-1],)
     input = randn_strided(shape, strides, dtype=dtype, device=device)
-    other = randn_strided(shape, strides, dtype=dtype, device=device)
+    residual = randn_strided(shape, strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, None, dtype=dtype, device=device)
     out = empty_strided(shape, strides, dtype=dtype, device=device)
     residual_out = empty_strided(shape, strides, dtype=dtype, device=device)
@@ -54,7 +54,7 @@ def test_add_rms_norm(
             *args, **kwargs, implementation_index=implementation_index
         ),
         _torch_add_rms_norm,
-        (input, other, weight),
+        (input, residual, weight),
         {"eps": eps, "out": out, "residual_out": residual_out},
         rtol=rtol,
         atol=atol,
@@ -63,7 +63,7 @@ def test_add_rms_norm(
 
 def _add_rms_norm(
     input,
-    other,
+    residual,
     weight,
     *,
     eps=1e-6,
@@ -73,7 +73,7 @@ def _add_rms_norm(
 ):
     infini.ops.add_rms_norm(
         input,
-        other,
+        residual,
         weight,
         eps,
         out,
@@ -86,8 +86,8 @@ def _add_rms_norm(
     return torch.cat([out.contiguous().flatten(), residual_out.contiguous().flatten()])
 
 
-def _torch_add_rms_norm(input, other, weight, *, eps=1e-6, out=None, residual_out=None):
-    x_sum = input + other
+def _torch_add_rms_norm(input, residual, weight, *, eps=1e-6, out=None, residual_out=None):
+    x_sum = input + residual
 
     if residual_out is not None:
         residual_out.copy_(x_sum)
