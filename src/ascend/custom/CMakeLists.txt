@@ -50,6 +50,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_PATH})
 file(GLOB OP_SRCS
     ${PROJECT_OP_SRC_BASE}/torch_binding.cpp
     ${PROJECT_OP_SRC_BASE}/rms_norm/op_host/rms_norm.cpp
+    ${PROJECT_OP_SRC_BASE}/add_rms_norm/op_host/add_rms_norm.cpp
 )
 
 # Shared library name — consumed by `kernel_custom.h` variants and by the
@@ -59,6 +60,7 @@ set(OP_PLUGIN_NAME ascend_kernel)
 # Kernel-side files (device code compiled by the `AscendC` toolchain).
 ascendc_library(no_workspace_kernel STATIC
     ${PROJECT_OP_SRC_BASE}/rms_norm/op_kernel/rms_norm.cpp
+    ${PROJECT_OP_SRC_BASE}/add_rms_norm/op_kernel/add_rms_norm.cpp
 )
 
 # Create the shared library `libascend_kernel.so`.
