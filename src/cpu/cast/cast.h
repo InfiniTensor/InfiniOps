@@ -13,19 +13,14 @@ class Operator<Cast, Device::Type::kCpu> : public Cast {
   Operator(const Tensor input, Tensor out) : Cast{input, out} {}
 
   void operator()(const Tensor input, Tensor out) const override {
-    DispatchFunc<Device::Type::kCpu, AllTypes>(
-        input_dtype_,
-        [&](auto in_tag) {
+    DispatchFunc<Device::Type::kCpu, AllTypes, AllTypes>(
+        {input_dtype_, out_dtype_},
+        [&](auto in_tag, auto out_tag) {
           using InT = typename decltype(in_tag)::type;
-          DispatchFunc<Device::Type::kCpu, AllTypes>(
-              out_dtype_,
-              [&](auto out_tag) {
-                using OutT = typename decltype(out_tag)::type;
-                Compute<InT, OutT>(input, out);
-              },
-              "`Operator<Cast, Device::Type::kCpu>::operator()` (out)");
+          using OutT = typename decltype(out_tag)::type;
+          Compute<InT, OutT>(input, out);
         },
-        "`Operator<Cast, Device::Type::kCpu>::operator()` (in)");
+        "`Operator<Cast, Device::Type::kCpu>::operator()`");
   }
 
  private:

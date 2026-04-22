@@ -32,19 +32,19 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
   template <typename T>
   void Compute(const Tensor a, const Tensor b, std::optional<Tensor> bias,
                bool trans_a, bool trans_b, Tensor out) const {
-    const auto* A = static_cast<const T*>(a.data());
-    const auto* B = static_cast<const T*>(b.data());
-    auto* Out = static_cast<T*>(out.data());
-    const T* Bias = bias ? static_cast<const T*>(bias->data()) : nullptr;
+    const auto* a_ptr = static_cast<const T*>(a.data());
+    const auto* b_ptr = static_cast<const T*>(b.data());
+    auto* out_ptr = static_cast<T*>(out.data());
+    const T* bias_ptr = bias ? static_cast<const T*>(bias->data()) : nullptr;
 
-    // Determine M, K, N from shapes and transpose flags.
+    // Determine `m`, `n`, `k` from shapes and transpose flags.
     auto ndim_a = a_shape_.size();
     auto ndim_b = b_shape_.size();
     auto ndim_out = out_shape_.size();
 
-    Tensor::Size M = out_shape_[ndim_out - 2];
-    Tensor::Size N = out_shape_[ndim_out - 1];
-    Tensor::Size K = trans_a ? a_shape_[ndim_a - 2] : a_shape_[ndim_a - 1];
+    Tensor::Size m = out_shape_[ndim_out - 2];
+    Tensor::Size n = out_shape_[ndim_out - 1];
+    Tensor::Size k = trans_a ? a_shape_[ndim_a - 2] : a_shape_[ndim_a - 1];
 
     // Compute strides for the inner matrix dimensions after transpose.
     Tensor::Stride stride_a_m =
@@ -69,34 +69,34 @@ class Operator<Linear, Device::Type::kCpu> : public Linear,
     Tensor::Stride batch_stride_out =
         ndim_out > 2 ? out_strides_[ndim_out - 3] : 0;
 
-    // Bias stride: for 1D bias [N], stride is 1. For batched bias, use last
+    // Bias stride: for 1D bias `[n]`, stride is 1. For batched bias, use last
     // stride.
     Tensor::Stride bias_stride = 0;
-    if (Bias && bias) {
+    if (bias_ptr && bias) {
       auto ndim_bias = bias->shape().size();
       bias_stride = bias->strides()[ndim_bias - 1];
     }
 
     for (Tensor::Size batch = 0; batch < batch_count; ++batch) {
-      const auto* A_batch = A + batch * batch_stride_a;
-      const auto* B_batch = B + batch * batch_stride_b;
-      auto* Out_batch = Out + batch * batch_stride_out;
+      const auto* a_batch = a_ptr + batch * batch_stride_a;
+      const auto* b_batch = b_ptr + batch * batch_stride_b;
+      auto* out_batch = out_ptr + batch * batch_stride_out;
 
-      for (Tensor::Size i = 0; i < M; ++i) {
-        for (Tensor::Size j = 0; j < N; ++j) {
+      for (Tensor::Size i = 0; i < m; ++i) {
+        for (Tensor::Size j = 0; j < n; ++j) {
           float sum = 0.0f;
 
-          for (Tensor::Size l = 0; l < K; ++l) {
-            float a_val = Cast<float>(A_batch[i * stride_a_m + l * stride_a_k]);
-            float b_val = Cast<float>(B_batch[l * stride_b_k + j * stride_b_n]);
+          for (Tensor::Size l = 0; l < k; ++l) {
+            float a_val = Cast<float>(a_batch[i * stride_a_m + l * stride_a_k]);
+            float b_val = Cast<float>(b_batch[l * stride_b_k + j * stride_b_n]);
             sum += a_val * b_val;
           }
 
-          if (Bias) {
-            sum += Cast<float>(Bias[j * bias_stride]);
+          if (bias_ptr) {
+            sum += Cast<float>(bias_ptr[j * bias_stride]);
           }
 
-          Out_batch[i * stride_out_m + j * stride_out_n] = Cast<T>(sum);
+          out_batch[i * stride_out_m + j * stride_out_n] = Cast<T>(sum);
         }
       }
     }
