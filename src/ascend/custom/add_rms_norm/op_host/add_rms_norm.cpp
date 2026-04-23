@@ -1,4 +1,4 @@
-#include "aclrtlaunch_add_rms_norm.h"
+#include "aclrtlaunch_AddRmsNorm.h"
 #include "tiling/platform/platform_ascendc.h"
 #include "torch_kernel_helper.h"
 
@@ -105,16 +105,14 @@ std::vector<at::Tensor> AddRmsNorm(const at::Tensor& x1, const at::Tensor& x2,
   float eps_float = static_cast<float>(eps);
   int64_t dtype_size_val = dtype_size;
 
-  // The first arg `add_rms_norm` is the AscendC kernel entry-point name — it
-  // must match `ascendc_add_operator(OP_NAME add_rms_norm)` in `CMakeLists.txt`,
-  // the `__global__ __aicore__ void add_rms_norm(...)` definition in
-  // `op_kernel/`, and the generated `aclrtlaunch_add_rms_norm.h` header.
-  // Google C++ Style's PascalCase rule does NOT apply: this identifier is
-  // dictated by the AscendC toolchain's symbol convention.
-  EXEC_KERNEL_CMD(add_rms_norm, block_dim, kernel_input1, kernel_input2,
-                  weight_float, kernel_output_y, kernel_output_x_out,
-                  total_rows, dim_length, dim_length_align, former_num,
-                  former_length, tail_length, eps_float, dtype_size_val);
+  // The first arg `AddRmsNorm` is the AscendC kernel entry-point name — it
+  // must match the `__global__ __aicore__ void AddRmsNorm(...)` definition
+  // in `op_kernel/` and the generated `aclrtlaunch_AddRmsNorm.h` header.
+  // Parameter order follows the base class: inputs, attributes, outputs.
+  EXEC_KERNEL_CMD(AddRmsNorm, block_dim, kernel_input1, kernel_input2,
+                  weight_float, total_rows, dim_length, dim_length_align,
+                  former_num, former_length, tail_length, eps_float,
+                  dtype_size_val, kernel_output_y, kernel_output_x_out);
 
   // Remove padding and reshape back to original shape.
   at::Tensor output_y = kernel_output_y;
