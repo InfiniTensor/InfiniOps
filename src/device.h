@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_DEVICE_H_
 #define INFINI_OPS_DEVICE_H_
 
+#include <string>
+#include <string_view>
+
 #include "common/constexpr_map.h"
 #include "common/traits.h"
 #include "hash.h"

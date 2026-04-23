@@ -17,5 +17,10 @@ AUTO_DETECT_DEVICES = "ON"
 AUTO_DETECT_BACKENDS = "ON"
 GENERATE_PYTHON_BINDINGS = "ON"
 
+# Enables `compile_commands.json` under `SKBUILD_BUILD_DIR` (or the default
+# `scikit-build` build dir) for `clang-tidy -p <build-dir> <file>` used by
+# the `code-lint` skill.
+CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

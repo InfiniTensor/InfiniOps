@@ -1,0 +1,12 @@
+---
+# `CANN`'s `ascendc_add_operator(OP_NAME <lower_snake>)` dictates the
+# symbol name of the `extern "C" __global__ __aicore__ void <op>(…)`
+# kernel entry.  The `aclrtlaunch_<op>` wrapper and `op_host/` call site
+# must match, so these entries cannot follow Google's `PascalCase`
+# convention.  Relax `FunctionCase` to `lower_case` within this subtree;
+# class and method names still inherit `CamelCase` from the root config.
+
+InheritParentConfig: true
+
+CheckOptions:
+  - {key: readability-identifier-naming.FunctionCase, value: lower_case}
