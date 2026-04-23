@@ -108,7 +108,6 @@ std::vector<at::Tensor> AddRmsNorm(const at::Tensor& x1, const at::Tensor& x2,
   // The first arg `AddRmsNorm` is the AscendC kernel entry-point name — it
   // must match the `__global__ __aicore__ void AddRmsNorm(...)` definition
   // in `op_kernel/` and the generated `aclrtlaunch_AddRmsNorm.h` header.
-  // Parameter order follows the base class: inputs, attributes, outputs.
   EXEC_KERNEL_CMD(AddRmsNorm, block_dim, kernel_input1, kernel_input2,
                   weight_float, total_rows, dim_length, dim_length_align,
                   former_num, former_length, tail_length, eps_float,

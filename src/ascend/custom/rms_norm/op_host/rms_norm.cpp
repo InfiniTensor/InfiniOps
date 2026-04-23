@@ -97,7 +97,6 @@ at::Tensor RmsNorm(const at::Tensor& input, const at::Tensor& weight,
   // The first arg `RmsNorm` is the AscendC kernel entry-point name — it
   // must match the `__global__ __aicore__ void RmsNorm(...)` definition in
   // `op_kernel/` and the generated `aclrtlaunch_RmsNorm.h` header.
-  // Parameter order follows the base class: inputs, attributes, outputs.
   EXEC_KERNEL_CMD(RmsNorm, block_dim, kernel_input, weight_float, total_rows,
                   dim_length, dim_length_align, former_num, former_length,
                   tail_length, eps_float, dtype_size_val, kernel_output);
