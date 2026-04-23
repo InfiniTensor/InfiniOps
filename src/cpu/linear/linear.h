@@ -13,14 +13,7 @@ template <>
 class Operator<Linear, Device::Type::kCpu> : public Linear,
                                              Caster<Device::Type::kCpu> {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<Tensor> bias,
-           bool trans_a, bool trans_b, Tensor out)
-      : Linear{a, b, bias, trans_a, trans_b, out} {}
-
-  // vLLM-aligned overload — `weight [out, in]`, `out = input @ weight^T`.
-  Operator(const Tensor input, const Tensor weight,
-           std::optional<Tensor> bias, Tensor out)
-      : Linear{input, weight, bias, out} {}
+  using Linear::Linear;
 
   void operator()(const Tensor a, const Tensor b, std::optional<Tensor> bias,
                   bool trans_a, bool trans_b, Tensor out) const override {

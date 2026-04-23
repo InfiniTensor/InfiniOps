@@ -86,7 +86,9 @@ def _add_rms_norm(
     return torch.cat([out.contiguous().flatten(), residual_out.contiguous().flatten()])
 
 
-def _torch_add_rms_norm(input, residual, weight, *, eps=1e-6, out=None, residual_out=None):
+def _torch_add_rms_norm(
+    input, residual, weight, *, eps=1e-6, out=None, residual_out=None
+):
     x_sum = input + residual
 
     if residual_out is not None:

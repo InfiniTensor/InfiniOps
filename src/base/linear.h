@@ -7,21 +7,11 @@
 
 namespace infini::ops {
 
-// Fused linear projection.
-//
-// Two overloads:
-//   1. vLLM-aligned primary form (recommended):
-//        `Linear(input, weight, bias, out)` — matches
-//        `torch.nn.functional.linear(input, weight, bias)` semantics.
-//        `weight` is stored pre-transposed as `[out_features, in_features]`;
-//        the kernel internally computes `out = input @ weight^T + bias`.
-//        No `trans_a` / `trans_b` flags — vLLM never transposes operands.
-//
-//   2. Deprecated explicit-transpose form:
-//        `Linear(a, b, bias, trans_a, trans_b, out)` — historical 6-arg
-//        signature that lets the caller specify either operand's transpose.
-//        Kept for backward compatibility with the existing CPU / Ascend
-//        backends; new code should use the vLLM-aligned form.
+// Fused linear projection.  Primary form `(input, weight, bias?, out)`
+// matches `F.linear(input, weight, bias)`: `weight` is pre-transposed as
+// `[out_features, in_features]`, kernel computes `input @ weight^T`.  The
+// 6-arg `(a, b, bias, trans_a, trans_b, out)` form is kept deprecated for
+// callers that need explicit transpose flags.
 class Linear : public Operator<Linear> {
  public:
   // Deprecated — use `(input, weight, bias, out)` instead.
@@ -46,8 +36,6 @@ class Linear : public Operator<Linear> {
     }
   }
 
-  // vLLM-aligned form — delegates to the explicit-transpose ctor with
-  // `trans_a = false, trans_b = true` (i.e. `out = input @ weight^T`).
   Linear(const Tensor input, const Tensor weight, std::optional<Tensor> bias,
          Tensor out)
       : Linear{input, weight, bias, /*trans_a=*/false, /*trans_b=*/true, out} {
@@ -67,9 +55,6 @@ class Linear : public Operator<Linear> {
                           std::optional<Tensor> bias, bool trans_a,
                           bool trans_b, Tensor out) const = 0;
 
-  // vLLM-aligned entry.  Concrete default forwards to the explicit-transpose
-  // form with `trans_a = false, trans_b = true` so subclasses do not need to
-  // implement it separately.
   virtual void operator()(const Tensor input, const Tensor weight,
                           std::optional<Tensor> bias, Tensor out) const {
     return operator()(input, weight, bias, /*trans_a=*/false,

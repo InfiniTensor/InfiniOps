@@ -55,8 +55,9 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
     if (alpha_) aclDestroyScalar(alpha_);
   }
 
-  void operator()(const Tensor input, const Tensor residual, const Tensor weight,
-                  float eps, Tensor out, Tensor residual_out) const override {
+  void operator()(const Tensor input, const Tensor residual,
+                  const Tensor weight, float eps, Tensor out,
+                  Tensor residual_out) const override {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_residual = residual_cache_.get(const_cast<void*>(residual.data()));
     auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));

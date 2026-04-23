@@ -5,14 +5,10 @@
 
 namespace infini::ops {
 
-// vLLM-aligned SiLU-gated linear unit.
-//
-// Mirrors `vllm._C.silu_and_mul(result, input)` semantics:
-// splits `input` into halves along `dim` and computes
-// `silu(first_half) * second_half`.  vLLM hardcodes `dim = -1`; this base
-// retains `dim` as a parameter for generality but defaults to `-1` to match
-// the PyTorch convention for feature-dimension operations (e.g. `softmax`,
-// `log_softmax`).
+// SiLU-gated linear unit: splits `input` along `dim` into two halves and
+// computes `silu(first_half) * second_half`.  Matches
+// `vllm._C.silu_and_mul`; `dim` defaults to `-1` (PyTorch `F.glu`
+// convention).
 class SiluAndMul : public Operator<SiluAndMul> {
  public:
   SiluAndMul(const Tensor input, int64_t dim, Tensor out)
@@ -30,12 +26,10 @@ class SiluAndMul : public Operator<SiluAndMul> {
            "`SiluAndMul`: `input` and `out` must have the same dtype.");
   }
 
-  // Convenience overload: `dim` defaults to `-1`, matching
-  // `torch.nn.functional.glu(input, dim=-1)` and vLLM's hardcoded last-dim
-  // behavior.
   SiluAndMul(const Tensor input, Tensor out) : SiluAndMul{input, -1, out} {}
 
-  virtual void operator()(const Tensor input, int64_t dim, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, int64_t dim,
+                          Tensor out) const = 0;
 
   virtual void operator()(const Tensor input, Tensor out) const {
     return operator()(input, -1, out);

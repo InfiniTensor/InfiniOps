@@ -10,46 +10,17 @@
 
 namespace infini::ops {
 
-// vLLM-compatible rotary position embedding.
-//
-// Mirrors
-// `vllm.model_executor.layers.rotary_embedding.RotaryEmbedding.forward`:
-//   `forward(positions, query, key=None) -> (query, key | None)`.
-//
-// Inplace by default: passing `query_out = nullopt` / `key_out = nullopt`
-// tells the kernel to write back into `query` / `key`, matching vLLM's
-// inplace convention.  Callers that need a separate destination pass explicit
-// out tensors.
-//
-// The previous `ApplyRotaryPosEmb` (pre-gathered fast path) is folded into
-// this op via the `pre_gathered` constructor flag.  When
-// `pre_gathered == true`, the caller has already executed
-// `cos_sin_cache.index_select(0, positions)` plus any neox expansion; the
-// kernel then skips the internal gather step.  vLLM's native contract uses
-// `pre_gathered == false` (the default).
+// Rotary position embedding.  First 6 parameters mirror vLLM's
+// `rotary_embedding(positions, query, key?, head_size, cos_sin_cache,
+// is_neox_style)` schema verbatim; `cos_sin_cache` is `[max_pos,
+// rotary_dim * 2]` (cos then sin).  Inplace when `query_out` / `key_out`
+// are `nullopt`.
 class RotaryEmbedding : public Operator<RotaryEmbedding> {
  public:
-  // Parameter order mirrors vLLM's
-  // `rotary_embedding(positions, query, key?, head_size, cos_sin_cache, is_neox)`
-  // schema for the first 6 parameters.  Remaining parameters are InfiniOps
-  // extensions:
-  //   `rotary_dim`       — explicit; vLLM infers from
-  //                        `cos_sin_cache.size(-1) / 2`.
-  //   `query_out`        — optional out buffer (inplace when `nullopt`).
-  //   `key_out`          — optional out buffer (inplace when `nullopt`).
-  //   `pre_gathered`     — vendor-specific hint; `true` when the caller has
-  //                        already run `cos_sin_cache.index_select(0, positions)`
-  //                        plus neox expansion.
-  //
-  // Tensor conventions:
-  //   `positions`        — `[T]`, `int64`.
-  //   `query`            — `[T, Nq * head_size]` or `[T, Nq, head_size]`.
-  //   `key`              — same layout as `query`; `nullopt` for MLA.
-  //   `cos_sin_cache`    — default `[max_pos, rotary_dim * 2]` (cos then sin).
-  //                        When `pre_gathered == true` the caller passes
-  //                        `[T, head_size * 2]` already neox-expanded.
-  //   `is_neox_style`    — `true` for NeoX split-half layout, `false` for
-  //                        GPT-J interleaved.
+  // `pre_gathered = true` means the caller has already applied
+  // `cos_sin_cache.index_select(0, positions)` plus neox expansion, so
+  // `cos_sin_cache` is laid out as `[T, head_size * 2]` and the kernel skips
+  // the internal gather step.
   RotaryEmbedding(const Tensor positions, const Tensor query,
                   std::optional<Tensor> key, int64_t head_size,
                   const Tensor cos_sin_cache, bool is_neox_style,
