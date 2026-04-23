@@ -142,7 +142,6 @@ def _assert_close(actual, expected, rtol, atol):
     ),
 )
 @pytest.mark.parametrize("is_neox_style", (True, False))
-@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -150,7 +149,6 @@ def _assert_close(actual, expected, rtol, atol):
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
 def test_rotary_embedding_full(
     num_heads,
     head_size,
@@ -164,16 +162,6 @@ def test_rotary_embedding_full(
     """Full rotary: ``rotary_dim == head_size``."""
     if device == "npu" and not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
-
-    if device == "npu":
-        active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(
-            device
-        )
-
-        if implementation_index not in active_indices:
-            pytest.skip(
-                f"Implementation index={implementation_index} not active on this build"
-            )
 
     # Only implementation 0 (`aclnnApplyRotaryPosEmbV2`) is still limited to
     # `rotaryMode="half"`; implementation 1 (ATB `RopeParam`) plumbs
@@ -367,7 +355,6 @@ def test_rotary_embedding_atb(num_tokens, num_heads, head_size, device):
         (8, 64),
     ),
 )
-@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -375,20 +362,12 @@ def test_rotary_embedding_atb(num_tokens, num_heads, head_size, device):
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
 def test_rotary_embedding_2d(
     num_tokens, num_heads, head_size, implementation_index, dtype, rtol, atol, device
 ):
     """2D ``[T, N*D]`` layout (vLLM convention) for both CANN and ATB paths."""
     if not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
-
-    active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(
-            f"Implementation index={implementation_index} not active on this build"
-        )
 
     num_kv_heads = num_heads
     rotary_dim = head_size
@@ -575,7 +554,6 @@ def test_rotary_embedding_partial(
     _assert_close(k_out, ref_k, rtol, atol)
 
 
-@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -585,7 +563,6 @@ def test_rotary_embedding_partial(
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
 def test_rotary_embedding_inplace(implementation_index, dtype, rtol, atol, device):
     """Verify the inplace path (`query_out` / `key_out` omitted).
 
@@ -594,13 +571,6 @@ def test_rotary_embedding_inplace(implementation_index, dtype, rtol, atol, devic
     """
     if not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
-
-    active_indices = infini.ops.RotaryEmbedding.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(
-            f"Implementation index={implementation_index} not active on this build"
-        )
 
     num_tokens = 4
     num_heads = 8
@@ -675,6 +645,9 @@ def _expand_cos_sin(cos_sin_cache, positions, head_size):
         (8, 8, 64),
     ),
 )
+# Hardcoded `(0, 1)` — `apply_rotary_pos_emb` forwards with
+# `pre_gathered=True`, which impl 2 (`aclnnRopeWithSinCosCache`) rejects
+# at construction.  Cannot use `conftest` auto-injection here.
 @pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
@@ -782,6 +755,7 @@ def test_apply_rotary_pos_emb(
     _assert_close(key_out, ref_k, rtol=0, atol=0)
 
 
+# Hardcoded `(0, 1)` — see `test_apply_rotary_pos_emb` above for rationale.
 @pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),

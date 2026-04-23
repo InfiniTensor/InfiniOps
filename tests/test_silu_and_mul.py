@@ -20,7 +20,6 @@ from tests.utils import Payload, empty_strided, get_stream, rand_strided
         ((4, 4, 16), (128, 16, 1), (64, 8, 1)),
     ),
 )
-@pytest.mark.parametrize("implementation_index", (0,))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -39,11 +38,6 @@ def test_silu_and_mul(
     rtol,
     atol,
 ):
-    active_indices = infini.ops.SiluAndMul.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
-
     x = rand_strided(shape, x_strides, dtype=dtype, device=device)
     d = shape[-1] // 2
     out_shape = (*shape[:-1], d)
