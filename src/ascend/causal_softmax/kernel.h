@@ -17,7 +17,12 @@
 
 namespace infini::ops {
 
-// Implements causal softmax via three ACLNN calls:
+// CANN 8.5 has no single API covering causal-mask-then-softmax: the nearest
+// candidates (`aclnnSoftmaxV2`, `aclnnScaledSoftmaxGrad`) do not accept a
+// boolean mask argument, and `aclnnScaledMaskedSoftmax` requires a
+// pre-scaled attention-score tensor produced inside flash-attention, not a
+// standalone softmax input.  Decomposing into three ACLNN calls is therefore
+// unavoidable until a `aclnnCausalSoftmax` ships:
 //   1. `aclnnInplaceCopy(temp, input)` — stride-aware copy to a contiguous
 //      `temp` buffer.
 //   2. `aclnnInplaceMaskedFillScalar(temp, mask, -inf)` — apply the
