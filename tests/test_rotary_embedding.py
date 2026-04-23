@@ -619,3 +619,108 @@ def test_rotary_embedding_inplace(implementation_index, dtype, rtol, atol, devic
     _assert_close(query, ref_q, rtol, atol)
     _assert_close(key, ref_k, rtol, atol)
 
+
+def _build_pre_gathered_cache(cos_sin_cache, positions, head_size, is_neox_style):
+    """Build the `[2 * T, head_size]` pre-gathered cache the kernel expects.
+
+    Layout (see `src/ascend/rotary_embedding/kernel.h` pre-gathered branch):
+      - rows `0..T-1`: neox-expanded cos for each token (row `t` holds the
+        cos values for `positions[t]`, broadcast to full `head_size`).
+      - rows `T..2T-1`: neox-expanded sin, same indexing.
+    """
+    half = head_size // 2
+    cos_half = cos_sin_cache[:, :half].index_select(0, positions)
+    sin_half = cos_sin_cache[:, half:].index_select(0, positions)
+
+    if is_neox_style:
+        cos_full = torch.cat([cos_half, cos_half], dim=-1)
+        sin_full = torch.cat([sin_half, sin_half], dim=-1)
+    else:
+        # GPT-J interleave: pair-wise expansion `(x[0],x[0],x[1],x[1],…)`.
+        cos_full = cos_half.repeat_interleave(2, dim=-1)
+        sin_full = sin_half.repeat_interleave(2, dim=-1)
+
+    return torch.cat([cos_full, sin_full], dim=0)
+
+
+# Hardcoded `(0, 1)` — impl 2 (`aclnnRopeWithSinCosCache`) asserts
+# `!pre_gathered_` at construction.  Cannot use conftest auto-injection.
+@pytest.mark.parametrize("implementation_index", (0, 1))
+@pytest.mark.parametrize("layout", ("2d", "3d"))
+@pytest.mark.parametrize("is_neox_style", (True, False))
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float16, 1e-2, 5e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+@pytest.mark.parametrize("device", ("npu",))
+def test_rotary_embedding_pre_gathered(
+    implementation_index, layout, is_neox_style, dtype, rtol, atol, device
+):
+    """`pre_gathered=True` fast path: caller hands in `[2*T, head_size]` with
+    cos/sin already gathered and neox-expanded per token.  Exercises both 2D
+    `[T, N*D]` and 3D `[T, N, D]` query/key layouts."""
+    if not (hasattr(torch, "npu") and torch.npu.is_available()):
+        pytest.skip("NPU not available")
+
+    if not is_neox_style and implementation_index == 0:
+        pytest.skip(
+            'Ascend `aclnnApplyRotaryPosEmbV2` only supports `rotaryMode="half"`'
+        )
+
+    num_tokens = 8
+    num_heads = 16
+    num_kv_heads = 4
+    head_size = 128
+    rotary_dim = head_size
+    max_seq_len = 64
+
+    positions = randint_strided(
+        0, max_seq_len, (num_tokens,), None, dtype=torch.int64, device=device
+    )
+    cos_sin_cache = randn_strided(
+        (max_seq_len, rotary_dim), None, dtype=dtype, device=device
+    )
+
+    if layout == "3d":
+        q_shape = (num_tokens, num_heads, head_size)
+        k_shape = (num_tokens, num_kv_heads, head_size)
+    else:
+        q_shape = (num_tokens, num_heads * head_size)
+        k_shape = (num_tokens, num_kv_heads * head_size)
+
+    query = randn_strided(q_shape, None, dtype=dtype, device=device)
+    key = randn_strided(k_shape, None, dtype=dtype, device=device)
+    query_out = torch.empty_like(query)
+    key_out = torch.empty_like(key)
+
+    pre_gathered_cache = _build_pre_gathered_cache(
+        cos_sin_cache, positions, head_size, is_neox_style
+    )
+    # Kernel reads `positions` as `0..T-1` in the pre-gathered path (the
+    # gather has already happened); the actual values are not indexed.
+    arange_positions = torch.arange(num_tokens, dtype=torch.int64, device=device)
+
+    infini.ops.rotary_embedding(
+        arange_positions,
+        query,
+        key,
+        head_size,
+        pre_gathered_cache,
+        is_neox_style,
+        rotary_dim,
+        query_out,
+        key_out,
+        True,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+
+    ref_q, ref_k = _ref_rotary_embedding(
+        positions, query, key, cos_sin_cache, head_size, rotary_dim, is_neox_style
+    )
+
+    _assert_close(query_out, ref_q, rtol, atol)
+    _assert_close(key_out, ref_k, rtol, atol)
