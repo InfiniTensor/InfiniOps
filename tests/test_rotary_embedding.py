@@ -643,9 +643,6 @@ def _build_pre_gathered_cache(cos_sin_cache, positions, head_size, is_neox_style
     return torch.cat([cos_full, sin_full], dim=0)
 
 
-# Hardcoded `(0, 1)` — impl 2 (`aclnnRopeWithSinCosCache`) asserts
-# `!pre_gathered_` at construction.  Cannot use conftest auto-injection.
-@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize("layout", ("2d", "3d"))
 @pytest.mark.parametrize("is_neox_style", (True, False))
 @pytest.mark.parametrize(
@@ -655,7 +652,6 @@ def _build_pre_gathered_cache(cos_sin_cache, positions, head_size, is_neox_style
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-@pytest.mark.parametrize("device", ("npu",))
 def test_rotary_embedding_pre_gathered(
     implementation_index, layout, is_neox_style, dtype, rtol, atol, device
 ):
@@ -665,10 +661,11 @@ def test_rotary_embedding_pre_gathered(
     if not (hasattr(torch, "npu") and torch.npu.is_available()):
         pytest.skip("NPU not available")
 
+    if implementation_index == 2:
+        pytest.skip("`aclnnRopeWithSinCosCache` (impl 2) asserts `!pre_gathered_`")
+
     if not is_neox_style and implementation_index == 0:
-        pytest.skip(
-            'Ascend `aclnnApplyRotaryPosEmbV2` only supports `rotaryMode="half"`'
-        )
+        pytest.skip('`aclnnApplyRotaryPosEmbV2` only supports `rotaryMode="half"`')
 
     num_tokens = 8
     num_heads = 16

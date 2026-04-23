@@ -22,7 +22,7 @@ namespace infini::ops {
 // large tensors where kernel fusion reduces memory traffic.
 //
 // Select via `implementation_index=1` in Python:
-//   infini.ops.add_rms_norm(..., implementation_index=1, stream=s)
+//   `infini.ops.add_rms_norm(..., implementation_index=1, stream=s)`.
 template <>
 class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
  public:

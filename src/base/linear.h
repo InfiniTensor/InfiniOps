@@ -41,13 +41,13 @@ class Linear : public Operator<Linear> {
       : Linear{input, weight, bias, /*trans_a=*/false, /*trans_b=*/true, out} {
     assert(weight.ndim() >= 2 &&
            "`Linear`: `weight` must have at least 2 dims "
-           "`[..., out_features, in_features]`.");
+           "`[..., out_features, in_features]`");
     assert(weight.size(-1) == input.size(-1) &&
            "`Linear`: `weight.shape[-1]` must equal `input.shape[-1]` "
-           "(`in_features`).");
+           "(`in_features`)");
     assert(weight.size(-2) == out.size(-1) &&
            "`Linear`: `weight.shape[-2]` must equal `out.shape[-1]` "
-           "(`out_features`).");
+           "(`out_features`)");
   }
 
   // Deprecated — use `(input, weight, bias, out)` overload.

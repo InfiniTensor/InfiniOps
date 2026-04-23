@@ -56,7 +56,8 @@ namespace infini::ops {
 //       * `rotaryCoeff=2` when `is_neox_style=true`  (half split + cat)
 //       * `rotaryCoeff=head_size` when `is_neox_style=false` (interleave)
 //     Partial rotary (`rotary_dim < head_size`) is not supported by either
-//     the aclnn or ATB fused APIs; callers must pad to `head_size` upstream.
+//     the `aclnn` or ATB fused APIs; callers must pad to `head_size`
+//     upstream.
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     : public RotaryEmbedding {
@@ -71,11 +72,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
                         is_neox_style, rotary_dim, query_out, key_out,
                         pre_gathered) {
     assert(rotary_dim == head_size &&
-           "Ascend `RotaryEmbedding` (ATB): `rotary_dim` must equal "
-           "`head_size` — ATB `RopeParam` does not support partial rotary.");
+           "ascend `RotaryEmbedding` (ATB): `rotary_dim` must equal "
+           "`head_size` — ATB `RopeParam` does not support partial rotary");
     assert(has_key_ &&
-           "Ascend `RotaryEmbedding` (ATB): `key` is required — ATB "
-           "`RopeParam` always rotates Q and K together.");
+           "ascend `RotaryEmbedding` (ATB): `key` is required — ATB "
+           "`RopeParam` always rotates Q and K together");
 
     const int64_t head_dim = head_size_;
     const size_t elem_sz = cos_sin_cache.element_size();
@@ -101,7 +102,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
       aclrtMalloc(&cos_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
       aclrtMalloc(&sin_table_dev_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
 
-      // Upload the initial cos_sin_cache.  `cos_sin_cache_data_` memorizes
+      // Upload the initial `cos_sin_cache`.  `cos_sin_cache_data_` memorizes
       // the source pointer; if the caller later hands in a different buffer,
       // `operator()` re-runs the upload.
       UploadCosSinCache(cos_sin_cache);
@@ -142,7 +143,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     param.cosFormat = 0;  // Inference mode.
     atb::Status s = atb::CreateOperation(param, &op_);
 
-    assert(s == atb::NO_ERROR && "`atb::CreateOperation(Rope)` failed.");
+    assert(s == atb::NO_ERROR && "`atb::CreateOperation(Rope)` failed");
   }
 
   ~Operator() {
@@ -295,7 +296,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
     uint64_t ws_size = 0;
     atb::Status s = op_->Setup(vp, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB Rope `Setup` failed.");
+    assert(s == atb::NO_ERROR && "ATB Rope `Setup` failed");
 
     uint8_t* ws_ptr = nullptr;
 
@@ -306,7 +307,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 1>
 
     s = op_->Execute(vp, ws_ptr, ws_size, ctx);
 
-    assert(s == atb::NO_ERROR && "ATB Rope `Execute` failed.");
+    assert(s == atb::NO_ERROR && "ATB Rope `Execute` failed");
   }
 
  private:

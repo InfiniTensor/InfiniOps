@@ -52,15 +52,15 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
         max_seq_len_{cos_sin_cache.size(0)},
         elem_sz_{cos_sin_cache.element_size()} {
     assert(rotary_dim == head_size &&
-           "Ascend `RotaryEmbedding`: `rotary_dim` must equal `head_size` "
-           "(partial rotation is not implemented in this wrapper).");
+           "ascend `RotaryEmbedding`: `rotary_dim` must equal `head_size` "
+           "(partial rotation is not implemented in this wrapper)");
     assert(is_neox_style &&
-           "Ascend `RotaryEmbedding`: `is_neox_style` must be `true` — "
+           "ascend `RotaryEmbedding`: `is_neox_style` must be `true` — "
            "this wrapper only plumbs `rotaryMode=\"half\"` through "
-           "`aclnnApplyRotaryPosEmbV2`.");
+           "`aclnnApplyRotaryPosEmbV2`");
     assert(has_key_ &&
-           "Ascend `RotaryEmbedding` (impl 0): `key` is required — "
-           "`aclnnApplyRotaryPosEmbV2` always rotates Q and K together.");
+           "ascend `RotaryEmbedding` (impl 0): `key` is required — "
+           "`aclnnApplyRotaryPosEmbV2` always rotates Q and K together");
 
     // Resolve optional out buffers; when omitted, RoPE writes back in place
     // on `query` / `key` — vLLM-style inplace semantics.

@@ -40,25 +40,25 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
         has_key_{key.has_value()},
         pre_gathered_{pre_gathered} {
     assert(positions.dtype() == DataType::kInt64 &&
-           "`RotaryEmbedding`: `positions` must be `int64` (vLLM convention).");
+           "`RotaryEmbedding`: `positions` must be `int64` (vLLM convention)");
 
     assert((query.ndim() == 2 || query.ndim() == 3) &&
            "`RotaryEmbedding`: `query` must be 2D `[T, Nq * head_size]` or 3D "
-           "`[T, Nq, head_size]`.");
+           "`[T, Nq, head_size]`");
 
     // TODO: relax once an MLA-capable Ascend impl lands.  The signature keeps
     // `std::optional<Tensor> key` for vLLM-API compatibility, but all current
     // Ascend impls assume `key` is present and rotate Q and K together.
     assert(key.has_value() &&
            "`RotaryEmbedding`: `key` is required; the `key = None` (MLA) path "
-           "is not yet implemented on any backend.");
+           "is not yet implemented on any backend");
 
     assert((key->ndim() == 2 || key->ndim() == 3) &&
            "`RotaryEmbedding`: `key` must be 2D `[T, Nkv * head_size]` or 3D "
-           "`[T, Nkv, head_size]`.");
+           "`[T, Nkv, head_size]`");
 
     assert(rotary_dim <= head_size &&
-           "`RotaryEmbedding`: `rotary_dim` must be `<= head_size`.");
+           "`RotaryEmbedding`: `rotary_dim` must be `<= head_size`");
   }
 
   virtual void operator()(const Tensor positions, const Tensor query,

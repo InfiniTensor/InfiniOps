@@ -22,8 +22,8 @@
 // `ascendc_add_operator()` and cannot be `PascalCase`d.
 // NOLINTNEXTLINE(readability-identifier-naming)
 extern "C" uint32_t aclrtlaunch_add_rms_norm(
-    uint32_t block_dim, void* stream, void* x1, void* x2, void* weight, void* y,
-    void* x_out, int64_t total_rows, int64_t dim_length,
+    uint32_t block_dim, void* stream, void* input, void* residual, void* weight,
+    void* out, void* residual_out, int64_t total_rows, int64_t dim_length,
     int64_t dim_length_align, int64_t former_num, int64_t former_length,
     int64_t tail_length, float eps, int64_t dtype_code);
 
@@ -57,7 +57,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
     assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kBFloat16 ||
             dtype_ == DataType::kFloat32) &&
            "`AddRmsNorm` custom kernel: `input` must be `fp16`, `bf16`, or "
-           "`fp32`.");
+           "`fp32`");
 
     // 32-byte alignment on the last dimension — kernel relies on aligned
     // `DataCopyPad` loads/stores.
@@ -67,7 +67,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
         align_elems;
     assert(static_cast<int64_t>(dim_) == dim_length_align_ &&
            "`AddRmsNorm` custom kernel: last dimension must be 32-byte "
-           "aligned.");
+           "aligned");
 
     total_rows_ =
         static_cast<int64_t>(batch_size_) * static_cast<int64_t>(nhead_);
