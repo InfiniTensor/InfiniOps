@@ -8,11 +8,10 @@ class KernelRmsNorm {
  public:
   __aicore__ inline KernelRmsNorm() {}
 
-  __aicore__ inline void Init(GM_ADDR x, GM_ADDR weight, GM_ADDR y,
-                              int64_t total_rows, int64_t dim_length,
-                              int64_t dim_length_align, int64_t former_num,
-                              int64_t former_length, int64_t tail_length,
-                              float eps) {
+  __aicore__ inline void Init(GM_ADDR input, GM_ADDR weight, int64_t total_rows,
+                              int64_t dim_length, int64_t dim_length_align,
+                              int64_t former_num, int64_t former_length,
+                              int64_t tail_length, float eps, GM_ADDR out) {
     dim_length_ = dim_length;
     dim_length_align_ = dim_length_align;
     eps_ = eps;
@@ -31,18 +30,18 @@ class KernelRmsNorm {
     }
 
     // Global memory pointers.
-    x_gm_.SetGlobalBuffer((__gm__ T*)x + row_offset * dim_length_align,
-                          block_rows_ * dim_length_align);
-    y_gm_.SetGlobalBuffer((__gm__ T*)y + row_offset * dim_length_align,
-                          block_rows_ * dim_length_align);
+    input_gm_.SetGlobalBuffer((__gm__ T*)input + row_offset * dim_length_align,
+                              block_rows_ * dim_length_align);
+    out_gm_.SetGlobalBuffer((__gm__ T*)out + row_offset * dim_length_align,
+                            block_rows_ * dim_length_align);
     weight_gm_.SetGlobalBuffer((__gm__ float*)weight, dim_length_align);
 
     int32_t dim_len_align = static_cast<int32_t>(dim_length_align_);
 
     // I/O queues (double-buffered).
-    pipe_.InitBuffer(in_queue_x_, kBufferNum,
+    pipe_.InitBuffer(in_queue_input_, kBufferNum,
                      dim_len_align * static_cast<int32_t>(sizeof(T)));
-    pipe_.InitBuffer(out_queue_y_, kBufferNum,
+    pipe_.InitBuffer(out_queue_out_, kBufferNum,
                      dim_len_align * static_cast<int32_t>(sizeof(T)));
 
     // Weight buffer (fp32, loaded once, reused for all rows).
@@ -51,7 +50,7 @@ class KernelRmsNorm {
 
     // FP16/BF16 path needs extra fp32 compute buffers.
     if constexpr (sizeof(T) == 2) {
-      pipe_.InitBuffer(x_fp32_buf_,
+      pipe_.InitBuffer(input_fp32_buf_,
                        dim_len_align * static_cast<int32_t>(sizeof(float)));
       pipe_.InitBuffer(tmp_fp32_buf_,
                        dim_len_align * static_cast<int32_t>(sizeof(float)));
@@ -92,17 +91,18 @@ class KernelRmsNorm {
 
  private:
   __aicore__ inline void CopyIn(int64_t row) {
-    AscendC::LocalTensor<T> x_local = in_queue_x_.AllocTensor<T>();
+    AscendC::LocalTensor<T> input_local = in_queue_input_.AllocTensor<T>();
     AscendC::DataCopyExtParams params{
         1, static_cast<uint32_t>(dim_length_align_ * sizeof(T)), 0, 0, 0};
     AscendC::DataCopyPadExtParams<T> pad{false, 0, 0, static_cast<T>(0)};
-    AscendC::DataCopyPad(x_local, x_gm_[row * dim_length_align_], params, pad);
-    in_queue_x_.EnQue(x_local);
+    AscendC::DataCopyPad(input_local, input_gm_[row * dim_length_align_],
+                         params, pad);
+    in_queue_input_.EnQue(input_local);
   }
 
   __aicore__ inline void Compute(int64_t row) {
-    AscendC::LocalTensor<T> x_local = in_queue_x_.DeQue<T>();
-    AscendC::LocalTensor<T> y_local = out_queue_y_.AllocTensor<T>();
+    AscendC::LocalTensor<T> input_local = in_queue_input_.DeQue<T>();
+    AscendC::LocalTensor<T> out_local = out_queue_out_.AllocTensor<T>();
 
     AscendC::LocalTensor<float> w_local = weight_buf_.Get<float>();
     AscendC::LocalTensor<float> r_tmp = reduce_tmp_buf_.Get<float>();
@@ -114,12 +114,12 @@ class KernelRmsNorm {
     if constexpr (sizeof(T) == 4) {
       // ---- FP32 path: compute directly. ----
 
-      // Step 1: x^2 into y_local (reuse output buffer temporarily).
-      AscendC::Mul(y_local, x_local, x_local, dim_len_align);
+      // Step 1: x^2 into out_local (reuse output buffer temporarily).
+      AscendC::Mul(out_local, input_local, input_local, dim_len_align);
 
       // Step 2: ReduceSum(x^2) -> s_local[0].
-      // `ReduceSum` may modify src (y_local), but we overwrite it later.
-      AscendC::ReduceSum(s_local, y_local, r_tmp, dim_len_align);
+      // `ReduceSum` may modify src (out_local), but we overwrite it later.
+      AscendC::ReduceSum(s_local, out_local, r_tmp, dim_len_align);
 
       // Step 3-5: scale = 1 / sqrt(mean(x^2) + eps).
       float sum_val = s_local.GetValue(0);
@@ -129,18 +129,18 @@ class KernelRmsNorm {
       float scale = 1.0f / s_local.GetValue(0);
 
       // Step 6: y = x * scale.
-      AscendC::Muls(y_local, x_local, scale, dim_len_align);
+      AscendC::Muls(out_local, input_local, scale, dim_len_align);
 
       // Step 7: y = y * weight.
-      AscendC::Mul(y_local, y_local, w_local, dim_len_align);
+      AscendC::Mul(out_local, out_local, w_local, dim_len_align);
 
     } else {
       // ---- FP16/BF16 path: cast → fp32 compute → cast back. ----
-      AscendC::LocalTensor<float> x_f32 = x_fp32_buf_.Get<float>();
+      AscendC::LocalTensor<float> x_f32 = input_fp32_buf_.Get<float>();
       AscendC::LocalTensor<float> tmp_f32 = tmp_fp32_buf_.Get<float>();
 
       // Cast input fp16/bf16 → fp32.
-      AscendC::Cast(x_f32, x_local, AscendC::RoundMode::CAST_NONE,
+      AscendC::Cast(x_f32, input_local, AscendC::RoundMode::CAST_NONE,
                     dim_len_align);
 
       // Step 1: x^2 in fp32.
@@ -165,34 +165,34 @@ class KernelRmsNorm {
       // Cast result fp32 → fp16/bf16.  `CAST_RINT` is round-to-nearest-even
       // and is defined for both `half` and `bfloat16_t` destinations;
       // `CAST_ROUND` is a `half`-specific alias.
-      AscendC::Cast(y_local, tmp_f32, AscendC::RoundMode::CAST_RINT,
+      AscendC::Cast(out_local, tmp_f32, AscendC::RoundMode::CAST_RINT,
                     dim_len_align);
     }
 
-    in_queue_x_.FreeTensor(x_local);
-    out_queue_y_.EnQue(y_local);
+    in_queue_input_.FreeTensor(input_local);
+    out_queue_out_.EnQue(out_local);
   }
 
   __aicore__ inline void CopyOut(int64_t row) {
-    AscendC::LocalTensor<T> y_local = out_queue_y_.DeQue<T>();
+    AscendC::LocalTensor<T> out_local = out_queue_out_.DeQue<T>();
     AscendC::DataCopyExtParams params{
         1, static_cast<uint32_t>(dim_length_align_ * sizeof(T)), 0, 0, 0};
-    AscendC::DataCopyPad(y_gm_[row * dim_length_align_], y_local, params);
-    out_queue_y_.FreeTensor(y_local);
+    AscendC::DataCopyPad(out_gm_[row * dim_length_align_], out_local, params);
+    out_queue_out_.FreeTensor(out_local);
   }
 
  private:
   AscendC::TPipe pipe_;
-  AscendC::TQue<AscendC::TPosition::VECIN, kBufferNum> in_queue_x_;
-  AscendC::TQue<AscendC::TPosition::VECOUT, kBufferNum> out_queue_y_;
+  AscendC::TQue<AscendC::TPosition::VECIN, kBufferNum> in_queue_input_;
+  AscendC::TQue<AscendC::TPosition::VECOUT, kBufferNum> out_queue_out_;
 
   AscendC::TBuf<AscendC::TPosition::VECCALC> weight_buf_;
-  AscendC::TBuf<AscendC::TPosition::VECCALC> x_fp32_buf_;
+  AscendC::TBuf<AscendC::TPosition::VECCALC> input_fp32_buf_;
   AscendC::TBuf<AscendC::TPosition::VECCALC> tmp_fp32_buf_;
   AscendC::TBuf<AscendC::TPosition::VECCALC> reduce_tmp_buf_;
   AscendC::TBuf<AscendC::TPosition::VECCALC> sum_buf_;
 
-  AscendC::GlobalTensor<T> x_gm_, y_gm_;
+  AscendC::GlobalTensor<T> input_gm_, out_gm_;
   AscendC::GlobalTensor<float> weight_gm_;
 
   int64_t block_rows_;
@@ -206,33 +206,34 @@ class KernelRmsNorm {
 // distinct numeric paths, so dispatch is on the `DataType` tag rather
 // than the byte size.
 //
-// The symbol name `rms_norm` must match the `OP_NAME` passed to
-// `ascendc_add_operator()` / the `aclrtlaunch_*` header; Google C++
-// Style's PascalCase rule does not apply here (see `op_host/`).
-extern "C" __global__ __aicore__ void rms_norm(
-    GM_ADDR x, GM_ADDR weight, GM_ADDR y, int64_t total_rows,
-    int64_t dim_length, int64_t dim_length_align, int64_t former_num,
-    int64_t former_length, int64_t tail_length, float eps, int64_t dtype_code) {
+// Parameters follow the C2 convention: inputs first, attributes between,
+// outputs last.  The kernel symbol is prefixed with `aclrtlaunch_` by the
+// `AscendC` toolchain, yielding `aclrtlaunch_RmsNorm` which matches the
+// base `RmsNorm` class name.
+extern "C" __global__ __aicore__ void RmsNorm(
+    GM_ADDR input, GM_ADDR weight, int64_t total_rows, int64_t dim_length,
+    int64_t dim_length_align, int64_t former_num, int64_t former_length,
+    int64_t tail_length, float eps, int64_t dtype_code, GM_ADDR out) {
   switch (static_cast<infini::ops::DataType>(dtype_code)) {
     case infini::ops::DataType::kFloat16: {
       KernelRmsNorm<half> op;
-      op.Init(x, weight, y, total_rows, dim_length, dim_length_align,
-              former_num, former_length, tail_length, eps);
+      op.Init(input, weight, total_rows, dim_length, dim_length_align,
+              former_num, former_length, tail_length, eps, out);
       op.Process();
       break;
     }
     case infini::ops::DataType::kBFloat16: {
       KernelRmsNorm<bfloat16_t> op;
-      op.Init(x, weight, y, total_rows, dim_length, dim_length_align,
-              former_num, former_length, tail_length, eps);
+      op.Init(input, weight, total_rows, dim_length, dim_length_align,
+              former_num, former_length, tail_length, eps, out);
       op.Process();
       break;
     }
     case infini::ops::DataType::kFloat32:
     default: {
       KernelRmsNorm<float> op;
-      op.Init(x, weight, y, total_rows, dim_length, dim_length_align,
-              former_num, former_length, tail_length, eps);
+      op.Init(input, weight, total_rows, dim_length, dim_length_align,
+              former_num, former_length, tail_length, eps, out);
       op.Process();
       break;
     }
