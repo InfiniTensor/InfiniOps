@@ -14,11 +14,8 @@
 #include "base/add_rms_norm.h"
 #include "operator.h"
 
-// Forward-declare the generated AscendC kernel launch function.  This
-// symbol is provided by the `no_workspace_kernel` static library built
-// from `ascend/custom/add_rms_norm/op_kernel/add_rms_norm.cpp` via
-// `ascendc_library()`; the `aclrtlaunch_` prefix is prepended by the
-// AscendC toolchain to the kernel entry's `extern "C"` name.
+// Forward-declare the `aclrtlaunch_AddRmsNorm` launch symbol defined
+// by the AscendC toolchain from `custom/add_rms_norm/op_kernel/`.
 extern "C" uint32_t aclrtlaunch_AddRmsNorm(
     uint32_t block_dim, void* stream, void* input, void* residual, void* weight,
     int64_t total_rows, int64_t dim_length, int64_t dim_length_align,

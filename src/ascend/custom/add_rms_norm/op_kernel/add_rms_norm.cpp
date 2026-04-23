@@ -247,11 +247,6 @@ class KernelAddRmsNorm {
 // by the host launcher.  fp16 and bf16 both have `sizeof == 2` but need
 // distinct numeric paths, so dispatch is on the `DataType` tag rather
 // than the byte size.
-//
-// Parameters follow the C2 convention: inputs first, attributes between,
-// outputs last.  The kernel symbol is prefixed with `aclrtlaunch_` by the
-// `AscendC` toolchain, yielding `aclrtlaunch_AddRmsNorm` which matches the
-// base `AddRmsNorm` class name.
 extern "C" __global__ __aicore__ void AddRmsNorm(
     GM_ADDR input, GM_ADDR residual, GM_ADDR weight, int64_t total_rows,
     int64_t dim_length, int64_t dim_length_align, int64_t former_num,
