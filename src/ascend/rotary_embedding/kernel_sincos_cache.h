@@ -51,12 +51,12 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
                         pre_gathered),
         max_seq_len_{cos_sin_cache.size(0)} {
     assert(has_key_ &&
-           "Ascend `RotaryEmbedding` (`aclnnRopeWithSinCosCache`): `key` is "
-           "required — this fused API always rotates Q and K together.");
+           "ascend `RotaryEmbedding` (`aclnnRopeWithSinCosCache`): `key` is "
+           "required — this fused API always rotates Q and K together");
     assert(!pre_gathered_ &&
-           "Ascend `RotaryEmbedding` (`aclnnRopeWithSinCosCache`): "
+           "ascend `RotaryEmbedding` (`aclnnRopeWithSinCosCache`): "
            "`pre_gathered` is not supported — use implementation index 0 or "
-           "1 for the pre-gathered fast path.");
+           "1 for the pre-gathered fast path");
 
     // Resolve optional out buffers (inplace on `query` / `key` when omitted).
     // Non-const so `.data()` returns a writable `void*`.
@@ -143,7 +143,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
     auto ret = aclnnRopeWithSinCosCacheGetWorkspaceSize(
         t_pos, t_q, t_k, t_cache, /*mropeSection=*/nullptr, head_size,
         is_neox_style, t_q_out, t_k_out, &ws_size, &executor);
-    assert(ret == 0 && "`aclnnRopeWithSinCosCacheGetWorkspaceSize` failed.");
+    assert(ret == 0 && "`aclnnRopeWithSinCosCacheGetWorkspaceSize` failed");
 
     void* ws_buf = nullptr;
 
@@ -153,7 +153,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend, 2>
     }
 
     ret = aclnnRopeWithSinCosCache(ws_buf, ws_size, executor, stream);
-    assert(ret == 0 && "`aclnnRopeWithSinCosCache` failed.");
+    assert(ret == 0 && "`aclnnRopeWithSinCosCache` failed");
   }
 
  private:

@@ -23,7 +23,7 @@ class SiluAndMul : public Operator<SiluAndMul> {
         is_input_contiguous_{input.IsContiguous()},
         is_out_contiguous_{out.IsContiguous()} {
     assert(input_dtype_ == out_dtype_ &&
-           "`SiluAndMul`: `input` and `out` must have the same dtype.");
+           "`SiluAndMul`: `input` and `out` must have the same dtype");
   }
 
   SiluAndMul(const Tensor input, Tensor out) : SiluAndMul{input, -1, out} {}

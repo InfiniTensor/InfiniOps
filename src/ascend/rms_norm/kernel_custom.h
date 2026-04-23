@@ -23,28 +23,29 @@
 // `ascendc_add_operator()` and cannot be `PascalCase`d.
 // NOLINTNEXTLINE(readability-identifier-naming)
 extern "C" uint32_t aclrtlaunch_rms_norm(
-    uint32_t block_dim, void* stream, void* x, void* weight, void* y,
+    uint32_t block_dim, void* stream, void* input, void* weight, void* out,
     int64_t total_rows, int64_t dim_length, int64_t dim_length_align,
     int64_t former_num, int64_t former_length, int64_t tail_length, float eps,
     int64_t dtype_code);
 
 namespace infini::ops {
 
-// Custom AscendC fused RmsNorm kernel (implementation index 1).
+// Custom AscendC fused `RmsNorm` kernel (implementation index 1).
 //
-// A single-kernel implementation that computes RMSNorm in one launch, avoiding
-// the 5-sub-op decomposition of `aclnnRmsNorm` (index 0).  Uses `Sqrt` +
-// scalar division instead of `Rsqrt` for higher precision (~1e-7 fp32 error
-// vs ~0.2% with `Rsqrt`).
+// A single-kernel implementation that computes `RMSNorm` in one launch,
+// avoiding the 5-sub-op decomposition of `aclnnRmsNorm` (index 0).  Uses
+// `Sqrt` + scalar division instead of `Rsqrt` for higher precision (~1e-7
+// `fp32` error vs ~0.2% with `Rsqrt`).
 //
 // Select via `implementation_index=1` in Python:
-//   infini.ops.rms_norm(input, weight, eps, out, implementation_index=1,
-//                       stream=s)
+//   `infini.ops.rms_norm(input, weight, eps, out, implementation_index=1,
+//                        stream=s)`.
 //
 // Requirements:
-//   - Input last dimension must be 32-byte aligned (divisible by 16 for fp16
-//     or 8 for fp32).  All standard LLM hidden dimensions satisfy this.
-//   - Weight must have the same dtype as input.
+//   - Input last dimension must be 32-byte aligned (divisible by 16 for
+//     `fp16` or 8 for `fp32`).  All standard LLM hidden dimensions satisfy
+//     this.
+//   - `weight` must have the same dtype as `input`.
 //   - The custom kernel binary must be linked (`BUILD_ASCEND_CUSTOM=ON`).
 template <>
 class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
@@ -54,7 +55,7 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
     assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kBFloat16 ||
             dtype_ == DataType::kFloat32) &&
            "`RmsNorm` custom kernel: `input` must be `fp16`, `bf16`, or "
-           "`fp32`.");
+           "`fp32`");
 
     // 32-byte alignment on the last dimension — kernel relies on aligned
     // `DataCopyPad` loads/stores.
@@ -63,7 +64,7 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
         ((static_cast<int64_t>(dim_) + align_elems - 1) / align_elems) *
         align_elems;
     assert(static_cast<int64_t>(dim_) == dim_length_align_ &&
-           "`RmsNorm` custom kernel: last dimension must be 32-byte aligned.");
+           "`RmsNorm` custom kernel: last dimension must be 32-byte aligned");
 
     total_rows_ =
         static_cast<int64_t>(batch_size_) * static_cast<int64_t>(nhead_);

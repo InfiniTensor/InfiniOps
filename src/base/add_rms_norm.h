@@ -22,12 +22,11 @@ class AddRmsNorm : public Operator<AddRmsNorm> {
         batch_size_{ndim_ == 2 ? input.size(-2) : input.size(-3)},
         nhead_{ndim_ == 2 ? 1 : input.size(-2)} {
     assert(input.dtype() == residual.dtype() &&
-           "`AddRmsNorm`: `input` and `residual` must have the same dtype.");
+           "`AddRmsNorm`: `input` and `residual` must have the same dtype");
     assert(input.dtype() == out.dtype() &&
-           "`AddRmsNorm`: `input` and `out` must have the same dtype.");
-    assert(
-        input.dtype() == residual_out.dtype() &&
-        "`AddRmsNorm`: `input` and `residual_out` must have the same dtype.");
+           "`AddRmsNorm`: `input` and `out` must have the same dtype");
+    assert(input.dtype() == residual_out.dtype() &&
+           "`AddRmsNorm`: `input` and `residual_out` must have the same dtype");
   }
 
   AddRmsNorm(Tensor input, Tensor residual, const Tensor weight, float eps)
