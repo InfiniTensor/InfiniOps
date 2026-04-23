@@ -218,7 +218,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     } else {
       // Pre-gathered: caller passes `[2 * T, head_size]` — rows 0..T-1 are
       // neox-expanded cos, rows T..2T-1 are neox-expanded sin (stacked via
-      // `torch.cat([cos, sin], dim=0)` in the `apply_rotary_pos_emb` shim).
+      // `torch.cat([cos, sin], dim=0)`).
       const auto* base = static_cast<const uint8_t*>(cos_sin_cache.data());
       cos_sin_for_v2 = base;
       sin_for_v2 = base + static_cast<size_t>(num_tokens * head_dim) * elem_sz_;
