@@ -8,15 +8,11 @@
 
 namespace infini::ops {
 
-// vLLM-aligned fused add + RMSNorm.
-//
-// Mirrors `vllm._C.fused_add_rms_norm(input, residual, weight, eps)`
-// semantics: `residual_out = input + residual`; `out = RMSNorm(residual_out)
-// * weight`.  vLLM's schema is fully inplace (both `input` and `residual` are
-// written back); this base exposes an out-of-place primary form (matches the
-// project's C2 "inputs-first-outputs-last" rule and supports callers that
-// need separate destinations) plus an inplace convenience overload that
-// routes to the out-of-place form with aliased buffers.
+// Fused residual-add + RMSNorm.  Computes
+// `residual_out = input + residual` and `out = RMSNorm(residual_out) *
+// weight`.  The 4-arg overload `(input, residual, weight, eps)` aliases
+// `out = input`, `residual_out = residual` to match vLLM's inplace
+// `fused_add_rms_norm` schema.
 class AddRmsNorm : public Operator<AddRmsNorm> {
  public:
   AddRmsNorm(const Tensor input, const Tensor residual, const Tensor weight,
@@ -36,10 +32,6 @@ class AddRmsNorm : public Operator<AddRmsNorm> {
         "`AddRmsNorm`: `input` and `residual_out` must have the same dtype.");
   }
 
-  // Inplace convenience overload — matches vLLM's
-  // `fused_add_rms_norm(input, residual, weight, eps)` signature directly.
-  // Aliases `out = input` and `residual_out = residual`; callers that need
-  // separate destinations should use the primary constructor.
   AddRmsNorm(Tensor input, Tensor residual, const Tensor weight, float eps)
       : AddRmsNorm{input, residual, weight, eps, input, residual} {}
 

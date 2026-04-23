@@ -32,10 +32,10 @@ namespace infini::ops {
 
 // Custom AscendC fused `AddRmsNorm` kernel (implementation index 2).
 //
-// A single-kernel implementation that computes `residual_out = input + residual`
-// followed by `out = rms_norm(residual_out, weight, eps)` in one launch,
-// avoiding the decomposed `aclnnAdd` + `aclnnRmsNorm` calls (index 0) or
-// the fused `aclnnAddRmsNorm` call (index 1).  Migrated from the custom
+// A single-kernel implementation that computes `residual_out = input +
+// residual` followed by `out = rms_norm(residual_out, weight, eps)` in one
+// launch, avoiding the decomposed `aclnnAdd` + `aclnnRmsNorm` calls (index 0)
+// or the fused `aclnnAddRmsNorm` call (index 1).  Migrated from the custom
 // `RmsNorm` kernel (index 1 of `RmsNorm`).
 //
 // Select via `implementation_index=2` in Python:
@@ -98,8 +98,9 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 2> : public AddRmsNorm {
     if (weight_fp32_data_) aclrtFree(weight_fp32_data_);
   }
 
-  void operator()(const Tensor input, const Tensor residual, const Tensor weight,
-                  float eps, Tensor out, Tensor residual_out) const override {
+  void operator()(const Tensor input, const Tensor residual,
+                  const Tensor weight, float eps, Tensor out,
+                  Tensor residual_out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
     void* weight_fp32;
