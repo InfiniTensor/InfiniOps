@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <vector>
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"

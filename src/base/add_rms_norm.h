@@ -1,8 +1,6 @@
 #ifndef INFINI_OPS_BASE_ADD_RMS_NORM_H_
 #define INFINI_OPS_BASE_ADD_RMS_NORM_H_
 
-#include <cstddef>
-
 #include "operator.h"
 #include "tensor.h"
 

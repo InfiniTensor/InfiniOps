@@ -1,7 +1,6 @@
 #ifndef INFINI_OPS_BASE_ROTARY_EMBEDDING_H_
 #define INFINI_OPS_BASE_ROTARY_EMBEDDING_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 
