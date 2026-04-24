@@ -112,29 +112,9 @@ def _find_vector_tensor_params(op_name):
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
 
-def _find_params_with_defaults(op_name):
-    """Return ``{param_name: default_literal}`` for base-header params that
-    carry a `= <literal>` default value.  `libclang`'s cursor API does not
-    expose defaults reliably, so we regex-scan the source.  Only used for
-    plain scalar defaults such as ``bool pre_gathered = false``.
-    """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
-
-    mapping = {}
-
-    for name, default in re.findall(
-        r"\b(?:bool|int(?:64_t|32_t|8_t|16_t)?|std::size_t|std::uint\w+_t|float|double)\s+(\w+)\s*=\s*([^,\)]+?)\s*(?:,|\))",
-        source,
-    ):
-        mapping[name] = default.strip()
-
-    return mapping
-
-
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
-    params_with_defaults = _find_params_with_defaults(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
@@ -206,10 +186,6 @@ def _generate_pybind11(operator):
 
             if _is_optional(arg):
                 parts.append(f'py::arg("{arg.spelling}") = py::none()')
-            elif arg.spelling in params_with_defaults:
-                parts.append(
-                    f'py::arg("{arg.spelling}") = {params_with_defaults[arg.spelling]}'
-                )
             else:
                 parts.append(f'py::arg("{arg.spelling}")')
 
@@ -281,7 +257,8 @@ void Bind{pascal_case_op_name}(py::module& m) {{
       }})
       .def_static("clear_cache", &Self::clear_cache);
 
-{callers}}}
+{callers}
+}}
 
 }}  // namespace infini::ops
 

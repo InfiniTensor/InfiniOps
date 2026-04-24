@@ -7,15 +7,6 @@ name = "InfiniOps"
 version = "0.1.0"
 
 [project.optional-dependencies]
-# TODO: `torch` here is unconstrained.  On Ascend hosts, the working
-# torch is the Ascend-matched `torch 2.9.0+cpu` paired with
-# `torch_npu 2.9.0.post1+…`.  A `pip install -e .[dev] --force-reinstall`
-# will re-resolve `torch` to the latest PyPI version (currently
-# `torch 2.11.0`), which now declares `cuda-toolkit` / `nvidia-cublas` /
-# `nvidia-cudnn` / … as hard deps — downloads GBs of CUDA wheels and
-# kills the `torch_npu` / `vllm-ascend` pairing.  Needs a platform-aware
-# split (e.g. `torch; platform_machine != 'aarch64'`, or move `torch`
-# out of `dev` and require it pre-installed in the container image).
 dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff", "torch", "pyyaml"]
 
 [tool.scikit-build.wheel]

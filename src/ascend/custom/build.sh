@@ -1,20 +1,8 @@
 #!/bin/bash
-# Build custom `AscendC` kernels into `libno_workspace_kernel.a` (+ the
-# standalone `libascend_kernel.so`).
-#
-# Intermediate artefacts default to `<repo>/build/build_ascend_custom/`
-# so the source tree under `src/` stays free of build output.  Override
-# via `BUILD_DIR=<abs-path> bash build.sh …` if needed.
+# Build custom `AscendC` kernels into `libascend_kernel.so`.
 set -e
 
 SOC_VERSION="${1:-Ascend910_9382}"
-
-# Use the same `cmake` the caller resolved (default: first `cmake` on
-# PATH).  The outer `src/CMakeLists.txt` forwards `${CMAKE_COMMAND}`
-# via `CMAKE_EXE` so the child build doesn't accidentally pick up the
-# PyPI `cmake` shim whose Python package only exists in `pip`'s
-# build-isolation overlay.
-CMAKE_EXE="${CMAKE_EXE:-cmake}"
 
 # Detect CANN toolkit path.
 _CANN_TOOLKIT_INSTALL_PATH=$(grep "Toolkit_InstallPath" /etc/Ascend/ascend_cann_install.info | awk -F'=' '{print $2}')
@@ -22,24 +10,21 @@ source "${_CANN_TOOLKIT_INSTALL_PATH}/set_env.sh"
 echo "CANN: ${ASCEND_TOOLKIT_HOME}"
 
 ASCEND_INCLUDE_DIR=${ASCEND_TOOLKIT_HOME}/$(arch)-linux/include
+CURRENT_DIR=$(pwd)
+OUTPUT_DIR=${CURRENT_DIR}/output
+mkdir -p "${OUTPUT_DIR}"
 
-# Resolve build directory.  `<script>/../../..` is `<repo>/`.
-SCRIPT_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
-REPO_ROOT=$(cd "${SCRIPT_DIR}/../../.." && pwd)
-BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/build/build_ascend_custom}"
-OUTPUT_DIR="${BUILD_DIR}/output"
-
+BUILD_DIR=build
 rm -rf "${BUILD_DIR}"
-mkdir -p "${BUILD_DIR}" "${OUTPUT_DIR}"
+mkdir -p "${BUILD_DIR}"
 
-"${CMAKE_EXE}" \
+cmake \
     -DASCEND_HOME_PATH="${ASCEND_HOME_PATH}" \
     -DASCEND_INCLUDE_DIR="${ASCEND_INCLUDE_DIR}" \
     -DSOC_VERSION="${SOC_VERSION}" \
-    -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${OUTPUT_DIR}" \
     -B "${BUILD_DIR}" \
-    -S "${SCRIPT_DIR}"
+    -S .
 
-"${CMAKE_EXE}" --build "${BUILD_DIR}" -j 16
+cmake --build "${BUILD_DIR}" -j 16
 
 echo "Build complete. Output: ${OUTPUT_DIR}"
