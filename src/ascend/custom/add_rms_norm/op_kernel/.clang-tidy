@@ -1,0 +1,9 @@
+---
+# `op_kernel/*.cpp` is `AscendC` device code compiled by `ccec`, not by
+# the host toolchain, so it has no entry in `compile_commands.json` and
+# `clang-tidy` cannot parse it correctly (the `__aicore__` macro expands
+# unexpectedly when `kernel_operator.h` is absent).  Disable all checks
+# here — the `op_host/` side and the `kernel_custom.h` launcher still
+# enforce the full ruleset.
+
+Checks: '-*'
