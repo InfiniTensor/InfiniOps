@@ -1,102 +1,98 @@
-#include "data_type.h"
 #include "kernel_operator.h"
 
-constexpr int32_t kBufferNum = 2;
+constexpr int32_t BUFFER_NUM = 2;
 
 template <typename T>
 class KernelAddRmsNorm {
  public:
   __aicore__ inline KernelAddRmsNorm() {}
 
-  __aicore__ inline void Init(GM_ADDR input, GM_ADDR residual, GM_ADDR weight,
-                              int64_t total_rows, int64_t dim_length,
-                              int64_t dim_length_align, int64_t former_num,
-                              int64_t former_length, int64_t tail_length,
-                              float eps, GM_ADDR out, GM_ADDR residual_out) {
-    dim_length_ = dim_length;
-    dim_length_align_ = dim_length_align;
-    eps_ = eps;
+  __aicore__ inline void Init(GM_ADDR x1, GM_ADDR x2, GM_ADDR weight, GM_ADDR y,
+                              GM_ADDR x_out, int64_t totalRows,
+                              int64_t dimLength, int64_t dimLengthAlign,
+                              int64_t formerNum, int64_t formerLength,
+                              int64_t tailLength, float eps) {
+    this->dimLength = dimLength;
+    this->dimLengthAlign = dimLengthAlign;
+    this->eps = eps;
 
     // Block-level tiling: determine row range for this core.
-    int64_t block_idx = AscendC::GetBlockIdx();
-    int64_t row_offset;
+    int64_t blockIdx = AscendC::GetBlockIdx();
+    int64_t rowOffset;
 
-    if (block_idx < former_num) {
-      block_rows_ = former_length;
-      row_offset = former_length * block_idx;
+    if (blockIdx < formerNum) {
+      this->blockRows = formerLength;
+      rowOffset = formerLength * blockIdx;
     } else {
-      block_rows_ = tail_length;
-      int64_t tail_idx = block_idx - former_num;
-      row_offset = former_length * former_num + tail_length * tail_idx;
+      this->blockRows = tailLength;
+      int64_t tailIdx = blockIdx - formerNum;
+      rowOffset = formerLength * formerNum + tailLength * tailIdx;
     }
 
     // Global memory pointers.
-    input_gm_.SetGlobalBuffer((__gm__ T*)input + row_offset * dim_length_align,
-                              block_rows_ * dim_length_align);
-    residual_gm_.SetGlobalBuffer(
-        (__gm__ T*)residual + row_offset * dim_length_align,
-        block_rows_ * dim_length_align);
-    out_gm_.SetGlobalBuffer((__gm__ T*)out + row_offset * dim_length_align,
-                            block_rows_ * dim_length_align);
-    residual_out_gm_.SetGlobalBuffer(
-        (__gm__ T*)residual_out + row_offset * dim_length_align,
-        block_rows_ * dim_length_align);
-    weight_gm_.SetGlobalBuffer((__gm__ float*)weight, dim_length_align);
+    x1Gm.SetGlobalBuffer((__gm__ T*)x1 + rowOffset * dimLengthAlign,
+                         this->blockRows * dimLengthAlign);
+    x2Gm.SetGlobalBuffer((__gm__ T*)x2 + rowOffset * dimLengthAlign,
+                         this->blockRows * dimLengthAlign);
+    yGm.SetGlobalBuffer((__gm__ T*)y + rowOffset * dimLengthAlign,
+                        this->blockRows * dimLengthAlign);
+    xOutGm.SetGlobalBuffer((__gm__ T*)x_out + rowOffset * dimLengthAlign,
+                           this->blockRows * dimLengthAlign);
+    weightGm.SetGlobalBuffer((__gm__ float*)weight, dimLengthAlign);
 
-    int32_t dim_len_align = static_cast<int32_t>(dim_length_align_);
+    int32_t dimLenAlign = static_cast<int32_t>(this->dimLengthAlign);
 
     // I/O queues (double-buffered).
-    pipe_.InitBuffer(in_queue_input_, kBufferNum,
-                     dim_len_align * static_cast<int32_t>(sizeof(T)));
-    pipe_.InitBuffer(in_queue_residual_, kBufferNum,
-                     dim_len_align * static_cast<int32_t>(sizeof(T)));
-    pipe_.InitBuffer(out_queue_out_, kBufferNum,
-                     dim_len_align * static_cast<int32_t>(sizeof(T)));
-    pipe_.InitBuffer(out_queue_residual_out_, kBufferNum,
-                     dim_len_align * static_cast<int32_t>(sizeof(T)));
+    pipe.InitBuffer(inQueueX1, BUFFER_NUM,
+                    dimLenAlign * static_cast<int32_t>(sizeof(T)));
+    pipe.InitBuffer(inQueueX2, BUFFER_NUM,
+                    dimLenAlign * static_cast<int32_t>(sizeof(T)));
+    pipe.InitBuffer(outQueueY, BUFFER_NUM,
+                    dimLenAlign * static_cast<int32_t>(sizeof(T)));
+    pipe.InitBuffer(outQueueXOut, BUFFER_NUM,
+                    dimLenAlign * static_cast<int32_t>(sizeof(T)));
 
     // Weight buffer (fp32, loaded once, reused for all rows).
-    pipe_.InitBuffer(weight_buf_,
-                     dim_len_align * static_cast<int32_t>(sizeof(float)));
+    pipe.InitBuffer(weightBuf,
+                    dimLenAlign * static_cast<int32_t>(sizeof(float)));
 
-    // FP16/BF16 path needs extra fp32 compute buffers.
-    // `fp32_buf1_`: holds `x_out` in fp32 (reused from `x1_fp32` after Add).
-    // `fp32_buf2_`: holds `x2_fp32` initially, then `x_out^2`, then final
-    // result.
+    // FP16 path needs extra fp32 compute buffers.
+    // buf1: holds x_out in fp32 (reused from x1_fp32 after Add).
+    // buf2: holds x2_fp32 initially, then x_out^2, then final result.
     if constexpr (sizeof(T) == 2) {
-      pipe_.InitBuffer(fp32_buf1_,
-                       dim_len_align * static_cast<int32_t>(sizeof(float)));
-      pipe_.InitBuffer(fp32_buf2_,
-                       dim_len_align * static_cast<int32_t>(sizeof(float)));
+      pipe.InitBuffer(fp32Buf1,
+                      dimLenAlign * static_cast<int32_t>(sizeof(float)));
+      pipe.InitBuffer(fp32Buf2,
+                      dimLenAlign * static_cast<int32_t>(sizeof(float)));
     }
 
-    // `ReduceSum` temporary buffer (size per API formula).
-    constexpr int32_t kElemsPerRepeat = 256 / sizeof(float);
-    constexpr int32_t kElemsPerBlock = 32 / sizeof(float);
-    int32_t first_max_repeat =
-        (dim_len_align + kElemsPerRepeat - 1) / kElemsPerRepeat;
-    int32_t reduce_tmp_size =
-        ((first_max_repeat + kElemsPerBlock - 1) / kElemsPerBlock) *
-        kElemsPerBlock;
-    pipe_.InitBuffer(reduce_tmp_buf_,
-                     reduce_tmp_size * static_cast<int32_t>(sizeof(float)));
+    // ReduceSum temporary buffer (size per API formula).
+    constexpr int32_t ELEMS_PER_REPEAT = 256 / sizeof(float);
+    constexpr int32_t ELEMS_PER_BLOCK = 32 / sizeof(float);
+    int32_t firstMaxRepeat =
+        (dimLenAlign + ELEMS_PER_REPEAT - 1) / ELEMS_PER_REPEAT;
+    int32_t reduceTmpSize =
+        ((firstMaxRepeat + ELEMS_PER_BLOCK - 1) / ELEMS_PER_BLOCK) *
+        ELEMS_PER_BLOCK;
+    pipe.InitBuffer(reduceTmpBuf,
+                    reduceTmpSize * static_cast<int32_t>(sizeof(float)));
 
     // Scalar buffer for reduction result (8 floats = 32 bytes).
-    pipe_.InitBuffer(sum_buf_, 32);
+    pipe.InitBuffer(sumBuf, 32);
 
-    // Load weight (fp32) from GM into `weight_buf_`.
-    AscendC::LocalTensor<float> w_local = weight_buf_.Get<float>();
-    AscendC::DataCopyExtParams w_params{
-        1, static_cast<uint32_t>(dim_len_align * sizeof(float)), 0, 0, 0};
-    AscendC::DataCopyPadExtParams<float> w_pad{false, 0, 0, 0.0f};
-    AscendC::DataCopyPad(w_local, weight_gm_, w_params, w_pad);
+    // Load weight (fp32) from GM into `weightBuf`.
+    AscendC::LocalTensor<float> wLocal = weightBuf.Get<float>();
+    AscendC::DataCopyExtParams wParams{
+        1, static_cast<uint32_t>(dimLenAlign * sizeof(float)), 0, 0, 0};
+    AscendC::DataCopyPadExtParams<float> wPad{false, 0, 0, 0.0f};
+    AscendC::DataCopyPad(wLocal, weightGm, wParams, wPad);
 
     // Ensure weight DMA completes before compute.
     AscendC::PipeBarrier<PIPE_ALL>();
   }
 
   __aicore__ inline void Process() {
-    for (int64_t row = 0; row < block_rows_; ++row) {
+    for (int64_t row = 0; row < this->blockRows; ++row) {
       CopyIn(row);
       Compute(row);
       CopyOut(row);
@@ -105,175 +101,149 @@ class KernelAddRmsNorm {
 
  private:
   __aicore__ inline void CopyIn(int64_t row) {
-    AscendC::LocalTensor<T> input_local = in_queue_input_.AllocTensor<T>();
-    AscendC::LocalTensor<T> residual_local =
-        in_queue_residual_.AllocTensor<T>();
+    AscendC::LocalTensor<T> x1Local = inQueueX1.AllocTensor<T>();
+    AscendC::LocalTensor<T> x2Local = inQueueX2.AllocTensor<T>();
     AscendC::DataCopyExtParams params{
-        1, static_cast<uint32_t>(dim_length_align_ * sizeof(T)), 0, 0, 0};
+        1, static_cast<uint32_t>(this->dimLengthAlign * sizeof(T)), 0, 0, 0};
     AscendC::DataCopyPadExtParams<T> pad{false, 0, 0, static_cast<T>(0)};
-    AscendC::DataCopyPad(input_local, input_gm_[row * dim_length_align_],
-                         params, pad);
-    AscendC::DataCopyPad(residual_local, residual_gm_[row * dim_length_align_],
-                         params, pad);
-    in_queue_input_.EnQue(input_local);
-    in_queue_residual_.EnQue(residual_local);
+    AscendC::DataCopyPad(x1Local, x1Gm[row * this->dimLengthAlign], params,
+                         pad);
+    AscendC::DataCopyPad(x2Local, x2Gm[row * this->dimLengthAlign], params,
+                         pad);
+    inQueueX1.EnQue(x1Local);
+    inQueueX2.EnQue(x2Local);
   }
 
   __aicore__ inline void Compute(int64_t row) {
-    AscendC::LocalTensor<T> input_local = in_queue_input_.DeQue<T>();
-    AscendC::LocalTensor<T> residual_local = in_queue_residual_.DeQue<T>();
-    AscendC::LocalTensor<T> out_local = out_queue_out_.AllocTensor<T>();
-    AscendC::LocalTensor<T> residual_out_local =
-        out_queue_residual_out_.AllocTensor<T>();
+    AscendC::LocalTensor<T> x1Local = inQueueX1.DeQue<T>();
+    AscendC::LocalTensor<T> x2Local = inQueueX2.DeQue<T>();
+    AscendC::LocalTensor<T> yLocal = outQueueY.AllocTensor<T>();
+    AscendC::LocalTensor<T> xOutLocal = outQueueXOut.AllocTensor<T>();
 
-    AscendC::LocalTensor<float> w_local = weight_buf_.Get<float>();
-    AscendC::LocalTensor<float> r_tmp = reduce_tmp_buf_.Get<float>();
-    AscendC::LocalTensor<float> s_local = sum_buf_.Get<float>();
+    AscendC::LocalTensor<float> wLocal = weightBuf.Get<float>();
+    AscendC::LocalTensor<float> rTmp = reduceTmpBuf.Get<float>();
+    AscendC::LocalTensor<float> sLocal = sumBuf.Get<float>();
 
-    int32_t dim_len = static_cast<int32_t>(dim_length_);
-    int32_t dim_len_align = static_cast<int32_t>(dim_length_align_);
+    int32_t dimLen = static_cast<int32_t>(this->dimLength);
+    int32_t dimLenAlign = static_cast<int32_t>(this->dimLengthAlign);
 
     if constexpr (sizeof(T) == 4) {
       // ---- FP32 path: compute directly. ----
 
       // Step 1: x_out = x1 + x2.
-      AscendC::Add(residual_out_local, input_local, residual_local,
-                   dim_len_align);
+      AscendC::Add(xOutLocal, x1Local, x2Local, dimLenAlign);
 
-      // Step 2: x_out^2 into out_local (reuse output buffer temporarily).
-      AscendC::Mul(out_local, residual_out_local, residual_out_local,
-                   dim_len_align);
+      // Step 2: x_out^2 into yLocal (reuse output buffer temporarily).
+      AscendC::Mul(yLocal, xOutLocal, xOutLocal, dimLenAlign);
 
-      // Step 3: ReduceSum(x_out^2) -> s_local[0].
-      // `ReduceSum` may modify `out_local`, but we overwrite it below.
-      AscendC::ReduceSum(s_local, out_local, r_tmp, dim_len_align);
+      // Step 3: ReduceSum(x_out^2) -> sLocal[0].
+      // ReduceSum may modify yLocal, but we overwrite it below.
+      AscendC::ReduceSum(sLocal, yLocal, rTmp, dimLenAlign);
 
       // Step 4-5: scale = 1 / sqrt(mean(x_out^2) + eps).
-      float sum_val = s_local.GetValue(0);
-      float mean_val = sum_val / static_cast<float>(dim_len) + eps_;
-      s_local.SetValue(0, mean_val);
-      AscendC::Sqrt(s_local, s_local, 8);
-      float scale = 1.0f / s_local.GetValue(0);
+      float sumVal = sLocal.GetValue(0);
+      float meanVal = sumVal / static_cast<float>(dimLen) + this->eps;
+      sLocal.SetValue(0, meanVal);
+      AscendC::Sqrt(sLocal, sLocal, 8);
+      float scale = 1.0f / sLocal.GetValue(0);
 
       // Step 6: y = x_out * scale.
-      AscendC::Muls(out_local, residual_out_local, scale, dim_len_align);
+      AscendC::Muls(yLocal, xOutLocal, scale, dimLenAlign);
 
       // Step 7: y = y * weight.
-      AscendC::Mul(out_local, out_local, w_local, dim_len_align);
+      AscendC::Mul(yLocal, yLocal, wLocal, dimLenAlign);
 
     } else {
-      // ---- FP16/BF16 path: cast → fp32 compute → cast back. ----
-      AscendC::LocalTensor<float> b1 = fp32_buf1_.Get<float>();
-      AscendC::LocalTensor<float> b2 = fp32_buf2_.Get<float>();
+      // ---- FP16 path: cast → fp32 compute → cast back. ----
+      AscendC::LocalTensor<float> b1 = fp32Buf1.Get<float>();
+      AscendC::LocalTensor<float> b2 = fp32Buf2.Get<float>();
 
-      // Cast inputs fp16/bf16 → fp32.
-      AscendC::Cast(b1, input_local, AscendC::RoundMode::CAST_NONE,
-                    dim_len_align);
-      AscendC::Cast(b2, residual_local, AscendC::RoundMode::CAST_NONE,
-                    dim_len_align);
+      // Cast inputs fp16 → fp32.
+      AscendC::Cast(b1, x1Local, AscendC::RoundMode::CAST_NONE, dimLenAlign);
+      AscendC::Cast(b2, x2Local, AscendC::RoundMode::CAST_NONE, dimLenAlign);
 
       // Step 1: x_out = x1 + x2 (fp32), stored in b1.
-      AscendC::Add(b1, b1, b2, dim_len_align);
+      AscendC::Add(b1, b1, b2, dimLenAlign);
 
-      // Cast `x_out` fp32 → fp16/bf16 for the residual output.
-      AscendC::Cast(residual_out_local, b1, AscendC::RoundMode::CAST_RINT,
-                    dim_len_align);
+      // Cast x_out fp32 → fp16 for the x_out output.
+      AscendC::Cast(xOutLocal, b1, AscendC::RoundMode::CAST_ROUND, dimLenAlign);
 
       // Step 2: x_out^2 in fp32, stored in b2.
-      AscendC::Mul(b2, b1, b1, dim_len_align);
+      AscendC::Mul(b2, b1, b1, dimLenAlign);
 
-      // Step 3: ReduceSum(x_out^2) -> s_local[0].
-      AscendC::ReduceSum(s_local, b2, r_tmp, dim_len_align);
+      // Step 3: ReduceSum(x_out^2) -> sLocal[0].
+      AscendC::ReduceSum(sLocal, b2, rTmp, dimLenAlign);
 
       // Step 4-5: scale = 1 / sqrt(mean(x_out^2) + eps).
-      float sum_val = s_local.GetValue(0);
-      float mean_val = sum_val / static_cast<float>(dim_len) + eps_;
-      s_local.SetValue(0, mean_val);
-      AscendC::Sqrt(s_local, s_local, 8);
-      float scale = 1.0f / s_local.GetValue(0);
+      float sumVal = sLocal.GetValue(0);
+      float meanVal = sumVal / static_cast<float>(dimLen) + this->eps;
+      sLocal.SetValue(0, meanVal);
+      AscendC::Sqrt(sLocal, sLocal, 8);
+      float scale = 1.0f / sLocal.GetValue(0);
 
       // Step 6: y = x_out * scale (fp32), reuse b2.
-      AscendC::Muls(b2, b1, scale, dim_len_align);
+      AscendC::Muls(b2, b1, scale, dimLenAlign);
 
       // Step 7: y = y * weight (fp32).
-      AscendC::Mul(b2, b2, w_local, dim_len_align);
+      AscendC::Mul(b2, b2, wLocal, dimLenAlign);
 
-      AscendC::Cast(out_local, b2, AscendC::RoundMode::CAST_RINT,
-                    dim_len_align);
+      // Cast result fp32 → fp16.
+      AscendC::Cast(yLocal, b2, AscendC::RoundMode::CAST_ROUND, dimLenAlign);
     }
 
-    in_queue_input_.FreeTensor(input_local);
-    in_queue_residual_.FreeTensor(residual_local);
-    out_queue_out_.EnQue(out_local);
-    out_queue_residual_out_.EnQue(residual_out_local);
+    inQueueX1.FreeTensor(x1Local);
+    inQueueX2.FreeTensor(x2Local);
+    outQueueY.EnQue(yLocal);
+    outQueueXOut.EnQue(xOutLocal);
   }
 
   __aicore__ inline void CopyOut(int64_t row) {
-    AscendC::LocalTensor<T> out_local = out_queue_out_.DeQue<T>();
-    AscendC::LocalTensor<T> residual_out_local =
-        out_queue_residual_out_.DeQue<T>();
+    AscendC::LocalTensor<T> yLocal = outQueueY.DeQue<T>();
+    AscendC::LocalTensor<T> xOutLocal = outQueueXOut.DeQue<T>();
     AscendC::DataCopyExtParams params{
-        1, static_cast<uint32_t>(dim_length_align_ * sizeof(T)), 0, 0, 0};
-    AscendC::DataCopyPad(out_gm_[row * dim_length_align_], out_local, params);
-    AscendC::DataCopyPad(residual_out_gm_[row * dim_length_align_],
-                         residual_out_local, params);
-    out_queue_out_.FreeTensor(out_local);
-    out_queue_residual_out_.FreeTensor(residual_out_local);
+        1, static_cast<uint32_t>(this->dimLengthAlign * sizeof(T)), 0, 0, 0};
+    AscendC::DataCopyPad(yGm[row * this->dimLengthAlign], yLocal, params);
+    AscendC::DataCopyPad(xOutGm[row * this->dimLengthAlign], xOutLocal, params);
+    outQueueY.FreeTensor(yLocal);
+    outQueueXOut.FreeTensor(xOutLocal);
   }
 
  private:
-  AscendC::TPipe pipe_;
-  AscendC::TQue<AscendC::TPosition::VECIN, kBufferNum> in_queue_input_;
-  AscendC::TQue<AscendC::TPosition::VECIN, kBufferNum> in_queue_residual_;
-  AscendC::TQue<AscendC::TPosition::VECOUT, kBufferNum> out_queue_out_;
-  AscendC::TQue<AscendC::TPosition::VECOUT, kBufferNum> out_queue_residual_out_;
+  AscendC::TPipe pipe;
+  AscendC::TQue<AscendC::TPosition::VECIN, BUFFER_NUM> inQueueX1;
+  AscendC::TQue<AscendC::TPosition::VECIN, BUFFER_NUM> inQueueX2;
+  AscendC::TQue<AscendC::TPosition::VECOUT, BUFFER_NUM> outQueueY;
+  AscendC::TQue<AscendC::TPosition::VECOUT, BUFFER_NUM> outQueueXOut;
 
-  AscendC::TBuf<AscendC::TPosition::VECCALC> weight_buf_;
-  AscendC::TBuf<AscendC::TPosition::VECCALC> fp32_buf1_;
-  AscendC::TBuf<AscendC::TPosition::VECCALC> fp32_buf2_;
-  AscendC::TBuf<AscendC::TPosition::VECCALC> reduce_tmp_buf_;
-  AscendC::TBuf<AscendC::TPosition::VECCALC> sum_buf_;
+  AscendC::TBuf<AscendC::TPosition::VECCALC> weightBuf;
+  AscendC::TBuf<AscendC::TPosition::VECCALC> fp32Buf1;
+  AscendC::TBuf<AscendC::TPosition::VECCALC> fp32Buf2;
+  AscendC::TBuf<AscendC::TPosition::VECCALC> reduceTmpBuf;
+  AscendC::TBuf<AscendC::TPosition::VECCALC> sumBuf;
 
-  AscendC::GlobalTensor<T> input_gm_, residual_gm_, out_gm_, residual_out_gm_;
-  AscendC::GlobalTensor<float> weight_gm_;
+  AscendC::GlobalTensor<T> x1Gm, x2Gm, yGm, xOutGm;
+  AscendC::GlobalTensor<float> weightGm;
 
-  int64_t block_rows_;
-  int64_t dim_length_;
-  int64_t dim_length_align_;
-  float eps_;
+  int64_t blockRows;
+  int64_t dimLength;
+  int64_t dimLengthAlign;
+  float eps;
 };
 
-// `dtype_code` is `static_cast<int64_t>(infini::ops::DataType)` forwarded
-// by the host launcher.  fp16 and bf16 both have `sizeof == 2` but need
-// distinct numeric paths, so dispatch is on the `DataType` tag rather
-// than the byte size.
-extern "C" __global__ __aicore__ void AddRmsNorm(
-    GM_ADDR input, GM_ADDR residual, GM_ADDR weight, int64_t total_rows,
-    int64_t dim_length, int64_t dim_length_align, int64_t former_num,
-    int64_t former_length, int64_t tail_length, float eps, int64_t dtype_code,
-    GM_ADDR out, GM_ADDR residual_out) {
-  switch (static_cast<infini::ops::DataType>(dtype_code)) {
-    case infini::ops::DataType::kFloat16: {
-      KernelAddRmsNorm<half> op;
-      op.Init(input, residual, weight, total_rows, dim_length, dim_length_align,
-              former_num, former_length, tail_length, eps, out, residual_out);
-      op.Process();
-      break;
-    }
-    case infini::ops::DataType::kBFloat16: {
-      KernelAddRmsNorm<bfloat16_t> op;
-      op.Init(input, residual, weight, total_rows, dim_length, dim_length_align,
-              former_num, former_length, tail_length, eps, out, residual_out);
-      op.Process();
-      break;
-    }
-    case infini::ops::DataType::kFloat32:
-    default: {
-      KernelAddRmsNorm<float> op;
-      op.Init(input, residual, weight, total_rows, dim_length, dim_length_align,
-              former_num, former_length, tail_length, eps, out, residual_out);
-      op.Process();
-      break;
-    }
+extern "C" __global__ __aicore__ void add_rms_norm(
+    GM_ADDR x1, GM_ADDR x2, GM_ADDR weight, GM_ADDR y, GM_ADDR x_out,
+    int64_t totalRows, int64_t dimLength, int64_t dimLengthAlign,
+    int64_t formerNum, int64_t formerLength, int64_t tailLength, float eps,
+    int64_t dtypeSize) {
+  if (dtypeSize == 2) {
+    KernelAddRmsNorm<half> op;
+    op.Init(x1, x2, weight, y, x_out, totalRows, dimLength, dimLengthAlign,
+            formerNum, formerLength, tailLength, eps);
+    op.Process();
+  } else {
+    KernelAddRmsNorm<float> op;
+    op.Init(x1, x2, weight, y, x_out, totalRows, dimLength, dimLengthAlign,
+            formerNum, formerLength, tailLength, eps);
+    op.Process();
   }
 }

@@ -11,26 +11,19 @@
 
 namespace infini::ops {
 
-// Element-type tag shared across the project.  Values are assigned
-// explicitly because they are part of the ABI between the host-side
-// launcher wrappers (e.g. `src/ascend/rms_norm/kernel_custom.h`) and the
-// `aclrtlaunch_*` device kernels under `src/ascend/custom/**/op_kernel/`
-// — the launcher forwards `static_cast<int64_t>(input.dtype())` and the
-// kernel dispatches on it.  Reordering entries would silently break that
-// ABI.
 enum class DataType : std::int8_t {
-  kInt8 = 0,
-  kInt16 = 1,
-  kInt32 = 2,
-  kInt64 = 3,
-  kUInt8 = 4,
-  kUInt16 = 5,
-  kUInt32 = 6,
-  kUInt64 = 7,
-  kFloat16 = 8,
-  kBFloat16 = 9,
-  kFloat32 = 10,
-  kFloat64 = 11,
+  kInt8,
+  kInt16,
+  kInt32,
+  kInt64,
+  kUInt8,
+  kUInt16,
+  kUInt32,
+  kUInt64,
+  kFloat16,
+  kBFloat16,
+  kFloat32,
+  kFloat64
 };
 
 constexpr ConstexprMap<DataType, std::size_t, 12> kDataTypeToSize{{{

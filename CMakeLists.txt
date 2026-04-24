@@ -18,21 +18,12 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
-# Custom `AscendC` kernels under `src/ascend/custom/`.  `ON` by default
-# so CI and routine dev builds always exercise `implementation_index=1/2`
-# for `RmsNorm` / `AddRmsNorm`.  Gated by `WITH_ASCEND` in
-# `src/CMakeLists.txt` — non-Ascend builds ignore it.  Pass
-# `-DBUILD_ASCEND_CUSTOM=OFF` to skip the `ccec` build on Ascend
-# machines where the custom kernels aren't needed.
-#
-# When `ON`, `src/CMakeLists.txt` drives the standalone
-# `src/ascend/custom/build.sh` via `execute_process` at configure time
-# (sidesteps a `CANN` `extract_host_stub.py` path bug that breaks
-# in-tree `ascendc_library()` under `scikit-build-core` temp-dir builds)
-# and links the produced `libno_workspace_kernel.a` into the `ops`
-# module with `--whole-archive`.  Requires `torch_npu` and the
-# `AscendC` toolchain (`ccec`).
-option(BUILD_ASCEND_CUSTOM "Build custom AscendC kernels" ON)
+# Default OFF until CANN's `extract_host_stub.py` path handling is fixed for
+# `scikit-build-core` temp-dir builds (triggers `KeyError` on the preprocessed
+# object path). Enable explicitly with `-DBUILD_CUSTOM_KERNEL=ON` when the
+# toolchain is compatible or when building via the standalone
+# `src/ascend/custom/build.sh` script.
+option(BUILD_CUSTOM_KERNEL "Build custom AscendC kernel PyTorch extension (requires `torch_npu`)" OFF)
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
