@@ -438,8 +438,12 @@ if(GENERATE_PYTHON_BINDINGS)
     # `aclrtlaunch_*` live in `ops.cc`, so link here with
     # `--whole-archive` to ensure all launch functions are available.
     # `$<TARGET_FILE>` works for both real `ascendc_library()` targets and
-    # `IMPORTED` targets pointing at a pre-built `.a`.
-    if(BUILD_ASCEND_CUSTOM)
+    # `IMPORTED` targets pointing at a pre-built `.a`.  The
+    # `no_workspace_kernel` target is only created inside the
+    # `WITH_ASCEND` block above, so this branch must mirror that gate;
+    # otherwise non-Ascend builds error out with "No target
+    # no_workspace_kernel".
+    if(WITH_ASCEND AND BUILD_ASCEND_CUSTOM)
         target_link_libraries(ops PRIVATE
             -Wl,--whole-archive $<TARGET_FILE:no_workspace_kernel> -Wl,--no-whole-archive)
         # `ops` link step must wait for `build.sh` to produce the `.a`.
