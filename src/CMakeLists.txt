@@ -269,26 +269,24 @@ if(WITH_ASCEND)
             "${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/build.sh")
 
         # Scrub env inherited from the outer `scikit-build-core` invocation
-        # before handing control to `build.sh`:
-        #  * `CMAKE_GENERATOR` / `CMAKE_EXPORT_COMPILE_COMMANDS` leaking
-        #    into the inner `cmake` change the path format passed to
-        #    `ninja`'s `_host_cpp` rule and re-trigger the `CANN`
-        #    `extract_host_stub.py` `KeyError` (`/./workspace/...`) that
-        #    standalone `build.sh` avoids.
-        #  * `PYTHONPATH` from `pip`'s build-isolation overlay makes the
-        #    child `python3` skip the system `site-packages` — child
-        #    `cmake` modules that `import torch` (`config_envs.cmake`)
-        #    then fail with `ModuleNotFoundError` even though `torch` is
-        #    installed.
+        # before handing control to `build.sh`: `CMAKE_GENERATOR` /
+        # `CMAKE_EXPORT_COMPILE_COMMANDS` leaking into the inner `cmake`
+        # change the path format passed to `ninja`'s `_host_cpp` rule and
+        # re-trigger the `CANN` `extract_host_stub.py` `KeyError`
+        # (`/./workspace/...`) that standalone `build.sh` avoids.
+        #
+        # `pip install` MUST be invoked with `--no-build-isolation` on
+        # Ascend; otherwise pip's build-isolation overlay shadows system
+        # `torch` (via `PYTHONPATH`) and the inner `cmake`'s
+        # `import torch` in `config_envs.cmake` fails with
+        # `ModuleNotFoundError`.
         add_custom_command(
             OUTPUT ${_custom_lib}
             COMMAND ${CMAKE_COMMAND} -E env
                     --unset=CMAKE_GENERATOR
                     --unset=CMAKE_EXPORT_COMPILE_COMMANDS
                     --unset=CMAKE_BUILD_PARALLEL_LEVEL
-                    --unset=PYTHONPATH
                     "BUILD_DIR=${_custom_build_dir}"
-                    "CMAKE_EXE=${CMAKE_COMMAND}"
                     bash ${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/build.sh ${SOC_VERSION}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom
             DEPENDS ${_custom_srcs}

@@ -9,13 +9,6 @@ set -e
 
 SOC_VERSION="${1:-Ascend910_9382}"
 
-# Use the same `cmake` the caller resolved (default: first `cmake` on
-# PATH).  The outer `src/CMakeLists.txt` forwards `${CMAKE_COMMAND}`
-# via `CMAKE_EXE` so the child build doesn't accidentally pick up the
-# PyPI `cmake` shim whose Python package only exists in `pip`'s
-# build-isolation overlay.
-CMAKE_EXE="${CMAKE_EXE:-cmake}"
-
 # Detect CANN toolkit path.
 _CANN_TOOLKIT_INSTALL_PATH=$(grep "Toolkit_InstallPath" /etc/Ascend/ascend_cann_install.info | awk -F'=' '{print $2}')
 source "${_CANN_TOOLKIT_INSTALL_PATH}/set_env.sh"
@@ -32,7 +25,7 @@ OUTPUT_DIR="${BUILD_DIR}/output"
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}" "${OUTPUT_DIR}"
 
-"${CMAKE_EXE}" \
+cmake \
     -DASCEND_HOME_PATH="${ASCEND_HOME_PATH}" \
     -DASCEND_INCLUDE_DIR="${ASCEND_INCLUDE_DIR}" \
     -DSOC_VERSION="${SOC_VERSION}" \
@@ -40,6 +33,6 @@ mkdir -p "${BUILD_DIR}" "${OUTPUT_DIR}"
     -B "${BUILD_DIR}" \
     -S "${SCRIPT_DIR}"
 
-"${CMAKE_EXE}" --build "${BUILD_DIR}" -j 16
+cmake --build "${BUILD_DIR}" -j 16
 
 echo "Build complete. Output: ${OUTPUT_DIR}"
