@@ -241,8 +241,64 @@ if(WITH_ASCEND)
     list(APPEND DEVICE_LIST "ascend")
 
     # Custom `AscendC` kernels (PyTorch extension, requires `torch_npu`).
-    if(BUILD_CUSTOM_KERNEL)
-        add_subdirectory(ascend/custom)
+    if(BUILD_ASCEND_CUSTOM)
+        # In-tree `ascendc_library()` trips the `CANN` `extract_host_stub.py`
+        # path-handling bug under `scikit-build-core`'s temp-dir builds
+        # (`KeyError` on `/./workspace/...` paths in `$<TARGET_OBJECTS>`).
+        # Work around it by driving the standalone `src/ascend/custom/build.sh`
+        # — that script invokes a separate `cmake` with
+        # `src/ascend/custom/` as its `SOURCE_DIR`, avoiding the buggy
+        # path shape.  The produced `.a` is imported and linked into
+        # `ops` with `--whole-archive`.
+        set(_custom_build_dir "${CMAKE_SOURCE_DIR}/build/build_ascend_custom")
+        set(_custom_lib "${_custom_build_dir}/lib/libno_workspace_kernel.a")
+
+        if(NOT DEFINED SOC_VERSION OR "${SOC_VERSION}" STREQUAL "")
+            include(${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/cmake/detect_soc.cmake)
+            infiniops_detect_soc(SOC_VERSION)
+        endif()
+
+        # Drive `build.sh` as a build-phase target with explicit source
+        # dependencies so that editing any `op_host/` or `op_kernel/`
+        # source re-triggers the build (plain `execute_process` at
+        # configure time would only gate on file existence and leave
+        # stale `.a` files in place).
+        file(GLOB_RECURSE _custom_srcs CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/*.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/*.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/build.sh")
+
+        # Scrub env inherited from the outer `scikit-build-core` invocation
+        # before handing control to `build.sh`: `CMAKE_GENERATOR` /
+        # `CMAKE_EXPORT_COMPILE_COMMANDS` leaking into the inner `cmake`
+        # change the path format passed to `ninja`'s `_host_cpp` rule and
+        # re-trigger the `CANN` `extract_host_stub.py` `KeyError`
+        # (`/./workspace/...`) that standalone `build.sh` avoids.
+        #
+        # `pip install` MUST be invoked with `--no-build-isolation` on
+        # Ascend; otherwise pip's build-isolation overlay shadows system
+        # `torch` (via `PYTHONPATH`) and the inner `cmake`'s
+        # `import torch` in `config_envs.cmake` fails with
+        # `ModuleNotFoundError`.
+        add_custom_command(
+            OUTPUT ${_custom_lib}
+            COMMAND ${CMAKE_COMMAND} -E env
+                    --unset=CMAKE_GENERATOR
+                    --unset=CMAKE_EXPORT_COMPILE_COMMANDS
+                    --unset=CMAKE_BUILD_PARALLEL_LEVEL
+                    "BUILD_DIR=${_custom_build_dir}"
+                    bash ${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom/build.sh ${SOC_VERSION}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ascend/custom
+            DEPENDS ${_custom_srcs}
+            COMMENT "Building custom AscendC kernels (SOC_VERSION=${SOC_VERSION})"
+            VERBATIM)
+
+        add_custom_target(no_workspace_kernel_build ALL DEPENDS ${_custom_lib})
+
+        add_library(no_workspace_kernel STATIC IMPORTED GLOBAL)
+        set_target_properties(no_workspace_kernel PROPERTIES
+            IMPORTED_LOCATION "${_custom_lib}")
+        add_dependencies(no_workspace_kernel no_workspace_kernel_build)
 
         # Link the compiled `AscendC` kernel objects into `infiniops` so that
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
@@ -379,9 +435,17 @@ if(GENERATE_PYTHON_BINDINGS)
     # The `Operator<..., 1>` template instantiations that call
     # `aclrtlaunch_*` live in `ops.cc`, so link here with
     # `--whole-archive` to ensure all launch functions are available.
-    if(BUILD_CUSTOM_KERNEL)
+    # `$<TARGET_FILE>` works for both real `ascendc_library()` targets and
+    # `IMPORTED` targets pointing at a pre-built `.a`.  The
+    # `no_workspace_kernel` target is only created inside the
+    # `WITH_ASCEND` block above, so this branch must mirror that gate;
+    # otherwise non-Ascend builds error out with "No target
+    # no_workspace_kernel".
+    if(WITH_ASCEND AND BUILD_ASCEND_CUSTOM)
         target_link_libraries(ops PRIVATE
-            -Wl,--whole-archive no_workspace_kernel -Wl,--no-whole-archive)
+            -Wl,--whole-archive $<TARGET_FILE:no_workspace_kernel> -Wl,--no-whole-archive)
+        # `ops` link step must wait for `build.sh` to produce the `.a`.
+        add_dependencies(ops no_workspace_kernel_build)
     endif()
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "$ORIGIN")

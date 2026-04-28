@@ -90,26 +90,21 @@ def skip_unsupported_dtypes(request):
         pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
 
 
-# PyTorch device type → InfiniOps platform names. A single torch device type
-# can map to several platforms (e.g., `cuda` is shared by `nvidia`, `metax`,
-# and `iluvatar`); at most one is actually available at runtime.
-_TORCH_DEVICE_TO_PLATFORMS = {
-    "cuda": ("nvidia", "metax", "iluvatar"),
-    "mlu": ("cambricon",),
-    "musa": ("moore",),
-    "npu": ("ascend",),
-}
-
-
 @pytest.fixture(autouse=True)
 def skip_op_without_platform_impl(request):
     """Skip `device=<torch_type>` parametrizations when the op has no
-    implementation on any of the corresponding platforms.
+    implementation on the corresponding platform.
 
     Only runs for tests that parametrize `device` but not
     `implementation_index` — joint `(device, impl_idx)` parametrize in
     `pytest_generate_tests` already prunes empty-impl pairs at collection
     time, making this check redundant (and wasteful) on those tests.
+
+    Hardcoded `device` parametrize (e.g. `("npu",)`) on a build that
+    doesn't include that backend skips early instead of crashing in the
+    C++ dispatcher: the cross-build-platform mapping is owned by
+    `DeviceTypeFromString`'s `TorchNameMap` which only enumerates
+    locally-built devices, so we pre-filter against `get_available_devices()`.
     """
     if not hasattr(request.node, "callspec"):
         return
@@ -119,21 +114,21 @@ def skip_op_without_platform_impl(request):
     if "implementation_index" in params:
         return
 
-    platforms = _TORCH_DEVICE_TO_PLATFORMS.get(params.get("device"))
+    device = params.get("device")
 
-    if not platforms:
+    if device is None:
         return
+
+    if device not in get_available_devices():
+        pytest.skip(f"`{device}` not available in this build")
 
     op_cls = _op_class_from_module(request.node.module)
 
     if op_cls is None or not hasattr(op_cls, "active_implementation_indices"):
         return
 
-    if not any(op_cls.active_implementation_indices(p) for p in platforms):
-        pytest.skip(
-            f"{op_cls.__name__} has no implementation on any "
-            f"`{params.get('device')}`-mapped platform"
-        )
+    if not op_cls.active_implementation_indices(device):
+        pytest.skip(f"{op_cls.__name__} has no implementation for device `{device}`")
 
 
 def _set_random_seed(seed):

@@ -30,6 +30,12 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
     }
   }
 
+  // vLLM-aligned overload — `weight [out, in]`, `out = input @ weight^T`.
+  Operator(const Tensor input, const Tensor weight, std::optional<Tensor> bias,
+           Tensor out)
+      : Operator(input, weight, bias, /*trans_a=*/false, /*trans_b=*/true,
+                 out) {}
+
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
