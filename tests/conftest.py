@@ -128,9 +128,7 @@ def skip_op_without_platform_impl(request):
         return
 
     if not op_cls.active_implementation_indices(device):
-        pytest.skip(
-            f"{op_cls.__name__} has no implementation for device `{device}`"
-        )
+        pytest.skip(f"{op_cls.__name__} has no implementation for device `{device}`")
 
 
 def _set_random_seed(seed):
