@@ -4,6 +4,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <algorithm>
+
 #include "tensor.h"
 #include "torch/device_.h"
 
@@ -38,7 +40,37 @@ inline Device::Type DeviceTypeFromString(const std::string& name) {
     return it->second;
   }
 
-  return Device::TypeFromString(name);
+  std::vector<std::string> supported_names;
+
+  for (const auto& [torch_name, device_type] : kTorchNameToTypes) {
+    const auto internal_name = std::string{Device::StringFromType(device_type)};
+
+    if (name == internal_name) {
+      return device_type;
+    }
+
+    supported_names.push_back(torch_name);
+    supported_names.push_back(internal_name);
+  }
+
+  std::sort(supported_names.begin(), supported_names.end());
+  supported_names.erase(
+      std::unique(supported_names.begin(), supported_names.end()),
+      supported_names.end());
+
+  std::string message = "Unsupported device type `" + name +
+                        "` for this InfiniOps build. Supported device names: ";
+
+  for (std::size_t i = 0; i < supported_names.size(); ++i) {
+    if (i != 0) {
+      message += ", ";
+    }
+    message += supported_names[i];
+  }
+
+  message += ". Rebuild InfiniOps with the matching backend enabled.";
+
+  throw py::value_error(message);
 }
 
 inline Tensor TensorFromPybind11Handle(py::handle obj) {

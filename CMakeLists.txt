@@ -11,6 +11,7 @@ set(PYBIND11_ENABLE_EXTRAS ON)
 option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
+option(WITH_HYGON "Enable Hygon GPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
@@ -29,6 +30,31 @@ option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
+set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")
+
+function(_infiniops_find_hygon_cuda_root out_var dtk_root)
+    set(_candidates
+        "${dtk_root}/cuda"
+        "${dtk_root}/cuda/cuda"
+    )
+
+    file(GLOB _versioned_cuda_dirs LIST_DIRECTORIES true "${dtk_root}/cuda/cuda-*")
+    if(_versioned_cuda_dirs)
+        list(SORT _versioned_cuda_dirs)
+        list(REVERSE _versioned_cuda_dirs)
+        list(APPEND _candidates ${_versioned_cuda_dirs})
+    endif()
+
+    foreach(_candidate IN LISTS _candidates)
+        if(EXISTS "${_candidate}/bin/nvcc")
+            set(${out_var} "${_candidate}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+
+    set(${out_var} "" PARENT_SCOPE)
+endfunction()
+
 if(AUTO_DETECT_DEVICES)
     message(STATUS "Auto-detecting available devices...")
 
@@ -46,6 +72,21 @@ if(AUTO_DETECT_DEVICES)
     if(ILUVATAR_DEV_FILES)
         set(WITH_ILUVATAR ON)
         message(STATUS "Auto-detected Iluvatar environment.")
+    endif()
+
+    set(_hygon_detected FALSE)
+    if(DEFINED ENV{DTK_ROOT} AND NOT "$ENV{DTK_ROOT}" STREQUAL "")
+        set(_hygon_detected TRUE)
+    else()
+        _infiniops_find_hygon_cuda_root(_HYGON_CUDA_DETECT_ROOT "${_DEFAULT_HYGON_DTK_ROOT}")
+        if(_HYGON_CUDA_DETECT_ROOT)
+            set(_hygon_detected TRUE)
+        endif()
+    endif()
+
+    if(_hygon_detected)
+        set(WITH_HYGON ON)
+        message(STATUS "Auto-detected Hygon environment.")
     endif()
 
     if(DEFINED ENV{MACA_PATH})
@@ -132,6 +173,17 @@ if(WITH_TORCH)
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "import pathlib, torch; p = pathlib.Path(torch.__file__).resolve().parent.parent / 'torch.libs'; print(str(p) if p.exists() else '')"
+        OUTPUT_VARIABLE _torch_private_lib_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    set(TORCH_RUNTIME_DIRS ${_torch_lib_dirs})
+    if(_torch_private_lib_dir)
+        list(APPEND TORCH_RUNTIME_DIRS ${_torch_private_lib_dir})
+    endif()
+
     find_library(TORCH_LIB torch HINTS ${_torch_lib_dirs} REQUIRED)
     find_library(TORCH_CPU_LIB torch_cpu HINTS ${_torch_lib_dirs} REQUIRED)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
@@ -181,14 +233,14 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_METAX WITH_MOORE WITH_ASCEND)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MOORE WITH_ASCEND)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
 endforeach()
 
 if(_gpu_backend_count GREATER 1)
-    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_METAX`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_METAX`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NVIDIA)
@@ -225,6 +277,70 @@ if(WITH_ILUVATAR)
     # linking, where it would cause `clang++` to re-parse `.o` files as
     # source.
     add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-x$<SEMICOLON>ivcore>)
+endif()
+
+if(WITH_HYGON)
+    add_compile_definitions(WITH_HYGON=1)
+    set(DTK_ROOT $ENV{DTK_ROOT})
+    if(NOT DTK_ROOT)
+        set(DTK_ROOT "${_DEFAULT_HYGON_DTK_ROOT}")
+    endif()
+    if(NOT EXISTS "${DTK_ROOT}")
+        message(FATAL_ERROR "`WITH_HYGON` is `ON` but `DTK_ROOT` (`${DTK_ROOT}`) does not exist.")
+    endif()
+
+    set(_HYGON_ARCH_DEFAULT "gfx906")
+    if(DEFINED ENV{HYGON_ARCH} AND NOT "$ENV{HYGON_ARCH}" STREQUAL "")
+        set(_HYGON_ARCH_DEFAULT "$ENV{HYGON_ARCH}")
+    else()
+        find_program(HYGON_ROCMINFO_EXECUTABLE NAMES rocminfo HINTS "${DTK_ROOT}/bin")
+        if(HYGON_ROCMINFO_EXECUTABLE)
+            execute_process(
+                COMMAND ${HYGON_ROCMINFO_EXECUTABLE}
+                OUTPUT_VARIABLE _HYGON_ROCMINFO_OUTPUT
+                ERROR_QUIET
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            string(REGEX MATCH "gfx[0-9]+" _HYGON_ARCH_AUTO "${_HYGON_ROCMINFO_OUTPUT}")
+            if(_HYGON_ARCH_AUTO)
+                set(_HYGON_ARCH_DEFAULT "${_HYGON_ARCH_AUTO}")
+            endif()
+        endif()
+    endif()
+
+    set(HYGON_ARCH "${_HYGON_ARCH_DEFAULT}" CACHE STRING "Hygon GPU architecture")
+    _infiniops_find_hygon_cuda_root(HYGON_CUDA_ROOT "${DTK_ROOT}")
+
+    if(NOT HYGON_CUDA_ROOT)
+        message(FATAL_ERROR "`WITH_HYGON` is `ON` but no DTK `nvcc` was found under `${DTK_ROOT}`. Checked `${DTK_ROOT}/cuda/bin/nvcc`, `${DTK_ROOT}/cuda/cuda/bin/nvcc`, and `${DTK_ROOT}/cuda/cuda-*/bin/nvcc`.")
+    endif()
+
+    set(CMAKE_CUDA_COMPILER "${HYGON_CUDA_ROOT}/bin/nvcc" CACHE FILEPATH "Hygon CUDA compiler (DTK nvcc)")
+    set(CUDAToolkit_ROOT "${HYGON_CUDA_ROOT}" CACHE PATH "Hygon CUDA toolkit root")
+    set(CMAKE_CUDA_ARCHITECTURES OFF CACHE STRING "Disable default CUDA arch flags for Hygon" FORCE)
+    set(CMAKE_CUDA_FLAGS "-std=c++17 -fPIC -arch=${HYGON_ARCH} -Wno-return-type -Wno-error=unused-private-field" CACHE STRING "Hygon CUDA flags")
+    set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Hygon")
+
+    # DTK's nvcc wrapper derives its toolkit root from `CUDA_PATH`.
+    set(ENV{CUDA_PATH} "${HYGON_CUDA_ROOT}")
+    set(ENV{CUDA_HOME} "${HYGON_CUDA_ROOT}")
+
+    # DTK's nvcc wrapper may invoke `nvcc` by name during compiler checks.
+    set(ENV{PATH} "${HYGON_CUDA_ROOT}/bin:$ENV{PATH}")
+
+    # The actual Ninja build runs in fresh processes. Keep a launcher command
+    # for CUDA-backed Python bindings that need the DTK wrapper environment.
+    set(_HYGON_RULE_LAUNCH_ENV
+        "${CMAKE_COMMAND} -E env CUDA_PATH=${HYGON_CUDA_ROOT} CUDA_HOME=${HYGON_CUDA_ROOT} PATH=${HYGON_CUDA_ROOT}/bin:$ENV{PATH}")
+
+    include_directories("${DTK_ROOT}/include")
+    include_directories("${HYGON_CUDA_ROOT}/include")
+    link_directories("${DTK_ROOT}/lib")
+    link_directories("${HYGON_CUDA_ROOT}/lib64")
+
+    message(STATUS "Hygon: CUDA compiler ${CMAKE_CUDA_COMPILER}, arch ${HYGON_ARCH}, DTK root ${DTK_ROOT}")
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
 endif()
 
 if(WITH_METAX)
@@ -310,11 +426,15 @@ if(WITH_ASCEND)
 endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
     add_compile_definitions(WITH_CPU=1)
 endif()
 
 if(WITH_METAX OR WITH_MOORE)
+    set(PYBIND11_ENABLE_EXTRAS OFF)
+endif()
+
+if(WITH_HYGON AND NOT EXISTS "${DTK_ROOT}/llvm/lib/LLVMgold.so")
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 

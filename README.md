@@ -1,6 +1,6 @@
 # InfiniOps
 
-InfiniOps is a high-performance, cross-platform operator library supporting multiple backends: CPU, Nvidia, MetaX, Iluvatar, Moore, Cambricon, and more.
+InfiniOps is a high-performance, cross-platform operator library supporting multiple backends: CPU, Nvidia, MetaX, Iluvatar, Hygon, Moore, Cambricon, and more.
 
 ## Prerequisites
 
@@ -31,11 +31,15 @@ pip install . -C cmake.define.WITH_CPU=ON -C cmake.define.WITH_NVIDIA=ON
 | `-DWITH_NVIDIA=[ON\|OFF]` | Compile the Nvidia implementation | OFF |
 | `-DWITH_METAX=[ON\|OFF]` | Compile the MetaX implementation | OFF |
 | `-DWITH_ILUVATAR=[ON\|OFF]` | Compile the Iluvatar implementation | OFF |
+| `-DWITH_HYGON=[ON\|OFF]` | Compile the Hygon implementation | OFF |
 | `-DWITH_MOORE=[ON\|OFF]` | Compile the Moore implementation | OFF |
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
+| `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |
 | `-DAUTO_DETECT_DEVICES=[ON\|OFF]` | Auto-detect available platforms | ON |
 
 If no accelerator options are provided and auto-detection finds nothing, `WITH_CPU` is enabled by default.
+
+For Hygon builds, set `DTK_ROOT` to the DTK installation root if it is not installed at `/opt/dtk`. You can override the default DCU arch with `-DHYGON_ARCH=<arch>` when configuring CMake.
 
 ## Contributing
 

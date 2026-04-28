@@ -16,7 +16,7 @@ def pytest_addoption(parser):
         "--devices",
         nargs="+",
         default=None,
-        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
+        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `hygon`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
     )
 
 
@@ -92,13 +92,20 @@ def skip_unsupported_dtypes(request):
 
 # PyTorch device type → InfiniOps platform names. A single torch device type
 # can map to several platforms (e.g., `cuda` is shared by `nvidia`, `metax`,
-# and `iluvatar`); at most one is actually available at runtime.
+# `iluvatar`, and `hygon`); at most one is actually available at runtime.
 _TORCH_DEVICE_TO_PLATFORMS = {
-    "cuda": ("nvidia", "metax", "iluvatar"),
+    "cuda": ("nvidia", "metax", "iluvatar", "hygon"),
     "mlu": ("cambricon",),
     "musa": ("moore",),
     "npu": ("ascend",),
 }
+
+
+def _active_implementation_indices_or_empty(op_cls, device):
+    try:
+        return op_cls.active_implementation_indices(device)
+    except ValueError:
+        return ()
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +136,7 @@ def skip_op_without_platform_impl(request):
     if op_cls is None or not hasattr(op_cls, "active_implementation_indices"):
         return
 
-    if not any(op_cls.active_implementation_indices(p) for p in platforms):
+    if not any(_active_implementation_indices_or_empty(op_cls, p) for p in platforms):
         pytest.skip(
             f"{op_cls.__name__} has no implementation on any "
             f"`{params.get('device')}`-mapped platform"
@@ -145,6 +152,7 @@ _PLATFORM_TO_TORCH_DEVICE = {
     "nvidia": "cuda",
     "metax": "cuda",
     "iluvatar": "cuda",
+    "hygon": "cuda",
     "moore": "musa",
     "cambricon": "mlu",
     "ascend": "npu",
@@ -196,7 +204,7 @@ def pytest_generate_tests(metafunc):
                 pairs = [
                     (dev, idx)
                     for dev in devices
-                    for idx in op_cls.active_implementation_indices(dev)
+                    for idx in _active_implementation_indices_or_empty(op_cls, dev)
                 ]
 
                 if not pairs:
