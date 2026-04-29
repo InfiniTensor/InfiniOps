@@ -3,7 +3,7 @@
 
 #include <type_traits>
 
-#include "../runtime.h"
+#include "runtime.h"
 
 namespace infini::ops {
 

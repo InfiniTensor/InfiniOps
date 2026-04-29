@@ -5,7 +5,7 @@
 
 #include "native/cuda/metax/device_.h"
 #include "native/cuda/metax/runtime_utils.h"
-#include "native/cuda/runtime.h"
+#include "native/cuda/runtime_.h"
 
 namespace infini::ops {
 
