@@ -4,27 +4,27 @@
 #include "device.h"
 
 #ifdef WITH_NVIDIA
-#include "cuda/nvidia/gemm/cublas.h"
-#include "cuda/nvidia/gemm/cublaslt.h"
-#include "cuda/nvidia/runtime_.h"
+#include "native/cuda/nvidia/ops/gemm/cublas.h"
+#include "native/cuda/nvidia/ops/gemm/cublaslt.h"
+#include "native/cuda/nvidia/runtime_.h"
 #elif WITH_ILUVATAR
-#include "cuda/iluvatar/gemm/cublas.h"
-#include "cuda/iluvatar/runtime_.h"
+#include "native/cuda/iluvatar/ops/gemm/cublas.h"
+#include "native/cuda/iluvatar/runtime_.h"
 #elif WITH_METAX
-#include "cuda/metax/gemm/mcblas.h"
-#include "cuda/metax/runtime_.h"
+#include "native/cuda/metax/ops/gemm/mcblas.h"
+#include "native/cuda/metax/runtime_.h"
 #elif WITH_CAMBRICON
-#include "cambricon/gemm/cnblas.h"
-#include "cambricon/runtime_.h"
+#include "native/cambricon/ops/gemm/cnblas.h"
+#include "native/cambricon/runtime_.h"
 #elif WITH_MOORE
-#include "cuda/moore/gemm/mublas.h"
-#include "cuda/moore/runtime_.h"
+#include "native/cuda/moore/ops/gemm/mublas.h"
+#include "native/cuda/moore/runtime_.h"
 #elif WITH_ASCEND
-#include "ascend/gemm/kernel.h"
-#include "ascend/runtime_.h"
+#include "native/ascend/ops/gemm/kernel.h"
+#include "native/ascend/runtime_.h"
 #elif WITH_CPU
-#include "cpu/gemm/gemm.h"
-#include "cpu/runtime_.h"
+#include "native/cpu/ops/gemm/gemm.h"
+#include "native/cpu/runtime_.h"
 #else
 #error "One `WITH_*` backend must be enabled for the examples."
 #endif
