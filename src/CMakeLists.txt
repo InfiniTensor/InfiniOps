@@ -7,8 +7,8 @@ set(DEVICE_LIST "")
 
 if(WITH_CPU)
     set(CPU_PATTERNS
-        "cpu/*.cc"
-        "cpu/*.cpp"
+        "native/cpu/*.cc"
+        "native/cpu/*.cpp"
     )
 
     file(GLOB_RECURSE CPU_SOURCES CONFIGURE_DEPENDS ${CPU_PATTERNS})
@@ -24,12 +24,12 @@ endif()
 
 if(WITH_NVIDIA)
     set(NVIDIA_PATTERNS
-        "cuda/*.cc"
-        "cuda/*.cpp"
-        "cuda/*.cu"
-        "cuda/nvidia/*.cc"
-        "cuda/nvidia/*.cpp"
-        "cuda/nvidia/*.cu"
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/*.cu"
+        "native/cuda/nvidia/*.cc"
+        "native/cuda/nvidia/*.cpp"
+        "native/cuda/nvidia/*.cu"
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
@@ -51,12 +51,12 @@ endif()
 
 if(WITH_ILUVATAR)
     set(ILUVATAR_PATTERNS
-        "cuda/*.cc"
-        "cuda/*.cpp"
-        "cuda/*.cu"
-        "cuda/iluvatar/*.cc"
-        "cuda/iluvatar/*.cpp"
-        "cuda/iluvatar/*.cu"
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/*.cu"
+        "native/cuda/iluvatar/*.cc"
+        "native/cuda/iluvatar/*.cpp"
+        "native/cuda/iluvatar/*.cu"
     )
 
     file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
@@ -79,10 +79,10 @@ endif()
 
 if(WITH_METAX)
     set(METAX_PATTERNS
-        "cuda/*.cc"
-        "cuda/*.cpp"
-        "cuda/metax/*.cc"
-        "cuda/metax/*.maca"
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/metax/*.cc"
+        "native/cuda/metax/*.maca"
     )
 
     file(GLOB_RECURSE METAX_SOURCES CONFIGURE_DEPENDS ${METAX_PATTERNS})
@@ -105,11 +105,11 @@ endif()
 
 if(WITH_MOORE)
     set(MOORE_PATTERNS
-        "cuda/*.cc"
-        "cuda/*.cpp"
-        "cuda/moore/*.cc"
-        "cuda/moore/*.cpp"
-        "cuda/moore/*.mu"
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/moore/*.cc"
+        "native/cuda/moore/*.cpp"
+        "native/cuda/moore/*.mu"
     )
 
     file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
@@ -127,7 +127,7 @@ if(WITH_MOORE)
 endif()
 
 if(WITH_CAMBRICON)
-    file(GLOB_RECURSE CAMBRICON_MLU_SOURCES CONFIGURE_DEPENDS "cambricon/*/*.mlu")
+    file(GLOB_RECURSE CAMBRICON_MLU_SOURCES CONFIGURE_DEPENDS "native/cambricon/ops/*/*.mlu")
     find_program(CNCC_COMPILER cncc HINTS "${NEUWARE_HOME}/bin" "$ENV{NEUWARE_HOME}/bin" /usr/local/neuware/bin)
     if(CNCC_COMPILER)
         message(STATUS "Found cncc: ${CNCC_COMPILER}")
@@ -175,8 +175,8 @@ endif()
 if(WITH_ASCEND)
     # ASCEND_HOME is set by the top-level CMakeLists.txt.
     file(GLOB_RECURSE ASCEND_SOURCES CONFIGURE_DEPENDS
-        "ascend/*.cc"
-        "ascend/*.cpp"
+        "native/ascend/*.cc"
+        "native/ascend/*.cpp"
     )
     # Exclude `kernel_impl.cpp` — `AscendC` device code, not compiled by the host C++ compiler.
     list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
@@ -242,7 +242,7 @@ if(WITH_ASCEND)
 
     # Custom `AscendC` kernels (PyTorch extension, requires `torch_npu`).
     if(BUILD_CUSTOM_KERNEL)
-        add_subdirectory(ascend/custom)
+        add_subdirectory(native/ascend/custom)
 
         # Link the compiled `AscendC` kernel objects into `infiniops` so that
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
