@@ -4,10 +4,10 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnn_add.h"
-#include "native/ascend/common.h"
-#include "native/ascend/workspace_pool_.h"
 #include "base/add.h"
 #include "data_type.h"
+#include "native/ascend/common.h"
+#include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
 namespace infini::ops {

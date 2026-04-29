@@ -3,8 +3,8 @@
 
 #include "bang_bf16.h"
 #include "bang_fp16.h"
-#include "native/cambricon/device_.h"
 #include "data_type.h"
+#include "native/cambricon/device_.h"
 
 namespace infini::ops {
 

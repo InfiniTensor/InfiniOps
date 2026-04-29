@@ -9,9 +9,9 @@
 #include "native/cuda/moore/device_.h"
 // clang-format on
 
-#include "native/cuda/ops/causal_softmax/kernel.h"
 #include "native/cuda/moore/caster.cuh"
 #include "native/cuda/moore/runtime_.h"
+#include "native/cuda/ops/causal_softmax/kernel.h"
 
 namespace infini::ops {
 

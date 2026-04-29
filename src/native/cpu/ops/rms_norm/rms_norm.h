@@ -5,8 +5,8 @@
 
 #include "base/rms_norm.h"
 #include "common/generic_utils.h"
-#include "native/cpu/caster_.h"
 #include "data_type.h"
+#include "native/cpu/caster_.h"
 #include "tensor.h"
 
 namespace infini::ops {

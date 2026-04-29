@@ -5,8 +5,8 @@
 #include <common/maca_fp16.h>
 #include <mcr/mc_runtime.h>
 
-#include "native/cuda/metax/device_.h"
 #include "data_type.h"
+#include "native/cuda/metax/device_.h"
 
 namespace infini::ops {
 

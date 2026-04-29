@@ -5,10 +5,10 @@
 
 #include <utility>
 
+#include "data_type.h"
 #include "native/cuda/blas.h"
 #include "native/cuda/moore/blas_utils.h"
 #include "native/cuda/moore/runtime_.h"
-#include "data_type.h"
 
 namespace infini::ops {
 

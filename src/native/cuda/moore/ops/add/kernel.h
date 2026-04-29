@@ -7,10 +7,10 @@
 #include "native/cuda/moore/polyfills.cuh"
 // clang-format on
 
-#include "native/cuda/ops/add/kernel.h"
 #include "native/cuda/moore/caster.cuh"
 #include "native/cuda/moore/polyfills.cuh"
 #include "native/cuda/moore/runtime_.h"
+#include "native/cuda/ops/add/kernel.h"
 
 namespace infini::ops {
 

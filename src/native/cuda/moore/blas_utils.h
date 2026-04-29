@@ -3,8 +3,8 @@
 
 #include <mublas.h>
 
-#include "native/cuda/blas_utils.h"
 #include "data_type.h"
+#include "native/cuda/blas_utils.h"
 
 namespace infini::ops {
 

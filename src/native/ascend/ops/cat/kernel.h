@@ -7,9 +7,9 @@
 #include "aclnn/acl_meta.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_cat.h"
+#include "base/cat.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
-#include "base/cat.h"
 #include "operator.h"
 
 namespace infini::ops {

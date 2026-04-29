@@ -4,8 +4,8 @@
 #include <cassert>
 
 #include "acl/acl.h"
-#include "native/ascend/device_.h"
 #include "data_type.h"
+#include "native/ascend/device_.h"
 
 namespace infini::ops::ascend {
 
