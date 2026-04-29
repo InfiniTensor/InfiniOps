@@ -9,7 +9,7 @@
 
 #include "native/cuda/iluvatar/device_.h"
 #include "native/cuda/iluvatar/runtime_utils.h"
-#include "native/cuda/runtime.h"
+#include "native/cuda/runtime_.h"
 
 namespace infini::ops {
 
