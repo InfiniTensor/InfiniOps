@@ -7,10 +7,10 @@
 #include "cublas_v2.h"
 // clang-format on
 
+#include "data_type.h"
 #include "native/cuda/blas.h"
 #include "native/cuda/nvidia/blas_utils.h"
 #include "native/cuda/nvidia/runtime_.h"
-#include "data_type.h"
 
 namespace infini::ops {
 
