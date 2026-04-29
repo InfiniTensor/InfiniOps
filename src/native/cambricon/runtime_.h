@@ -3,7 +3,7 @@
 
 #include <cnrt.h>
 
-#include "cambricon/device_.h"
+#include "native/cambricon/device_.h"
 #include "runtime.h"
 
 namespace infini::ops {

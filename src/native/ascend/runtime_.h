@@ -5,7 +5,7 @@
 #include "acl/acl.h"
 // clang-format on
 
-#include "ascend/device_.h"
+#include "native/ascend/device_.h"
 #include "runtime.h"
 
 namespace infini::ops {

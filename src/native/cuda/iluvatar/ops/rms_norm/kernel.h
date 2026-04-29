@@ -3,9 +3,9 @@
 
 #include <utility>
 
-#include "cuda/iluvatar/caster.cuh"
-#include "cuda/iluvatar/runtime_.h"
-#include "cuda/rms_norm/kernel.h"
+#include "native/cuda/iluvatar/caster.cuh"
+#include "native/cuda/iluvatar/runtime_.h"
+#include "native/cuda/ops/rms_norm/kernel.h"
 
 namespace infini::ops {
 

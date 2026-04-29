@@ -5,8 +5,8 @@
 #include <cstddef>
 #include <cub/block/block_reduce.cuh>
 
-#include "cuda/caster.cuh"
-#include "cuda/kernel_commons.cuh"
+#include "native/cuda/caster.cuh"
+#include "native/cuda/kernel_commons.cuh"
 
 namespace infini::ops {
 

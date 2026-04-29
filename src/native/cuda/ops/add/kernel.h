@@ -8,9 +8,9 @@
 
 #include "base/add.h"
 #include "common/generic_utils.h"
-#include "cuda/add/kernel.cuh"
-#include "cuda/kernel_commons.cuh"
-#include "cuda/runtime_utils.h"
+#include "native/cuda/ops/add/kernel.cuh"
+#include "native/cuda/kernel_commons.cuh"
+#include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
 

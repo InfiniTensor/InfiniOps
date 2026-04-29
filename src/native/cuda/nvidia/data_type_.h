@@ -6,7 +6,7 @@
 #include <cuda_fp16.h>
 // clang-format on
 
-#include "cuda/nvidia/device_.h"
+#include "native/cuda/nvidia/device_.h"
 #include "data_type.h"
 
 namespace infini::ops {
