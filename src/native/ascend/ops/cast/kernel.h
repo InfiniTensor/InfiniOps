@@ -4,9 +4,9 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_cast.h"
+#include "base/cast.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
-#include "base/cast.h"
 #include "operator.h"
 
 namespace infini::ops {

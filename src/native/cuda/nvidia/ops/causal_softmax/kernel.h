@@ -3,9 +3,9 @@
 
 #include <utility>
 
-#include "native/cuda/ops/causal_softmax/kernel.h"
 #include "native/cuda/nvidia/caster.cuh"
 #include "native/cuda/nvidia/runtime_.h"
+#include "native/cuda/ops/causal_softmax/kernel.h"
 
 namespace infini::ops {
 

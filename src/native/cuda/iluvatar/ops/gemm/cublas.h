@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_ILUVATAR_GEMM_CUBLAS_H_
 #define INFINI_OPS_ILUVATAR_GEMM_CUBLAS_H_
 
-#include "native/cuda/ops/gemm/blas.h"
 #include "native/cuda/iluvatar/blas.h"
+#include "native/cuda/ops/gemm/blas.h"
 
 namespace infini::ops {
 

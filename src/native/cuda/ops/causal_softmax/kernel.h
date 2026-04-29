@@ -6,11 +6,11 @@
 #include <cstdint>
 
 #include "base/causal_softmax.h"
-#include "native/cuda/ops/causal_softmax/kernel.cuh"
-#include "native/cuda/kernel_commons.cuh"
-#include "native/cuda/runtime_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
+#include "native/cuda/kernel_commons.cuh"
+#include "native/cuda/ops/causal_softmax/kernel.cuh"
+#include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
 
