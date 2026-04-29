@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_MOORE_CASTER__H_
 #define INFINI_OPS_MOORE_CASTER__H_
 
-#include "cuda/caster.cuh"
-#include "cuda/moore/data_type_.h"
+#include "native/cuda/caster.cuh"
+#include "native/cuda/moore/data_type_.h"
 
 namespace infini::ops {
 

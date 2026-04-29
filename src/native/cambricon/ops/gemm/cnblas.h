@@ -11,7 +11,7 @@
 // clang-format on
 
 #include "base/gemm.h"
-#include "cambricon/common.h"
+#include "native/cambricon/common.h"
 
 namespace infini::ops {
 

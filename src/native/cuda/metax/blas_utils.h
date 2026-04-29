@@ -5,7 +5,7 @@
 #include <mcblas/mcblas.h>
 // clang-format on
 
-#include "cuda/blas_utils.h"
+#include "native/cuda/blas_utils.h"
 #include "data_type.h"
 
 namespace infini::ops {

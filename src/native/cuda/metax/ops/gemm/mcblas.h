@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_METAX_GEMM_MCBLAS_H_
 #define INFINI_OPS_METAX_GEMM_MCBLAS_H_
 
-#include "cuda/gemm/blas.h"
-#include "cuda/metax/blas.h"
+#include "native/cuda/ops/gemm/blas.h"
+#include "native/cuda/metax/blas.h"
 
 namespace infini::ops {
 

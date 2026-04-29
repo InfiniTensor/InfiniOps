@@ -3,9 +3,9 @@
 
 #include <utility>
 
-#include "cuda/metax/caster.cuh"
-#include "cuda/metax/runtime_.h"
-#include "cuda/rms_norm/kernel.h"
+#include "native/cuda/metax/caster.cuh"
+#include "native/cuda/metax/runtime_.h"
+#include "native/cuda/ops/rms_norm/kernel.h"
 
 namespace infini::ops {
 
