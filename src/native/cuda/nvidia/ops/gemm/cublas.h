@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_NVIDIA_GEMM_CUBLAS_H_
 #define INFINI_OPS_NVIDIA_GEMM_CUBLAS_H_
 
-#include "cuda/gemm/blas.h"
-#include "cuda/nvidia/blas.h"
+#include "native/cuda/ops/gemm/blas.h"
+#include "native/cuda/nvidia/blas.h"
 
 namespace infini::ops {
 

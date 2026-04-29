@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "base/rms_norm.h"
-#include "cambricon/common.h"
-#include "cambricon/data_type_.h"
+#include "native/cambricon/common.h"
+#include "native/cambricon/data_type_.h"
 
 namespace infini::ops {
 

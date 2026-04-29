@@ -1,4 +1,4 @@
-#include "torch/add/add.h"
+#include "torch/ops/add/add.h"
 
 #include "torch/tensor_.h"
 

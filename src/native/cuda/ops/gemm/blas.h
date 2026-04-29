@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "base/gemm.h"
-#include "cuda/blas_utils.h"
+#include "native/cuda/blas_utils.h"
 
 namespace infini::ops {
 

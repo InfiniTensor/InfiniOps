@@ -7,9 +7,9 @@
 #include <musa_runtime.h>
 // clang-format on
 
-#include "cuda/moore/caster.cuh"
-#include "cuda/moore/runtime_.h"
-#include "cuda/rms_norm/kernel.h"
+#include "native/cuda/moore/caster.cuh"
+#include "native/cuda/moore/runtime_.h"
+#include "native/cuda/ops/rms_norm/kernel.h"
 
 namespace infini::ops {
 

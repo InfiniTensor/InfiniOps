@@ -8,8 +8,8 @@
 
 #include "base/swiglu.h"
 #include "common/generic_utils.h"
-#include "cuda/runtime_utils.h"
-#include "cuda/swiglu/kernel.cuh"
+#include "native/cuda/runtime_utils.h"
+#include "native/cuda/ops/swiglu/kernel.cuh"
 
 namespace infini::ops {
 

@@ -5,7 +5,7 @@
 
 #include "base/linear.h"
 #include "common/generic_utils.h"
-#include "cpu/caster_.h"
+#include "native/cpu/caster_.h"
 
 namespace infini::ops {
 

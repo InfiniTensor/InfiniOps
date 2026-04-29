@@ -6,7 +6,7 @@
 
 #include "acl/acl.h"
 #include "aclnn/acl_meta.h"
-#include "ascend/data_type_.h"
+#include "native/ascend/data_type_.h"
 #include "tensor.h"
 
 namespace infini::ops::ascend {
