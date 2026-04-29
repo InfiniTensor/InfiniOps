@@ -9,7 +9,7 @@
 
 #include "native/cuda/nvidia/device_.h"
 #include "native/cuda/nvidia/runtime_utils.h"
-#include "native/cuda/runtime.h"
+#include "native/cuda/runtime_.h"
 
 namespace infini::ops {
 
