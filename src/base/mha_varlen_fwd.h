@@ -4,6 +4,7 @@
 #include <cassert>
 #include <optional>
 
+#include "data_type.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -13,6 +14,8 @@ namespace infini::ops {
 // Layout follows `flash_attn` `varlen_fwd`:
 //   `q`: `[total_q, num_heads, head_size]`.
 //   `k` / `v`: `[total_k, num_kv_heads, head_size]`.
+//   Paged `k` / `v`: `[num_blocks, block_size, num_kv_heads, head_size]`
+//     when `block_table` is supplied.
 //   `cu_seqlens_q` / `cu_seqlens_k`: `[batch_size + 1]`.
 //
 // InfiniOps is an in-place operator API, so `out` must be supplied even
@@ -55,6 +58,19 @@ class MhaVarlenFwd : public Operator<MhaVarlenFwd> {
         has_generator_{generator.has_value()} {
     assert(q.ndim() == 3 &&
            "`MhaVarlenFwd` requires `q` to be `[total_q, heads, dim]`");
+    if (has_block_table_) {
+      assert(k.ndim() == 4 && v.ndim() == 4 &&
+             "`MhaVarlenFwd` with `block_table` requires paged `k` / `v` to "
+             "be `[num_blocks, block_size, heads, dim]`.");
+      assert(block_table->ndim() == 2 &&
+             "`MhaVarlenFwd` requires `block_table` to be 2D.");
+      assert(block_table->dtype() == DataType::kInt32 &&
+             "`MhaVarlenFwd` requires `block_table` to be `int32`.");
+    } else {
+      assert(k.ndim() == 3 && v.ndim() == 3 &&
+             "`MhaVarlenFwd` requires `k` / `v` to be "
+             "`[total_k, heads, dim]`.");
+    }
     assert(k.dtype() == q.dtype() && v.dtype() == q.dtype() &&
            "`MhaVarlenFwd` requires `q`, `k`, and `v` to have same dtype");
     assert(k.stride(-1) == 1 && v.stride(-1) == 1 && q.stride(-1) == 1 &&
@@ -67,6 +83,10 @@ class MhaVarlenFwd : public Operator<MhaVarlenFwd> {
            "`MhaVarlenFwd` requires `head_size` to be a multiple of 8");
     assert(cu_seqlens_q.ndim() == 1 && cu_seqlens_k.ndim() == 1 &&
            "`MhaVarlenFwd` requires 1D `cu_seqlens_q` / `cu_seqlens_k`");
+    assert(cu_seqlens_q.dtype() == DataType::kInt32 &&
+           cu_seqlens_k.dtype() == DataType::kInt32 &&
+           "`MhaVarlenFwd` requires `cu_seqlens_q` and `cu_seqlens_k` to be "
+           "`int32`.");
     assert(cu_seqlens_q.numel() == cu_seqlens_k.numel() &&
            "`MhaVarlenFwd` requires matching `cu_seqlens` lengths");
     assert(has_out_ && "`MhaVarlenFwd` requires caller-provided `out`");

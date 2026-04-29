@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <vector>
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
@@ -37,10 +38,26 @@ class Operator<MhaVarlenFwd, Device::Type::kAscend> : public MhaVarlenFwd {
         out_cache_(out.value()) {
     ascend::fia::AssertSupportedDtype(q.dtype(), "`MhaVarlenFwd`");
 
+    if (has_block_table_) {
+      block_table_cache_ = ascend::AclTensorCache(block_table.value());
+
+      const int64_t num_blocks = k.size(0);
+      const int64_t block_size = k.size(1);
+      const int64_t kv_nd = k.size(2) * k.size(3);
+      kv_shape_ = {num_blocks, block_size, kv_nd};
+      kv_strides_ = {block_size * kv_nd, kv_nd, 1};
+      kv_storage_shape_ = {num_blocks * block_size * kv_nd};
+      kv_acl_dtype_ = ascend::ToAclDtype(q.dtype());
+      page_block_size_ = block_size;
+      assert(page_block_size_ % 16 == 0 &&
+             "`MhaVarlenFwd`: paged KV `block_size` must be 16-aligned for "
+             "`float16` and `bfloat16`.");
+    }
+
     if (is_causal_) {
       assert(max_seqlen_q_ <= 2048 && max_seqlen_k_ <= 2048 &&
              "`MhaVarlenFwd`: causal FIA mask currently supports "
-             "`max_seqlen <= 2048`");
+             "`max_seqlen <= 2048`.");
       causal_mask_ = ascend::fia::MakeCausalMask(&causal_mask_buf_);
     }
   }
@@ -75,9 +92,9 @@ class Operator<MhaVarlenFwd, Device::Type::kAscend> : public MhaVarlenFwd {
            "`MhaVarlenFwd`: `seqused_k` is not supported by this Ascend path");
     assert(!leftpad_k.has_value() &&
            "`MhaVarlenFwd`: `leftpad_k` is not supported by this Ascend path");
-    assert(!block_table.has_value() &&
-           "`MhaVarlenFwd`: paged KV in `varlen_fwd` is not supported by this "
-           "Ascend path; use `mha_fwd_kvcache` for paged decode");
+    assert(block_table.has_value() == has_block_table_ &&
+           "`MhaVarlenFwd`: `block_table` presence changed after descriptor "
+           "creation");
     assert(!alibi_slopes.has_value() &&
            "`MhaVarlenFwd`: `alibi_slopes` is not supported by this Ascend "
            "path");
@@ -105,12 +122,38 @@ class Operator<MhaVarlenFwd, Device::Type::kAscend> : public MhaVarlenFwd {
                                    next_tokens);
 
     auto seq_q = ascend::fia::CreateCumSeqLengths(cu_seqlens_q, stream);
-    auto seq_k = ascend::fia::CreateCumSeqLengths(cu_seqlens_k, stream);
+    auto seq_k = has_block_table_
+                     ? ascend::fia::CreateDiffSeqLengths(cu_seqlens_k, stream)
+                     : ascend::fia::CreateCumSeqLengths(cu_seqlens_k, stream);
 
     auto t_q = q_cache_.get(const_cast<void*>(q.data()));
-    auto t_k = ascend::BuildAclTensor(k);
-    auto t_v = ascend::BuildAclTensor(v);
     auto t_out = out_cache_.get(out->data());
+    aclTensor* t_block_table = nullptr;
+    aclTensor* t_k = nullptr;
+    aclTensor* t_v = nullptr;
+
+    if (has_block_table_) {
+      assert(page_block_size_ == static_cast<int64_t>(k.size(1)) &&
+             "`MhaVarlenFwd`: paged KV `block_size` changed after descriptor "
+             "creation");
+      t_block_table =
+          block_table_cache_.get(const_cast<void*>(block_table->data()));
+      t_k = aclCreateTensor(kv_shape_.data(),
+                            static_cast<int64_t>(kv_shape_.size()),
+                            kv_acl_dtype_, kv_strides_.data(), 0, ACL_FORMAT_ND,
+                            kv_storage_shape_.data(),
+                            static_cast<int64_t>(kv_storage_shape_.size()),
+                            const_cast<void*>(k.data()));
+      t_v = aclCreateTensor(kv_shape_.data(),
+                            static_cast<int64_t>(kv_shape_.size()),
+                            kv_acl_dtype_, kv_strides_.data(), 0, ACL_FORMAT_ND,
+                            kv_storage_shape_.data(),
+                            static_cast<int64_t>(kv_storage_shape_.size()),
+                            const_cast<void*>(v.data()));
+    } else {
+      t_k = ascend::BuildAclTensor(k);
+      t_v = ascend::BuildAclTensor(v);
+    }
 
     const aclTensor* key_arr[] = {t_k};
     const aclTensor* value_arr[] = {t_v};
@@ -124,15 +167,15 @@ class Operator<MhaVarlenFwd, Device::Type::kAscend> : public MhaVarlenFwd {
         nullptr,       // pseShift.
         causal_mask_,  // attenMask.
         seq_q, seq_k, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, t_block_table, nullptr, nullptr, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        static_cast<int64_t>(num_heads_), softmax_scale_, pre_tokens,
+        nullptr, static_cast<int64_t>(num_heads_), softmax_scale_, pre_tokens,
         next_tokens, const_cast<char*>("TND"),
         static_cast<int64_t>(num_kv_heads_), sparse_mode,
-        0,      // innerPrecise.
-        0,      // blockSize.
-        0,      // antiquantMode.
-        false,  // softmaxLseFlag.
+        0,                 // innerPrecise.
+        page_block_size_,  // blockSize.
+        0,                 // antiquantMode.
+        false,             // softmaxLseFlag.
         0, 0, 0, t_out, nullptr, &ws_size, &executor);
     assert(ret == ACL_SUCCESS &&
            "`aclnnFusedInferAttentionScoreV4GetWorkspaceSize` failed");
@@ -152,9 +195,21 @@ class Operator<MhaVarlenFwd, Device::Type::kAscend> : public MhaVarlenFwd {
 
   mutable ascend::AclTensorCache out_cache_;
 
+  mutable ascend::AclTensorCache block_table_cache_;
+
   aclTensor* causal_mask_ = nullptr;
 
   void* causal_mask_buf_ = nullptr;
+
+  std::vector<int64_t> kv_shape_;
+
+  std::vector<int64_t> kv_strides_;
+
+  std::vector<int64_t> kv_storage_shape_;
+
+  aclDataType kv_acl_dtype_{ACL_DT_UNDEFINED};
+
+  int64_t page_block_size_{0};
 };
 
 }  // namespace infini::ops
