@@ -290,7 +290,16 @@ def pytest_pyfunc_call(pyfuncitem):
         rtol = payload.rtol
         atol = payload.atol
 
-        assert torch.allclose(output, expected, rtol=rtol, atol=atol)
+        # `torch.allclose` rejects `bool` dtypes — use `torch.equal` for
+        # non-floating outputs (bool, int) so comparison ops work.  Pass
+        # `equal_nan=True` so NaN-in-both-positions (common for special
+        # functions fed out-of-domain inputs) doesn't fail the test.
+        if output.dtype.is_floating_point:
+            assert torch.allclose(
+                output, expected, rtol=rtol, atol=atol, equal_nan=True
+            )
+        else:
+            assert torch.equal(output, expected)
 
         return True
 
