@@ -167,6 +167,55 @@ _LARGE_REDUCTION_OPS = frozenset(
     {"sum", "mean", "nansum", "nanmean", "prod", "std", "var"}
 )
 
+# Ops with input-domain `TORCH_CHECK` macros that fire as device-side
+# `assert` on CUDA when our generic random fp32 inputs fall outside the
+# expected range.  The Python-side `RuntimeError` is catchable, but the
+# CUDA context is left poisoned and every subsequent test errors at
+# setup.  Skip these on cuda; the CPU path raises a clean exception
+# that the existing harness already handles.
+_DEVICE_ASSERTING_OPS = frozenset(
+    {
+        "binary_cross_entropy",  # requires inputs in [0, 1]
+        "multi_margin_loss",
+        "multilabel_margin_loss",
+        "nll_loss",
+        "nll_loss2d",
+        # cuDNN paths divide by `kernel_size`/`stride` and SIGFPE on the
+        # `[0, 0]` defaults our harness substitutes for required `int[N]`
+        # parameters.
+        "cudnn_convolution",
+        "slow_conv3d",
+        "slow_conv_transpose2d",
+        "slow_conv_transpose3d",
+        "thnn_conv2d",
+        "im2col",
+        "col2im",
+        "max_unpool2d",
+        "max_unpool3d",
+        "reflection_pad1d",
+        "reflection_pad2d",
+        "reflection_pad3d",
+        "replication_pad1d",
+        "replication_pad2d",
+        "replication_pad3d",
+        "upsample_bicubic2d",
+        "upsample_bilinear2d",
+        "upsample_linear1d",
+        "upsample_nearest1d",
+        "upsample_nearest2d",
+        "upsample_nearest3d",
+        "upsample_trilinear3d",
+        "avg_pool2d",
+        "avg_pool3d",
+        "max_pool2d_with_indices",
+        "max_pool3d_with_indices",
+        "adaptive_max_pool2d",
+        "adaptive_max_pool3d",
+        "adaptive_avg_pool2d",
+        "adaptive_avg_pool3d",
+    }
+)
+
 
 def _torch_func(op_name):
     """Resolve the reference function across `torch`, `torch.special`,
@@ -254,6 +303,8 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     _skip_low_precision_reduction(aten_name, dtype, device)
     if aten_name in _RANDOM_OPS:
         pytest.skip(f"`{aten_name}` is non-deterministic (independent draws diverge)")
+    if device == "cuda" and aten_name in _DEVICE_ASSERTING_OPS:
+        pytest.skip(f"`{aten_name}` triggers a CUDA device-side assert on random inputs")
 
     in_params = [p for p in op_meta["params"] if not p["is_out"]]
     out_params = [p for p in op_meta["params"] if p["is_out"]]
@@ -299,6 +350,12 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     )
     if unsupported is not None:
         pytest.skip(f"`{op_name}` uses dtype {unsupported} — not in InfiniOps `DataType`")
+
+    # On CUDA, `torch.empty_like` of a 0-element tensor gives a tensor
+    # whose `data_ptr()` is unregistered with the device; passing it
+    # through to the wrapper trips "pointer resides on host memory".
+    if any(t.numel() == 0 for t in ref_outs):
+        pytest.skip(f"`{op_name}` produced 0-element output (unregistered data_ptr on cuda)")
 
     outs = [torch.empty_like(t) for t in ref_outs]
     _call_infini(op_name, *inputs, *outs)
