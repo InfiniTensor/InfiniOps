@@ -7,14 +7,14 @@
 
 namespace infini::ops {
 
-// Fused linear projection: out = a @ b (+ bias).
-//
-// When bias is present, computes out = a @ b + bias in a single dispatch.
-// When bias is absent, computes out = a @ b (equivalent to Matmul).
-// `trans_a` / `trans_b`: If true, transpose the last two dims before
-// multiplying.
+// Fused linear projection.  Primary form `(input, weight, bias?, out)`
+// matches `F.linear(input, weight, bias)`: `weight` is pre-transposed as
+// `[out_features, in_features]`, kernel computes `input @ weight^T`.  The
+// 6-arg `(a, b, bias, trans_a, trans_b, out)` form is kept deprecated for
+// callers that need explicit transpose flags.
 class Linear : public Operator<Linear> {
  public:
+  // Deprecated — use `(input, weight, bias, out)` instead.
   Linear(const Tensor a, const Tensor b, std::optional<Tensor> bias,
          bool trans_a, bool trans_b, Tensor out)
       : a_shape_{a.shape()},
@@ -36,9 +36,30 @@ class Linear : public Operator<Linear> {
     }
   }
 
+  Linear(const Tensor input, const Tensor weight, std::optional<Tensor> bias,
+         Tensor out)
+      : Linear{input, weight, bias, /*trans_a=*/false, /*trans_b=*/true, out} {
+    assert(weight.ndim() >= 2 &&
+           "`Linear`: `weight` must have at least 2 dims "
+           "`[..., out_features, in_features]`");
+    assert(weight.size(-1) == input.size(-1) &&
+           "`Linear`: `weight.shape[-1]` must equal `input.shape[-1]` "
+           "(`in_features`)");
+    assert(weight.size(-2) == out.size(-1) &&
+           "`Linear`: `weight.shape[-2]` must equal `out.shape[-1]` "
+           "(`out_features`)");
+  }
+
+  // Deprecated — use `(input, weight, bias, out)` overload.
   virtual void operator()(const Tensor a, const Tensor b,
                           std::optional<Tensor> bias, bool trans_a,
                           bool trans_b, Tensor out) const = 0;
+
+  virtual void operator()(const Tensor input, const Tensor weight,
+                          std::optional<Tensor> bias, Tensor out) const {
+    return operator()(input, weight, bias, /*trans_a=*/false,
+                      /*trans_b=*/true, out);
+  }
 
  protected:
   Tensor::Shape a_shape_;
