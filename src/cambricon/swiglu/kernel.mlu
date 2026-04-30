@@ -1,0 +1,211 @@
+#include "swiglu.h"
+
+__nram__ char nram_buffer[NRAM_MAX_SIZE];
+
+namespace infini::ops {
+
+template <typename T>
+__mlu_device__ void ComputeSwiglu(const T *input, const T *gate, T *output,
+                                   size_t n) {
+  if constexpr (std::is_same_v<T, float>) {
+    for (size_t i = 0; i < n; ++i) {
+      float g = gate[i];
+      output[i] = input[i] * g / (1.0f + expf(-g));
+    }
+  } else if constexpr (std::is_same_v<T, __half>) {
+    auto *out_h = reinterpret_cast<half *>(output);
+    auto *in_h = reinterpret_cast<const half *>(input);
+    auto *gate_h = reinterpret_cast<const half *>(gate);
+    __bang_active_sigmoid(out_h, gate_h, n);
+    __bang_mul(out_h, out_h, gate_h, n);
+    __bang_mul(out_h, out_h, in_h, n);
+  } else {
+    __bang_active_sigmoid(output, gate, n);
+    __bang_mul(output, output, gate, n);
+    __bang_mul(output, output, input, n);
+  }
+}
+
+template <typename T>
+__mlu_global__ void SwigluKernel(const T *input, const T *gate, T *output,
+                                  const size_t *out_shape,
+                                  const ptrdiff_t *out_strides,
+                                  const size_t *input_shape,
+                                  const ptrdiff_t *input_strides,
+                                  const size_t *gate_shape,
+                                  const ptrdiff_t *gate_strides,
+                                  size_t output_size, int ndim, bool fast_path,
+                                  bool out_contiguous) {
+  size_t elements_per_task = (output_size + taskDim - 1) / taskDim;
+  size_t start = taskId * elements_per_task;
+  size_t end = start + elements_per_task;
+  if (end > output_size) end = output_size;
+  size_t num_elements = end > start ? end - start : 0;
+  if (num_elements == 0) return;
+
+  size_t nram_usable = NRAM_MAX_SIZE - 256;
+  size_t block_size = nram_usable / (3 * sizeof(T));
+  block_size = (block_size / 64) * 64;
+  if (block_size == 0) block_size = 64;
+
+  T *input_buf = reinterpret_cast<T *>(nram_buffer);
+  T *gate_buf = input_buf + block_size;
+  T *output_buf = gate_buf + block_size;
+
+  size_t processed = 0;
+
+  if (fast_path) {
+    while (processed < num_elements) {
+      size_t curr = block_size;
+      if (curr > num_elements - processed) curr = num_elements - processed;
+
+      __memcpy(input_buf, input + start + processed,
+               curr * sizeof(T), GDRAM2NRAM);
+      __memcpy(gate_buf, gate + start + processed,
+               curr * sizeof(T), GDRAM2NRAM);
+      ComputeSwiglu<T>(input_buf, gate_buf, output_buf, curr);
+      __memcpy(output + start + processed, output_buf,
+               curr * sizeof(T), NRAM2GDRAM);
+
+      processed += curr;
+    }
+    return;
+  }
+
+  // General path: handle non-contiguous tensors and broadcasting.
+  while (processed < num_elements) {
+    size_t curr = block_size;
+    if (curr > num_elements - processed) curr = num_elements - processed;
+
+    for (size_t i = 0; i < curr; ++i) {
+      size_t flat_idx = start + processed + i;
+
+      // Compute `input` offset.
+      {
+        size_t tmp = flat_idx;
+        ptrdiff_t offset = 0;
+        for (int d = ndim - 1; d >= 0; --d) {
+          size_t coord = tmp % out_shape[d];
+          tmp /= out_shape[d];
+          size_t c = coord < input_shape[d] ? coord : 0;
+          offset += static_cast<ptrdiff_t>(c) * input_strides[d];
+        }
+        input_buf[i] = input[offset];
+      }
+
+      // Compute `gate` offset.
+      {
+        size_t tmp = flat_idx;
+        ptrdiff_t offset = 0;
+        for (int d = ndim - 1; d >= 0; --d) {
+          size_t coord = tmp % out_shape[d];
+          tmp /= out_shape[d];
+          size_t c = coord < gate_shape[d] ? coord : 0;
+          offset += static_cast<ptrdiff_t>(c) * gate_strides[d];
+        }
+        gate_buf[i] = gate[offset];
+      }
+    }
+
+    ComputeSwiglu<T>(input_buf, gate_buf, output_buf, curr);
+
+    if (out_contiguous) {
+      __memcpy(output + start + processed, output_buf,
+               curr * sizeof(T), NRAM2GDRAM);
+    } else {
+      for (size_t i = 0; i < curr; ++i) {
+        size_t flat_idx = start + processed + i;
+        size_t tmp = flat_idx;
+        ptrdiff_t offset = 0;
+        for (int d = ndim - 1; d >= 0; --d) {
+          size_t coord = tmp % out_shape[d];
+          offset += static_cast<ptrdiff_t>(coord) * out_strides[d];
+          tmp /= out_shape[d];
+        }
+        output[offset] = output_buf[i];
+      }
+    }
+
+    processed += curr;
+  }
+}
+
+template <typename T>
+void SwigluUnion(void *workspace, int core_per_cluster, int cluster_count,
+                 cnrtQueue_t queue, void *out, const void *input,
+                 const void *gate, const size_t *out_shape,
+                 const ptrdiff_t *out_strides, const size_t *input_shape,
+                 const ptrdiff_t *input_strides, const size_t *gate_shape,
+                 const ptrdiff_t *gate_strides, size_t output_size, int ndim,
+                 bool fast_path, bool out_contiguous) {
+  cnrtDim3_t kernel_dim;
+  cnrtFunctionType_t kernel_type;
+
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+  kernel_type = cnrtFuncTypeUnion1;
+
+  auto out_ = reinterpret_cast<T *>(out);
+  auto input_ = reinterpret_cast<const T *>(input);
+  auto gate_ = reinterpret_cast<const T *>(gate);
+
+  char *tmp = reinterpret_cast<char *>(workspace);
+  size_t *mlu_out_shape = reinterpret_cast<size_t *>(tmp);
+  size_t *mlu_input_shape = mlu_out_shape + ndim;
+  size_t *mlu_gate_shape = mlu_input_shape + ndim;
+  ptrdiff_t *mlu_out_strides =
+      reinterpret_cast<ptrdiff_t *>(mlu_gate_shape + ndim);
+  ptrdiff_t *mlu_input_strides = mlu_out_strides + ndim;
+  ptrdiff_t *mlu_gate_strides = mlu_input_strides + ndim;
+
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_out_shape, const_cast<size_t *>(out_shape),
+                             ndim * sizeof(size_t), queue,
+                             cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_input_shape, const_cast<size_t *>(input_shape),
+                             ndim * sizeof(size_t), queue,
+                             cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_gate_shape, const_cast<size_t *>(gate_shape),
+                             ndim * sizeof(size_t), queue,
+                             cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_out_strides,
+                             const_cast<ptrdiff_t *>(out_strides),
+                             ndim * sizeof(ptrdiff_t), queue,
+                             cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_input_strides,
+                             const_cast<ptrdiff_t *>(input_strides),
+                             ndim * sizeof(ptrdiff_t), queue,
+                             cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(mlu_gate_strides,
+                             const_cast<ptrdiff_t *>(gate_strides),
+                             ndim * sizeof(ptrdiff_t), queue,
+                             cnrtMemcpyHostToDev));
+
+  SwigluKernel<T><<<kernel_dim, kernel_type, queue>>>(
+      input_, gate_, out_, mlu_out_shape, mlu_out_strides, mlu_input_shape,
+      mlu_input_strides, mlu_gate_shape, mlu_gate_strides, output_size, ndim,
+      fast_path, out_contiguous);
+
+  cnrtQueueSync(queue);
+}
+
+template void SwigluUnion<__half>(void *, int, int, cnrtQueue_t, void *,
+                                  const void *, const void *, const size_t *,
+                                  const ptrdiff_t *, const size_t *,
+                                  const ptrdiff_t *, const size_t *,
+                                  const ptrdiff_t *, size_t, int, bool, bool);
+
+template void SwigluUnion<__bang_bfloat16>(void *, int, int, cnrtQueue_t, void *,
+                                           const void *, const void *,
+                                           const size_t *, const ptrdiff_t *,
+                                           const size_t *, const ptrdiff_t *,
+                                           const size_t *, const ptrdiff_t *,
+                                           size_t, int, bool, bool);
+
+template void SwigluUnion<float>(void *, int, int, cnrtQueue_t, void *,
+                                 const void *, const void *, const size_t *,
+                                 const ptrdiff_t *, const size_t *,
+                                 const ptrdiff_t *, const size_t *,
+                                 const ptrdiff_t *, size_t, int, bool, bool);
+
+}  // namespace infini::ops
