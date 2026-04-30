@@ -95,7 +95,18 @@ _SCALAR_TYPE_MAP = {
     # `SymInt` / `SymInt[]` exist for `torch.compile` internals; at runtime
     # they're just `int64`/IntArrayRef.
     "SymInt": "int64_t",
+    # `str` for required string params (e.g. `index_reduce.reduce`).
+    # `std::string` marshals through pybind11 cleanly and converts
+    # implicitly to ATen's `c10::string_view`.
+    "str": "std::string",
 }
+
+# `Dimname` overloads (named-tensor dim) are skipped — passing them
+# from Python to ATen requires a wrapper conversion through
+# `at::Dimname::fromSymbol(...)` that doesn't fit the cleanly-rendered
+# 1:1 arg model, and named tensors remain experimental in PyTorch.
+# The int-dim overload is always emitted alongside, so we lose nothing
+# user-visible.
 
 # Optional ATen types we hide from the user-facing API and pass as a
 # typed empty optional at the call site.  Covers the common "full
@@ -251,8 +262,12 @@ class Op:
         """InfiniOps op name.  Includes the overload to disambiguate
         between schemas of the same ATen op
         (e.g. `pow.Tensor_Tensor_out` → `pow_tensor_tensor`,
-        `pow.Tensor_Scalar_out` → `pow_tensor_scalar`)."""
-        suffix = self.overload.removesuffix("_out") if self.overload else ""
+        `pow.Tensor_Scalar_out` → `pow_tensor_scalar`,
+        `div.out_mode` → `div_mode`).  The `out` suffix/prefix used by
+        ATen to disambiguate the out-variant carries no semantic info
+        and is stripped."""
+        suffix = self.overload
+        suffix = suffix.removesuffix("_out").removeprefix("out_")
         if suffix and suffix != "out":
             return f"{self.aten_name}_{suffix.lower()}"
         return self.aten_name
@@ -394,17 +409,22 @@ def _load_aten_yaml() -> str:
 def _find_out_entries(entries: list[dict], op_name: str) -> list[dict]:
     """Return all out-variant entries for `op_name`, with the bare
     `<name>.out(` form first and overload-suffixed variants
-    (e.g. `pow.Tensor_Tensor_out(`) after.  Callers iterate in order
-    and pick the first one parseable into a supported `kind`."""
+    (e.g. `pow.Tensor_Tensor_out(`, `kthvalue.values(`) after.  An
+    entry counts as an out-variant when it (a) is named
+    `<op_name>.out`, (b) ends in `_out`, or (c) carries a
+    `Tensor(<letter>!)` mutability annotation — that last case covers
+    multi-output ops named after their output tensors
+    (`kthvalue.values`, `mode.values`, …)."""
     bare_prefix = f"{op_name}.out("
-    overloaded = re.compile(rf"^{re.escape(op_name)}\.\w+_out\(")
+    op_overload = re.compile(rf"^{re.escape(op_name)}\.\w+\(")
+    mut_tensor = re.compile(r"Tensor\([a-z]!\)")
     bare: list[dict] = []
     others: list[dict] = []
     for entry in entries:
         func = entry.get("func", "")
         if func.startswith(bare_prefix):
             bare.append(entry)
-        elif overloaded.match(func):
+        elif op_overload.match(func) and (func.split("(", 1)[0].endswith("_out") or mut_tensor.search(func)):
             others.append(entry)
     return bare + others
 

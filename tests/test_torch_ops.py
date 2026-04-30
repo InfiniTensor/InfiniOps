@@ -88,6 +88,14 @@ _SCALAR_VALUES = {
     ("sub", "alpha"): 1.0,
     ("addcmul", "value"): 1.0,
     ("addcdiv", "value"): 1.0,
+    # `str reduce` modes accepted by the corresponding ATen kernels.
+    ("index_reduce", "reduce"): "amax",
+    ("scatter_reduce", "reduce"): "amax",
+    ("scatter_reduce_two", "reduce"): "amax",
+    # `int dim` for ops where 0 is a safe choice for our test shapes.
+    ("kthvalue_values", "k"): 1,
+    ("kthvalue_values", "dim"): 0,
+    ("mode_values", "dim"): 0,
 }
 
 _TYPE_DEFAULTS = {"int": 0, "SymInt": 0, "bool": False, "str": "none"}

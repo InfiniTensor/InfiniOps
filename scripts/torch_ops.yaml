@@ -152,6 +152,7 @@
 - index
 - index_add
 - index_copy
+- index_reduce
 - index_select
 - inner
 - inverse
@@ -159,6 +160,7 @@
 - isneginf
 - isposinf
 - kron
+- kthvalue
 - lcm
 - ldexp
 - le
@@ -232,6 +234,7 @@
 - maximum
 - mean
 - min
+- mode
 - minimum
 - mish
 - mkldnn_adaptive_avg_pool2d
@@ -292,6 +295,7 @@
 - rsqrt
 - scatter
 - scatter_add
+- scatter_reduce
 - searchsorted
 - sgn
 - sigmoid
