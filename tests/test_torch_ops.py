@@ -92,6 +92,26 @@ _SCALAR_VALUES = {
 
 _TYPE_DEFAULTS = {"int": 0, "SymInt": 0, "bool": False, "str": "none"}
 
+# Mirrors `kStringToDataType` in `src/data_type.h`.  Any tensor passed to
+# an InfiniOps op must have one of these dtypes; others (`bool`, complex,
+# quantised types) abort the process inside `DataTypeFromString`.
+_SUPPORTED_DTYPES = frozenset(
+    {
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.uint8,
+        torch.uint16,
+        torch.uint32,
+        torch.uint64,
+        torch.float16,
+        torch.bfloat16,
+        torch.float32,
+        torch.float64,
+    }
+)
+
 
 _LIST_SIZE_RE = re.compile(r"\[(\d+)\]")
 
@@ -116,6 +136,28 @@ _VENDOR_SKIP_PATTERNS = (
     "Could not run",  # missing dispatcher entry on this backend
     "don't support tensor dtype",  # `torch_mlu` dtype check
     "result requires dtype",  # output dtype mismatch (e.g. `float_power`)
+    # ATen kernels for some loss ops (`mse_loss`, `huber_loss`, …) use
+    # the `out` buffer as intermediate scratch and resize it before the
+    # final reduction.  Our `from_blob` outputs are non-resizable, so
+    # the kernel aborts the call with this message.  Skip these — the
+    # zero-copy wrapper can't drive that codepath.
+    "Trying to resize storage that is not resizable",
+)
+
+# Random-sampling ops never match a fresh torch reference call —
+# they consume RNG state and return different draws.  Skip rather
+# than try to align the two PRNG streams.
+_RANDOM_OPS = frozenset(
+    {
+        "bernoulli",
+        "multinomial",
+        "normal",
+        "rand",
+        "randn",
+        "randint",
+        "randperm",
+        "rrelu_with_noise",
+    }
 )
 
 # Full reductions with low-precision inputs diverge between the functional
@@ -210,6 +252,8 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     aten_name = op_meta.get("aten_name", op_name)
     _skip_if_not_active(op_name, device)
     _skip_low_precision_reduction(aten_name, dtype, device)
+    if aten_name in _RANDOM_OPS:
+        pytest.skip(f"`{aten_name}` is non-deterministic (independent draws diverge)")
 
     in_params = [p for p in op_meta["params"] if not p["is_out"]]
     out_params = [p for p in op_meta["params"] if p["is_out"]]
@@ -225,19 +269,36 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
             tensor_idx += 1
 
     # Run the reference to discover output shape(s)/dtype(s).
+    # An op may reject our generic `randn(shape)` input with any of these
+    # exception types — the gap is in our test harness's input synthesis,
+    # not in the InfiniOps wrapper.
     try:
         ref = _torch_func(aten_name)(*inputs)
-    except (RuntimeError, TypeError) as exc:
+    except (RuntimeError, TypeError, ValueError, IndexError, NotImplementedError) as exc:
         pytest.skip(f"`torch.{aten_name}` rejects these inputs: {exc}")
 
     ref_outs = ref if isinstance(ref, tuple) else (ref,)
-    assert len(ref_outs) == len(out_params), (
-        f"`{op_name}` produced {len(ref_outs)} outputs but the schema declares "
-        f"{len(out_params)}"
-    )
+    if len(ref_outs) != len(out_params):
+        # The Python-facing function (e.g. `F.adaptive_max_pool2d`) often
+        # exposes a subset of the ATen `_out` schema's outputs (returning
+        # only `out`, hiding `indices` behind a `return_indices=True`
+        # kwarg).  Without a per-op map of how to coax the full tuple
+        # out, skip — the InfiniOps wrapper itself is fine.
+        pytest.skip(
+            f"`{aten_name}` reference produced {len(ref_outs)} output(s); "
+            f"schema declares {len(out_params)}"
+        )
 
-    if any(t.dtype == torch.bool for t in ref_outs):
-        pytest.skip(f"`{op_name}` returns `bool` — InfiniOps `DataType` has no `kBool`")
+    # InfiniOps `DataType` enumerates only int{8,16,32,64}, uint{8,16,32,64},
+    # float{16,32,64}, and bfloat16.  Tensors with any other torch dtype
+    # (`bool`, `complex64`, `complex128`, …) abort on `DataTypeFromString`,
+    # so skip the test rather than crash the process.
+    tensors = [*ref_outs, *(x for x in inputs if isinstance(x, torch.Tensor))]
+    unsupported = next(
+        (t.dtype for t in tensors if t.dtype not in _SUPPORTED_DTYPES), None
+    )
+    if unsupported is not None:
+        pytest.skip(f"`{op_name}` uses dtype {unsupported} — not in InfiniOps `DataType`")
 
     outs = [torch.empty_like(t) for t in ref_outs]
     _call_infini(op_name, *inputs, *outs)

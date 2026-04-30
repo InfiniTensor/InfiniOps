@@ -132,7 +132,7 @@ def _find_vector_tensor_params(op_name):
     """Return a set of parameter names declared as `std::vector<Tensor>` in
     the base header.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
@@ -539,9 +539,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    _BINDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _GENERATED_SRC_DIR.mkdir(parents=True, exist_ok=True)
-    _INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
+    # Wipe previous outputs so files for ops that have since been removed
+    # don't linger and cause build failures (the per-op `.h` includes are
+    # written from `header_paths`, but `ops.cc`'s `impl_includes` reads
+    # from the live `ops` map — a stale `<op>/<op>.h` file referenced by
+    # a previous run's `ops.cc` is harmless, but a stale source file in
+    # `generated/src/<op>/` can still get globbed by the build).
+    for d in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
 
     ops_json = pathlib.Path("ops.json")
 
