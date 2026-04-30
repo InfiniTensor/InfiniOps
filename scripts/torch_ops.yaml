@@ -1,0 +1,258 @@
+# Allowlist of ATen ops to expose as InfiniOps operators.
+#
+# `scripts/generate_torch_ops.py` finds the `.out` variant of each entry in
+# `native_functions.yaml` and emits a base class plus a PyTorch backend
+# specialization at slot `_PYTORCH_SLOT` that wraps `at::<op>_out`.  Ops
+# already implemented natively in InfiniOps (e.g. `add`, `gemm`) are
+# skipped automatically; ops whose schema the generator cannot parse
+# (unsupported scalar types, complex overloads, etc.) are skipped with a
+# warning and recorded under `skipped:` in the generator output.
+#
+# Adding an op here automatically extends `tests/test_torch_ops.py` via
+# the metadata file the generator emits.
+
+# Unary float-domain ops
+- abs
+- neg
+- sign
+- sgn
+- reciprocal
+- square
+- sqrt
+- rsqrt
+- exp
+- exp2
+- expm1
+- log
+- log2
+- log10
+- log1p
+- ceil
+- floor
+- round
+- trunc
+- frac
+- sin
+- cos
+- tan
+- sinh
+- cosh
+- tanh
+- asin
+- acos
+- atan
+- asinh
+- acosh
+- atanh
+- erf
+- erfc
+- erfinv
+- lgamma
+- digamma
+- i0
+- sinc
+- sigmoid
+- silu
+- mish
+- hardsigmoid
+- hardswish
+- deg2rad
+- rad2deg
+
+# Special functions (resolve to `torch.special.<name>` in tests)
+- special_entr
+- special_log_ndtr
+- special_ndtr
+- special_i1
+- special_psi
+- special_gammaln
+- special_expit
+- special_sinc
+- special_log1p
+- special_exp2
+- special_i0e
+- special_i1e
+- special_modified_bessel_i0
+- special_modified_bessel_i1
+- special_modified_bessel_k0
+- special_modified_bessel_k1
+- special_bessel_j0
+# `special_bessel_j1`, `special_bessel_y1` — CUDA kernels exceed fp32
+# tolerance vs. CPU on our random inputs; fast but less precise.
+# - special_bessel_j1
+- special_bessel_y0
+# - special_bessel_y1
+- special_airy_ai
+- special_spherical_bessel_j0
+- special_scaled_modified_bessel_k0
+- special_scaled_modified_bessel_k1
+
+# Special binary functions (polynomials & generalized gamma)
+- special_chebyshev_polynomial_t
+- special_chebyshev_polynomial_u
+- special_chebyshev_polynomial_v
+- special_chebyshev_polynomial_w
+- special_hermite_polynomial_h
+- special_hermite_polynomial_he
+- special_laguerre_polynomial_l
+- special_legendre_polynomial_p
+- special_shifted_chebyshev_polynomial_t
+- special_shifted_chebyshev_polynomial_u
+- special_shifted_chebyshev_polynomial_v
+- special_shifted_chebyshev_polynomial_w
+- special_zeta
+- special_gammainc
+- special_gammaincc
+
+# Activations with one Scalar parameter
+- leaky_relu
+- hardshrink
+- softshrink
+
+# `Tensor self, int p` — `mvlgamma` (multivariate log-gamma)
+- mvlgamma
+
+# Full reductions (return 0-d tensor).  `ScalarType? dtype=None` is
+# hardcoded to `nullopt` in the generated wrapper.
+- sum
+- prod
+- nansum
+- mean
+- nanmean
+- std
+- var
+
+# Cumulative reductions / scans (int dim required — test passes 0)
+- cumsum
+- cumprod
+
+# Softmax ops (int dim required)
+- softmax
+- log_softmax
+
+# Remaining unary special
+- special_erfcx
+
+# Reductions (full: `int[] dim=[]` hardcoded to `{}` means all dims)
+- amax
+- amin
+- argmax
+- argmin
+
+# Binary ops picked up via overload-`_out` lookup
+- ldexp
+
+# Unary ops with `int diagonal=0` default (hidden).
+# `diag` only accepts 1-D/2-D; 3-D input cases skip via
+# `_allocate_out` when the torch reference errors.
+- diag
+- tril
+- triu
+
+# Unary ops
+- log_sigmoid
+
+# Scan with required `int dim`
+- logcumsumexp
+
+# Multi-scalar activations
+- threshold
+- hardtanh
+- softplus
+- elu
+
+# Matrix-product ops — tested by `test_matrix` with op-specific shapes
+- mm
+- bmm
+- matmul
+- dot
+- vdot
+- mv
+- inner
+- outer
+- ger
+- kron
+
+# Loss functions: disabled for now — `mse_loss`/`huber_loss`/...
+# produce unexpected output values with 0-d `out` (needs investigation).
+# `binary_cross_entropy` additionally requires inputs in `[0, 1]` which
+# crashes CUDA with device-side assertions.
+# - mse_loss
+# - huber_loss
+# - smooth_l1_loss
+# - soft_margin_loss
+# - binary_cross_entropy
+
+# Comparison ops (bool output)
+- eq
+- ne
+- lt
+- le
+- gt
+- ge
+
+# Logical ops (bool output)
+- logical_and
+- logical_or
+- logical_xor
+- logical_not
+
+# Predicate unary ops (bool output)
+- isneginf
+- isposinf
+- signbit
+- bitwise_not
+
+# Optional-float unary ops (float? args hardcoded to None)
+- logit
+- nan_to_num
+- special_logit
+
+# Pointwise binary ops
+- mul
+- div
+# `floor_divide` is deprecated by PyTorch for floats and produces
+# off-by-one results vs. `floor(a/b)` near integer boundaries on
+# `bfloat16`.  Use `div(..., rounding_mode='floor')` instead if needed.
+- maximum
+- minimum
+- fmax
+- fmin
+- atan2
+- hypot
+- copysign
+- nextafter
+- logaddexp
+- logaddexp2
+
+# Picked up via overload-`_out` lookup
+- pow
+- fmod
+- remainder
+- float_power
+- special_xlogy
+- special_xlog1py
+- bitwise_and
+- bitwise_or
+- bitwise_xor
+- bitwise_left_shift
+- bitwise_right_shift
+- gcd
+- lcm
+- igamma
+- igammac
+- heaviside
+
+# Pure ternary (3 tensors) via overload lookup
+- lerp
+
+# Pointwise binary ops with `Scalar alpha=1`
+- sub
+
+# Tensor + Scalar ops
+- clamp_min
+- clamp_max
+
+# (a, b, c, value) → a + value * b * c (`addcmul`) or a + value * b / c (`addcdiv`)
+- addcmul
+- addcdiv
