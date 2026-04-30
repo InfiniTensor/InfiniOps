@@ -59,6 +59,11 @@ def test_add(
         pytest.skip(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
+        
+    if device == "mlu" and ( dtype in _UINT_DTYPES or dtype == torch.int16):
+        pytest.skip(
+            "The `torch.mlu` test cloning path does not support `int16`, `uint16`, `uint32`, or `uint64`."
+        )
 
     if implementation_index == 1 and dtype in _UINT_DTYPES:
         pytest.skip("ATen `add` does not support unsigned integer types")
