@@ -15,6 +15,11 @@ _BASE_DIR = _SRC_DIR / "base"
 
 _GENERATION_DIR = pathlib.Path("generated")
 
+# Base headers emitted by `generate_torch_ops.py` live alongside the
+# hand-written ones in `src/base/`, but in a parallel tree under
+# `generated/base/` so they are not committed.
+_GENERATED_BASE_DIR = _GENERATION_DIR / "base"
+
 _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 
 _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
@@ -22,6 +27,18 @@ _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 _INCLUDE_DIR = _GENERATION_DIR / "include"
 
 _INDENTATION = "  "
+
+
+def _find_base_header(op_name):
+    """Return the base header for `op_name`, looking under both `src/base/`
+    and `generated/base/` (preferring the hand-written one)."""
+    src_path = _BASE_DIR / f"{op_name}.h"
+    if src_path.exists():
+        return src_path
+    generated_path = _GENERATED_BASE_DIR / f"{op_name}.h"
+    if generated_path.exists():
+        return generated_path
+    raise FileNotFoundError(f"no base header for op {op_name!r}")
 
 
 class _OperatorExtractor:
@@ -53,8 +70,16 @@ class _OperatorExtractor:
         system_include_flags = _get_system_include_flags()
 
         index = clang.cindex.Index.create()
-        args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
+        args = (
+            "-std=c++17",
+            "-x",
+            "c++",
+            "-I",
+            "src",
+            "-I",
+            str(_GENERATION_DIR),
+        ) + tuple(system_include_flags)
+        translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -98,7 +123,7 @@ def _find_optional_tensor_params(op_name):
     headers are not fully available, so we fall back to a regex scan of the
     source text.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
@@ -216,8 +241,10 @@ def _generate_pybind11(operator):
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
-        return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return static_cast<const Operator<Self>&>(self)({call_args});
+        # Use `op` rather than `self` for the operator instance — `self` is
+        # a common ATen parameter name and would collide.
+        return f"""      .def("__call__", [](const Self& op, {call_params}) {{
+        return static_cast<const Operator<Self>&>(op)({call_args});
       }})"""
 
     inits = "\n".join(
@@ -268,8 +295,15 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 
 def _generate_legacy_c(operator, paths):
     def _generate_source(operator):
+        def _to_include_path(path):
+            text = str(path)
+            for prefix in ("src/", "generated/"):
+                if text.startswith(prefix):
+                    return text[len(prefix) :]
+            return text
+
         impl_includes = "\n".join(
-            f'#include "{str(path).removeprefix("src/")}"' for path in paths
+            f'#include "{_to_include_path(path)}"' for path in paths
         )
 
         return f"""#include "../../handle.h"
@@ -452,20 +486,36 @@ def _get_all_ops(devices, with_torch=False):
 
     ops = {}
 
-    for file_path in _BASE_DIR.iterdir():
-        if not file_path.is_file():
-            continue
+    base_dirs = [_BASE_DIR]
+    if _GENERATED_BASE_DIR.exists():
+        base_dirs.append(_GENERATED_BASE_DIR)
 
-        op_name = file_path.stem
+    impl_roots = [_SRC_DIR]
+    if with_torch and (_GENERATION_DIR / "torch").exists():
+        impl_roots.append(_GENERATION_DIR)
 
-        ops[op_name] = []
-
-        for file_path in _SRC_DIR.rglob("*.h"):
-            if file_path.parent.parent.name not in scan_dirs:
+    for base_dir in base_dirs:
+        for file_path in base_dir.iterdir():
+            if not file_path.is_file():
                 continue
 
-            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
-                ops[op_name].append(file_path)
+            op_name = file_path.stem
+
+            if op_name in ops:
+                continue
+
+            ops[op_name] = []
+
+            for impl_root in impl_roots:
+                for impl_path in impl_root.rglob("*.h"):
+                    if impl_path.parent.parent.name not in scan_dirs:
+                        continue
+
+                    if (
+                        f"class Operator<{_snake_to_pascal(op_name)}"
+                        in impl_path.read_text()
+                    ):
+                        ops[op_name].append(impl_path)
 
     return ops
 
