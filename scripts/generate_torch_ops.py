@@ -91,26 +91,40 @@ _SCALAR_TYPE_MAP = {
     "int": "int64_t",
     "bool": "bool",
     "float": "double",
+    # `SymInt` / `SymInt[]` exist for `torch.compile` internals; at runtime
+    # they're just `int64`/IntArrayRef.
+    "SymInt": "int64_t",
 }
 
 # Optional ATen types we hide from the user-facing API and pass as
 # `at::nullopt` at the call site.  Covers the common "full default"
-# case for most reductions and activations.
+# case for most reductions and activations.  Tensor-typed optionals are
+# hardcoded to `nullopt` too (e.g. `binary_cross_entropy.weight`); ops
+# that *require* a non-null tensor would need a separate path.
 _HARDCODE_NULLOPT_TYPES = frozenset(
     {
         "Scalar?",
         "int?",
         "bool?",
         "float?",
+        "str?",
         "ScalarType?",
         "MemoryFormat?",
         "Layout?",
         "Device?",
         "Generator?",
+        "Tensor?",
+        "Tensor?[]",
         "int[]?",
         "int[1]?",
         "int[2]?",
         "int[3]?",
+        "SymInt?",
+        "SymInt[]?",
+        "SymInt[1]?",
+        "SymInt[2]?",
+        "SymInt[3]?",
+        "float[]?",
     }
 )
 
@@ -124,9 +138,9 @@ class Param:
 
     @property
     def is_tensor(self) -> bool:
-        # Strip nullable marker, then check for `Tensor` prefix.
-        bare = self.aten_type.rstrip("?")
-        return bare == "Tensor" or bare.startswith("Tensor(")
+        # Real tensors only.  `Tensor?` is optional and falls through to
+        # the hidden-param path (substituted with `at::nullopt`).
+        return self.aten_type == "Tensor" or self.aten_type.startswith("Tensor(")
 
     @property
     def is_out(self) -> bool:
@@ -152,9 +166,13 @@ class Param:
             return True
         if self.aten_type == "bool" and self.default in {"False", "True"}:
             return True
-        if self.aten_type in {"int", "float"} and self.default is not None:
+        if self.aten_type in {"int", "float", "SymInt"} and self.default is not None:
             return True
-        if self.aten_type.startswith("int[") and self.default == "[]":
+        if (
+            self.aten_type.startswith("int[") or self.aten_type.startswith("SymInt[")
+        ) and self.default is not None:
+            return True
+        if self.aten_type == "str" and self.default is not None:
             return True
         return False
 
@@ -166,12 +184,24 @@ class Param:
             return "true"
         if self.default == "False":
             return "false"
-        if self.default == "[]":
-            return "{}"
-        if self.aten_type in {"int", "float"} and self.default is not None:
+        if self.aten_type.startswith(("int[", "SymInt[")) and self.default is not None:
+            # `int[N]=[a, b, c]` → `{a, b, c}`; `int[N]=0` (scalar default
+            # for list type) → `{0, 0, ...}` replicated to size N.
+            if self.default.startswith("["):
+                return "{" + self.default[1:-1] + "}"
+            size_match = re.search(r"\[(\d+)\]", self.aten_type)
+            n = int(size_match.group(1)) if size_match else 1
+            return "{" + ", ".join([self.default] * n) + "}"
+        if self.aten_type == "str" and self.default is not None:
+            # YAML strings already come quoted (e.g. `'none'`).
+            return self.default
+        if self.aten_type in {"int", "float", "SymInt"} and self.default is not None:
             # Translate known ATen enum defaults to their C++ identifiers.
             return _ENUM_DEFAULTS.get(self.default, self.default)
-        raise AssertionError(f"param {self.name!r} is not hidden")
+        raise AssertionError(
+            f"param {self.name!r} of type {self.aten_type!r} with default "
+            f"{self.default!r} is not hidden"
+        )
 
     @property
     def cpp_type(self) -> str:
@@ -182,6 +212,11 @@ class Param:
             # so the `cpp_type` is irrelevant.
             return "void"
         bare = self.aten_type.rstrip("?")
+        # Required `int[N]` / `SymInt[N]` (no default) — pybind11 accepts
+        # a Python list of ints into `std::vector<int64_t>`, which ATen
+        # promotes to `IntArrayRef` implicitly.
+        if bare.startswith(("int[", "SymInt[")) or bare in {"int[]", "SymInt[]"}:
+            return "std::vector<int64_t>"
         try:
             return _SCALAR_TYPE_MAP[bare]
         except KeyError as exc:
@@ -198,7 +233,18 @@ class Op:
 
     @property
     def pascal_name(self) -> str:
-        return _snake_to_pascal(self.aten_name)
+        return _snake_to_pascal(self.infini_name)
+
+    @property
+    def infini_name(self) -> str:
+        """InfiniOps op name.  Includes the overload to disambiguate
+        between schemas of the same ATen op
+        (e.g. `pow.Tensor_Tensor_out` → `pow_tensor_tensor`,
+        `pow.Tensor_Scalar_out` → `pow_tensor_scalar`)."""
+        suffix = self.overload.removesuffix("_out") if self.overload else ""
+        if suffix and suffix != "out":
+            return f"{self.aten_name}_{suffix.lower()}"
+        return self.aten_name
 
     @property
     def tensor_params(self) -> list[Param]:
@@ -226,12 +272,11 @@ class Op:
 
     @property
     def is_testable(self) -> bool:
-        """Cheap structural check: at least one tensor input and at least
-        one out tensor.  Type compatibility is verified separately by
-        evaluating `cpp_type` on every param."""
-        return bool(self.out_params) and bool(
-            [p for p in self.visible_params if p.is_tensor and not p.is_out]
-        )
+        """Cheap structural check: at least one out tensor.  Generators
+        like `arange` / `linspace` produce a tensor from scalars only —
+        those are still testable (the test runs the torch reference for
+        shape discovery)."""
+        return bool(self.out_params)
 
 
 _FUNC_RE = re.compile(
@@ -384,7 +429,7 @@ def _generate_base_header(op: Op) -> str:
     init_list = ",\n".join(init_pieces).lstrip()
 
     return _BASE_TEMPLATE.format(
-        name_uc=op.aten_name.upper(),
+        name_uc=op.infini_name.upper(),
         pascal=op.pascal_name,
         ctor_signature=_format_signature(op),
         init_list=init_list,
@@ -395,8 +440,8 @@ def _generate_base_header(op: Op) -> str:
 
 def _generate_torch_header(op: Op) -> str:
     return _TORCH_HEADER_TEMPLATE.format(
-        name_uc=op.aten_name.upper(),
-        name=op.aten_name,
+        name_uc=op.infini_name.upper(),
+        name=op.infini_name,
         pascal=op.pascal_name,
         op_call_signature=_format_signature(op),
         slot=_PYTORCH_SLOT,
@@ -437,10 +482,12 @@ def _generate_torch_source(op: Op) -> str:
     )
 
     return _TORCH_SOURCE_TEMPLATE.format(
-        name=op.aten_name,
+        name=op.infini_name,
         pascal=op.pascal_name,
         op_call_signature=_format_signature(op),
         tensor_conversions="\n".join(conversion_lines),
+        # `at::<aten_name>_out` resolves the right kernel via C++ overload
+        # resolution from the argument types we pass.
         aten_call=f"{op.aten_name}_out({aten_args})",
         slot=_PYTORCH_SLOT,
         instantiations=instantiations,
@@ -518,10 +565,10 @@ void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
 
 
 def _emit(op: Op) -> None:
-    base_path = _GENERATED_BASE_DIR / f"{op.aten_name}.h"
-    torch_dir = _GENERATED_TORCH_DIR / op.aten_name
-    torch_header_path = torch_dir / f"{op.aten_name}.h"
-    torch_source_path = torch_dir / f"{op.aten_name}.cc"
+    base_path = _GENERATED_BASE_DIR / f"{op.infini_name}.h"
+    torch_dir = _GENERATED_TORCH_DIR / op.infini_name
+    torch_header_path = torch_dir / f"{op.infini_name}.h"
+    torch_source_path = torch_dir / f"{op.infini_name}.cc"
 
     _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
     torch_dir.mkdir(parents=True, exist_ok=True)
@@ -575,25 +622,27 @@ def main() -> int:
             skipped.append((name, last_reason or "no usable overload"))
             continue
 
-        # Prefer overloads with the most tensor inputs (e.g. `pow.Tensor_Tensor_out`
-        # over `pow.Tensor_Scalar_out`) so we exercise the densest path.
-        chosen = max(usable, key=lambda op: len(op.tensor_params))
-
-        _emit(chosen)
-        metadata.append(
-            {
-                "name": name,
-                "params": [
-                    {
-                        "name": p.name,
-                        "type": p.aten_type,
-                        "is_tensor": p.is_tensor,
-                        "is_out": p.is_out,
-                    }
-                    for p in chosen.visible_params
-                ],
-            }
-        )
+        # Emit one InfiniOps wrapper per usable overload — `pow.Tensor_Tensor_out`
+        # and `pow.Tensor_Scalar_out` become distinct classes
+        # (`PowTensorTensor`, `PowTensorScalar`) so users get the right
+        # behaviour by naming the variant they want.
+        for op in usable:
+            _emit(op)
+            metadata.append(
+                {
+                    "name": op.infini_name,
+                    "aten_name": op.aten_name,
+                    "params": [
+                        {
+                            "name": p.name,
+                            "type": p.aten_type,
+                            "is_tensor": p.is_tensor,
+                            "is_out": p.is_out,
+                        }
+                        for p in op.visible_params
+                    ],
+                }
+            )
 
     _GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     _METADATA_PATH.write_text(json.dumps({"ops": metadata}, indent=2) + "\n")
