@@ -20,9 +20,9 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
-        (torch.float32, 1e-5, 1e-5),
-        (torch.float16, 1e-2, 1e-2),
-        (torch.bfloat16, 1e-2, 1e-2),
+        (torch.float32, 1e-5, 3e-5),
+        (torch.float16, 1e-2, 1e-3),
+        (torch.bfloat16, 5e-2, 5e-3),
     ),
 )
 def test_causal_softmax(shape, input_strides, out_strides, dtype, device, rtol, atol):

@@ -1,0 +1,164 @@
+#include "causal_softmax.h"
+
+__nram__ char nram_buffer[NRAM_MAX_SIZE];
+const int SRC_MAX_SIZE = NRAM_MAX_SIZE / 4;
+
+namespace infini::ops {
+
+template <typename T>
+__mlu_func__ void ProcessSoftmaxStep(const T *input, T *output, float scalar,
+                                     int num_elements, int stride,
+                                     bool is_exp_phase) {
+  constexpr bool is_half = std::is_same_v<T, __half>;
+  constexpr bool is_bfloat16 = std::is_same_v<T, __bang_bfloat16>;
+  constexpr bool is_float = !is_half && !is_bfloat16;
+
+  const int chunk_size =
+      SRC_MAX_SIZE /
+      ((is_half || is_bfloat16) ? (2 * sizeof(float)) : sizeof(float));
+  float *float_buffer = (float *)nram_buffer;
+  T *temp_buffer =
+      is_float ? nullptr : (T *)(nram_buffer + chunk_size * sizeof(float));
+
+  // Common stride configurations.
+  const int src_stride = stride * sizeof(T);
+  const int dst_stride = stride * sizeof(T);
+
+  int processed = 0;
+  while (processed < num_elements) {
+    int curr_batch = std::min(chunk_size, num_elements - processed);
+
+    if constexpr (is_float) {
+      __memcpy(
+          float_buffer, (is_exp_phase ? input : output) + processed * stride,
+          sizeof(float), GDRAM2NRAM, sizeof(float), src_stride, curr_batch - 1);
+    } else {
+      __memcpy(temp_buffer,
+               (is_exp_phase ? input : output) + processed * stride, sizeof(T),
+               GDRAM2NRAM, sizeof(T), src_stride, curr_batch - 1);
+
+      if constexpr (is_half) {
+        __bang_half2float(float_buffer, reinterpret_cast<half *>(temp_buffer),
+                          curr_batch);
+      } else if constexpr (is_bfloat16) {
+        __bang_bfloat162float(float_buffer, temp_buffer, curr_batch);
+      }
+    }
+
+    // Common processing for all types.
+    if (is_exp_phase) {
+      __bang_sub_scalar(float_buffer, float_buffer, scalar,
+                        curr_batch);  // scalar is max_val
+      __bang_active_exphp(float_buffer, float_buffer, curr_batch);
+    } else {
+      __bang_mul_scalar(float_buffer, float_buffer, scalar,
+                        curr_batch);  // scalar is 1.0f/sum_val
+    }
+
+    if constexpr (is_float) {
+      __memcpy(output + processed * stride, float_buffer, sizeof(float),
+               NRAM2GDRAM, dst_stride, sizeof(float), curr_batch - 1);
+    } else {
+      if constexpr (is_half) {
+        __bang_float2half(reinterpret_cast<half *>(temp_buffer), float_buffer,
+                          curr_batch);
+      } else if constexpr (is_bfloat16) {
+        __bang_float2bfloat16(temp_buffer, float_buffer, curr_batch);
+      }
+
+      __memcpy(output + processed * stride, temp_buffer, sizeof(T), NRAM2GDRAM,
+               dst_stride, sizeof(T), curr_batch - 1);
+    }
+
+    processed += curr_batch;
+  }
+}
+
+template <typename T>
+__mlu_global__ void CausalSoftmax(T *y, const T *x, size_t batch_size,
+                                  size_t seq_len, size_t total_seq_len,
+                                  ptrdiff_t y_stride_b, ptrdiff_t y_stride_i,
+                                  ptrdiff_t y_stride_j, ptrdiff_t x_stride_b,
+                                  ptrdiff_t x_stride_i, ptrdiff_t x_stride_j) {
+  size_t task_id = taskId;
+  size_t task_num = taskDimX * taskDimY;
+
+  size_t total_tasks = batch_size * seq_len;
+  size_t tasks_per_core = (total_tasks + task_num - 1) / task_num;
+  size_t start = task_id * tasks_per_core;
+  size_t end = std::min(start + tasks_per_core, total_tasks);
+
+  const int max_batch = SRC_MAX_SIZE / sizeof(T);
+  T *src = (T *)nram_buffer;
+  float *dst = (float *)(nram_buffer + max_batch * sizeof(T));
+
+  for (size_t index = start; index < end; index++) {
+    size_t batch = index / seq_len;
+    size_t i = (index % seq_len);
+    ptrdiff_t y_offset = batch * y_stride_b + i * y_stride_i;
+    ptrdiff_t x_offset = batch * x_stride_b + i * x_stride_i;
+    T *y_ = y + y_offset;
+    const T *x_ = x + x_offset;
+
+    // Calculate the valid sequence length for this position.
+    size_t valid_len = total_seq_len - seq_len + i + 1;
+
+    // Zero out future positions.
+    for (size_t j = valid_len; j < total_seq_len; j++) {
+      y_[j * y_stride_j] = (T)0.0f;
+    }
+
+    // Calculate max value using optimized reduction.
+    float max_val =
+        infini::ops::reduce::MaxBatched(x_, src, dst, valid_len, max_batch);
+
+    // Compute `exp(x - max)`.
+    ProcessSoftmaxStep(x_, y_, max_val, valid_len, x_stride_j, true);
+
+    // Calculate sum of exponentials.
+    float sum_val =
+        infini::ops::reduce::SumBatched(y_, src, dst, valid_len, max_batch);
+
+    // Normalize by sum.
+    ProcessSoftmaxStep(y_, y_, 1.0f / sum_val, valid_len, y_stride_j, false);
+  }
+}
+
+template <typename T>
+void CausalSoftmaxUnion(void *workspace, int core_per_cluster,
+                        int cluster_count, cnrtQueue_t queue, void *y,
+                        const void *x, size_t batch_size_, size_t seq_len_,
+                        size_t total_seq_len_, ptrdiff_t y_stride_b,
+                        ptrdiff_t y_stride_i, ptrdiff_t y_stride_j,
+                        ptrdiff_t x_stride_b, ptrdiff_t x_stride_i,
+                        ptrdiff_t x_stride_j) {
+  cnrtDim3_t kernel_dim;
+  cnrtFunctionType_t kernel_type;
+
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+  kernel_type = cnrtFuncTypeUnion1;
+
+  CausalSoftmax<T><<<kernel_dim, kernel_type, queue>>>(
+      (T *)y, (const T *)x, batch_size_, seq_len_, total_seq_len_, y_stride_b,
+      y_stride_i, y_stride_j, x_stride_b, x_stride_i, x_stride_j);
+
+  cnrtQueueSync(queue);
+}
+
+template void CausalSoftmaxUnion<__half>(void *, int, int, cnrtQueue_t, void *,
+                                         const void *, size_t, size_t, size_t,
+                                         ptrdiff_t, ptrdiff_t, ptrdiff_t,
+                                         ptrdiff_t, ptrdiff_t, ptrdiff_t);
+
+template void CausalSoftmaxUnion<__bang_bfloat16>(
+    void *, int, int, cnrtQueue_t, void *, const void *, size_t, size_t, size_t,
+    ptrdiff_t, ptrdiff_t, ptrdiff_t, ptrdiff_t, ptrdiff_t, ptrdiff_t);
+
+template void CausalSoftmaxUnion<float>(void *, int, int, cnrtQueue_t, void *,
+                                        const void *, size_t, size_t, size_t,
+                                        ptrdiff_t, ptrdiff_t, ptrdiff_t,
+                                        ptrdiff_t, ptrdiff_t, ptrdiff_t);
+
+}  // namespace infini::ops

@@ -30,6 +30,164 @@ __mlu_func__ void SumInternal(float* dst, float* src, int max_batch) {
   }
 }
 
+template <typename T>
+__mlu_func__ void SumTyped(float *result, T *data, size_t len) {
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float((float *)data, reinterpret_cast<half *>(data) + len, len);
+    SumInternal(result, (float *)data, len);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float((float *)data, data + len, len);
+    SumInternal(result, (float *)data, len);
+  } else {
+    SumInternal(result, data, len);
+  }
+}
+
+template <typename T>
+__mlu_func__ float Sum(const T *source, T *src, float *dst, int num_elements,
+                       int max_batch) {
+  float res = 0.0f;
+  int offset = (sizeof(T) == 2 ? max_batch : 0);
+
+  size_t processed = 0;
+  while (processed < num_elements) {
+    size_t curr_batch = std::min<size_t>(max_batch, num_elements - processed);
+
+    if (curr_batch < max_batch) {
+      __bang_write_value(src, max_batch + offset, 0);
+    }
+
+    __memcpy(src + offset, source + processed, curr_batch * sizeof(T),
+             GDRAM2NRAM);
+    SumTyped(dst, src, max_batch);
+    res += dst[0];
+    processed += curr_batch;
+  }
+
+  return res;
+}
+
+template <typename T>
+__mlu_func__ float SumBatched(const T *source, T *src, float *dst,
+                              int num_elements, int max_batch) {
+  constexpr int min_vector_size = 32;
+
+  if (num_elements < min_vector_size) {
+    return Sum(source, src, dst, num_elements, max_batch);
+  }
+
+  float res = 0.0f;
+  int offset = (sizeof(T) == 2 ? max_batch : 0);
+
+  size_t processed = 0;
+  while (processed < num_elements) {
+    size_t curr_batch = std::min<size_t>(max_batch, num_elements - processed);
+    size_t aligned_batch = (curr_batch / batch_size) * batch_size;
+    size_t remainder = curr_batch % batch_size;
+
+    // Ensure NRAM buffer is zeroed.
+    __bang_write_value(src, max_batch + offset, 0);
+
+    // Copy data to NRAM.
+    __memcpy(src + offset, source + processed, curr_batch * sizeof(T),
+             GDRAM2NRAM);
+
+    if constexpr (std::is_same_v<T, __half>) {
+      __bang_half2float((float *)(src + offset),
+                        reinterpret_cast<half *>(src) + offset, curr_batch);
+    } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+      __bang_bfloat162float((float *)(src + offset), src + offset, curr_batch);
+    }
+
+    if (aligned_batch > 0) {
+      SumInternal(dst, (float *)(src + offset), aligned_batch);
+      res += dst[0];
+    }
+    if (remainder > 0) {
+      for (size_t i = aligned_batch; i < curr_batch; ++i) {
+        res += ((float *)(src + offset))[i];
+      }
+    }
+
+    processed += curr_batch;
+  }
+
+  return res;
+}
+
+__mlu_func__ void MaxInternal(float *dst, float *src, int max_batch) {
+  __bang_maxpool(dst, src, batch_size, 1, max_batch / batch_size, 1,
+                 max_batch / batch_size, 1, 1);
+  __bang_argmax(dst, dst, batch_size);
+}
+
+template <typename T>
+__mlu_func__ void MaxTyped(float *result, T *data, size_t len) {
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float((float *)data, reinterpret_cast<half *>(data) + len, len);
+    MaxInternal(result, (float *)data, len);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float((float *)data, data + len, len);
+    MaxInternal(result, (float *)data, len);
+  } else {
+    MaxInternal(result, data, len);
+  }
+}
+
+template <typename T>
+__mlu_func__ float Max(const T *source, T *src, float *dst, int num_elements,
+                       int max_batch) {
+  float max_val = -INFINITY;
+  int offset = (sizeof(T) == 2 ? max_batch : 0);
+
+  size_t processed = 0;
+  while (processed < num_elements) {
+    size_t curr_batch = std::min<size_t>(max_batch, num_elements - processed);
+
+    if (curr_batch < max_batch) {
+      __bang_write_value(src, max_batch + offset, 0);
+    }
+
+    __memcpy(src + offset, source + processed, curr_batch * sizeof(T),
+             GDRAM2NRAM);
+    MaxTyped(dst, src, max_batch);
+    max_val = std::max(max_val, dst[0]);
+    processed += curr_batch;
+  }
+
+  return max_val;
+}
+
+template <typename T>
+__mlu_func__ float MaxBatched(const T *source, T *src, float *dst,
+                              int num_elements, int max_batch) {
+  constexpr int min_vector_size = 32;
+
+  if (num_elements < min_vector_size) {
+    return Max(source, src, dst, num_elements, max_batch);
+  }
+
+  float max_val = -INFINITY;
+  int offset = (sizeof(T) == 2 ? max_batch : 0);
+
+  size_t processed = 0;
+  while (processed < num_elements) {
+    size_t curr_batch = std::min<size_t>(max_batch, num_elements - processed);
+
+    if (curr_batch < max_batch) {
+      __bang_write_value(src, max_batch + offset, 0);
+    }
+
+    __memcpy(src + offset, source + processed, curr_batch * sizeof(T),
+             GDRAM2NRAM);
+    MaxTyped(dst, src, max_batch);
+    max_val = std::max(max_val, dst[0]);
+    processed += curr_batch;
+  }
+
+  return max_val;
+}
+
 }  // namespace infini::ops::reduce
 
 #endif  // __BANG__
