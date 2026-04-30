@@ -10,6 +10,7 @@ extends coverage with no test changes.
 
 import json
 import pathlib
+import re
 
 import infini.ops
 import pytest
@@ -89,7 +90,21 @@ _SCALAR_VALUES = {
     ("addcdiv", "value"): 1.0,
 }
 
-_TYPE_DEFAULTS = {"int": 0, "bool": False}
+_TYPE_DEFAULTS = {"int": 0, "SymInt": 0, "bool": False, "str": "none"}
+
+
+_LIST_SIZE_RE = re.compile(r"\[(\d+)\]")
+
+
+def _list_default(aten_type):
+    """Default value for a required `int[N]` / `SymInt[N]` param.  Most
+    such params name a `dim` or `kernel_size`; `[0]` works for `dim` and
+    causes `kernel_size`-style ops to fail their reference call cleanly,
+    which the test then skips."""
+    size_match = _LIST_SIZE_RE.search(aten_type)
+    n = int(size_match.group(1)) if size_match else 1
+    return [0] * n
+
 
 # Errors emitted by upstream PyTorch and vendor-forked variants for
 # unsupported (op, dtype, device) combinations.  We skip rather than fail
@@ -158,7 +173,10 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
     key = (op_name, param["name"])
     if key in _SCALAR_VALUES:
         return _SCALAR_VALUES[key]
-    return _TYPE_DEFAULTS.get(param["type"], 0.5)
+    t = param["type"]
+    if t.startswith(("int[", "SymInt[")) or t in {"int[]", "SymInt[]"}:
+        return _list_default(t)
+    return _TYPE_DEFAULTS.get(t, 0.5)
 
 
 def _call_infini(op_name, *args):
@@ -189,8 +207,9 @@ def _testable_ops():
 @pytest.mark.parametrize(("dtype", "rtol", "atol"), _DTYPES)
 def test_op(op_meta, shape, dtype, device, rtol, atol):
     op_name = op_meta["name"]
+    aten_name = op_meta.get("aten_name", op_name)
     _skip_if_not_active(op_name, device)
-    _skip_low_precision_reduction(op_name, dtype, device)
+    _skip_low_precision_reduction(aten_name, dtype, device)
 
     in_params = [p for p in op_meta["params"] if not p["is_out"]]
     out_params = [p for p in op_meta["params"] if p["is_out"]]
@@ -199,15 +218,17 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     inputs = []
     tensor_idx = 0
     for p in in_params:
-        inputs.append(_build_input_value(op_name, p, shape, dtype, device, tensor_idx))
+        inputs.append(
+            _build_input_value(aten_name, p, shape, dtype, device, tensor_idx)
+        )
         if p["is_tensor"]:
             tensor_idx += 1
 
     # Run the reference to discover output shape(s)/dtype(s).
     try:
-        ref = _torch_func(op_name)(*inputs)
+        ref = _torch_func(aten_name)(*inputs)
     except (RuntimeError, TypeError) as exc:
-        pytest.skip(f"`torch.{op_name}` rejects these inputs: {exc}")
+        pytest.skip(f"`torch.{aten_name}` rejects these inputs: {exc}")
 
     ref_outs = ref if isinstance(ref, tuple) else (ref,)
     assert len(ref_outs) == len(out_params), (

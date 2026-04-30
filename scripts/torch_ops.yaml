@@ -1,258 +1,399 @@
 # Allowlist of ATen ops to expose as InfiniOps operators.
 #
-# `scripts/generate_torch_ops.py` finds the `.out` variant of each entry in
-# `native_functions.yaml` and emits a base class plus a PyTorch backend
-# specialization at slot `_PYTORCH_SLOT` that wraps `at::<op>_out`.  Ops
-# already implemented natively in InfiniOps (e.g. `add`, `gemm`) are
-# skipped automatically; ops whose schema the generator cannot parse
-# (unsupported scalar types, complex overloads, etc.) are skipped with a
-# warning and recorded under `skipped:` in the generator output.
+# Auto-discovered: every base op name with at least one parsable
+# `.out` overload using the supported type vocabulary.  The
+# generator emits one InfiniOps wrapper per overload, so this
+# file lists ~390 base names but produces 500+ wrappers.
 #
-# Adding an op here automatically extends `tests/test_torch_ops.py` via
-# the metadata file the generator emits.
+# To exclude an op, comment out its line.
 
-# Unary float-domain ops
 - abs
-- neg
-- sign
-- sgn
-- reciprocal
-- square
-- sqrt
-- rsqrt
-- exp
-- exp2
-- expm1
-- log
-- log2
-- log10
-- log1p
-- ceil
-- floor
-- round
-- trunc
-- frac
-- sin
-- cos
-- tan
-- sinh
-- cosh
-- tanh
-- asin
+- absolute
 - acos
-- atan
-- asinh
 - acosh
+- adaptive_avg_pool2d
+- adaptive_avg_pool3d
+- adaptive_max_pool2d
+- adaptive_max_pool3d
+- add
+- addbmm
+- addcdiv
+- addcmul
+- addmm
+- addmv
+- addr
+- all
+- amax
+- amin
+- aminmax
+- angle
+- any
+- arange
+- arccos
+- arccosh
+- arcsin
+- arcsinh
+- arctan
+- arctan2
+- arctanh
+- argmax
+- argmin
+- asin
+- asinh
+- atan
+- atan2
 - atanh
+- avg_pool2d
+- avg_pool3d
+- baddbmm
+- batch_norm_elemt
+- bernoulli
+- binary_cross_entropy
+- bitwise_and
+- bitwise_left_shift
+- bitwise_not
+- bitwise_or
+- bitwise_right_shift
+- bitwise_xor
+- bmm
+- bucketize
+- ceil
+- cholesky
+- cholesky_inverse
+- cholesky_solve
+- clamp
+- clamp_max
+- clamp_min
+- clip
+- col2im
+- complex
+- conj_physical
+- copysign
+- cos
+- cosh
+- cross
+- cudnn_convolution
+- cummax
+- cummin
+- cumprod
+- cumsum
+- deg2rad
+- diag
+- diff
+- digamma
+- div
+- divide
+- dot
+- elu
+- empty
+- eq
 - erf
 - erfc
 - erfinv
-- lgamma
-- digamma
-- i0
-- sinc
-- sigmoid
-- silu
-- mish
+- exp
+- exp2
+- expm1
+- eye
+- fft_fft
+- fft_fft2
+- fft_fftfreq
+- fft_fftn
+- fft_hfft
+- fft_hfft2
+- fft_hfftn
+- fft_ifft
+- fft_ifft2
+- fft_ifftn
+- fft_ihfft
+- fft_ihfft2
+- fft_ihfftn
+- fft_irfft
+- fft_irfft2
+- fft_irfftn
+- fft_rfft
+- fft_rfft2
+- fft_rfftfreq
+- fft_rfftn
+- fix
+- float_power
+- floor
+- floor_divide
+- fmax
+- fmin
+- fmod
+- frac
+- frexp
+- frobenius_norm
+- full
+- gather
+- gcd
+- ge
+- gelu
+- ger
+- glu
+- greater
+- greater_equal
+- gt
+- hardshrink
 - hardsigmoid
 - hardswish
-- deg2rad
+- hardtanh
+- heaviside
+- histc
+- histogram
+- hspmm
+- huber_loss
+- huber_loss_backward
+- hypot
+- i0
+- igamma
+- igammac
+- im2col
+- index
+- index_add
+- index_copy
+- index_select
+- inner
+- inverse
+- isin
+- isneginf
+- isposinf
+- kron
+- lcm
+- ldexp
+- le
+- leaky_relu
+- lerp
+- less
+- less_equal
+- lgamma
+- linalg_cholesky
+- linalg_cond
+- linalg_cross
+- linalg_det
+- linalg_eig
+- linalg_eigvals
+- linalg_eigvalsh
+- linalg_householder_product
+- linalg_inv
+- linalg_ldl_factor
+- linalg_ldl_factor_ex
+- linalg_ldl_solve
+- linalg_lstsq
+- linalg_lu
+- linalg_lu_factor
+- linalg_lu_factor_ex
+- linalg_lu_solve
+- linalg_matmul
+- linalg_matrix_norm
+- linalg_matrix_power
+- linalg_matrix_rank
+- linalg_norm
+- linalg_pinv
+- linalg_qr
+- linalg_slogdet
+- linalg_solve
+- linalg_solve_ex
+- linalg_solve_triangular
+- linalg_svdvals
+- linalg_tensorinv
+- linalg_tensorsolve
+- linalg_vecdot
+- linalg_vector_norm
+- linear
+- linspace
+- log
+- log10
+- log1p
+- log2
+- log_sigmoid
+- log_softmax
+- logaddexp
+- logaddexp2
+- logcumsumexp
+- logical_and
+- logical_not
+- logical_or
+- logical_xor
+- logit
+- logspace
+- logsumexp
+- lt
+- lu_solve
+- lu_unpack
+- masked_select
+- matmul
+- matrix_power
+- max
+- max_pool2d_with_indices
+- max_pool3d_with_indices
+- max_unpool2d
+- max_unpool3d
+- maximum
+- mean
+- min
+- minimum
+- mish
+- mkldnn_adaptive_avg_pool2d
+- mm
+- mse_loss
+- msort
+- mul
+- multi_margin_loss
+- multilabel_margin_loss
+- multinomial
+- multiply
+- mv
+- mvlgamma
+- nan_to_num
+- nanmean
+- nanquantile
+- nansum
+- narrow_copy
+- native_batch_norm
+- ne
+- neg
+- negative
+- nextafter
+- nll_loss
+- nll_loss2d
+- nonzero
+- nonzero_static
+- norm
+- normal
+- not_equal
+- nuclear_norm
+- ones
+- orgqr
+- ormqr
+- outer
+- polar
+- polygamma
+- pow
+- prod
+- quantile
 - rad2deg
-
-# Special functions (resolve to `torch.special.<name>` in tests)
-- special_entr
-- special_log_ndtr
-- special_ndtr
-- special_i1
-- special_psi
-- special_gammaln
-- special_expit
-- special_sinc
-- special_log1p
-- special_exp2
-- special_i0e
-- special_i1e
-- special_modified_bessel_i0
-- special_modified_bessel_i1
-- special_modified_bessel_k0
-- special_modified_bessel_k1
-- special_bessel_j0
-# `special_bessel_j1`, `special_bessel_y1` — CUDA kernels exceed fp32
-# tolerance vs. CPU on our random inputs; fast but less precise.
-# - special_bessel_j1
-- special_bessel_y0
-# - special_bessel_y1
+- rand
+- randint
+- randn
+- randperm
+- range
+- reciprocal
+- reflection_pad1d
+- reflection_pad2d
+- reflection_pad3d
+- remainder
+- renorm
+- replication_pad1d
+- replication_pad2d
+- replication_pad3d
+- round
+- rrelu_with_noise
+- rsqrt
+- scatter
+- scatter_add
+- searchsorted
+- sgn
+- sigmoid
+- sign
+- signbit
+- silu
+- sin
+- sinc
+- sinh
+- slogdet
+- slow_conv3d
+- slow_conv_transpose2d
+- slow_conv_transpose3d
+- smooth_l1_loss
+- soft_margin_loss
+- softmax
+- softplus
+- softshrink
+- sparse_sampled_addmm
 - special_airy_ai
-- special_spherical_bessel_j0
-- special_scaled_modified_bessel_k0
-- special_scaled_modified_bessel_k1
-
-# Special binary functions (polynomials & generalized gamma)
+- special_bessel_j0
+- special_bessel_j1
+- special_bessel_y0
+- special_bessel_y1
 - special_chebyshev_polynomial_t
 - special_chebyshev_polynomial_u
 - special_chebyshev_polynomial_v
 - special_chebyshev_polynomial_w
+- special_digamma
+- special_entr
+- special_erf
+- special_erfc
+- special_erfcx
+- special_erfinv
+- special_exp2
+- special_expit
+- special_expm1
+- special_gammainc
+- special_gammaincc
+- special_gammaln
 - special_hermite_polynomial_h
 - special_hermite_polynomial_he
+- special_i0
+- special_i0e
+- special_i1
+- special_i1e
 - special_laguerre_polynomial_l
 - special_legendre_polynomial_p
+- special_log1p
+- special_log_ndtr
+- special_logit
+- special_logsumexp
+- special_modified_bessel_i0
+- special_modified_bessel_i1
+- special_modified_bessel_k0
+- special_modified_bessel_k1
+- special_multigammaln
+- special_ndtr
+- special_ndtri
+- special_polygamma
+- special_psi
+- special_round
+- special_scaled_modified_bessel_k0
+- special_scaled_modified_bessel_k1
 - special_shifted_chebyshev_polynomial_t
 - special_shifted_chebyshev_polynomial_u
 - special_shifted_chebyshev_polynomial_v
 - special_shifted_chebyshev_polynomial_w
+- special_sinc
+- special_spherical_bessel_j0
+- special_xlog1py
+- special_xlogy
 - special_zeta
-- special_gammainc
-- special_gammaincc
-
-# Activations with one Scalar parameter
-- leaky_relu
-- hardshrink
-- softshrink
-
-# `Tensor self, int p` — `mvlgamma` (multivariate log-gamma)
-- mvlgamma
-
-# Full reductions (return 0-d tensor).  `ScalarType? dtype=None` is
-# hardcoded to `nullopt` in the generated wrapper.
-- sum
-- prod
-- nansum
-- mean
-- nanmean
+- split_copy
+- split_with_sizes_copy
+- sqrt
+- square
+- sspaddmm
 - std
-- var
-
-# Cumulative reductions / scans (int dim required — test passes 0)
-- cumsum
-- cumprod
-
-# Softmax ops (int dim required)
-- softmax
-- log_softmax
-
-# Remaining unary special
-- special_erfcx
-
-# Reductions (full: `int[] dim=[]` hardcoded to `{}` means all dims)
-- amax
-- amin
-- argmax
-- argmin
-
-# Binary ops picked up via overload-`_out` lookup
-- ldexp
-
-# Unary ops with `int diagonal=0` default (hidden).
-# `diag` only accepts 1-D/2-D; 3-D input cases skip via
-# `_allocate_out` when the torch reference errors.
-- diag
+- sub
+- subtract
+- sum
+- take
+- take_along_dim
+- tan
+- tanh
+- tensordot
+- thnn_conv2d
+- threshold
 - tril
 - triu
-
-# Unary ops
-- log_sigmoid
-
-# Scan with required `int dim`
-- logcumsumexp
-
-# Multi-scalar activations
-- threshold
-- hardtanh
-- softplus
-- elu
-
-# Matrix-product ops — tested by `test_matrix` with op-specific shapes
-- mm
-- bmm
-- matmul
-- dot
+- true_divide
+- trunc
+- unbind_copy
+- upsample_bicubic2d
+- upsample_bilinear2d
+- upsample_linear1d
+- upsample_nearest1d
+- upsample_nearest2d
+- upsample_nearest3d
+- upsample_trilinear3d
+- var
 - vdot
-- mv
-- inner
-- outer
-- ger
-- kron
-
-# Loss functions: disabled for now — `mse_loss`/`huber_loss`/...
-# produce unexpected output values with 0-d `out` (needs investigation).
-# `binary_cross_entropy` additionally requires inputs in `[0, 1]` which
-# crashes CUDA with device-side assertions.
-# - mse_loss
-# - huber_loss
-# - smooth_l1_loss
-# - soft_margin_loss
-# - binary_cross_entropy
-
-# Comparison ops (bool output)
-- eq
-- ne
-- lt
-- le
-- gt
-- ge
-
-# Logical ops (bool output)
-- logical_and
-- logical_or
-- logical_xor
-- logical_not
-
-# Predicate unary ops (bool output)
-- isneginf
-- isposinf
-- signbit
-- bitwise_not
-
-# Optional-float unary ops (float? args hardcoded to None)
-- logit
-- nan_to_num
-- special_logit
-
-# Pointwise binary ops
-- mul
-- div
-# `floor_divide` is deprecated by PyTorch for floats and produces
-# off-by-one results vs. `floor(a/b)` near integer boundaries on
-# `bfloat16`.  Use `div(..., rounding_mode='floor')` instead if needed.
-- maximum
-- minimum
-- fmax
-- fmin
-- atan2
-- hypot
-- copysign
-- nextafter
-- logaddexp
-- logaddexp2
-
-# Picked up via overload-`_out` lookup
-- pow
-- fmod
-- remainder
-- float_power
-- special_xlogy
-- special_xlog1py
-- bitwise_and
-- bitwise_or
-- bitwise_xor
-- bitwise_left_shift
-- bitwise_right_shift
-- gcd
-- lcm
-- igamma
-- igammac
-- heaviside
-
-# Pure ternary (3 tensors) via overload lookup
-- lerp
-
-# Pointwise binary ops with `Scalar alpha=1`
-- sub
-
-# Tensor + Scalar ops
-- clamp_min
-- clamp_max
-
-# (a, b, c, value) → a + value * b * c (`addcmul`) or a + value * b / c (`addcdiv`)
-- addcmul
-- addcdiv
+- where
+- zeros
