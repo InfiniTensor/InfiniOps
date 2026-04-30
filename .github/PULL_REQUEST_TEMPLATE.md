@@ -63,7 +63,7 @@ in the PR title and the branch name (see `CONTRIBUTING.md` §Branches). -->
 ## Test Results on Supported Platforms
 
 <!--
-Per `CONTRIBUTING.md` §Pull Requests \#3, you MUST build and test on every
+Per `CONTRIBUTING.md` §Pull Requests, you MUST build and test on every
 supported platform touched by this PR (or explain why a platform is not
 reachable). Paste `pytest` output summaries below (a trimmed tail is fine —
 include pass/fail counts, skipped tests, and any warnings).
@@ -120,60 +120,60 @@ follow-up work intentionally left out of scope, etc.
 - [ ] PR **title** follows [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat(nvidia): …`, `fix(cuda/gemm): …`).
 - [ ] Branch name follows `<type>/xxx-yyyy-zzzz` where `<type>` matches the PR title's Conventional Commits type and words are joined with hyphens (see `CONTRIBUTING.md` §Branches).
 - [ ] Each **commit** message follows Conventional Commits.
-- [ ] Small PR is a **single squashable commit**; or, for a large PR, every commit is meaningful, well-formed, and independently reviewable (see `CONTRIBUTING.md` §Pull Requests \#1).
+- [ ] Small PR is a **single squashable commit**; or, for a large PR, every commit is meaningful, well-formed, and independently reviewable (see `CONTRIBUTING.md` §Pull Requests).
 - [ ] No stray merge commits from `master` — the branch is rebased cleanly on top of the current `master`.
 - [ ] No `fixup!` / `squash!` / `wip` commits remain.
 
 ### Scope and Design
 
-- [ ] Changes are **minimal** — nothing unrelated to the stated motivation was added (`CONTRIBUTING.md` §Code/General \#1).
+- [ ] Changes are **minimal** — nothing unrelated to the stated motivation was added (`CONTRIBUTING.md` §Code/General).
 - [ ] No dead code, commented-out blocks, debug prints, `printf`/`std::cout`/`print(...)` left behind, or `TODO` without an owner and issue link.
 - [ ] No unrelated formatting churn that would obscure the diff.
 - [ ] Public API changes (if any) are intentional, documented, and reflected in affected callers/tests.
 
 ### General Code Hygiene (applies to all languages)
 
-- [ ] The code is self-explanatory; comments were added **only** where the *why* is non-obvious (`CONTRIBUTING.md` §Code/General \#2).
-- [ ] Every modified or added file **ends with a single trailing newline** (`CONTRIBUTING.md` §Code/General \#3).
+- [ ] The code is self-explanatory; comments were added **only** where the *why* is non-obvious (`CONTRIBUTING.md` §Code/General).
+- [ ] Every modified or added file **ends with a single trailing newline** (`CONTRIBUTING.md` §Code/General).
 - [ ] No trailing whitespace, tab/space mixing, or stray BOMs.
-- [ ] Identifiers in comments and error messages are wrapped in backticks (e.g. ``the `seqlens_k` tensor``) (`CONTRIBUTING.md` §Code/General \#4).
-- [ ] All comments and error messages are in **English** (`CONTRIBUTING.md` §Code/General \#5).
-- [ ] Comments and error messages are complete sentences — capitalized first letter, terminal punctuation — **unless** the language/framework convention says otherwise (`CONTRIBUTING.md` §Code/General \#6; Python \#2).
+- [ ] Identifiers in comments and error messages are wrapped in backticks (e.g. ``the `seqlens_k` tensor``) (`CONTRIBUTING.md` §Code/General).
+- [ ] All comments and error messages are in **English** (`CONTRIBUTING.md` §Code/General).
+- [ ] Comments and error messages are complete sentences — capitalized first letter, terminal punctuation — **unless** the language/framework convention says otherwise (`CONTRIBUTING.md` §Code/General; §Python).
 
 ### C++ Specific (if C++ files changed)
 
 - [ ] Code follows the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) strictly.
 - [ ] `clang-format` (version **21**, per `.github/workflows/clang-format.yml`) has been run against all modified `.h`, `.cc`, `.cuh`, and `.mlu` files; the diff is clean.
 - [ ] `clang-tidy` concerns (per `.clang-tidy`) have been reviewed — no new warnings beyond the existing baseline.
-- [ ] Operator parameter order is **inputs first, outputs last**; attributes are between inputs and outputs; naming follows PyTorch → ONNX → CUDA API precedence (`CONTRIBUTING.md` §C++ \#2).
-- [ ] **No exceptions** are thrown. Error paths use `assert` with messages that include at least `__FILE__`, `__LINE__`, and `__func__` (`CONTRIBUTING.md` §C++ \#3).
-- [ ] Error and warning message wording follows the [LLVM Coding Standards](https://llvm.org/docs/CodingStandards.html#error-and-warning-messages) (`CONTRIBUTING.md` §C++ \#4).
-- [ ] Kernel files are named correctly: custom = `kernel` / `kernel_v2` / …; well-known algorithms use the algorithm name; library-based implementations use the library name (`CONTRIBUTING.md` §C++ \#5).
-- [ ] Kernel and kernel launcher are in **separate files**: launcher `.h`, kernel follows platform conventions (e.g. `.cuh` + `.cu`) even when non-templated (`CONTRIBUTING.md` §C++ \#6).
-- [ ] Constructor **initializer list order matches member declaration order** (`CONTRIBUTING.md` §C++ \#7).
-- [ ] Exactly **one blank line** between classes, between classes and functions, and between functions (`CONTRIBUTING.md` §C++ \#8).
-- [ ] Exactly **one blank line** between members (functions *and* variables) within a class (`CONTRIBUTING.md` §C++ \#9).
-- [ ] Exactly **one blank line** before and after the contents of a namespace (`CONTRIBUTING.md` §C++ \#10).
-- [ ] New operators added via `src/base/<op>.h` (inheriting `Operator<Op>`) with platform implementations under `src/<category>/<platform>/` inheriting the base (`CONTRIBUTING.md` §Adding an Operator \#1–2).
+- [ ] Operator parameter order is **inputs first, outputs last**; attributes are between inputs and outputs; naming follows PyTorch → ONNX → CUDA API precedence (`CONTRIBUTING.md` §C++).
+- [ ] **No exceptions** are thrown. Error paths use `assert` with messages that include at least `__FILE__`, `__LINE__`, and `__func__` (`CONTRIBUTING.md` §C++).
+- [ ] Error and warning message wording follows the [LLVM Coding Standards](https://llvm.org/docs/CodingStandards.html#error-and-warning-messages) (`CONTRIBUTING.md` §C++).
+- [ ] Kernel files are named correctly: custom = `kernel` / `kernel_v2` / …; well-known algorithms use the algorithm name; library-based implementations use the library name (`CONTRIBUTING.md` §C++).
+- [ ] Kernel and kernel launcher are in **separate files**: launcher `.h`, kernel follows platform conventions (e.g. `.cuh` + `.cu`) even when non-templated (`CONTRIBUTING.md` §C++).
+- [ ] Constructor **initializer list order matches member declaration order** (`CONTRIBUTING.md` §C++).
+- [ ] Exactly **one blank line** between classes, between classes and functions, and between functions (`CONTRIBUTING.md` §C++).
+- [ ] Exactly **one blank line** between members (functions *and* variables) within a class (`CONTRIBUTING.md` §C++).
+- [ ] Exactly **one blank line** before and after the contents of a namespace (`CONTRIBUTING.md` §C++).
+- [ ] New operators added via `src/base/<op>.h` (inheriting `Operator<Op>`) with platform implementations under `src/<category>/<platform>/` inheriting the base (`CONTRIBUTING.md` §Adding an Operator).
 - [ ] No raw `new`/`delete`; RAII / smart pointers / existing allocators are used.
 
 ### Python Specific (if Python files changed)
 
 - [ ] Code is [PEP 8](https://peps.python.org/pep-0008/) compliant; `ruff check` passes cleanly on CI (see `.github/workflows/ruff.yml`).
 - [ ] `ruff format --check` passes cleanly — if not, run `ruff format` and commit the result.
-- [ ] Comments are complete English sentences, starting with a capital letter and ending with punctuation; Markdown backticks are used for code references (`CONTRIBUTING.md` §Python \#1).
-- [ ] Framework-specific conventions (e.g. lowercase `pytest.skip` messages without terminal period) are honored where applicable (`CONTRIBUTING.md` §Python \#2).
-- [ ] **No blank line** between the function signature and the body when there is no docstring or comment (`CONTRIBUTING.md` §Python \#3).
-- [ ] A blank line is present **before and after** `if`, `for`, and similar control-flow statements (`CONTRIBUTING.md` §Python \#4).
-- [ ] A blank line appears **before** each `return`, except when it directly follows a control-flow statement (`CONTRIBUTING.md` §Python \#5).
-- [ ] Docstrings (if any) follow [PEP 257](https://peps.python.org/pep-0257/) (`CONTRIBUTING.md` §Python \#6).
+- [ ] Comments are complete English sentences, starting with a capital letter and ending with punctuation; Markdown backticks are used for code references (`CONTRIBUTING.md` §Python).
+- [ ] Framework-specific conventions (e.g. lowercase `pytest.skip` messages without terminal period) are honored where applicable (`CONTRIBUTING.md` §Python).
+- [ ] **No blank line** between the function signature and the body when there is no docstring or comment (`CONTRIBUTING.md` §Python).
+- [ ] A blank line is present **before and after** `if`, `for`, and similar control-flow statements (`CONTRIBUTING.md` §Python).
+- [ ] A blank line appears **before** each `return`, except when it directly follows a control-flow statement (`CONTRIBUTING.md` §Python).
+- [ ] Docstrings (if any) follow [PEP 257](https://peps.python.org/pep-0257/) (`CONTRIBUTING.md` §Python).
 - [ ] Type hints are added / kept consistent with the surrounding code.
 
 ### Testing
 
-- [ ] `pytest` was run locally on **every supported platform** that this PR can affect, and the results are recorded in the "Test Results" table above (`CONTRIBUTING.md` §Pull Requests \#3).
+- [ ] `pytest` was run locally on **every supported platform** that this PR can affect, and the results are recorded in the "Test Results" table above (`CONTRIBUTING.md` §Pull Requests).
 - [ ] For any platform that could not be tested, an explicit reason is given in the table and a reviewer with access has been tagged.
-- [ ] New functionality has matching tests under `tests/` following `tests/test_add.py` / `tests/test_gemm.py` patterns (`CONTRIBUTING.md` §Adding an Operator \#3).
+- [ ] New functionality has matching tests under `tests/` following `tests/test_add.py` / `tests/test_gemm.py` patterns (`CONTRIBUTING.md` §Adding an Operator).
 - [ ] Tests use `pytest.mark.parametrize` correctly: dependent parameters share one decorator (e.g. `@pytest.mark.parametrize("dtype, rtol, atol", …)`), independent parameters use separate decorators ordered by parameter declaration.
 - [ ] Where appropriate, `pytest.mark.auto_act_and_assert` is used and the test returns a `Payload` whose `func` and `ref` share the same calling convention.
 - [ ] Default `dtype` / `device` parameterization is relied on, or overridden with an explicit `pytest.mark.parametrize` when necessary.
