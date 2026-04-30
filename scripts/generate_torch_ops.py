@@ -28,6 +28,7 @@ import dataclasses
 import json
 import pathlib
 import re
+import shutil
 import sys
 import urllib.request
 
@@ -96,37 +97,37 @@ _SCALAR_TYPE_MAP = {
     "SymInt": "int64_t",
 }
 
-# Optional ATen types we hide from the user-facing API and pass as
-# `at::nullopt` at the call site.  Covers the common "full default"
-# case for most reductions and activations.  Tensor-typed optionals are
-# hardcoded to `nullopt` too (e.g. `binary_cross_entropy.weight`); ops
-# that *require* a non-null tensor would need a separate path.
-_HARDCODE_NULLOPT_TYPES = frozenset(
-    {
-        "Scalar?",
-        "int?",
-        "bool?",
-        "float?",
-        "str?",
-        "ScalarType?",
-        "MemoryFormat?",
-        "Layout?",
-        "Device?",
-        "Generator?",
-        "Tensor?",
-        "Tensor?[]",
-        "int[]?",
-        "int[1]?",
-        "int[2]?",
-        "int[3]?",
-        "SymInt?",
-        "SymInt[]?",
-        "SymInt[1]?",
-        "SymInt[2]?",
-        "SymInt[3]?",
-        "float[]?",
-    }
-)
+# Optional ATen types we hide from the user-facing API and pass as a
+# typed empty optional at the call site.  Covers the common "full
+# default" case for most reductions and activations.  We use a typed
+# `c10::optional<T>{}` rather than bare `at::nullopt` so the compiler
+# can disambiguate ops with multiple `_out` overloads (e.g. `clamp_out`
+# accepts both `optional<Scalar>` and `optional<Tensor>` for `min`/`max`).
+_NULLOPT_BY_TYPE = {
+    "Scalar?": "c10::optional<at::Scalar>{}",
+    "int?": "c10::optional<int64_t>{}",
+    "bool?": "c10::optional<bool>{}",
+    "float?": "c10::optional<double>{}",
+    "str?": "c10::optional<c10::string_view>{}",
+    "ScalarType?": "c10::optional<at::ScalarType>{}",
+    "MemoryFormat?": "c10::optional<at::MemoryFormat>{}",
+    "Layout?": "c10::optional<at::Layout>{}",
+    "Device?": "c10::optional<at::Device>{}",
+    "Generator?": "c10::optional<at::Generator>{}",
+    "Tensor?": "c10::optional<at::Tensor>{}",
+    "Tensor?[]": "c10::List<c10::optional<at::Tensor>>{}",
+    "int[]?": "c10::optional<at::IntArrayRef>{}",
+    "int[1]?": "c10::optional<at::IntArrayRef>{}",
+    "int[2]?": "c10::optional<at::IntArrayRef>{}",
+    "int[3]?": "c10::optional<at::IntArrayRef>{}",
+    "SymInt?": "c10::optional<int64_t>{}",
+    "SymInt[]?": "c10::optional<at::IntArrayRef>{}",
+    "SymInt[1]?": "c10::optional<at::IntArrayRef>{}",
+    "SymInt[2]?": "c10::optional<at::IntArrayRef>{}",
+    "SymInt[3]?": "c10::optional<at::IntArrayRef>{}",
+    "float[]?": "c10::optional<at::ArrayRef<double>>{}",
+}
+_HARDCODE_NULLOPT_TYPES = frozenset(_NULLOPT_BY_TYPE)
 
 
 @dataclasses.dataclass
@@ -179,7 +180,7 @@ class Param:
     def hidden_value(self) -> str:
         """C++ literal substituted for a hidden param in the ATen call."""
         if self.is_hardcoded_nullopt:
-            return "at::nullopt"
+            return _NULLOPT_BY_TYPE[self.aten_type]
         if self.default == "True":
             return "true"
         if self.default == "False":
@@ -193,8 +194,9 @@ class Param:
             n = int(size_match.group(1)) if size_match else 1
             return "{" + ", ".join([self.default] * n) + "}"
         if self.aten_type == "str" and self.default is not None:
-            # YAML strings already come quoted (e.g. `'none'`).
-            return self.default
+            # YAML uses single-quoted strings (e.g. `'none'`); C++ char
+            # literals also use single quotes, so swap to doubles.
+            return '"' + self.default.strip("'\"") + '"'
         if self.aten_type in {"int", "float", "SymInt"} and self.default is not None:
             # Translate known ATen enum defaults to their C++ identifiers.
             return _ENUM_DEFAULTS.get(self.default, self.default)
@@ -206,6 +208,15 @@ class Param:
     @property
     def cpp_type(self) -> str:
         if self.is_tensor:
+            # `Tensor[]` / `Tensor(a!)[]` would need `std::vector<Tensor>` and a
+            # different ATen call shape — not yet supported, so reject so the
+            # whole overload gets skipped instead of emitting code that calls
+            # `at::<op>_out(at::Tensor, ...)` against an `at::TensorList`
+            # signature.
+            if self.aten_type.endswith("[]"):
+                raise NotImplementedError(
+                    f"`Tensor[]` param {self.name!r} not supported yet"
+                )
             return "Tensor"
         if self.is_hidden:
             # Not exposed — the ATen call substitutes a hardcoded value
@@ -272,11 +283,22 @@ class Op:
 
     @property
     def is_testable(self) -> bool:
-        """Cheap structural check: at least one out tensor.  Generators
-        like `arange` / `linspace` produce a tensor from scalars only —
-        those are still testable (the test runs the torch reference for
-        shape discovery)."""
-        return bool(self.out_params)
+        """Cheap structural check: at least one out tensor, and the first
+        constructor parameter is a tensor.  The latter is needed because
+        `Operator::Make(Tensor tensor, Args... args)` dispatches on
+        `tensor.device()`, so an op like `pow.Scalar_out(Scalar self,
+        Tensor exponent, *, Tensor(a!) out)` cannot be wired up without
+        a separate dispatch path.  Generators like `arange` / `linspace`
+        also fall under this rule (no input tensors at all)."""
+        if not self.out_params:
+            return False
+        # `params` includes out tensors at the end; check the first
+        # non-out param.  If there are no non-out params (`empty.out`,
+        # `arange.out`), this op also fails the dispatch precondition.
+        non_out = [p for p in self.params if not p.is_out]
+        if not non_out:
+            return False
+        return non_out[0].is_tensor
 
 
 _FUNC_RE = re.compile(
@@ -589,6 +611,15 @@ def main() -> int:
 
     op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
     aten_entries = yaml.safe_load(_load_aten_yaml())
+
+    # Wipe previous outputs so files for ops that have since been removed,
+    # renamed, or rejected by `cpp_type` don't linger and get picked up by
+    # the CMake glob.  Both `generated/base/` and `generated/torch/` are
+    # written exclusively by this script.
+    if _GENERATED_BASE_DIR.exists():
+        shutil.rmtree(_GENERATED_BASE_DIR)
+    if _GENERATED_TORCH_DIR.exists():
+        shutil.rmtree(_GENERATED_TORCH_DIR)
 
     skipped: list[tuple[str, str]] = []
     metadata: list[dict] = []
