@@ -312,7 +312,9 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     if aten_name in _RANDOM_OPS:
         pytest.skip(f"`{aten_name}` is non-deterministic (independent draws diverge)")
     if device == "cuda" and aten_name in _DEVICE_ASSERTING_OPS:
-        pytest.skip(f"`{aten_name}` triggers a CUDA device-side assert on random inputs")
+        pytest.skip(
+            f"`{aten_name}` triggers a CUDA device-side assert on random inputs"
+        )
 
     in_params = [p for p in op_meta["params"] if not p["is_out"]]
     out_params = [p for p in op_meta["params"] if p["is_out"]]
@@ -333,7 +335,13 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     # not in the InfiniOps wrapper.
     try:
         ref = _torch_func(aten_name)(*inputs)
-    except (RuntimeError, TypeError, ValueError, IndexError, NotImplementedError) as exc:
+    except (
+        RuntimeError,
+        TypeError,
+        ValueError,
+        IndexError,
+        NotImplementedError,
+    ) as exc:
         pytest.skip(f"`torch.{aten_name}` rejects these inputs: {exc}")
 
     ref_outs = ref if isinstance(ref, tuple) else (ref,)
@@ -357,13 +365,17 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
         (t.dtype for t in tensors if t.dtype not in _SUPPORTED_DTYPES), None
     )
     if unsupported is not None:
-        pytest.skip(f"`{op_name}` uses dtype {unsupported} — not in InfiniOps `DataType`")
+        pytest.skip(
+            f"`{op_name}` uses dtype {unsupported} — not in InfiniOps `DataType`"
+        )
 
     # On CUDA, `torch.empty_like` of a 0-element tensor gives a tensor
     # whose `data_ptr()` is unregistered with the device; passing it
     # through to the wrapper trips "pointer resides on host memory".
     if any(t.numel() == 0 for t in ref_outs):
-        pytest.skip(f"`{op_name}` produced 0-element output (unregistered data_ptr on cuda)")
+        pytest.skip(
+            f"`{op_name}` produced 0-element output (unregistered data_ptr on cuda)"
+        )
 
     outs = [torch.empty_like(t) for t in ref_outs]
     _call_infini(op_name, *inputs, *outs)

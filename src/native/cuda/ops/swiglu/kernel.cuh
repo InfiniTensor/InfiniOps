@@ -77,7 +77,8 @@ __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
       out[out_idx] = Caster<kDev>::template Cast<T>(
           __fmul_rn(__fmul_rn(gatef, sigf), upf));
     } else if constexpr (std::is_same_v<T, float>) {
-      out[out_idx] = __fmul_rn(__fmul_rn(gate, detail::Sigmoid<kDev>(gate)), up);
+      out[out_idx] =
+          __fmul_rn(__fmul_rn(gate, detail::Sigmoid<kDev>(gate)), up);
     } else {
       out[out_idx] = gate * detail::Sigmoid<kDev>(gate) * up;
     }
