@@ -392,6 +392,10 @@ def _snake_to_pascal(s: str) -> str:
     return "".join(p.capitalize() for p in s.split("_"))
 
 
+def _base_path(op_name: str) -> pathlib.Path:
+    return _BASE_DIR / f"{op_name}.h"
+
+
 def _load_aten_yaml() -> str:
     """Return the contents of `native_functions.yaml`, fetching and caching
     the version pinned by `_PYTORCH_VERSION` on the first call."""
@@ -424,7 +428,9 @@ def _find_out_entries(entries: list[dict], op_name: str) -> list[dict]:
         func = entry.get("func", "")
         if func.startswith(bare_prefix):
             bare.append(entry)
-        elif op_overload.match(func) and (func.split("(", 1)[0].endswith("_out") or mut_tensor.search(func)):
+        elif op_overload.match(func) and (
+            func.split("(", 1)[0].endswith("_out") or mut_tensor.search(func)
+        ):
             others.append(entry)
     return bare + others
 
@@ -438,6 +444,28 @@ def _format_signature(op: Op, *, include_defaults: bool = False) -> str:
             text += f" = {_translate_default(param)}"
         parts.append(text)
     return ", ".join(parts)
+
+
+def _normalize_cxx_signature(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip())
+
+
+def _has_compatible_base(op: Op) -> bool:
+    path = _base_path(op.infini_name)
+    if not path.exists():
+        return False
+
+    text = _normalize_cxx_signature(path.read_text())
+    ctor_signature = _normalize_cxx_signature(
+        f"{op.pascal_name}({_format_signature(op)})"
+    )
+    op_call_signature = _normalize_cxx_signature(f"operator()({_format_signature(op)})")
+
+    return (
+        f"class {op.pascal_name} : public Operator<{op.pascal_name}>" in text
+        and ctor_signature in text
+        and op_call_signature in text
+    )
 
 
 def _translate_default(param: Param) -> str:
@@ -606,16 +634,18 @@ void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
 """
 
 
-def _emit(op: Op) -> None:
+def _emit(op: Op, *, emit_base: bool) -> None:
     base_path = _GENERATED_BASE_DIR / f"{op.infini_name}.h"
     torch_dir = _GENERATED_TORCH_DIR / op.infini_name
     torch_header_path = torch_dir / f"{op.infini_name}.h"
     torch_source_path = torch_dir / f"{op.infini_name}.cc"
 
-    _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
+    if emit_base:
+        _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
+        base_path.write_text(_generate_base_header(op))
+
     torch_dir.mkdir(parents=True, exist_ok=True)
 
-    base_path.write_text(_generate_base_header(op))
     torch_header_path.write_text(_generate_torch_header(op))
     torch_source_path.write_text(_generate_torch_source(op))
 
@@ -645,10 +675,6 @@ def main() -> int:
     metadata: list[dict] = []
 
     for name in op_names:
-        if (_BASE_DIR / f"{name}.h").exists():
-            skipped.append((name, "hand-written `src/base/<op>.h` already exists"))
-            continue
-
         candidates = _find_out_entries(aten_entries, name)
         if not candidates:
             skipped.append((name, f"no `.out` variant for `{name}` in YAML"))
@@ -667,6 +693,12 @@ def main() -> int:
             if not op.is_testable:
                 last_reason = "no testable tensor input/output pair"
                 continue
+            if _base_path(op.infini_name).exists() and not _has_compatible_base(op):
+                last_reason = (
+                    f"`src/base/{op.infini_name}.h` exists but does not match "
+                    "the generated torch wrapper signature"
+                )
+                continue
             usable.append(op)
 
         if not usable:
@@ -678,7 +710,7 @@ def main() -> int:
         # (`PowTensorTensor`, `PowTensorScalar`) so users get the right
         # behaviour by naming the variant they want.
         for op in usable:
-            _emit(op)
+            _emit(op, emit_base=not _has_compatible_base(op))
             metadata.append(
                 {
                     "name": op.infini_name,
