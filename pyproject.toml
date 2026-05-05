@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core", "pybind11", "libclang"]
+requires = ["scikit-build-core", "pybind11", "libclang", "PyYAML"]
 build-backend = "scikit_build_core.build"
 
 [project]
