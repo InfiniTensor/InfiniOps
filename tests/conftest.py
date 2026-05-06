@@ -92,7 +92,8 @@ def skip_unsupported_dtypes(request):
 
 # PyTorch device type → InfiniOps platform names. A single torch device type
 # can map to several platforms (e.g., `cuda` is shared by `nvidia`, `metax`,
-# and `iluvatar`); at most one is actually available at runtime.
+# and `iluvatar`). CI passes concrete platforms through `--devices`; without
+# that explicit platform, tests keep the historical broad mapping.
 _TORCH_DEVICE_TO_PLATFORMS = {
     "cuda": ("nvidia", "metax", "iluvatar"),
     "mlu": ("cambricon",),
@@ -119,7 +120,7 @@ def skip_op_without_platform_impl(request):
     if "implementation_index" in params:
         return
 
-    platforms = _TORCH_DEVICE_TO_PLATFORMS.get(params.get("device"))
+    platforms = _active_platforms_for_torch_device(request.config, params.get("device"))
 
     if not platforms:
         return
@@ -149,6 +150,24 @@ _PLATFORM_TO_TORCH_DEVICE = {
     "cambricon": "mlu",
     "ascend": "npu",
 }
+
+
+def _active_platforms_for_torch_device(config, torch_device):
+    """Return platform names selected for a torch device type."""
+    if not torch_device:
+        return ()
+
+    cli_devices = config.getoption("--devices") or ()
+    requested_platforms = tuple(
+        name
+        for name in cli_devices
+        if _PLATFORM_TO_TORCH_DEVICE.get(name) == torch_device
+    )
+
+    if requested_platforms:
+        return requested_platforms
+
+    return _TORCH_DEVICE_TO_PLATFORMS.get(torch_device, ())
 
 
 def _resolve_device(name):
