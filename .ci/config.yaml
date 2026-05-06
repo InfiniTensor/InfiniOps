@@ -19,6 +19,8 @@ github:
 #     url: http://moore-host:8080
 #   cambricon:
 #     url: http://cambricon-host:8080
+#   hygon:
+#     url: http://hygon-host:8080
 
 platforms:
   nvidia:
@@ -137,6 +139,32 @@ platforms:
         stages:
           - name: test
             run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+
+  hygon:
+    image:
+      dockerfile: .ci/images/hygon/
+      build_args:
+        BASE_IMAGE: image.sourcefind.cn:5000/dcu/admin/base/custom:pytorch2.4.1-dtk25.04.1-ubuntu22.04
+        APT_MIRROR: http://archive.ubuntu.com/ubuntu
+        PIP_INDEX_URL: https://pypi.org/simple
+    docker_args:
+      - "--privileged"
+      - "--device=/dev/kfd"
+      - "--device=/dev/dri"
+      - "--group-add=video"
+      - "--ipc=host"
+    setup: pip install .[dev] --no-build-isolation
+    jobs:
+      gpu:
+        resources:
+          ngpus: 1
+          gpu_ids: auto
+          memory: 32GB
+          shm_size: 16g
+          timeout: 3600
+        stages:
+          - name: test
+            run: pytest tests/test_add.py tests/test_gemm.py --devices hygon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:                                  # TODO: Ascend image is not ready yet.
     image:
