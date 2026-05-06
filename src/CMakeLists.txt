@@ -42,6 +42,12 @@ if(WITH_NVIDIA)
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
 
+    # FlashInfer sampling kernels
+    if(FLASHINFER_INCLUDE_DIR)
+        target_include_directories(infiniops PUBLIC "${FLASHINFER_INCLUDE_DIR}")
+        message(STATUS "Using FlashInfer from: ${FLASHINFER_INCLUDE_DIR}")
+    endif()
+
     list(APPEND DEVICE_LIST "nvidia")
     set_target_properties(infiniops PROPERTIES
         CUDA_STANDARD 17

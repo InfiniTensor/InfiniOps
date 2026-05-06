@@ -4,9 +4,6 @@ import torch
 
 from tests.utils import empty_strided, randn_strided
 
-# Only CPU implementation exists for now.
-_CPU_ONLY = pytest.mark.parametrize("device", ("cpu",))
-
 
 # --- Helpers ---
 
@@ -55,7 +52,6 @@ def _torch_argmax_sample(logits):
 
 @pytest.mark.parametrize("batch_size, vocab_size", ((1, 16), (4, 128), (8, 256)))
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_greedy_topk1(batch_size, vocab_size, dtype, device):
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
     out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
@@ -72,7 +68,6 @@ def test_greedy_topk1(batch_size, vocab_size, dtype, device):
 
 @pytest.mark.parametrize("batch_size, vocab_size", ((1, 16), (4, 64)))
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_reproducibility(batch_size, vocab_size, dtype, device):
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
 
@@ -90,7 +85,6 @@ def test_reproducibility(batch_size, vocab_size, dtype, device):
 
 @pytest.mark.parametrize("batch_size, vocab_size", ((2, 32), (4, 64)))
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_output_valid(batch_size, vocab_size, dtype, device):
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
     out = empty_strided((batch_size,), None, dtype=torch.int32, device=device)
@@ -103,7 +97,6 @@ def test_output_valid(batch_size, vocab_size, dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_topp_filtering(dtype, device):
     batch_size, vocab_size = 4, 16
     logits = torch.full((batch_size, vocab_size), -10.0, dtype=dtype, device=device)
@@ -118,7 +111,6 @@ def test_topp_filtering(dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_minp_filtering(dtype, device):
     batch_size, vocab_size = 4, 16
     logits = torch.full((batch_size, vocab_size), -10.0, dtype=dtype, device=device)
@@ -133,7 +125,6 @@ def test_minp_filtering(dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_1d_logits(dtype, device):
     vocab_size = 32
     logits = randn_strided((vocab_size,), None, dtype=dtype, device=device)
@@ -148,7 +139,6 @@ def test_1d_logits(dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_seed_offset_reproducibility(dtype, device):
     """Same seed+offset reproduces; different seed likely differs."""
     batch_size, vocab_size = 4, 256
@@ -174,7 +164,6 @@ def test_seed_offset_reproducibility(dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_int64_output(dtype, device):
     batch_size, vocab_size = 2, 32
     logits = randn_strided((batch_size, vocab_size), None, dtype=dtype, device=device)
@@ -189,7 +178,6 @@ def test_int64_output(dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_per_batch_tensor_params(dtype, device):
     """Per-batch tensor parameters (int64 top_k, float32 temperature) should work."""
     batch_size, vocab_size = 4, 32
@@ -208,7 +196,6 @@ def test_per_batch_tensor_params(dtype, device):
 
 
 @pytest.mark.parametrize("dtype", (torch.float32,))
-@_CPU_ONLY
 def test_per_batch_temperature_tensor(dtype, device):
     """Per-batch float32 temperature tensor should work."""
     batch_size, vocab_size = 4, 32

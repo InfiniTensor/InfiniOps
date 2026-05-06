@@ -18,6 +18,8 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
+set(FLASHINFER_INCLUDE_DIR "" CACHE PATH "FlashInfer include directory for sampling kernels")
+
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
