@@ -23,6 +23,10 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         (((2, 4, 32), (2, 4, 64)), 2, (2, 4, 96)),
         # 4 inputs, dim=1
         (((1, 1024), (1, 1024), (1, 1024), (1, 1024)), 1, (1, 4096)),
+        # 2 inputs, empty cat dim
+        (((2, 0, 32), (2, 0, 32)), 1, (2, 0, 32)),
+        # 2 inputs, empty non-cat dim
+        (((0, 32), (0, 64)), 1, (0, 96)),
     ),
 )
 @pytest.mark.parametrize(
