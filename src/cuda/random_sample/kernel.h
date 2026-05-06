@@ -14,6 +14,7 @@
 #include "data_type.h"
 #include "dispatcher.h"
 
+// FlashInfer sampling kernels — included directly, same as cuBLAS/cuBLASLt.
 #include "flashinfer/sampling.cuh"
 
 namespace infini::ops {
@@ -118,7 +119,7 @@ class CudaRandomSample : public RandomSample {
     if (t.has_value()) {
       assert(t->dtype() == DataType::kFloat32 &&
              "per-batch float param must be float32 for CUDA backend");
-      return {static_cast<float*>(t->data()), scalar_val};
+      return {const_cast<float*>(static_cast<const float*>(t->data())), scalar_val};
     }
     return {nullptr, scalar_val};
   }
@@ -163,23 +164,25 @@ class CudaRandomSample : public RandomSample {
     if (temperature.has_value()) {
       assert(temperature->dtype() == DataType::kFloat32 &&
              "temperature tensor must be float32 for CUDA backend");
-      temp_arr = static_cast<float*>(temperature->data());
+      temp_arr = const_cast<float*>(static_cast<const float*>(temperature->data()));
     }
 
-    if constexpr (std::is_same_v<T, float>) {
-      auto* logits_ptr = static_cast<float*>(logits.data());
-      OnlineSoftmax<float>(logits_ptr, probs, batch_size_, vocab_size_,
-                           temp_arr, temperature_val, d_workspace_,
-                           workspace_size_, false, stream);
-    } else {
+    if constexpr (!std::is_same_v<T, float>) {
       auto* logits_ptr = static_cast<const T*>(logits.data());
       constexpr int kBlock = 256;
       int grid = (total + kBlock - 1) / kBlock;
       CastToFloatKernel<T>
           <<<grid, kBlock, 0, stream>>>(float_logits, logits_ptr, total);
-      OnlineSoftmax<float>(float_logits, probs, batch_size_, vocab_size_,
-                           temp_arr, temperature_val, d_workspace_,
-                           workspace_size_, false, stream);
+    }
+
+    {
+      float* softmax_in = (std::is_same_v<T, float>)
+                               ? const_cast<float*>(static_cast<const float*>(logits.data()))
+                               : float_logits;
+      flashinfer::sampling::OnlineSoftmax<float>(
+          softmax_in, probs, batch_size_, vocab_size_,
+          temp_arr, temperature_val,
+          d_workspace_, workspace_size_, false, stream);
     }
 
     // --- Step 2: resolve per-batch parameters ---
@@ -189,21 +192,35 @@ class CudaRandomSample : public RandomSample {
     float* top_k_float_arr = nullptr;
     IdType* top_k_id_arr = nullptr;
     if (top_k.has_value()) {
-      // Host-stage int->float conversion for TopKSamplingFromProb
+      const auto& tk = *top_k;
+      auto stride = tk.strides().empty() ? 1 : tk.strides()[0];
+
+      // Copy int values from device to host, then convert to float.
       std::vector<float> host_top_k(batch_size_);
-      for (Tensor::Size i = 0; i < batch_size_; ++i)
-        host_top_k[i] =
-            static_cast<float>(GetIntParam(top_k, top_k_val, i));
+      if (tk.dtype() == DataType::kInt32) {
+        std::vector<int32_t> host_buf(batch_size_);
+        Backend::Memcpy(host_buf.data(), tk.data(),
+                        static_cast<size_t>(batch_size_) * sizeof(int32_t),
+                        Backend::MemcpyDeviceToHost);
+        for (Tensor::Size i = 0; i < batch_size_; ++i)
+          host_top_k[i] = static_cast<float>(host_buf[i * stride]);
+      } else {
+        std::vector<int64_t> host_buf(batch_size_);
+        Backend::Memcpy(host_buf.data(), tk.data(),
+                        static_cast<size_t>(batch_size_) * sizeof(int64_t),
+                        Backend::MemcpyDeviceToHost);
+        for (Tensor::Size i = 0; i < batch_size_; ++i)
+          host_top_k[i] = static_cast<float>(host_buf[i * stride]);
+      }
+
       Backend::Memcpy(d_top_k_float_, host_top_k.data(),
                       static_cast<size_t>(batch_size_) * sizeof(float),
                       Backend::MemcpyHostToDevice);
       top_k_float_arr = static_cast<float*>(d_top_k_float_);
 
-      // TopKTopPSamplingFromProb needs IdType*
-      const auto& tk = *top_k;
       if ((tk.dtype() == DataType::kInt32 && sizeof(IdType) == 4) ||
           (tk.dtype() == DataType::kInt64 && sizeof(IdType) == 8)) {
-        top_k_id_arr = static_cast<IdType*>(tk.data());
+        top_k_id_arr = const_cast<IdType*>(static_cast<const IdType*>(tk.data()));
       }
     }
 
@@ -213,35 +230,38 @@ class CudaRandomSample : public RandomSample {
         (top_p_val > 0.f && top_p_val < 1.f) || top_p.has_value();
     bool use_min_p = min_p_val > 0.f || min_p.has_value();
 
+    namespace fis = flashinfer::sampling;
+
     if (use_top_k && use_top_p) {
-      TopKTopPSamplingFromProb<float, IdType>(
-          probs, top_k_id_arr, top_p_arr, out_ptr, valid_ptr,
-          /*indices=*/nullptr, batch_size_,
-          static_cast<IdType>(top_k_val), top_p_scalar, vocab_size_,
-          deterministic,
-          /*seed_arr=*/nullptr, seed,
-          /*offset_arr=*/nullptr, offset, stream);
+      fis::TopKTopPSamplingFromProb<float, IdType>(
+          probs, top_k_id_arr, top_p_arr,
+          out_ptr, valid_ptr, /*indices=*/nullptr,
+          batch_size_, static_cast<IdType>(top_k_val), top_p_scalar,
+          vocab_size_, deterministic,
+          /*seed_arr=*/nullptr, seed, /*offset_arr=*/nullptr, offset, stream);
     } else if (use_top_k) {
-      TopKSamplingFromProb<float, IdType>(
-          probs, out_ptr, valid_ptr,
-          /*indices=*/nullptr, top_k_float_arr, batch_size_,
+      fis::TopKSamplingFromProb<float, IdType>(
+          probs, out_ptr, valid_ptr, /*indices=*/nullptr,
+          top_k_float_arr, batch_size_,
           static_cast<uint32_t>(top_k_val), vocab_size_, deterministic,
-          nullptr, seed, nullptr, offset, stream);
+          /*seed_arr=*/nullptr, seed, /*offset_arr=*/nullptr, offset, stream);
     } else if (use_top_p) {
-      TopPSamplingFromProb<float, IdType>(
-          probs, out_ptr, valid_ptr,
-          /*indices=*/nullptr, top_p_arr, batch_size_, top_p_scalar,
-          vocab_size_, deterministic, nullptr, seed, nullptr, offset, stream);
+      fis::TopPSamplingFromProb<float, IdType>(
+          probs, out_ptr, valid_ptr, /*indices=*/nullptr,
+          top_p_arr, batch_size_, top_p_scalar,
+          vocab_size_, deterministic,
+          /*seed_arr=*/nullptr, seed, /*offset_arr=*/nullptr, offset, stream);
     } else if (use_min_p) {
-      MinPSamplingFromProb<float, IdType>(
-          probs, min_p_arr, out_ptr, valid_ptr,
-          /*indices=*/nullptr, batch_size_, min_p_scalar, vocab_size_,
-          deterministic, nullptr, seed, nullptr, offset, stream);
+      fis::MinPSamplingFromProb<float, IdType>(
+          probs, min_p_arr, out_ptr, valid_ptr, /*indices=*/nullptr,
+          batch_size_, min_p_scalar,
+          vocab_size_, deterministic,
+          /*seed_arr=*/nullptr, seed, /*offset_arr=*/nullptr, offset, stream);
     } else {
-      SamplingFromProb<float, IdType>(
-          probs, out_ptr, valid_ptr,
-          /*indices=*/nullptr, batch_size_, vocab_size_, deterministic,
-          nullptr, seed, nullptr, offset, stream);
+      fis::SamplingFromProb<float, IdType>(
+          probs, out_ptr, valid_ptr, /*indices=*/nullptr,
+          batch_size_, vocab_size_, deterministic,
+          /*seed_arr=*/nullptr, seed, /*offset_arr=*/nullptr, offset, stream);
     }
   }
 };
