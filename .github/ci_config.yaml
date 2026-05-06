@@ -24,7 +24,7 @@ platforms:
         #   MY_VAR: value
         stages:
           - name: test
-            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices nvidia -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
     image:
       dockerfile: images/iluvatar/
