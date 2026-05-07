@@ -24,14 +24,23 @@ class LinalgHouseholderProduct : public Operator<LinalgHouseholderProduct> {
 
  protected:
   Tensor::Shape input_shape_;
+
   Tensor::Strides input_strides_;
+
   DataType input_type_;
+
   Tensor::Shape tau_shape_;
+
   Tensor::Strides tau_strides_;
+
   DataType tau_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
