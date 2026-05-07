@@ -24,14 +24,23 @@ class LinalgMatrixRankTolTensor : public Operator<LinalgMatrixRankTolTensor> {
 
  protected:
   Tensor::Shape input_shape_;
+
   Tensor::Strides input_strides_;
+
   DataType input_type_;
+
   Tensor::Shape tol_shape_;
+
   Tensor::Strides tol_strides_;
+
   DataType tol_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
