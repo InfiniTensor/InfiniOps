@@ -24,14 +24,23 @@ class Slogdet : public Operator<Slogdet> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape sign_shape_;
+
   Tensor::Strides sign_strides_;
+
   DataType sign_type_;
+
   Tensor::Shape logabsdet_shape_;
+
   Tensor::Strides logabsdet_strides_;
+
   DataType logabsdet_type_;
+
   int device_index_{0};
 };
 
