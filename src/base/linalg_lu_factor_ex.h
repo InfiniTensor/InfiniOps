@@ -27,17 +27,29 @@ class LinalgLuFactorEx : public Operator<LinalgLuFactorEx> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape LU_shape_;
+
   Tensor::Strides LU_strides_;
+
   DataType LU_type_;
+
   Tensor::Shape pivots_shape_;
+
   Tensor::Strides pivots_strides_;
+
   DataType pivots_type_;
+
   Tensor::Shape info_shape_;
+
   Tensor::Strides info_strides_;
+
   DataType info_type_;
+
   int device_index_{0};
 };
 
