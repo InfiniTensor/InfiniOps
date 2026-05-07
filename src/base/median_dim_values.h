@@ -25,14 +25,23 @@ class MedianDimValues : public Operator<MedianDimValues> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape values_shape_;
+
   Tensor::Strides values_strides_;
+
   DataType values_type_;
+
   Tensor::Shape indices_shape_;
+
   Tensor::Strides indices_strides_;
+
   DataType indices_type_;
+
   int device_index_{0};
 };
 
