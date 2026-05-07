@@ -20,11 +20,17 @@ class NormalTensorFloat : public Operator<NormalTensorFloat> {
 
  protected:
   Tensor::Shape mean_shape_;
+
   Tensor::Strides mean_strides_;
+
   DataType mean_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
