@@ -28,17 +28,29 @@ class WhereSelf : public Operator<WhereSelf> {
 
  protected:
   Tensor::Shape condition_shape_;
+
   Tensor::Strides condition_strides_;
+
   DataType condition_type_;
+
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape other_shape_;
+
   Tensor::Strides other_strides_;
+
   DataType other_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
