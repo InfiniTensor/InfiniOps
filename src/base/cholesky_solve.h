@@ -24,14 +24,23 @@ class CholeskySolve : public Operator<CholeskySolve> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape input2_shape_;
+
   Tensor::Strides input2_strides_;
+
   DataType input2_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
