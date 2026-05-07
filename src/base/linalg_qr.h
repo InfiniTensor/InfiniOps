@@ -23,14 +23,23 @@ class LinalgQr : public Operator<LinalgQr> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape Q_shape_;
+
   Tensor::Strides Q_strides_;
+
   DataType Q_type_;
+
   Tensor::Shape R_shape_;
+
   Tensor::Strides R_strides_;
+
   DataType R_type_;
+
   int device_index_{0};
 };
 
