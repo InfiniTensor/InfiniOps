@@ -34,17 +34,29 @@ class FractionalMaxPool3dOutput : public Operator<FractionalMaxPool3dOutput> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape random_samples_shape_;
+
   Tensor::Strides random_samples_strides_;
+
   DataType random_samples_type_;
+
   Tensor::Shape output_shape_;
+
   Tensor::Strides output_strides_;
+
   DataType output_type_;
+
   Tensor::Shape indices_shape_;
+
   Tensor::Strides indices_strides_;
+
   DataType indices_type_;
+
   int device_index_{0};
 };
 
