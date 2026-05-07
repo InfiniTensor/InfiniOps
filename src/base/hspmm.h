@@ -24,14 +24,23 @@ class Hspmm : public Operator<Hspmm> {
 
  protected:
   Tensor::Shape mat1_shape_;
+
   Tensor::Strides mat1_strides_;
+
   DataType mat1_type_;
+
   Tensor::Shape mat2_shape_;
+
   Tensor::Strides mat2_strides_;
+
   DataType mat2_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
