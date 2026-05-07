@@ -23,14 +23,23 @@ class LinalgCholeskyExL : public Operator<LinalgCholeskyExL> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape L_shape_;
+
   Tensor::Strides L_strides_;
+
   DataType L_type_;
+
   Tensor::Shape info_shape_;
+
   Tensor::Strides info_strides_;
+
   DataType info_type_;
+
   int device_index_{0};
 };
 
