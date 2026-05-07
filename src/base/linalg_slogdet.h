@@ -24,14 +24,23 @@ class LinalgSlogdet : public Operator<LinalgSlogdet> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape sign_shape_;
+
   Tensor::Strides sign_strides_;
+
   DataType sign_type_;
+
   Tensor::Shape logabsdet_shape_;
+
   Tensor::Strides logabsdet_strides_;
+
   DataType logabsdet_type_;
+
   int device_index_{0};
 };
 
