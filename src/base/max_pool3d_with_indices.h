@@ -27,14 +27,23 @@ class MaxPool3dWithIndices : public Operator<MaxPool3dWithIndices> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   Tensor::Shape indices_shape_;
+
   Tensor::Strides indices_strides_;
+
   DataType indices_type_;
+
   int device_index_{0};
 };
 
