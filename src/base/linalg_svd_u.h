@@ -27,17 +27,29 @@ class LinalgSvdU : public Operator<LinalgSvdU> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape U_shape_;
+
   Tensor::Strides U_strides_;
+
   DataType U_type_;
+
   Tensor::Shape S_shape_;
+
   Tensor::Strides S_strides_;
+
   DataType S_type_;
+
   Tensor::Shape Vh_shape_;
+
   Tensor::Strides Vh_strides_;
+
   DataType Vh_type_;
+
   int device_index_{0};
 };
 
