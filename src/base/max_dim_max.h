@@ -24,14 +24,23 @@ class MaxDimMax : public Operator<MaxDimMax> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape max_shape_;
+
   Tensor::Strides max_strides_;
+
   DataType max_type_;
+
   Tensor::Shape max_values_shape_;
+
   Tensor::Strides max_values_strides_;
+
   DataType max_values_type_;
+
   int device_index_{0};
 };
 
