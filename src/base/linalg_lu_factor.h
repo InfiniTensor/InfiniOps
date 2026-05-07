@@ -23,14 +23,23 @@ class LinalgLuFactor : public Operator<LinalgLuFactor> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape LU_shape_;
+
   Tensor::Strides LU_strides_;
+
   DataType LU_type_;
+
   Tensor::Shape pivots_shape_;
+
   Tensor::Strides pivots_strides_;
+
   DataType pivots_type_;
+
   int device_index_{0};
 };
 
