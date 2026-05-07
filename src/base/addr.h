@@ -29,17 +29,29 @@ class Addr : public Operator<Addr> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape vec1_shape_;
+
   Tensor::Strides vec1_strides_;
+
   DataType vec1_type_;
+
   Tensor::Shape vec2_shape_;
+
   Tensor::Strides vec2_strides_;
+
   DataType vec2_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
