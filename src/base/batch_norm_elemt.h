@@ -29,17 +29,29 @@ class BatchNormElemt : public Operator<BatchNormElemt> {
 
  protected:
   Tensor::Shape input_shape_;
+
   Tensor::Strides input_strides_;
+
   DataType input_type_;
+
   Tensor::Shape mean_shape_;
+
   Tensor::Strides mean_strides_;
+
   DataType mean_type_;
+
   Tensor::Shape invstd_shape_;
+
   Tensor::Strides invstd_strides_;
+
   DataType invstd_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
