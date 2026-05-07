@@ -29,17 +29,29 @@ class Addmv : public Operator<Addmv> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape mat_shape_;
+
   Tensor::Strides mat_strides_;
+
   DataType mat_type_;
+
   Tensor::Shape vec_shape_;
+
   Tensor::Strides vec_strides_;
+
   DataType vec_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
