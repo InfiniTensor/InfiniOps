@@ -30,17 +30,29 @@ class NativeBatchNorm : public Operator<NativeBatchNorm> {
 
  protected:
   Tensor::Shape input_shape_;
+
   Tensor::Strides input_strides_;
+
   DataType input_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   Tensor::Shape save_mean_shape_;
+
   Tensor::Strides save_mean_strides_;
+
   DataType save_mean_type_;
+
   Tensor::Shape save_invstd_shape_;
+
   Tensor::Strides save_invstd_strides_;
+
   DataType save_invstd_type_;
+
   int device_index_{0};
 };
 
