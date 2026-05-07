@@ -31,20 +31,35 @@ class LuUnpack : public Operator<LuUnpack> {
 
  protected:
   Tensor::Shape LU_data_shape_;
+
   Tensor::Strides LU_data_strides_;
+
   DataType LU_data_type_;
+
   Tensor::Shape LU_pivots_shape_;
+
   Tensor::Strides LU_pivots_strides_;
+
   DataType LU_pivots_type_;
+
   Tensor::Shape P_shape_;
+
   Tensor::Strides P_strides_;
+
   DataType P_type_;
+
   Tensor::Shape L_shape_;
+
   Tensor::Strides L_strides_;
+
   DataType L_type_;
+
   Tensor::Shape U_shape_;
+
   Tensor::Strides U_strides_;
+
   DataType U_type_;
+
   int device_index_{0};
 };
 
