@@ -27,17 +27,29 @@ class SvdU : public Operator<SvdU> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape U_shape_;
+
   Tensor::Strides U_strides_;
+
   DataType U_type_;
+
   Tensor::Shape S_shape_;
+
   Tensor::Strides S_strides_;
+
   DataType S_type_;
+
   Tensor::Shape V_shape_;
+
   Tensor::Strides V_strides_;
+
   DataType V_type_;
+
   int device_index_{0};
 };
 
