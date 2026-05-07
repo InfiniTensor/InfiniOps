@@ -24,14 +24,23 @@ class Polar : public Operator<Polar> {
 
  protected:
   Tensor::Shape abs_shape_;
+
   Tensor::Strides abs_strides_;
+
   DataType abs_type_;
+
   Tensor::Shape angle_shape_;
+
   Tensor::Strides angle_strides_;
+
   DataType angle_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
