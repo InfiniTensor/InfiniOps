@@ -54,7 +54,7 @@ platforms:
           timeout: 3600
         stages:
           - name: test
-            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices iluvatar -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
     image:
@@ -79,7 +79,7 @@ platforms:
           timeout: 3600
         stages:
           - name: test
-            run: pytest tests/ -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices metax -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
     image:
@@ -102,7 +102,7 @@ platforms:
           timeout: 3600
         stages:
           - name: test
-            run: pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
     image:
@@ -124,7 +124,7 @@ platforms:
           timeout: 3600
         stages:
           - name: test
-            run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/test_gemm.py --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
     image:
