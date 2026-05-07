@@ -29,17 +29,29 @@ class Addbmm : public Operator<Addbmm> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape batch1_shape_;
+
   Tensor::Strides batch1_strides_;
+
   DataType batch1_type_;
+
   Tensor::Shape batch2_shape_;
+
   Tensor::Strides batch2_strides_;
+
   DataType batch2_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
