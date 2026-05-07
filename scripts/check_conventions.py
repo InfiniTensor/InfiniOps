@@ -12,6 +12,7 @@ import argparse
 import ast
 import bisect
 import dataclasses
+import functools
 import io
 import json
 import os
@@ -548,9 +549,7 @@ def check_text_file(path: pathlib.Path, data: bytes) -> list[Finding]:
                 1,
             )
 
-    mode = path.stat().st_mode
-
-    if mode & stat.S_IXUSR and not has_shebang(data) and path.suffix != ".sh":
+    if file_has_executable_bit(path) and not has_shebang(data) and path.suffix != ".sh":
         add_finding(
             findings,
             "warning",
@@ -564,6 +563,26 @@ def check_text_file(path: pathlib.Path, data: bytes) -> list[Finding]:
 
 def has_shebang(data: bytes) -> bool:
     return data.startswith(b"#!")
+
+
+def file_has_executable_bit(path: pathlib.Path) -> bool:
+    indexed_mode = git_index_mode(path)
+
+    if indexed_mode:
+        return indexed_mode.endswith("755")
+
+    return bool(path.stat().st_mode & stat.S_IXUSR)
+
+
+@functools.cache
+def git_index_mode(path: pathlib.Path) -> str:
+    output = run_git(["ls-files", "-s", "--", rel_path(path)], check=False)
+    fields = output.split()
+
+    if not fields:
+        return ""
+
+    return fields[0]
 
 
 def check_secrets(path: pathlib.Path, text: str) -> list[Finding]:
@@ -1796,11 +1815,13 @@ def check_python_control_flow_spacing(
             continue
 
         previous_line = lines[node.lineno - 2].strip() if node.lineno > 1 else ""
+        current_line = lines[node.lineno - 1].strip()
 
         if (
             previous_line
             and not previous_line.startswith(("#", "@"))
             and not previous_line.endswith(":")
+            and not is_python_continuation_header(current_line)
         ):
             add_finding(
                 findings,
@@ -1822,7 +1843,7 @@ def check_python_control_flow_spacing(
         if not next_line:
             continue
 
-        if next_line.startswith(("elif ", "else:", "except ", "except:", "finally:")):
+        if is_python_continuation_header(next_line):
             continue
 
         add_finding(
@@ -1836,6 +1857,10 @@ def check_python_control_flow_spacing(
         )
 
     return findings
+
+
+def is_python_continuation_header(line: str) -> bool:
+    return line.startswith(("elif ", "else:", "except ", "except:", "finally:"))
 
 
 def check_python_debug_print(path: pathlib.Path, tree: ast.AST) -> list[Finding]:
