@@ -35,23 +35,41 @@ class LinalgLstsq : public Operator<LinalgLstsq> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape b_shape_;
+
   Tensor::Strides b_strides_;
+
   DataType b_type_;
+
   Tensor::Shape solution_shape_;
+
   Tensor::Strides solution_strides_;
+
   DataType solution_type_;
+
   Tensor::Shape residuals_shape_;
+
   Tensor::Strides residuals_strides_;
+
   DataType residuals_type_;
+
   Tensor::Shape rank_shape_;
+
   Tensor::Strides rank_strides_;
+
   DataType rank_type_;
+
   Tensor::Shape singular_values_shape_;
+
   Tensor::Strides singular_values_strides_;
+
   DataType singular_values_type_;
+
   int device_index_{0};
 };
 
