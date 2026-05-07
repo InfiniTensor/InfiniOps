@@ -24,14 +24,23 @@ class LinalgLdlFactor : public Operator<LinalgLdlFactor> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape LD_shape_;
+
   Tensor::Strides LD_strides_;
+
   DataType LD_type_;
+
   Tensor::Shape pivots_shape_;
+
   Tensor::Strides pivots_strides_;
+
   DataType pivots_type_;
+
   int device_index_{0};
 };
 
