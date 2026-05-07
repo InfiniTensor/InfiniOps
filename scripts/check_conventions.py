@@ -21,7 +21,7 @@ import stat
 import subprocess
 import sys
 import tokenize
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -447,9 +447,7 @@ def list_tracked_files() -> list[pathlib.Path]:
 
 
 def list_diff_files(base: str, head: str) -> list[pathlib.Path]:
-    output = run_git(
-        ["diff", "--name-only", "--diff-filter=ACMR", f"{base}...{head}"]
-    )
+    output = run_git(["diff", "--name-only", "--diff-filter=ACMR", f"{base}...{head}"])
     files = []
 
     for name in output.splitlines():
@@ -889,7 +887,9 @@ def check_strict_comment(
             1,
         )
 
-    for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*(?:::|\(|_)[A-Za-z0-9_:()]*", clean):
+    for token in re.findall(
+        r"\b[A-Za-z_][A-Za-z0-9_]*(?:::|\(|_)[A-Za-z0-9_:()]*", clean
+    ):
         if f"`{token}`" not in clean and not token.startswith(("http", "TODO")):
             add_finding(
                 findings,
@@ -1074,7 +1074,9 @@ def collect_segments_in_body(
                 start_line, _ = line_col(starts, current_start)
                 end_line, _ = line_col(starts, end_index)
                 segments.append(
-                    Segment(kind, start_line, end_line, text[current_start : end_index + 1])
+                    Segment(
+                        kind, start_line, end_line, text[current_start : end_index + 1]
+                    )
                 )
                 current_start = None
         elif c == ";" and body_depth == 0 and paren_depth == 0 and bracket_depth == 0:
@@ -1138,10 +1140,12 @@ def blank_lines_between(lines: Sequence[str], end_line: int, start_line: int) ->
     if start_line <= end_line:
         return 0
 
-    return sum(1 for line in lines[end_line:start_line - 1] if line.strip() == "")
+    return sum(1 for line in lines[end_line : start_line - 1] if line.strip() == "")
 
 
-def check_class_member_spacing(path: pathlib.Path, text: str, masked: str) -> list[Finding]:
+def check_class_member_spacing(
+    path: pathlib.Path, text: str, masked: str
+) -> list[Finding]:
     findings: list[Finding] = []
     lines = text.splitlines()
 
@@ -1176,7 +1180,9 @@ def check_class_member_spacing(path: pathlib.Path, text: str, masked: str) -> li
     return findings
 
 
-def check_namespace_spacing(path: pathlib.Path, text: str, masked: str) -> list[Finding]:
+def check_namespace_spacing(
+    path: pathlib.Path, text: str, masked: str
+) -> list[Finding]:
     findings: list[Finding] = []
     starts = line_starts(masked)
     lines = text.splitlines()
@@ -1251,7 +1257,9 @@ def check_namespace_declaration_spacing(
             close_index,
             class_body=False,
         )
-        decls = [segment for segment in segments if segment.kind in {"class", "function"}]
+        decls = [
+            segment for segment in segments if segment.kind in {"class", "function"}
+        ]
 
         for previous, current in zip(decls, decls[1:]):
             blanks = blank_lines_between(lines, previous.end_line, current.start_line)
@@ -1270,7 +1278,9 @@ def check_namespace_declaration_spacing(
     return findings
 
 
-def check_initializer_order(path: pathlib.Path, text: str, masked: str) -> list[Finding]:
+def check_initializer_order(
+    path: pathlib.Path, text: str, masked: str
+) -> list[Finding]:
     findings: list[Finding] = []
 
     for span in find_class_spans(masked):
@@ -1339,7 +1349,9 @@ def extract_member_order(segments: Sequence[Segment]) -> list[str]:
 
 
 def extract_initializer_names(class_name: str, segment_text: str) -> list[str]:
-    match = re.search(rf"\b{re.escape(class_name)}\s*\([^)]*\)\s*:(.*)\{{", segment_text, re.S)
+    match = re.search(
+        rf"\b{re.escape(class_name)}\s*\([^)]*\)\s*:(.*)\{{", segment_text, re.S
+    )
 
     if not match:
         return []
@@ -1355,8 +1367,18 @@ def check_cpp_tokens(path: pathlib.Path, text: str, masked: str) -> list[Finding
 
     token_checks = (
         ("error", "CXX001", r"\b(?:throw|try|catch)\b", "Do not use C++ exceptions."),
-        ("error", "CXX002", r"\bnew\s+", "Use RAII, smart pointers, or existing allocators instead of raw `new`."),
-        ("error", "CXX002", r"\bdelete\b", "Use RAII, smart pointers, or existing allocators instead of raw `delete`."),
+        (
+            "error",
+            "CXX002",
+            r"\bnew\s+",
+            "Use RAII, smart pointers, or existing allocators instead of raw `new`.",
+        ),
+        (
+            "error",
+            "CXX002",
+            r"\bdelete\b",
+            "Use RAII, smart pointers, or existing allocators instead of raw `delete`.",
+        ),
     )
 
     for severity, code, pattern, message in token_checks:
@@ -1439,7 +1461,9 @@ def check_kernel_files(path: pathlib.Path, text: str, masked: str) -> list[Findi
     )
     kernel_like_extension = path.suffix in {".cu", ".cuh", ".maca", ".mlu", ".mu"}
 
-    if (has_kernel_marker or kernel_like_extension) and not is_allowed_kernel_name(path):
+    if (has_kernel_marker or kernel_like_extension) and not is_allowed_kernel_name(
+        path
+    ):
         add_finding(
             findings,
             "error",
@@ -1492,7 +1516,10 @@ def check_base_operator_structure(path: pathlib.Path, text: str) -> list[Finding
 
     op_name = snake_to_pascal(path.stem)
 
-    if not re.search(rf"\bclass\s+{re.escape(op_name)}\s*:\s*public\s+Operator\s*<\s*{re.escape(op_name)}\s*>", text):
+    if not re.search(
+        rf"\bclass\s+{re.escape(op_name)}\s*:\s*public\s+Operator\s*<\s*{re.escape(op_name)}\s*>",
+        text,
+    ):
         add_finding(
             findings,
             "error",
@@ -1531,7 +1558,9 @@ def check_base_operator_parameter_order(path: pathlib.Path, text: str) -> list[F
     return findings
 
 
-def extract_operator_signatures(text: str, op_name: str) -> list[tuple[int, str, list[str]]]:
+def extract_operator_signatures(
+    text: str, op_name: str
+) -> list[tuple[int, str, list[str]]]:
     signatures: list[tuple[int, str, list[str]]] = []
     starts = line_starts(text)
     pattern = re.compile(rf"\b({re.escape(op_name)}|operator\s*\(\))\s*\(")
@@ -1679,7 +1708,7 @@ def check_python_function_spacing(
         if first_body_is_docstring:
             continue
 
-        between = lines[header_end:first_body_line - 1]
+        between = lines[header_end : first_body_line - 1]
         first_content = next((line.strip() for line in between if line.strip()), "")
 
         if first_content.startswith("#"):
@@ -1764,7 +1793,15 @@ def check_python_control_flow_spacing(
     tree: ast.AST,
 ) -> list[Finding]:
     findings: list[Finding] = []
-    node_types = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.Try)
+    node_types = (
+        ast.If,
+        ast.For,
+        ast.AsyncFor,
+        ast.While,
+        ast.With,
+        ast.AsyncWith,
+        ast.Try,
+    )
 
     for node in ast.walk(tree):
         if not isinstance(node, node_types):
@@ -1772,7 +1809,11 @@ def check_python_control_flow_spacing(
 
         previous_line = lines[node.lineno - 2].strip() if node.lineno > 1 else ""
 
-        if previous_line and not previous_line.startswith(("#", "@")) and not previous_line.endswith(":"):
+        if (
+            previous_line
+            and not previous_line.startswith(("#", "@"))
+            and not previous_line.endswith(":")
+        ):
             add_finding(
                 findings,
                 "warning",
@@ -1922,7 +1963,11 @@ def parametrize_names(decorator: ast.expr) -> list[str]:
     if not isinstance(value, str):
         return []
 
-    return [part.strip() for part in value.replace("(", "").replace(")", "").split(",") if part.strip()]
+    return [
+        part.strip()
+        for part in value.replace("(", "").replace(")", "").split(",")
+        if part.strip()
+    ]
 
 
 def dotted_name(node: ast.AST) -> str:
@@ -1938,7 +1983,9 @@ def dotted_name(node: ast.AST) -> str:
     return ""
 
 
-def check_auto_payload_marker(path: pathlib.Path, node: ast.FunctionDef) -> list[Finding]:
+def check_auto_payload_marker(
+    path: pathlib.Path, node: ast.FunctionDef
+) -> list[Finding]:
     findings: list[Finding] = []
     has_marker = any(
         dotted_name(decorator) == "pytest.mark.auto_act_and_assert"
