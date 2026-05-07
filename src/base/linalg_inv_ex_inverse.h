@@ -24,14 +24,23 @@ class LinalgInvExInverse : public Operator<LinalgInvExInverse> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape inverse_shape_;
+
   Tensor::Strides inverse_strides_;
+
   DataType inverse_type_;
+
   Tensor::Shape info_shape_;
+
   Tensor::Strides info_strides_;
+
   DataType info_type_;
+
   int device_index_{0};
 };
 
