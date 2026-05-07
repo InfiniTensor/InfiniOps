@@ -24,14 +24,23 @@ class MseLoss : public Operator<MseLoss> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape target_shape_;
+
   Tensor::Strides target_strides_;
+
   DataType target_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
