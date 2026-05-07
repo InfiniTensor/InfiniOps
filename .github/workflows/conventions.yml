@@ -1,0 +1,46 @@
+name: Conventions
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run convention checker
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            python3 scripts/check_conventions.py \
+              --base "$PR_BASE_SHA" \
+              --head "$PR_HEAD_SHA" \
+              --check-git \
+              --pr-title "$PR_TITLE" \
+              --summary-by-code
+            exit 0
+          fi
+
+          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_REF="origin/$DEFAULT_BRANCH"
+          else
+            BASE_REF="$BEFORE_SHA"
+          fi
+
+          python3 scripts/check_conventions.py \
+            --base "$BASE_REF" \
+            --head "$HEAD_SHA" \
+            --summary-by-code
