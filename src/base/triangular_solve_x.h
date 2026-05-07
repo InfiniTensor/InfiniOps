@@ -27,17 +27,29 @@ class TriangularSolveX : public Operator<TriangularSolveX> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape X_shape_;
+
   Tensor::Strides X_strides_;
+
   DataType X_type_;
+
   Tensor::Shape M_shape_;
+
   Tensor::Strides M_strides_;
+
   DataType M_type_;
+
   int device_index_{0};
 };
 
