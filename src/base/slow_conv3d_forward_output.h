@@ -30,14 +30,23 @@ class SlowConv3dForwardOutput : public Operator<SlowConv3dForwardOutput> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape weight_shape_;
+
   Tensor::Strides weight_strides_;
+
   DataType weight_type_;
+
   Tensor::Shape output_shape_;
+
   Tensor::Strides output_strides_;
+
   DataType output_type_;
+
   int device_index_{0};
 };
 
