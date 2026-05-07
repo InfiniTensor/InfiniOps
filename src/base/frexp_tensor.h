@@ -24,14 +24,23 @@ class FrexpTensor : public Operator<FrexpTensor> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape mantissa_shape_;
+
   Tensor::Strides mantissa_strides_;
+
   DataType mantissa_type_;
+
   Tensor::Shape exponent_shape_;
+
   Tensor::Strides exponent_strides_;
+
   DataType exponent_type_;
+
   int device_index_{0};
 };
 
