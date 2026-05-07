@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  ci:
+    uses: InfiniTensor/ci/.github/workflows/infiniops-ci.yml@codex/prune-unused-ci-artifacts
+    with:
+      config_path: .github/ci_config.yml
+      ci_ref: codex/prune-unused-ci-artifacts
+    secrets: inherit
