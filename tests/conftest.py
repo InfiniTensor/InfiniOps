@@ -90,17 +90,6 @@ def skip_unsupported_dtypes(request):
         pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
 
 
-# PyTorch device type → InfiniOps platform names. A single torch device type
-# can map to several platforms (e.g., `cuda` is shared by `nvidia`, `metax`,
-# and `iluvatar`); at most one is actually available at runtime.
-_TORCH_DEVICE_TO_PLATFORMS = {
-    "cuda": ("nvidia", "metax", "iluvatar"),
-    "mlu": ("cambricon",),
-    "musa": ("moore",),
-    "npu": ("ascend",),
-}
-
-
 @pytest.fixture(autouse=True)
 def skip_op_without_platform_impl(request):
     """Skip `device=<torch_type>` parametrizations when the op has no
@@ -119,9 +108,11 @@ def skip_op_without_platform_impl(request):
     if "implementation_index" in params:
         return
 
-    platforms = _TORCH_DEVICE_TO_PLATFORMS.get(params.get("device"))
+    device_selectors = _active_device_selectors_for_torch_device(
+        request.config, params.get("device")
+    )
 
-    if not platforms:
+    if not device_selectors:
         return
 
     op_cls = _op_class_from_module(request.node.module)
@@ -129,10 +120,10 @@ def skip_op_without_platform_impl(request):
     if op_cls is None or not hasattr(op_cls, "active_implementation_indices"):
         return
 
-    if not any(op_cls.active_implementation_indices(p) for p in platforms):
+    if not any(op_cls.active_implementation_indices(d) for d in device_selectors):
         pytest.skip(
             f"{op_cls.__name__} has no implementation on any "
-            f"`{params.get('device')}`-mapped platform"
+            f"`{params.get('device')}`-mapped platform/device"
         )
 
 
@@ -149,6 +140,26 @@ _PLATFORM_TO_TORCH_DEVICE = {
     "cambricon": "mlu",
     "ascend": "npu",
 }
+
+
+def _active_device_selectors_for_torch_device(config, torch_device):
+    """Return platform or torch device names selected for a torch device type."""
+    if not torch_device:
+        return ()
+
+    cli_devices = config.getoption("--devices") or ()
+    requested_platforms = tuple(
+        name
+        for name in cli_devices
+        if _PLATFORM_TO_TORCH_DEVICE.get(name) == torch_device
+    )
+
+    if requested_platforms:
+        return requested_platforms
+
+    # The pybind layer maps torch device names (e.g. "cuda") to the backend
+    # compiled into the current wheel, avoiding probes of inactive CUDA siblings.
+    return (torch_device,)
 
 
 def _resolve_device(name):
