@@ -24,14 +24,23 @@ class LinalgEig : public Operator<LinalgEig> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape eigenvalues_shape_;
+
   Tensor::Strides eigenvalues_strides_;
+
   DataType eigenvalues_type_;
+
   Tensor::Shape eigenvectors_shape_;
+
   Tensor::Strides eigenvectors_strides_;
+
   DataType eigenvectors_type_;
+
   int device_index_{0};
 };
 
