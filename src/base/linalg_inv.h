@@ -20,11 +20,17 @@ class LinalgInv : public Operator<LinalgInv> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
