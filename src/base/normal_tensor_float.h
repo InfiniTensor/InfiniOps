@@ -1,0 +1,39 @@
+#ifndef INFINI_OPS_BASE_NORMAL_TENSOR_FLOAT_H_
+#define INFINI_OPS_BASE_NORMAL_TENSOR_FLOAT_H_
+
+#include "operator.h"
+
+namespace infini::ops {
+
+class NormalTensorFloat : public Operator<NormalTensorFloat> {
+ public:
+  NormalTensorFloat(const Tensor mean, Tensor out)
+      : mean_shape_{mean.shape()},
+        mean_strides_{mean.strides()},
+        mean_type_{mean.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        device_index_{out.device().index()} {}
+
+  virtual void operator()(const Tensor mean, Tensor out) const = 0;
+
+ protected:
+  Tensor::Shape mean_shape_;
+
+  Tensor::Strides mean_strides_;
+
+  DataType mean_type_;
+
+  Tensor::Shape out_shape_;
+
+  Tensor::Strides out_strides_;
+
+  DataType out_type_;
+
+  int device_index_{0};
+};
+
+}  // namespace infini::ops
+
+#endif
