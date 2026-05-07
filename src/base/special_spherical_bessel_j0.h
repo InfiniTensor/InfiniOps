@@ -20,11 +20,17 @@ class SpecialSphericalBesselJ0 : public Operator<SpecialSphericalBesselJ0> {
 
  protected:
   Tensor::Shape x_shape_;
+
   Tensor::Strides x_strides_;
+
   DataType x_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
