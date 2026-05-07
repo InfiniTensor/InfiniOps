@@ -27,17 +27,29 @@ class LinalgSolveEx : public Operator<LinalgSolveEx> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape B_shape_;
+
   Tensor::Strides B_strides_;
+
   DataType B_type_;
+
   Tensor::Shape result_shape_;
+
   Tensor::Strides result_strides_;
+
   DataType result_type_;
+
   Tensor::Shape info_shape_;
+
   Tensor::Strides info_strides_;
+
   DataType info_type_;
+
   int device_index_{0};
 };
 
