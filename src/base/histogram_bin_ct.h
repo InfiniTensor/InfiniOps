@@ -24,14 +24,23 @@ class HistogramBinCt : public Operator<HistogramBinCt> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape hist_shape_;
+
   Tensor::Strides hist_strides_;
+
   DataType hist_type_;
+
   Tensor::Shape bin_edges_shape_;
+
   Tensor::Strides bin_edges_strides_;
+
   DataType bin_edges_type_;
+
   int device_index_{0};
 };
 
