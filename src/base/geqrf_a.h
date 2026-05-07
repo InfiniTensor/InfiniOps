@@ -23,14 +23,23 @@ class GeqrfA : public Operator<GeqrfA> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape a_shape_;
+
   Tensor::Strides a_strides_;
+
   DataType a_type_;
+
   Tensor::Shape tau_shape_;
+
   Tensor::Strides tau_strides_;
+
   DataType tau_type_;
+
   int device_index_{0};
 };
 
