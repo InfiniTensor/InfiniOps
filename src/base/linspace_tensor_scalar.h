@@ -22,11 +22,17 @@ class LinspaceTensorScalar : public Operator<LinspaceTensorScalar> {
 
  protected:
   Tensor::Shape start_shape_;
+
   Tensor::Strides start_strides_;
+
   DataType start_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
