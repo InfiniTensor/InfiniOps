@@ -27,17 +27,29 @@ class LinalgLu : public Operator<LinalgLu> {
 
  protected:
   Tensor::Shape A_shape_;
+
   Tensor::Strides A_strides_;
+
   DataType A_type_;
+
   Tensor::Shape P_shape_;
+
   Tensor::Strides P_strides_;
+
   DataType P_type_;
+
   Tensor::Shape L_shape_;
+
   Tensor::Strides L_strides_;
+
   DataType L_type_;
+
   Tensor::Shape U_shape_;
+
   Tensor::Strides U_strides_;
+
   DataType U_type_;
+
   int device_index_{0};
 };
 
