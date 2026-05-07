@@ -23,14 +23,23 @@ class Aminmax : public Operator<Aminmax> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape min_shape_;
+
   Tensor::Strides min_strides_;
+
   DataType min_type_;
+
   Tensor::Shape max_shape_;
+
   Tensor::Strides max_strides_;
+
   DataType max_type_;
+
   int device_index_{0};
 };
 
