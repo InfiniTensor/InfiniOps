@@ -24,14 +24,23 @@ class LogSigmoidForwardOutput : public Operator<LogSigmoidForwardOutput> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape output_shape_;
+
   Tensor::Strides output_strides_;
+
   DataType output_type_;
+
   Tensor::Shape buffer_shape_;
+
   Tensor::Strides buffer_strides_;
+
   DataType buffer_type_;
+
   int device_index_{0};
 };
 
