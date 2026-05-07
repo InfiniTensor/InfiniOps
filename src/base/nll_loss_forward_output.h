@@ -30,17 +30,29 @@ class NllLossForwardOutput : public Operator<NllLossForwardOutput> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape target_shape_;
+
   Tensor::Strides target_strides_;
+
   DataType target_type_;
+
   Tensor::Shape output_shape_;
+
   Tensor::Strides output_strides_;
+
   DataType output_type_;
+
   Tensor::Shape total_weight_shape_;
+
   Tensor::Strides total_weight_strides_;
+
   DataType total_weight_type_;
+
   int device_index_{0};
 };
 
