@@ -28,17 +28,29 @@ class LinalgLdlSolve : public Operator<LinalgLdlSolve> {
 
  protected:
   Tensor::Shape LD_shape_;
+
   Tensor::Strides LD_strides_;
+
   DataType LD_type_;
+
   Tensor::Shape pivots_shape_;
+
   Tensor::Strides pivots_strides_;
+
   DataType pivots_type_;
+
   Tensor::Shape B_shape_;
+
   Tensor::Strides B_strides_;
+
   DataType B_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
