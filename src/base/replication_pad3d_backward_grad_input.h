@@ -28,14 +28,23 @@ class ReplicationPad3dBackwardGradInput
 
  protected:
   Tensor::Shape grad_output_shape_;
+
   Tensor::Strides grad_output_strides_;
+
   DataType grad_output_type_;
+
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape grad_input_shape_;
+
   Tensor::Strides grad_input_strides_;
+
   DataType grad_input_type_;
+
   int device_index_{0};
 };
 
