@@ -28,17 +28,29 @@ class LuSolve : public Operator<LuSolve> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape LU_data_shape_;
+
   Tensor::Strides LU_data_strides_;
+
   DataType LU_data_type_;
+
   Tensor::Shape LU_pivots_shape_;
+
   Tensor::Strides LU_pivots_strides_;
+
   DataType LU_pivots_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
