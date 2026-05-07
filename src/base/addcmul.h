@@ -29,17 +29,29 @@ class Addcmul : public Operator<Addcmul> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape tensor1_shape_;
+
   Tensor::Strides tensor1_strides_;
+
   DataType tensor1_type_;
+
   Tensor::Shape tensor2_shape_;
+
   Tensor::Strides tensor2_strides_;
+
   DataType tensor2_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
