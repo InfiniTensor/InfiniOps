@@ -24,14 +24,23 @@ class LinalgEighEigvals : public Operator<LinalgEighEigvals> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape eigvals_shape_;
+
   Tensor::Strides eigvals_strides_;
+
   DataType eigvals_type_;
+
   Tensor::Shape eigvecs_shape_;
+
   Tensor::Strides eigvecs_strides_;
+
   DataType eigvecs_type_;
+
   int device_index_{0};
 };
 
