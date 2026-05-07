@@ -122,48 +122,6 @@ CPP_CONTROL_KEYWORDS = {
     "catch",
 }
 
-KNOWN_KERNEL_NAMES = {
-    "add",
-    "add_rms_norm",
-    "blas",
-    "cast",
-    "cat",
-    "causal_softmax",
-    "cnblas",
-    "cublas",
-    "cublaslt",
-    "flash_attention",
-    "flash_attention_v2",
-    "gemm",
-    "kernel",
-    "linear",
-    "matmul",
-    "mcblas",
-    "mul",
-    "mublas",
-    "reshape_and_cache",
-    "rms_norm",
-    "rotary_embedding",
-    "swiglu",
-}
-
-OPERATOR_DIR_NAMES = {
-    "add",
-    "add_rms_norm",
-    "cast",
-    "cat",
-    "causal_softmax",
-    "flash_attention",
-    "gemm",
-    "linear",
-    "matmul",
-    "mul",
-    "reshape_and_cache",
-    "rms_norm",
-    "rotary_embedding",
-    "swiglu",
-}
-
 SECRET_PATTERNS = (
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
@@ -296,7 +254,7 @@ CHECKS = (
         "CXX005",
         "error",
         "CONTRIBUTING.md §C++; PR checklist line 151",
-        "Kernel files must use project-approved names.",
+        "Kernel files must use names derived from the operator or known kernel/library patterns.",
     ),
     CheckInfo(
         "CXX006",
@@ -428,6 +386,25 @@ def is_text_candidate(path: pathlib.Path) -> bool:
         return True
 
     return path.suffix in TEXT_EXTENSIONS
+
+
+def discover_operator_names() -> set[str]:
+    base_dir = ROOT / "src" / "base"
+
+    if not base_dir.is_dir():
+        return set()
+
+    return {
+        path.stem
+        for path in base_dir.glob("*.h")
+        if path.is_file() and path.stem != "operator"
+    }
+
+
+def operator_names_for_path(path: pathlib.Path) -> set[str]:
+    parts = set(path.resolve().relative_to(ROOT).parts)
+
+    return parts & discover_operator_names()
 
 
 def is_binary(data: bytes) -> bool:
@@ -1469,7 +1446,7 @@ def check_kernel_files(path: pathlib.Path, text: str, masked: str) -> list[Findi
             "error",
             "CXX005",
             path,
-            "Kernel file name should be `kernel`, `kernel_vN`, a well-known algorithm, or a library name.",
+            "Kernel file name should be `kernel`, `kernel_vN`, the operator name, `<operator>_vN`, or a BLAS wrapper name.",
         )
 
     if path.suffix == ".h" and re.search(r"__global__", masked):
@@ -1494,9 +1471,9 @@ def check_kernel_files(path: pathlib.Path, text: str, masked: str) -> list[Findi
 
 
 def is_operator_kernel_path(path: pathlib.Path) -> bool:
-    parts = set(path.parts)
+    parts = path.resolve().relative_to(ROOT).parts
 
-    return "op_kernel" in parts or bool(parts & OPERATOR_DIR_NAMES)
+    return "op_kernel" in parts or bool(operator_names_for_path(path))
 
 
 def is_allowed_kernel_name(path: pathlib.Path) -> bool:
@@ -1505,7 +1482,18 @@ def is_allowed_kernel_name(path: pathlib.Path) -> bool:
     if re.fullmatch(r"kernel(?:_v[0-9]+)?", name):
         return True
 
-    return name in KNOWN_KERNEL_NAMES
+    if re.fullmatch(r"[a-z]*blas(?:lt)?", name):
+        return True
+
+    operator_names = operator_names_for_path(path)
+
+    if name in operator_names:
+        return True
+
+    return any(
+        re.fullmatch(rf"{re.escape(operator_name)}_v[0-9]+", name)
+        for operator_name in operator_names
+    )
 
 
 def check_base_operator_structure(path: pathlib.Path, text: str) -> list[Finding]:
