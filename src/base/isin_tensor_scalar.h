@@ -21,11 +21,17 @@ class IsinTensorScalar : public Operator<IsinTensorScalar> {
 
  protected:
   Tensor::Shape elements_shape_;
+
   Tensor::Strides elements_strides_;
+
   DataType elements_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
