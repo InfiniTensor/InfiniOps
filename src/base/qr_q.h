@@ -23,14 +23,23 @@ class QrQ : public Operator<QrQ> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape Q_shape_;
+
   Tensor::Strides Q_strides_;
+
   DataType Q_type_;
+
   Tensor::Shape R_shape_;
+
   Tensor::Strides R_strides_;
+
   DataType R_type_;
+
   int device_index_{0};
 };
 
