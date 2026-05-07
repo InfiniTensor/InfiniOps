@@ -24,14 +24,23 @@ class Complex : public Operator<Complex> {
 
  protected:
   Tensor::Shape real_shape_;
+
   Tensor::Strides real_strides_;
+
   DataType real_type_;
+
   Tensor::Shape imag_shape_;
+
   Tensor::Strides imag_strides_;
+
   DataType imag_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
