@@ -27,17 +27,29 @@ class Ormqr : public Operator<Ormqr> {
 
  protected:
   Tensor::Shape self_shape_;
+
   Tensor::Strides self_strides_;
+
   DataType self_type_;
+
   Tensor::Shape input2_shape_;
+
   Tensor::Strides input2_strides_;
+
   DataType input2_type_;
+
   Tensor::Shape input3_shape_;
+
   Tensor::Strides input3_strides_;
+
   DataType input3_type_;
+
   Tensor::Shape out_shape_;
+
   Tensor::Strides out_strides_;
+
   DataType out_type_;
+
   int device_index_{0};
 };
 
