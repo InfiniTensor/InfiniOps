@@ -6,8 +6,8 @@ PyTorch GitHub release matching `_PYTORCH_VERSION`), parses its schema,
 and emits:
 
   - `generated/base/<op>.h` — the InfiniOps base class
-    `class <Op> : public Operator<<Op>>`, with a constructor and pure-virtual
-    `operator()` mirroring the ATen schema.
+    `class <Op> : public Operator<<Op>>`, with constructors and pure-virtual
+    `operator()` overloads mirroring the selected ATen schemas.
   - `generated/torch/<op>/<op>.h` and `<op>.cc` — the PyTorch backend
     `Operator<<Op>, kDev, 8>` that calls `at::<op>_out(out, ...)`.
   - `generated/torch_ops_metadata.json` — the kind (`unary` / `binary` /
@@ -152,17 +152,20 @@ class Param:
     def is_tensor(self) -> bool:
         # Real tensors only.  `Tensor?` is optional and falls through to
         # the hidden-param path (substituted with `at::nullopt`).
+
         return self.aten_type == "Tensor" or self.aten_type.startswith("Tensor(")
 
     @property
     def is_out(self) -> bool:
         # Mutable tensors carry `!` in their alias annotation, e.g. `Tensor(a!)`.
+
         return self.is_tensor and "!" in self.aten_type
 
     @property
     def is_hardcoded_nullopt(self) -> bool:
         """If `True`, the param is omitted from the user-facing API and
         passed as `at::nullopt` to ATen."""
+
         return self.aten_type in _HARDCODE_NULLOPT_TYPES
 
     @property
@@ -174,43 +177,60 @@ class Param:
         dim list means "all dims" for reductions like `amax`).  `Scalar`
         defaults are kept visible so ops like `sub(..., alpha=1)` expose
         `alpha` meaningfully."""
+
         if self.is_hardcoded_nullopt:
             return True
+
         if self.aten_type == "bool" and self.default in {"False", "True"}:
             return True
+
         if self.aten_type in {"int", "float", "SymInt"} and self.default is not None:
             return True
+
         if (
             self.aten_type.startswith("int[") or self.aten_type.startswith("SymInt[")
         ) and self.default is not None:
             return True
+
         if self.aten_type == "str" and self.default is not None:
             return True
+
         return False
 
     def hidden_value(self) -> str:
         """C++ literal substituted for a hidden param in the ATen call."""
+
         if self.is_hardcoded_nullopt:
             return _NULLOPT_BY_TYPE[self.aten_type]
+
         if self.default == "True":
             return "true"
+
         if self.default == "False":
             return "false"
+
         if self.aten_type.startswith(("int[", "SymInt[")) and self.default is not None:
             # `int[N]=[a, b, c]` → `{a, b, c}`; `int[N]=0` (scalar default
             # for list type) → `{0, 0, ...}` replicated to size N.
             if self.default.startswith("["):
                 return "{" + self.default[1:-1] + "}"
+
             size_match = re.search(r"\[(\d+)\]", self.aten_type)
             n = int(size_match.group(1)) if size_match else 1
+
             return "{" + ", ".join([self.default] * n) + "}"
+
         if self.aten_type == "str" and self.default is not None:
             # YAML uses single-quoted strings (e.g. `'none'`); C++ char
             # literals also use single quotes, so swap to doubles.
+
             return '"' + self.default.strip("'\"") + '"'
+
         if self.aten_type in {"int", "float", "SymInt"} and self.default is not None:
             # Translate known ATen enum defaults to their C++ identifiers.
+
             return _ENUM_DEFAULTS.get(self.default, self.default)
+
         raise AssertionError(
             f"param {self.name!r} of type {self.aten_type!r} with default "
             f"{self.default!r} is not hidden"
@@ -228,17 +248,22 @@ class Param:
                 raise NotImplementedError(
                     f"`Tensor[]` param {self.name!r} not supported yet"
                 )
+
             return "Tensor"
+
         if self.is_hidden:
             # Not exposed — the ATen call substitutes a hardcoded value
             # so the `cpp_type` is irrelevant.
+
             return "void"
+
         bare = self.aten_type.rstrip("?")
         # Required `int[N]` / `SymInt[N]` (no default) — pybind11 accepts
         # a Python list of ints into `std::vector<int64_t>`, which ATen
         # promotes to `IntArrayRef` implicitly.
         if bare.startswith(("int[", "SymInt[")) or bare in {"int[]", "SymInt[]"}:
             return "std::vector<int64_t>"
+
         try:
             return _SCALAR_TYPE_MAP[bare]
         except KeyError as exc:
@@ -268,8 +293,10 @@ class Op:
         and is stripped."""
         suffix = self.overload
         suffix = suffix.removesuffix("_out").removeprefix("out_")
+
         if suffix and suffix != "out":
             return f"{self.aten_name}_{suffix.lower()}"
+
         return self.aten_name
 
     @property
@@ -281,6 +308,7 @@ class Op:
         """Mutable tensor outputs.  Most ops have one (`Tensor(a!) out`);
         multi-output ops like `frexp` or `sort` have several
         (`Tensor(a!) values`, `Tensor(b!) indices`)."""
+
         return [p for p in self.params if p.is_out]
 
     @property
@@ -288,12 +316,14 @@ class Op:
         """Single-output convenience.  Asserts there's exactly one."""
         outs = self.out_params
         assert len(outs) == 1, f"op {self.aten_name!r} has {len(outs)} out tensors"
+
         return outs[0]
 
     @property
     def visible_params(self) -> list[Param]:
         """Params the wrapper exposes to the user; hidden ones (hardcoded
         optional nullopt, default-`False`/`True` bools) are filtered."""
+
         return [p for p in self.params if not p.is_hidden]
 
     @property
@@ -305,14 +335,18 @@ class Op:
         Tensor exponent, *, Tensor(a!) out)` cannot be wired up without
         a separate dispatch path.  Generators like `arange` / `linspace`
         also fall under this rule (no input tensors at all)."""
+
         if not self.out_params:
             return False
+
         # `params` includes out tensors at the end; check the first
         # non-out param.  If there are no non-out params (`empty.out`,
         # `arange.out`), this op also fails the dispatch precondition.
         non_out = [p for p in self.params if not p.is_out]
+
         if not non_out:
             return False
+
         return non_out[0].is_tensor
 
 
@@ -331,8 +365,10 @@ _ARG_RE = re.compile(
 
 def _parse_func(func_str: str) -> Op:
     m = _FUNC_RE.match(func_str)
+
     if not m:
         raise ValueError(f"could not parse func: {func_str!r}")
+
     return Op(
         aten_name=m.group("name"),
         overload=m.group("overload") or "",
@@ -343,11 +379,14 @@ def _parse_func(func_str: str) -> Op:
 def _parse_args(args_str: str) -> list[Param]:
     params: list[Param] = []
     keyword_only = False
+
     for token in _split_args(args_str):
         if token == "*":
             keyword_only = True
             continue
+
         params.append(_parse_one_arg(token, keyword_only))
+
     return params
 
 
@@ -356,6 +395,7 @@ def _split_args(args_str: str) -> list[str]:
     parts: list[str] = []
     depth = 0
     current: list[str] = []
+
     for ch in args_str:
         if ch in "([":
             depth += 1
@@ -365,21 +405,28 @@ def _split_args(args_str: str) -> list[str]:
             current.append(ch)
         elif ch == "," and depth == 0:
             piece = "".join(current).strip()
+
             if piece:
                 parts.append(piece)
+
             current = []
         else:
             current.append(ch)
+
     tail = "".join(current).strip()
+
     if tail:
         parts.append(tail)
+
     return parts
 
 
 def _parse_one_arg(token: str, keyword_only: bool) -> Param:
     m = _ARG_RE.match(token)
+
     if not m:
         raise ValueError(f"could not parse arg: {token!r}")
+
     return Param(
         name=m.group("name"),
         aten_type=m.group("type"),
@@ -399,14 +446,17 @@ def _base_path(op_name: str) -> pathlib.Path:
 def _load_aten_yaml() -> str:
     """Return the contents of `native_functions.yaml`, fetching and caching
     the version pinned by `_PYTORCH_VERSION` on the first call."""
+
     if not _ATEN_YAML_CACHE.exists():
         _ATEN_YAML_CACHE.parent.mkdir(parents=True, exist_ok=True)
         print(
             f"fetching `native_functions.yaml` ({_PYTORCH_VERSION})...",
             file=sys.stderr,
         )
+
         with urllib.request.urlopen(_ATEN_YAML_URL) as response:
             _ATEN_YAML_CACHE.write_bytes(response.read())
+
     return _ATEN_YAML_CACHE.read_text()
 
 
@@ -424,26 +474,97 @@ def _find_out_entries(entries: list[dict], op_name: str) -> list[dict]:
     mut_tensor = re.compile(r"Tensor\([a-z]!\)")
     bare: list[dict] = []
     others: list[dict] = []
+
     for entry in entries:
         func = entry.get("func", "")
+
         if func.startswith(bare_prefix):
             bare.append(entry)
         elif op_overload.match(func) and (
             func.split("(", 1)[0].endswith("_out") or mut_tensor.search(func)
         ):
             others.append(entry)
+
     return bare + others
 
 
 def _format_signature(op: Op, *, include_defaults: bool = False) -> str:
     parts = []
+
     for param in op.visible_params:
         prefix = "" if param.is_out else "const "
         text = f"{prefix}{param.cpp_type} {param.name}"
+
         if include_defaults and param.default is not None:
             text += f" = {_translate_default(param)}"
+
         parts.append(text)
+
     return ", ".join(parts)
+
+
+def _visible_signature_key(op: Op) -> tuple[str, ...]:
+    """C++ overload identity for the user-facing API.
+
+    Parameter names and top-level `const` do not distinguish C++ overloads, so
+    only the exposed C++ type sequence participates in duplicate detection.
+    """
+
+    return tuple(param.cpp_type for param in op.visible_params)
+
+
+def _canonical_overload_score(index: int, op: Op) -> tuple[bool, int, int, str, int]:
+    """Sort key for duplicate visible signatures.
+
+    Prefer the canonical unsuffixed InfiniOps name, then the schema that hides
+    fewer ATen-only defaults, then the shorter deterministic name.
+    """
+
+    return (
+        op.infini_name != op.aten_name,
+        sum(param.is_hidden for param in op.params),
+        len(op.infini_name),
+        op.infini_name,
+        index,
+    )
+
+
+def _dedupe_visible_overloads(ops: list[Op]) -> tuple[list[Op], list[tuple[Op, Op]]]:
+    """Drop overloads that collapse to the same visible C++ signature.
+
+    Returns the selected overloads in the original schema order plus a list of
+    `(skipped, kept)` duplicate pairs for diagnostics.
+    """
+    winners: dict[tuple[str, ...], tuple[int, Op]] = {}
+    duplicates: list[tuple[Op, tuple[str, ...]]] = []
+
+    for index, op in enumerate(ops):
+        key = _visible_signature_key(op)
+        current = winners.get(key)
+
+        if current is None:
+            winners[key] = (index, op)
+            continue
+
+        current_index, current_op = current
+
+        if _canonical_overload_score(index, op) < _canonical_overload_score(
+            current_index, current_op
+        ):
+            duplicates.append((current_op, key))
+            winners[key] = (index, op)
+        else:
+            duplicates.append((op, key))
+
+    selected_indices = {index for index, _ in winners.values()}
+    selected = [op for index, op in enumerate(ops) if index in selected_indices]
+    duplicate_pairs = [
+        (skipped, winners[key][1])
+        for skipped, key in duplicates
+        if winners[key][1] is not skipped
+    ]
+
+    return selected, duplicate_pairs
 
 
 def _normalize_cxx_signature(text: str) -> str:
@@ -451,75 +572,129 @@ def _normalize_cxx_signature(text: str) -> str:
 
 
 def _has_compatible_base(op: Op) -> bool:
-    path = _base_path(op.infini_name)
+    return _has_compatible_base_group(op.infini_name, [op])
+
+
+def _has_compatible_base_group(name: str, ops: list[Op]) -> bool:
+    path = _base_path(name)
+
     if not path.exists():
         return False
 
     text = _normalize_cxx_signature(path.read_text())
-    ctor_signature = _normalize_cxx_signature(
-        f"{op.pascal_name}({_format_signature(op)})"
-    )
-    op_call_signature = _normalize_cxx_signature(f"operator()({_format_signature(op)})")
+    pascal = _snake_to_pascal(name)
 
-    return (
-        f"class {op.pascal_name} : public Operator<{op.pascal_name}>" in text
-        and ctor_signature in text
-        and op_call_signature in text
-    )
+    if f"class {pascal} : public Operator<{pascal}>" not in text:
+        return False
+
+    for op in ops:
+        ctor_signature = _normalize_cxx_signature(f"{pascal}({_format_signature(op)})")
+        op_call_signature = _normalize_cxx_signature(
+            f"operator()({_format_signature(op)})"
+        )
+
+        if ctor_signature not in text or op_call_signature not in text:
+            return False
+
+    return True
 
 
 def _translate_default(param: Param) -> str:
     """Translate a YAML default literal to a C++ literal."""
     raw = param.default
+
     if raw == "True":
         return "true"
+
     if raw == "False":
         return "false"
+
     if raw == "None":
         return "{}"
+
     return raw  # numeric literals (`0`, `1`, `1.0`) pass through
 
 
-def _generate_base_header(op: Op) -> str:
-    init_pieces = []
+def _generate_base_header(name: str, ops: list[Op]) -> str:
+    pascal = _snake_to_pascal(name)
+
     member_decls = []
-    for param in op.tensor_params:
-        init_pieces.append(f"        {param.name}_shape_{{{param.name}.shape()}}")
-        init_pieces.append(f"        {param.name}_strides_{{{param.name}.strides()}}")
-        init_pieces.append(f"        {param.name}_type_{{{param.name}.dtype()}}")
-        member_decls.append(f"  Tensor::Shape {param.name}_shape_;")
-        member_decls.append(f"  Tensor::Strides {param.name}_strides_;")
-        member_decls.append(f"  DataType {param.name}_type_;")
-    # All out tensors share a device; use the first one.
-    init_pieces.append(
-        f"        device_index_{{{op.out_params[0].name}.device().index()}}"
-    )
+    tensor_member_order = []
+    seen_tensor_members = set()
+
+    for op in ops:
+        for param in op.tensor_params:
+            if param.name in seen_tensor_members:
+                continue
+
+            seen_tensor_members.add(param.name)
+            tensor_member_order.append(param.name)
+            member_decls.append(f"  Tensor::Shape {param.name}_shape_;")
+            member_decls.append(f"  Tensor::Strides {param.name}_strides_;")
+            member_decls.append(f"  DataType {param.name}_type_;")
+
     member_decls.append("  int device_index_{0};")
 
-    init_list = ",\n".join(init_pieces).lstrip()
+    constructors = []
+    calls = []
+
+    for op in ops:
+        init_pieces = []
+        tensor_params = {param.name: param for param in op.tensor_params}
+
+        for param_name in tensor_member_order:
+            param = tensor_params.get(param_name)
+
+            if param is None:
+                continue
+
+            init_pieces.append(f"        {param.name}_shape_{{{param.name}.shape()}}")
+            init_pieces.append(
+                f"        {param.name}_strides_{{{param.name}.strides()}}"
+            )
+            init_pieces.append(f"        {param.name}_type_{{{param.name}.dtype()}}")
+
+        # All out tensors share a device; use the first one.  Keep this last
+        # so initializer order follows the member declaration order.
+        init_pieces.append(
+            f"        device_index_{{{op.out_params[0].name}.device().index()}}"
+        )
+
+        init_list = ",\n".join(init_pieces).lstrip()
+        constructors.append(
+            f"  {pascal}({_format_signature(op)})\n"
+            f"      : {init_list} {{}}"
+        )
+        calls.append(f"  virtual void operator()({_format_signature(op)}) const = 0;")
 
     return _BASE_TEMPLATE.format(
-        name_uc=op.infini_name.upper(),
-        pascal=op.pascal_name,
-        ctor_signature=_format_signature(op),
-        init_list=init_list,
-        op_call_signature=_format_signature(op),
-        member_decls="\n".join(member_decls),
+        name_uc=name.upper(),
+        pascal=pascal,
+        constructors="\n\n".join(constructors),
+        op_calls="\n\n".join(calls),
+        member_decls="\n\n".join(member_decls),
     )
 
 
-def _generate_torch_header(op: Op) -> str:
+def _generate_torch_header(name: str, ops: list[Op]) -> str:
+    pascal = _snake_to_pascal(name)
+    op_calls = "\n\n".join(
+        f"  void operator()({_format_signature(op)}) const override;" for op in ops
+    )
+
     return _TORCH_HEADER_TEMPLATE.format(
-        name_uc=op.infini_name.upper(),
-        name=op.infini_name,
-        pascal=op.pascal_name,
-        op_call_signature=_format_signature(op),
+        name_uc=name.upper(),
+        name=name,
+        pascal=pascal,
+        op_calls=op_calls,
         slot=_PYTORCH_SLOT,
     )
 
 
-def _generate_torch_source(op: Op) -> str:
+def _generate_torch_method_source(name: str, op: Op) -> str:
+    pascal = _snake_to_pascal(name)
     conversion_lines = []
+
     for param in op.tensor_params:
         data_expr = (
             f"{param.name}.data()"
@@ -539,27 +714,36 @@ def _generate_torch_source(op: Op) -> str:
     def _render_arg(p):
         if p.is_hidden:
             return p.hidden_value()
+
         if p.is_tensor:
             return f"at_{p.name}"
+
         return p.name
 
     aten_args = ", ".join(_render_arg(p) for p in arg_order)
 
-    instantiations = "\n".join(
-        f"template class Operator<{op.pascal_name}, "
-        f"Device::Type::{dev}, {_PYTORCH_SLOT}>;"
-        for dev in _DEVICE_TYPES
-    )
-
-    return _TORCH_SOURCE_TEMPLATE.format(
-        name=op.infini_name,
-        pascal=op.pascal_name,
+    return _TORCH_METHOD_TEMPLATE.format(
+        pascal=pascal,
         op_call_signature=_format_signature(op),
         tensor_conversions="\n".join(conversion_lines),
         # `at::<aten_name>_out` resolves the right kernel via C++ overload
         # resolution from the argument types we pass.
         aten_call=f"{op.aten_name}_out({aten_args})",
         slot=_PYTORCH_SLOT,
+    )
+
+
+def _generate_torch_source(name: str, ops: list[Op]) -> str:
+    pascal = _snake_to_pascal(name)
+    methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
+    instantiations = "\n".join(
+        f"template class Operator<{pascal}, Device::Type::{dev}, {_PYTORCH_SLOT}>;"
+        for dev in _DEVICE_TYPES
+    )
+
+    return _TORCH_SOURCE_TEMPLATE.format(
+        name=name,
+        methods=methods,
         instantiations=instantiations,
     )
 
@@ -575,10 +759,9 @@ namespace infini::ops {{
 
 class {pascal} : public Operator<{pascal}> {{
  public:
-  {pascal}({ctor_signature})
-      : {init_list} {{}}
+{constructors}
 
-  virtual void operator()({op_call_signature}) const = 0;
+{op_calls}
 
  protected:
 {member_decls}
@@ -604,12 +787,22 @@ class Operator<{pascal}, kDev, {slot}> : public {pascal} {{
  public:
   using {pascal}::{pascal};
 
-  void operator()({op_call_signature}) const override;
+{op_calls}
 }};
 
 }}  // namespace infini::ops
 
 #endif
+"""
+
+
+_TORCH_METHOD_TEMPLATE = """\
+template <Device::Type kDev>
+void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
+{tensor_conversions}
+
+  at::{aten_call};
+}}
 """
 
 
@@ -621,12 +814,7 @@ _TORCH_SOURCE_TEMPLATE = """\
 
 namespace infini::ops {{
 
-template <Device::Type kDev>
-void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
-{tensor_conversions}
-
-  at::{aten_call};
-}}
+{methods}
 
 {instantiations}
 
@@ -634,20 +822,20 @@ void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
 """
 
 
-def _emit(op: Op, *, emit_base: bool) -> None:
-    base_path = _GENERATED_BASE_DIR / f"{op.infini_name}.h"
-    torch_dir = _GENERATED_TORCH_DIR / op.infini_name
-    torch_header_path = torch_dir / f"{op.infini_name}.h"
-    torch_source_path = torch_dir / f"{op.infini_name}.cc"
+def _emit(name: str, ops: list[Op], *, emit_base: bool) -> None:
+    base_path = _GENERATED_BASE_DIR / f"{name}.h"
+    torch_dir = _GENERATED_TORCH_DIR / name
+    torch_header_path = torch_dir / f"{name}.h"
+    torch_source_path = torch_dir / f"{name}.cc"
 
     if emit_base:
         _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
-        base_path.write_text(_generate_base_header(op))
+        base_path.write_text(_generate_base_header(name, ops))
 
     torch_dir.mkdir(parents=True, exist_ok=True)
 
-    torch_header_path.write_text(_generate_torch_header(op))
-    torch_source_path.write_text(_generate_torch_source(op))
+    torch_header_path.write_text(_generate_torch_header(name, ops))
+    torch_source_path.write_text(_generate_torch_source(name, ops))
 
 
 def main() -> int:
@@ -668,6 +856,7 @@ def main() -> int:
     # written exclusively by this script.
     if _GENERATED_BASE_DIR.exists():
         shutil.rmtree(_GENERATED_BASE_DIR)
+
     if _GENERATED_TORCH_DIR.exists():
         shutil.rmtree(_GENERATED_TORCH_DIR)
 
@@ -676,45 +865,75 @@ def main() -> int:
 
     for name in op_names:
         candidates = _find_out_entries(aten_entries, name)
+
         if not candidates:
             skipped.append((name, f"no `.out` variant for `{name}` in YAML"))
             continue
 
         usable: list[Op] = []
         last_reason = ""
+
         for entry in candidates:
             try:
                 op = _parse_func(entry["func"])
+
                 for param in op.params:
                     _ = param.cpp_type  # eagerly raise on unsupported types
             except (NotImplementedError, ValueError) as exc:
                 last_reason = str(exc)
                 continue
+
             if not op.is_testable:
                 last_reason = "no testable tensor input/output pair"
                 continue
+
             if _base_path(op.infini_name).exists() and not _has_compatible_base(op):
                 last_reason = (
                     f"`src/base/{op.infini_name}.h` exists but does not match "
                     "the generated torch wrapper signature"
                 )
                 continue
+
             usable.append(op)
 
         if not usable:
             skipped.append((name, last_reason or "no usable overload"))
             continue
 
-        # Emit one InfiniOps wrapper per usable overload — `pow.Tensor_Tensor_out`
-        # and `pow.Tensor_Scalar_out` become distinct classes
-        # (`PowTensorTensor`, `PowTensorScalar`) so users get the right
-        # behaviour by naming the variant they want.
+        usable, duplicate_overloads = _dedupe_visible_overloads(usable)
+
+        for skipped_op, kept_op in duplicate_overloads:
+            skipped.append(
+                (
+                    skipped_op.infini_name,
+                    "duplicate visible C++ signature for "
+                    f"`{name}`; using `{kept_op.infini_name}`",
+                )
+            )
+
+        if _base_path(name).exists() and not _has_compatible_base_group(name, usable):
+            skipped.append(
+                (
+                    name,
+                    f"`src/base/{name}.h` exists but does not match "
+                    "the generated torch wrapper signatures",
+                )
+            )
+            continue
+
+        # Emit one InfiniOps wrapper per ATen op.  Distinct visible overloads
+        # become overloaded constructors / `operator()` methods on the same
+        # class (`Pow` exposes both tensor and scalar exponents).  Overloads
+        # that collapse to the same C++ signature after hidden defaults are
+        # skipped above.
+        _emit(name, usable, emit_base=not _has_compatible_base_group(name, usable))
+
         for op in usable:
-            _emit(op, emit_base=not _has_compatible_base(op))
             metadata.append(
                 {
-                    "name": op.infini_name,
+                    "name": name,
                     "aten_name": op.aten_name,
+                    "overload_name": op.infini_name,
                     "params": [
                         {
                             "name": p.name,
@@ -730,9 +949,15 @@ def main() -> int:
     _GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     _METADATA_PATH.write_text(json.dumps({"ops": metadata}, indent=2) + "\n")
 
-    print(f"generated {len(metadata)} ops: {[m['name'] for m in metadata]}")
+    generated_names = sorted({m["name"] for m in metadata})
+    print(
+        f"generated {len(metadata)} overloads across {len(generated_names)} ops: "
+        f"{generated_names}"
+    )
+
     for name, reason in skipped:
         print(f"  skipped {name!r}: {reason}", file=sys.stderr)
+
     return 0
 
 

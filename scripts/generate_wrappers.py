@@ -33,11 +33,15 @@ def _find_base_header(op_name):
     """Return the base header for `op_name`, looking under both `src/base/`
     and `generated/base/` (preferring the hand-written one)."""
     src_path = _BASE_DIR / f"{op_name}.h"
+
     if src_path.exists():
         return src_path
+
     generated_path = _GENERATED_BASE_DIR / f"{op_name}.h"
+
     if generated_path.exists():
         return generated_path
+
     raise FileNotFoundError(f"no base header for op {op_name!r}")
 
 
@@ -193,6 +197,34 @@ def _generate_pybind11(operator):
 
         return ", ".join(args)
 
+    def _overload_order_key(node):
+        """Order pybind overloads from most-specific to most-permissive.
+
+        Tensor parameters are exposed as `py::object`, which can accept any
+        Python value and then fail inside `TensorFromPybind11Handle`.  When a
+        class has both Tensor and scalar overloads, pybind must see the scalar
+        overload first so it can reject/accept by C++ type before the
+        permissive Tensor fallback is attempted.
+        """
+        object_like = 0
+        total = 0
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            total += 1
+
+            if (
+                _is_optional_tensor(arg)
+                or _is_vector_tensor(arg)
+                or "Tensor" in arg.type.spelling
+            ):
+                object_like += 1
+
+        return (object_like, -total)
+
+
     op_name = operator.name
 
     def _generate_init(constructor):
@@ -243,16 +275,18 @@ def _generate_pybind11(operator):
 
         # Use `op` rather than `self` for the operator instance — `self` is
         # a common ATen parameter name and would collide.
+
         return f"""      .def("__call__", [](const Self& op, {call_params}) {{
         return static_cast<const Operator<Self>&>(op)({call_args});
       }})"""
 
-    inits = "\n".join(
-        _generate_init(constructor) for constructor in operator.constructors
-    )
-    calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
+    constructors = sorted(operator.constructors, key=_overload_order_key)
+    operator_calls = sorted(operator.calls, key=_overload_order_key)
+
+    inits = "\n".join(_generate_init(constructor) for constructor in constructors)
+    calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
     callers = "\n".join(
-        _generate_call(operator.name, call, method=False) for call in operator.calls
+        _generate_call(operator.name, call, method=False) for call in operator_calls
     )
 
     pascal_case_op_name = _snake_to_pascal(op_name)
@@ -297,9 +331,11 @@ def _generate_legacy_c(operator, paths):
     def _generate_source(operator):
         def _to_include_path(path):
             text = str(path)
+
             for prefix in ("src/", "generated/"):
                 if text.startswith(prefix):
                     return text[len(prefix) :]
+
             return text
 
         impl_includes = "\n".join(
@@ -446,6 +482,7 @@ __C __export {_generate_destroy_func_decl(operator)};
         def _handle_tensor(spelling):
             if call:
                 return spelling.replace("Tensor", "void *")
+
             return spelling.replace("Tensor", "infiniopTensorDescriptor_t")
 
         def _handle_std_optional(spelling):
@@ -487,10 +524,12 @@ def _get_all_ops(devices, with_torch=False):
     ops = {}
 
     base_dirs = [_BASE_DIR]
+
     if _GENERATED_BASE_DIR.exists():
         base_dirs.append(_GENERATED_BASE_DIR)
 
     impl_roots = [_SRC_DIR]
+
     if with_torch and (_GENERATION_DIR / "torch").exists():
         impl_roots.append(_GENERATION_DIR)
 
@@ -548,6 +587,7 @@ if __name__ == "__main__":
     for d in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
         if d.exists():
             shutil.rmtree(d)
+
         d.mkdir(parents=True)
 
     ops_json = pathlib.Path("ops.json")
