@@ -824,6 +824,34 @@ namespace infini::ops {{
 """
 
 
+def _ensure_clang_format() -> str:
+    """Return the path to a `clang-format` binary, installing the
+    `clang-format` PyPI wheel into the running interpreter if the system
+    does not provide one (CI containers running with
+    `--no-build-isolation` skip `[build-system].requires`)."""
+
+    found = shutil.which("clang-format")
+
+    if found:
+        return found
+
+    print(
+        "`clang-format` not found on PATH; installing `clang-format` from PyPI...",
+        file=sys.stderr,
+    )
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "clang-format"],
+        check=True,
+    )
+
+    found = shutil.which("clang-format")
+
+    if not found:
+        raise RuntimeError("`clang-format` still not available after `pip install`.")
+
+    return found
+
+
 def _clang_format(text: str, path: pathlib.Path) -> str:
     """Pipe `text` through `clang-format` so generated headers / sources
     satisfy the same style check (`clang-format` v21) that CI runs.
@@ -831,7 +859,7 @@ def _clang_format(text: str, path: pathlib.Path) -> str:
     first in a `.cc`)."""
 
     return subprocess.run(
-        ["clang-format", f"--assume-filename={path}"],
+        [_CLANG_FORMAT, f"--assume-filename={path}"],
         input=text,
         capture_output=True,
         text=True,
@@ -867,6 +895,9 @@ def main() -> int:
         help="Override the op allowlist. If omitted, reads `scripts/torch_ops.yaml`.",
     )
     args = parser.parse_args()
+
+    global _CLANG_FORMAT
+    _CLANG_FORMAT = _ensure_clang_format()
 
     op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
     aten_entries = yaml.safe_load(_load_aten_yaml())
