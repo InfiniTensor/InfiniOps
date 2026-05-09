@@ -416,8 +416,17 @@ def _parse_one_arg(token: str, keyword_only: bool) -> Param:
     if not m:
         raise ValueError(f"could not parse arg: {token!r}")
 
+    name = m.group("name")
+    # ATen names the first tensor parameter `self` (matching the
+    # method-style \`tensor.abs()\` convention).  InfiniOps uses
+    # \`input\` for the primary tensor input across all hand-written
+    # bases (\`Add\`, \`Gemm\`, …) per \`CONTRIBUTING.md\` §C++.
+    # Rename at parse time so the generated headers match.
+    if name == "self":
+        name = "input"
+
     return Param(
-        name=m.group("name"),
+        name=name,
         aten_type=m.group("type"),
         default=m.group("default"),
         keyword_only=keyword_only,
