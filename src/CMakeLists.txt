@@ -252,11 +252,32 @@ if(WITH_ASCEND)
 endif()
 
 if(WITH_TORCH)
-    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS "torch/*.cc" "torch/*.cpp")
+    # Auto-generate ATen-backed operator wrappers from `scripts/torch_ops.yaml`.
+    # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
+    # which we then glob below alongside any hand-written torch sources.
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        RESULT_VARIABLE _torch_ops_result
+    )
+    if(NOT _torch_ops_result EQUAL 0)
+        message(FATAL_ERROR "Generating torch op wrappers - failed")
+    endif()
+    message(STATUS "Generating torch op wrappers - done")
+
+    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS
+        "torch/*.cc" "torch/*.cpp"
+        "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
+        "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
+    )
 
     target_compile_definitions(infiniops PUBLIC WITH_TORCH=1)
     target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
-    target_include_directories(infiniops PUBLIC ${TORCH_INCLUDE_DIRS})
+    target_include_directories(infiniops PUBLIC
+        ${TORCH_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/generated
+    )
 
     if(WITH_METAX OR WITH_MOORE)
         # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
@@ -297,6 +318,7 @@ if(WITH_TORCH)
                 COMMAND ${SYSTEM_CXX}
                     -std=c++17 -fPIC -O2
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
+                    "-I${PROJECT_SOURCE_DIR}/generated"
                     ${_torch_include_flags}
                     ${_torch_extra_flags}
                     -c "${_src}" -o "${_obj}"
@@ -391,4 +413,11 @@ if(GENERATE_PYTHON_BINDINGS)
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)
+
+    if(WITH_TORCH)
+        # Ship the per-op metadata alongside the bindings so the unified
+        # torch op test can discover what to exercise at runtime.
+        install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
+            DESTINATION .)
+    endif()
 endif()
