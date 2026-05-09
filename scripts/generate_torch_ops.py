@@ -733,8 +733,15 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     pascal = _snake_to_pascal(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
+    # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
+    # so a build that only enables a subset of devices does not pay the
+    # ATen template-instantiation cost (and memory pressure) for the
+    # devices it does not link against.  Each macro is set by
+    # `target_compile_definitions` in `src/CMakeLists.txt`.
     instantiations = "\n".join(
-        f"template class Operator<{pascal}, Device::Type::{dev}, {_PYTORCH_SLOT}>;"
+        f"#ifdef WITH_{dev.removeprefix('k').upper()}\n"
+        f"template class Operator<{pascal}, Device::Type::{dev}, {_PYTORCH_SLOT}>;\n"
+        f"#endif"
         for dev in _DEVICE_TYPES
     )
 
