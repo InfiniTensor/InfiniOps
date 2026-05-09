@@ -184,6 +184,16 @@ _RANDOM_OPS = frozenset(
     }
 )
 
+# Ops whose vendor kernel hangs indefinitely on at least one platform
+# (`mode` on `torch_musa` for MUSA tensors).  Skip until the vendor
+# fixes the underlying kernel — letting the CI block on a hanging
+# kernel costs ~30 min per platform run.
+_VENDOR_HANG_OPS = frozenset(
+    {
+        "mode",
+    }
+)
+
 # Ops where the ATen `_out` schema and the Python reference (`torch.<op>`,
 # `torch.nn.functional.<op>`) diverge in positional-argument ordering, so
 # the harness's purely-positional reference call lands an InfiniOps
@@ -382,6 +392,8 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
             f"`{aten_name}`'s ATen `_out` and Python reference signatures "
             "have different positional ordering"
         )
+    if aten_name in _VENDOR_HANG_OPS:
+        pytest.skip(f"`{aten_name}` hangs on at least one vendor kernel")
     if device == "cuda" and aten_name in _DEVICE_ASSERTING_OPS:
         pytest.skip(
             f"`{aten_name}` triggers a CUDA device-side assert on random inputs"
