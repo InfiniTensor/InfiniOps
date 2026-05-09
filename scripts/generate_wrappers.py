@@ -246,16 +246,51 @@ def _generate_pybind11(operator):
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
-        return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return static_cast<const Operator<Self>&>(self)({call_args});
+        # The first lambda parameter is conventionally named `self`, but
+        # ATen schemas often have a parameter literally called `self`
+        # (e.g. `pow.Tensor_Scalar_out(Scalar self, Tensor exponent)`),
+        # so rename to `op` to avoid the collision in the generated code.
+        return f"""      .def("__call__", [](const Self& op, {call_params}) {{
+        return static_cast<const Operator<Self>&>(op)({call_args});
       }})"""
 
-    inits = "\n".join(
-        _generate_init(constructor) for constructor in operator.constructors
-    )
-    calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
+    def _overload_order_key(node):
+        """Sort key that places more-specific overloads first.
+
+        Tensor parameters are exposed to pybind as `py::object`, which
+        accepts any Python value and only fails inside
+        `TensorFromPybind11Handle`.  When a class has both Tensor and
+        scalar overloads, pybind's overload-resolver tries them in
+        registration order and stops at the first that does not raise,
+        so the scalar overload must be registered first; otherwise the
+        permissive Tensor signature swallows scalar calls and aborts at
+        runtime.
+        """
+        object_like = 0
+        total = 0
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            total += 1
+
+            if (
+                _is_optional_tensor(arg)
+                or _is_vector_tensor(arg)
+                or "Tensor" in arg.type.spelling
+            ):
+                object_like += 1
+
+        return (object_like, -total)
+
+    constructors = sorted(operator.constructors, key=_overload_order_key)
+    operator_calls = sorted(operator.calls, key=_overload_order_key)
+
+    inits = "\n".join(_generate_init(constructor) for constructor in constructors)
+    calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
     callers = "\n".join(
-        _generate_call(operator.name, call, method=False) for call in operator.calls
+        _generate_call(operator.name, call, method=False) for call in operator_calls
     )
 
     pascal_case_op_name = _snake_to_pascal(op_name)
