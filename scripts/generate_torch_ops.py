@@ -170,32 +170,24 @@ class Param:
 
     @property
     def is_hidden(self) -> bool:
-        """True if the param is omitted from the user-facing API.  Covers
-        hardcoded-nullopt plus `bool`s and `int`/`float`s with a numeric
-        default (typical for `keepdim`-style flags and `reduction`-style
-        enums).  Also hides `int[]`/`int[1]` with a `[]` default (empty
-        dim list means "all dims" for reductions like `amax`).  `Scalar`
-        defaults are kept visible so ops like `sub(..., alpha=1)` expose
-        `alpha` meaningfully."""
+        """True if the param is omitted from the user-facing API.
 
-        if self.is_hardcoded_nullopt:
-            return True
+        Default-valued non-optional params (\\`bool\\`, \\`int\\`, \\`float\\`,
+        \\`str\\`, \\`int[N]\\`, …) used to be hidden as a convenience, but
+        reviewers consistently flagged the resulting omissions —
+        \\`bool upper/transpose/unitriangular\\` on \\`triangular_solve\\`,
+        \\`int diagonal\\` on \\`triu\\`, \\`str ord\\` on \\`linalg_matrix_norm\\`,
+        \\`int n\\` on the special chebyshev family, etc. — as missing
+        semantic controls.  They are now exposed and forwarded to ATen.
 
-        if self.aten_type == "bool" and self.default in {"False", "True"}:
-            return True
+        Optional ATen types (\\`Tensor?\\`, \\`Scalar?\\`, \\`int?\\`, …) remain
+        hidden for now — exposing them would require teaching the torch
+        source to thread \\`std::optional\\` through to ATen, which is a
+        separate refactor.  The same goes for ATen-internal types like
+        \\`Generator?\\`/\\`Layout?\\` that have no InfiniOps analogue.
+        """
 
-        if self.aten_type in {"int", "float", "SymInt"} and self.default is not None:
-            return True
-
-        if (
-            self.aten_type.startswith("int[") or self.aten_type.startswith("SymInt[")
-        ) and self.default is not None:
-            return True
-
-        if self.aten_type == "str" and self.default is not None:
-            return True
-
-        return False
+        return self.is_hardcoded_nullopt
 
     def hidden_value(self) -> str:
         """C++ literal substituted for a hidden param in the ATen call."""
