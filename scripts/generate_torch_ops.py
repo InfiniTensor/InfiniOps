@@ -284,19 +284,16 @@ class Op:
 
     @property
     def infini_name(self) -> str:
-        """InfiniOps op name.  Includes the overload to disambiguate
-        between schemas of the same ATen op
-        (e.g. `pow.Tensor_Tensor_out` → `pow_tensor_tensor`,
-        `pow.Tensor_Scalar_out` → `pow_tensor_scalar`,
-        `div.out_mode` → `div_mode`).  The `out` suffix/prefix used by
-        ATen to disambiguate the out-variant carries no semantic info
-        and is stripped."""
-        suffix = self.overload
-        suffix = suffix.removesuffix("_out").removeprefix("out_")
+        """InfiniOps op name — always the canonical ATen base name.
 
-        if suffix and suffix != "out":
-            return f"{self.aten_name}_{suffix.lower()}"
-
+        ATen disambiguates `_out` overloads with suffixes like `Tensor_Tensor_out`,
+        `out_x`, `forward_output`, `grad_input`, but reviewers consistently
+        flag those suffixes as bad public-API naming when they leak into
+        InfiniOps class names.  Different ATen overloads of the same base op
+        become overloaded `operator()` methods on a single class instead.  When
+        two overloads collapse to the same visible C++ signature after hidden
+        defaults, `_dedupe_visible_overloads` keeps only one.
+        """
         return self.aten_name
 
     @property

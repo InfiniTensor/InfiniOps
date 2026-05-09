@@ -314,10 +314,14 @@ def _testable_ops():
 
 
 def _op_meta_id(op_meta):
-    if isinstance(op_meta, dict):
-        return op_meta.get("name", "op")
+    if not isinstance(op_meta, dict):
+        return "empty"
 
-    return "empty"
+    # Multiple ATen overloads now share a single class name (`scatter` covers
+    # `scatter.src`, `scatter.value`, `scatter.reduce`, ...) — disambiguate
+    # parametrize ids by appending the visible parameter type signature so
+    # pytest does not collapse them into duplicate ids.
+    return op_meta["overload_name"]
 
 
 @pytest.mark.parametrize("op_meta", _testable_ops(), ids=_op_meta_id)
