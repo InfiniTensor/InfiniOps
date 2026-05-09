@@ -353,9 +353,18 @@ if(WITH_TORCH)
         # Build the heavy torch sources as their own object library so
         # the Ninja `torch_compile` job pool throttles only those
         # compilations and the rest of `infiniops` keeps full
-        # parallelism.
+        # parallelism.  Inherit infiniops's compile-time settings via
+        # generator expressions (linking would create a cyclic
+        # dependency since infiniops then absorbs the object files).
         add_library(infiniops_torch_objs OBJECT ${TORCH_SOURCES})
-        target_link_libraries(infiniops_torch_objs PUBLIC infiniops)
+        target_include_directories(infiniops_torch_objs PRIVATE
+            $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>
+            ${TORCH_INCLUDE_DIRS}
+            ${PROJECT_SOURCE_DIR}/generated)
+        target_compile_definitions(infiniops_torch_objs PRIVATE
+            $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
+        target_compile_options(infiniops_torch_objs PRIVATE
+            $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS>)
         if(CMAKE_GENERATOR MATCHES "Ninja")
             set_target_properties(infiniops_torch_objs
                 PROPERTIES JOB_POOL_COMPILE torch_compile)
