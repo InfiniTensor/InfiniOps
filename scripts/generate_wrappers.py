@@ -142,9 +142,26 @@ def _find_vector_tensor_params(op_name):
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
 
+def _find_vector_int64_params(op_name):
+    """Return a set of parameter names declared as `std::vector<int64_t>` in
+    the base header.
+
+    libclang on systems where the STL headers are not fully indexable
+    silently falls back to reporting the type as `int` for these params,
+    which then leaks into the generated bindings as `const int padding`
+    instead of `const std::vector<int64_t> padding` and breaks the call
+    to the base operator.  Regex-scan the source so the binding's
+    parameter type comes from the actual declaration.
+    """
+    source = _find_base_header(op_name).read_text()
+
+    return set(re.findall(r"std::vector<int64_t>\s+(\w+)", source))
+
+
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
+    vector_int64_params = _find_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
@@ -161,6 +178,9 @@ def _generate_pybind11(operator):
 
         return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
+    def _is_vector_int64(arg):
+        return arg.spelling in vector_int64_params
+
     def _generate_params(node):
         parts = []
 
@@ -172,6 +192,8 @@ def _generate_pybind11(operator):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
             elif _is_vector_tensor(arg):
                 parts.append(f"std::vector<py::object> {arg.spelling}")
+            elif _is_vector_int64(arg):
+                parts.append(f"const std::vector<int64_t> {arg.spelling}")
             else:
                 param = arg.type.spelling.replace("const Tensor", "py::object").replace(
                     "Tensor", "py::object"
