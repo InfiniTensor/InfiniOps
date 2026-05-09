@@ -847,9 +847,7 @@ def _emit(name: str, ops: list[Op], *, emit_base: bool) -> None:
 
     if emit_base:
         _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
-        base_path.write_text(
-            _clang_format(_generate_base_header(name, ops), base_path)
-        )
+        base_path.write_text(_clang_format(_generate_base_header(name, ops), base_path))
 
     torch_dir.mkdir(parents=True, exist_ok=True)
 
