@@ -22,10 +22,22 @@ from tests.utils import randn_strided
 # `scripts/generate_torch_ops.py`.
 _PYTORCH_SLOT = 8
 
-_METADATA_PATH = (
+_INSTALLED_METADATA_PATH = pathlib.Path(infini.ops.__file__).resolve().with_name(
+    "torch_ops_metadata.json"
+)
+_SOURCE_METADATA_PATH = (
     pathlib.Path(__file__).resolve().parent.parent
     / "generated"
     / "torch_ops_metadata.json"
+)
+
+_METADATA_PATH = next(
+    (
+        path
+        for path in (_INSTALLED_METADATA_PATH, _SOURCE_METADATA_PATH)
+        if path.exists()
+    ),
+    _SOURCE_METADATA_PATH,
 )
 _METADATA = (
     json.loads(_METADATA_PATH.read_text()) if _METADATA_PATH.exists() else {"ops": []}
@@ -301,7 +313,14 @@ def _testable_ops():
     return _METADATA.get("ops", [])
 
 
-@pytest.mark.parametrize("op_meta", _testable_ops(), ids=lambda m: m["name"])
+def _op_meta_id(op_meta):
+    if isinstance(op_meta, dict):
+        return op_meta.get("name", "op")
+
+    return "empty"
+
+
+@pytest.mark.parametrize("op_meta", _testable_ops(), ids=_op_meta_id)
 @pytest.mark.parametrize("shape", _SHAPES, ids=lambda s: "x".join(map(str, s)))
 @pytest.mark.parametrize(("dtype", "rtol", "atol"), _DTYPES)
 def test_op(op_meta, shape, dtype, device, rtol, atol):

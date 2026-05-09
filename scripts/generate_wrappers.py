@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import pathlib
 import re
@@ -29,6 +30,34 @@ _INCLUDE_DIR = _GENERATION_DIR / "include"
 _INDENTATION = "  "
 
 
+@functools.lru_cache(maxsize=1)
+def _get_system_include_flags():
+    compilers = []
+
+    for compiler in ("clang++", "g++"):
+        if shutil.which(compiler) is not None:
+            compilers.append(compiler)
+
+    system_include_flags = []
+
+    for compiler in compilers:
+        for line in subprocess.getoutput(
+            f"{compiler} -E -x c++ -v /dev/null"
+        ).splitlines():
+            if not line.startswith(" "):
+                continue
+
+            system_include_flags.append("-isystem")
+            system_include_flags.append(line.strip())
+
+    return tuple(system_include_flags)
+
+
+@functools.lru_cache(maxsize=1)
+def _get_clang_index():
+    return clang.cindex.Index.create()
+
+
 def _find_base_header(op_name):
     """Return the base header for `op_name`, looking under both `src/base/`
     and `generated/base/` (preferring the hand-written one)."""
@@ -47,33 +76,8 @@ def _find_base_header(op_name):
 
 class _OperatorExtractor:
     def __call__(self, op_name):
-        def _get_system_include_flags():
-            def _get_compilers():
-                compilers = []
-
-                for compiler in ("clang++", "g++"):
-                    if shutil.which(compiler) is not None:
-                        compilers.append(compiler)
-
-                return compilers
-
-            system_include_flags = []
-
-            for compiler in _get_compilers():
-                for line in subprocess.getoutput(
-                    f"{compiler} -E -x c++ -v /dev/null"
-                ).splitlines():
-                    if not line.startswith(" "):
-                        continue
-
-                    system_include_flags.append("-isystem")
-                    system_include_flags.append(line.strip())
-
-            return system_include_flags
-
         system_include_flags = _get_system_include_flags()
-
-        index = clang.cindex.Index.create()
+        index = _get_clang_index()
         args = (
             "-std=c++17",
             "-x",
@@ -314,7 +318,11 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
-        return Self::active_implementation_indices(DeviceTypeFromString(device));
+        auto dev_type = TryDeviceTypeFromString<Self>(device);
+        if (!dev_type.has_value()) {{
+          return std::vector<std::size_t>{{}};
+        }}
+        return Self::active_implementation_indices(*dev_type);
       }})
       .def_static("clear_cache", &Self::clear_cache);
 
@@ -515,6 +523,10 @@ def _snake_to_pascal(snake_str):
     return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
+def _matches_scan_dir(impl_path, scan_dirs):
+    return any(part in scan_dirs for part in impl_path.parts)
+
+
 def _get_all_ops(devices, with_torch=False):
     scan_dirs = set(devices)
 
@@ -547,7 +559,7 @@ def _get_all_ops(devices, with_torch=False):
 
             for impl_root in impl_roots:
                 for impl_path in impl_root.rglob("*.h"):
-                    if impl_path.parent.parent.name not in scan_dirs:
+                    if not _matches_scan_dir(impl_path, scan_dirs):
                         continue
 
                     if (

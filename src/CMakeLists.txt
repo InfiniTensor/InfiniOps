@@ -411,4 +411,9 @@ if(GENERATE_PYTHON_BINDINGS)
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)
+
+    if(WITH_TORCH)
+        install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
+            DESTINATION .)
+    endif()
 endif()

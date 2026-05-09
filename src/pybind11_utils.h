@@ -41,6 +41,40 @@ inline Device::Type DeviceTypeFromString(const std::string& name) {
   return Device::TypeFromString(name);
 }
 
+template <typename T = void>
+inline std::optional<Device::Type> TryDeviceTypeFromString(
+    const std::string& name) {
+  static const auto kTorchNameToTypes{
+      detail::BuildTorchNameMap(ActiveDevices<T>{})};
+
+  auto it{kTorchNameToTypes.find(name)};
+
+  if (it != kTorchNameToTypes.cend()) {
+    return it->second;
+  }
+
+  static const std::unordered_map<std::string, Device::Type> kPlatformNames{
+      {"cpu", Device::Type::kCpu},
+      {"nvidia", Device::Type::kNvidia},
+      {"cambricon", Device::Type::kCambricon},
+      {"ascend", Device::Type::kAscend},
+      {"metax", Device::Type::kMetax},
+      {"moore", Device::Type::kMoore},
+      {"iluvatar", Device::Type::kIluvatar},
+      {"kunlun", Device::Type::kKunlun},
+      {"hygon", Device::Type::kHygon},
+      {"qy", Device::Type::kQy},
+  };
+
+  auto platform_it{kPlatformNames.find(name)};
+
+  if (platform_it != kPlatformNames.cend()) {
+    return platform_it->second;
+  }
+
+  return std::nullopt;
+}
+
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
   auto data{
       reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
