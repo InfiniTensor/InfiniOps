@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import pathlib
 import re
@@ -15,6 +16,11 @@ _BASE_DIR = _SRC_DIR / "base"
 
 _GENERATION_DIR = pathlib.Path("generated")
 
+# Base headers emitted by `generate_torch_ops.py` live alongside the
+# hand-written ones in `src/base/`, but in a parallel tree under
+# `generated/base/` so they are not committed.
+_GENERATED_BASE_DIR = _GENERATION_DIR / "base"
+
 _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 
 _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
@@ -24,37 +30,61 @@ _INCLUDE_DIR = _GENERATION_DIR / "include"
 _INDENTATION = "  "
 
 
+@functools.lru_cache(maxsize=1)
+def _get_system_include_flags():
+    """Probe the system C++ compiler for default include paths so libclang
+    can resolve standard headers when parsing an op's base header."""
+    compilers = []
+
+    for compiler in ("clang++", "g++"):
+        if shutil.which(compiler) is not None:
+            compilers.append(compiler)
+
+    system_include_flags = []
+
+    for compiler in compilers:
+        for line in subprocess.getoutput(
+            f"{compiler} -E -x c++ -v /dev/null"
+        ).splitlines():
+            if not line.startswith(" "):
+                continue
+
+            system_include_flags.append("-isystem")
+            system_include_flags.append(line.strip())
+
+    return tuple(system_include_flags)
+
+
+def _find_base_header(op_name):
+    """Resolve the base header for `op_name`, preferring the hand-written
+    `src/base/<op>.h` over the auto-generated `generated/base/<op>.h`.
+    Mirrors the include-path resolution order used at compile time."""
+    src_path = _BASE_DIR / f"{op_name}.h"
+
+    if src_path.exists():
+        return src_path
+
+    generated_path = _GENERATED_BASE_DIR / f"{op_name}.h"
+
+    if generated_path.exists():
+        return generated_path
+
+    raise FileNotFoundError(f"no base header for op {op_name!r}")
+
+
 class _OperatorExtractor:
     def __call__(self, op_name):
-        def _get_system_include_flags():
-            def _get_compilers():
-                compilers = []
-
-                for compiler in ("clang++", "g++"):
-                    if shutil.which(compiler) is not None:
-                        compilers.append(compiler)
-
-                return compilers
-
-            system_include_flags = []
-
-            for compiler in _get_compilers():
-                for line in subprocess.getoutput(
-                    f"{compiler} -E -x c++ -v /dev/null"
-                ).splitlines():
-                    if not line.startswith(" "):
-                        continue
-
-                    system_include_flags.append("-isystem")
-                    system_include_flags.append(line.strip())
-
-            return system_include_flags
-
-        system_include_flags = _get_system_include_flags()
-
         index = clang.cindex.Index.create()
-        args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
+        args = (
+            "-std=c++17",
+            "-x",
+            "c++",
+            "-I",
+            "src",
+            "-I",
+            str(_GENERATION_DIR),
+        ) + _get_system_include_flags()
+        translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -98,7 +128,7 @@ def _find_optional_tensor_params(op_name):
     headers are not fully available, so we fall back to a regex scan of the
     source text.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
@@ -107,7 +137,7 @@ def _find_vector_tensor_params(op_name):
     """Return a set of parameter names declared as `std::vector<Tensor>` in
     the base header.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
 
@@ -253,7 +283,11 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
-        return Self::active_implementation_indices(DeviceTypeFromString(device));
+        auto dev_type = TryDeviceTypeFromString<Self>(device);
+        if (!dev_type.has_value()) {{
+          return std::vector<std::size_t>{{}};
+        }}
+        return Self::active_implementation_indices(*dev_type);
       }})
       .def_static("clear_cache", &Self::clear_cache);
 
@@ -268,8 +302,17 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 
 def _generate_legacy_c(operator, paths):
     def _generate_source(operator):
+        def _to_include_path(path):
+            text = str(path)
+
+            for prefix in ("src/", "generated/"):
+                if text.startswith(prefix):
+                    return text[len(prefix) :]
+
+            return text
+
         impl_includes = "\n".join(
-            f'#include "{str(path).removeprefix("src/")}"' for path in paths
+            f'#include "{_to_include_path(path)}"' for path in paths
         )
 
         return f"""#include "../../handle.h"
@@ -444,6 +487,10 @@ def _snake_to_pascal(snake_str):
     return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
+def _matches_scan_dir(impl_path, scan_dirs):
+    return any(part in scan_dirs for part in impl_path.parts)
+
+
 def _get_all_ops(devices, with_torch=False):
     scan_dirs = set(devices)
 
@@ -452,20 +499,40 @@ def _get_all_ops(devices, with_torch=False):
 
     ops = {}
 
-    for file_path in _BASE_DIR.iterdir():
-        if not file_path.is_file():
-            continue
+    base_dirs = [_BASE_DIR]
 
-        op_name = file_path.stem
+    if _GENERATED_BASE_DIR.exists():
+        base_dirs.append(_GENERATED_BASE_DIR)
 
-        ops[op_name] = []
+    impl_roots = [_SRC_DIR]
 
-        for file_path in _SRC_DIR.rglob("*.h"):
-            if file_path.parent.parent.parent.name not in scan_dirs:
+    if with_torch and (_GENERATION_DIR / "torch").exists():
+        impl_roots.append(_GENERATION_DIR)
+
+    for base_dir in base_dirs:
+        for file_path in base_dir.iterdir():
+            if not file_path.is_file():
                 continue
 
-            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
-                ops[op_name].append(file_path)
+            op_name = file_path.stem
+
+            # Hand-written `src/base/` is scanned first; the generated
+            # tree never overrides an already-known op.
+            if op_name in ops:
+                continue
+
+            ops[op_name] = []
+
+            for impl_root in impl_roots:
+                for impl_path in impl_root.rglob("*.h"):
+                    if not _matches_scan_dir(impl_path, scan_dirs):
+                        continue
+
+                    if (
+                        f"class Operator<{_snake_to_pascal(op_name)}"
+                        in impl_path.read_text()
+                    ):
+                        ops[op_name].append(impl_path)
 
     return ops
 
@@ -489,9 +556,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    _BINDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _GENERATED_SRC_DIR.mkdir(parents=True, exist_ok=True)
-    _INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
+    # Wipe previous outputs so files for ops that have since been removed
+    # from the active set (e.g. when toggling `--with-torch`) do not linger
+    # and get globbed by a later build.
+    for d in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
+        if d.exists():
+            shutil.rmtree(d)
+
+        d.mkdir(parents=True)
 
     ops_json = pathlib.Path("ops.json")
 
