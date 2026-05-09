@@ -133,9 +133,7 @@ _SUPPORTED_DTYPE_NAMES = (
     "float64",
 )
 _SUPPORTED_DTYPES = frozenset(
-    getattr(torch, name)
-    for name in _SUPPORTED_DTYPE_NAMES
-    if hasattr(torch, name)
+    getattr(torch, name) for name in _SUPPORTED_DTYPE_NAMES if hasattr(torch, name)
 )
 
 
