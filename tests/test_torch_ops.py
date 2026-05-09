@@ -180,6 +180,24 @@ _RANDOM_OPS = frozenset(
     }
 )
 
+# Ops where the ATen `_out` schema and the Python reference (`torch.<op>`,
+# `torch.nn.functional.<op>`) diverge in positional-argument ordering, so
+# the harness's purely-positional reference call lands an InfiniOps
+# argument on the wrong reference parameter.  E.g. ATen
+# `binary_cross_entropy_out(self, target, weight=None, reduction=Mean, out)`
+# has `weight` between `target` and `reduction`; with `weight` hidden as
+# `Tensor?`, our visible signature is `(self, target, reduction, out)`,
+# but `torch.nn.functional.binary_cross_entropy(input, target, weight,
+# reduction)` reads our `reduction:int` as `weight:Tensor` and crashes
+# inside `weight.size()`.  The InfiniOps wrapper itself is fine; only
+# the harness's reference call is wrong.
+_REFERENCE_SIGNATURE_MISMATCH_OPS = frozenset(
+    {
+        "binary_cross_entropy",
+        "binary_cross_entropy_backward",
+    }
+)
+
 # Full reductions with low-precision inputs diverge between the functional
 # (`torch.<op>(x)`) and `_out` paths because of intermediate-precision
 # choices we cannot align from outside ATen.
@@ -307,10 +325,31 @@ def _assert_close(actual, expected, rtol, atol):
 
 
 def _testable_ops():
-    """Filter out ops the harness can't drive — currently just bool-output
-    ops, since InfiniOps `DataType` has no `kBool`.  Unknown until runtime,
-    so we skip-at-test-time rather than filter here."""
-    return _METADATA.get("ops", [])
+    """Filter the metadata down to ops the harness can drive.
+
+    When multiple ATen overloads share the same `aten_name` they all
+    end up under one InfiniOps class (e.g., `std.dim` and
+    `std.correction` both map to `Std`), but each has a distinct ATen
+    `_out` signature.  The reference call we synthesize from
+    `op_meta['params']` only exercises one signature; the secondary
+    overloads either rely on hidden defaults whose ATen interpretation
+    differs from the Python wrapper's (`std.correction(self, dim=None,
+    correction=None, ...)` defaults to a different correction than
+    `torch.std(self)`), or expose a positional shape that the Python
+    reference does not accept (e.g., `binary_cross_entropy_out`'s
+    `reduction:int` lands on the reference's `weight:Tensor?`).  Keep
+    only the first overload of each `aten_name`."""
+    seen = set()
+    keep = []
+
+    for op in _METADATA.get("ops", []):
+        if op["aten_name"] in seen:
+            continue
+
+        seen.add(op["aten_name"])
+        keep.append(op)
+
+    return keep
 
 
 def _op_meta_id(op_meta):
@@ -334,6 +373,11 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     _skip_low_precision_reduction(aten_name, dtype, device)
     if aten_name in _RANDOM_OPS:
         pytest.skip(f"`{aten_name}` is non-deterministic (independent draws diverge)")
+    if aten_name in _REFERENCE_SIGNATURE_MISMATCH_OPS:
+        pytest.skip(
+            f"`{aten_name}`'s ATen `_out` and Python reference signatures "
+            "have different positional ordering"
+        )
     if device == "cuda" and aten_name in _DEVICE_ASSERTING_OPS:
         pytest.skip(
             f"`{aten_name}` triggers a CUDA device-side assert on random inputs"
