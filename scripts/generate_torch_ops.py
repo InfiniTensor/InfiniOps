@@ -824,11 +824,14 @@ namespace infini::ops {{
 """
 
 
-def _ensure_clang_format() -> str:
-    """Return the path to a `clang-format` binary, installing the
-    `clang-format` PyPI wheel into the running interpreter if the system
-    does not provide one (CI containers running with
-    `--no-build-isolation` skip `[build-system].requires`)."""
+def _find_clang_format() -> str | None:
+    """Return the path to a `clang-format` binary, or `None` if none is
+    available.  When the system does not provide one, try installing the
+    `clang-format` PyPI wheel; offline CI containers (no PyPI mirror) end
+    up returning `None` and the codegen falls through to writing
+    unformatted output — generated files live under `generated/` (which
+    is gitignored) so they do not need to satisfy the repo-level
+    clang-format check, only compile cleanly."""
 
     found = shutil.which("clang-format")
 
@@ -836,27 +839,36 @@ def _ensure_clang_format() -> str:
         return found
 
     print(
-        "`clang-format` not found on PATH; installing `clang-format` from PyPI...",
+        "`clang-format` not found on PATH; trying `pip install clang-format`...",
         file=sys.stderr,
     )
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", "clang-format"],
-        check=True,
-    )
 
-    found = shutil.which("clang-format")
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "clang-format"],
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        print(
+            "`pip install clang-format` failed (likely offline CI); generated "
+            "files will be emitted without formatting.",
+            file=sys.stderr,
+        )
 
-    if not found:
-        raise RuntimeError("`clang-format` still not available after `pip install`.")
+        return None
 
-    return found
+    return shutil.which("clang-format")
 
 
 def _clang_format(text: str, path: pathlib.Path) -> str:
     """Pipe `text` through `clang-format` so generated headers / sources
     satisfy the same style check (`clang-format` v21) that CI runs.
     `path` informs include sorting (the file's own header should come
-    first in a `.cc`)."""
+    first in a `.cc`).  If no `clang-format` binary is available, return
+    the input unchanged."""
+
+    if _CLANG_FORMAT is None:
+        return text
 
     return subprocess.run(
         [_CLANG_FORMAT, f"--assume-filename={path}"],
@@ -897,7 +909,7 @@ def main() -> int:
     args = parser.parse_args()
 
     global _CLANG_FORMAT
-    _CLANG_FORMAT = _ensure_clang_format()
+    _CLANG_FORMAT = _find_clang_format()
 
     op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
     aten_entries = yaml.safe_load(_load_aten_yaml())
