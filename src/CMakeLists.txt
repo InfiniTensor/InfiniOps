@@ -279,6 +279,17 @@ if(WITH_TORCH)
         ${PROJECT_SOURCE_DIR}/generated
     )
 
+    # Each generated `<op>.cc` instantiates `at::<op>_out(...)`, which
+    # pulls in roughly 0.5-1 GB of ATen template metaprogramming.  At
+    # ninja's default parallelism (one job per CPU), a build with 451
+    # ops can blow past 30 GB of RSS and the OOM killer drops
+    # `cc1plus`.  Cap the heavyweight torch sources to 4 concurrent
+    # compilations via a Ninja job pool; the rest of the build keeps
+    # full parallelism.
+    if(CMAKE_GENERATOR MATCHES "Ninja")
+        set_property(GLOBAL APPEND PROPERTY JOB_POOLS torch_compile=4)
+    endif()
+
     if(WITH_METAX OR WITH_MOORE)
         # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
         # headers. Compile `torch` sources with the system C++ compiler instead.
@@ -330,6 +341,7 @@ if(WITH_TORCH)
                     -c "${_src}" -o "${_obj}"
                 DEPENDS "${_src}"
                 COMMENT "Compiling ${_rel} with system C++ compiler"
+                JOB_POOL torch_compile
             )
             list(APPEND TORCH_OBJECT_FILES "${_obj}")
         endforeach()
@@ -338,7 +350,18 @@ if(WITH_TORCH)
             PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
         target_sources(infiniops PRIVATE ${TORCH_OBJECT_FILES})
     else()
-        target_sources(infiniops PRIVATE ${TORCH_SOURCES})
+        # Build the heavy torch sources as their own object library so
+        # the Ninja `torch_compile` job pool throttles only those
+        # compilations and the rest of `infiniops` keeps full
+        # parallelism.
+        add_library(infiniops_torch_objs OBJECT ${TORCH_SOURCES})
+        target_link_libraries(infiniops_torch_objs PUBLIC infiniops)
+        if(CMAKE_GENERATOR MATCHES "Ninja")
+            set_target_properties(infiniops_torch_objs
+                PROPERTIES JOB_POOL_COMPILE torch_compile)
+        endif()
+        target_sources(infiniops PRIVATE
+            $<TARGET_OBJECTS:infiniops_torch_objs>)
     endif()
 endif()
 
