@@ -114,22 +114,28 @@ _TYPE_DEFAULTS = {"int": 0, "SymInt": 0, "bool": False, "str": "none"}
 
 # Mirrors `kStringToDataType` in `src/data_type.h`.  Any tensor passed to
 # an InfiniOps op must have one of these dtypes; others (`bool`, complex,
-# quantised types) abort the process inside `DataTypeFromString`.
+# quantised types) abort the process inside `DataTypeFromString`.  Some
+# vendor torch forks lag behind upstream and lack `uint16` / `uint32` /
+# `uint64` (added in PyTorch 2.3); resolve them lazily and keep the
+# attributes that actually exist.
+_SUPPORTED_DTYPE_NAMES = (
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "float16",
+    "bfloat16",
+    "float32",
+    "float64",
+)
 _SUPPORTED_DTYPES = frozenset(
-    {
-        torch.int8,
-        torch.int16,
-        torch.int32,
-        torch.int64,
-        torch.uint8,
-        torch.uint16,
-        torch.uint32,
-        torch.uint64,
-        torch.float16,
-        torch.bfloat16,
-        torch.float32,
-        torch.float64,
-    }
+    getattr(torch, name)
+    for name in _SUPPORTED_DTYPE_NAMES
+    if hasattr(torch, name)
 )
 
 
