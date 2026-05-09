@@ -586,6 +586,8 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
     member_decls = []
     tensor_member_order = []
     seen_tensor_members = set()
+    scalar_member_order = []
+    scalar_member_types = {}
 
     for op in ops:
         for param in op.tensor_params:
@@ -598,6 +600,22 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
             member_decls.append(f"  Tensor::Strides {param.name}_strides_;")
             member_decls.append(f"  DataType {param.name}_type_;")
 
+        # Visible non-tensor params (scalars, strings, vectors) are also
+        # stored on the base so backends can dispatch on them later — not
+        # only at the moment `operator()` is invoked.  Reviewers flagged
+        # this on multiple PRs (e.g. `n` on
+        # `special_chebyshev_polynomial_v_n_scalar`).  Same-named params
+        # across overloads must share a type; if they conflict, the second
+        # overload's member is dropped (later constructors leave it
+        # default-initialised).
+        for param in op.visible_params:
+            if param.is_tensor or param.name in scalar_member_types:
+                continue
+
+            scalar_member_order.append(param.name)
+            scalar_member_types[param.name] = param.cpp_type
+            member_decls.append(f"  {param.cpp_type} {param.name}_{{}};")
+
     member_decls.append("  int device_index_{0};")
 
     constructors = []
@@ -606,6 +624,12 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
     for op in ops:
         init_pieces = []
         tensor_params = {param.name: param for param in op.tensor_params}
+        scalar_params = {
+            param.name: param
+            for param in op.visible_params
+            if not param.is_tensor
+            and scalar_member_types.get(param.name) == param.cpp_type
+        }
 
         for param_name in tensor_member_order:
             param = tensor_params.get(param_name)
@@ -618,6 +642,14 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
                 f"        {param.name}_strides_{{{param.name}.strides()}}"
             )
             init_pieces.append(f"        {param.name}_type_{{{param.name}.dtype()}}")
+
+        for param_name in scalar_member_order:
+            param = scalar_params.get(param_name)
+
+            if param is None:
+                continue
+
+            init_pieces.append(f"        {param.name}_{{{param.name}}}")
 
         # All out tensors share a device; use the first one.  Keep this last
         # so initializer order follows the member declaration order.
