@@ -29,6 +29,7 @@ import json
 import pathlib
 import re
 import shutil
+import subprocess
 import sys
 import urllib.request
 
@@ -823,6 +824,21 @@ namespace infini::ops {{
 """
 
 
+def _clang_format(text: str, path: pathlib.Path) -> str:
+    """Pipe `text` through `clang-format` so generated headers / sources
+    satisfy the same style check (`clang-format` v21) that CI runs.
+    `path` informs include sorting (the file's own header should come
+    first in a `.cc`)."""
+
+    return subprocess.run(
+        ["clang-format", f"--assume-filename={path}"],
+        input=text,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
 def _emit(name: str, ops: list[Op], *, emit_base: bool) -> None:
     base_path = _GENERATED_BASE_DIR / f"{name}.h"
     torch_dir = _GENERATED_TORCH_DIR / name
@@ -831,12 +847,18 @@ def _emit(name: str, ops: list[Op], *, emit_base: bool) -> None:
 
     if emit_base:
         _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
-        base_path.write_text(_generate_base_header(name, ops))
+        base_path.write_text(
+            _clang_format(_generate_base_header(name, ops), base_path)
+        )
 
     torch_dir.mkdir(parents=True, exist_ok=True)
 
-    torch_header_path.write_text(_generate_torch_header(name, ops))
-    torch_source_path.write_text(_generate_torch_source(name, ops))
+    torch_header_path.write_text(
+        _clang_format(_generate_torch_header(name, ops), torch_header_path)
+    )
+    torch_source_path.write_text(
+        _clang_format(_generate_torch_source(name, ops), torch_source_path)
+    )
 
 
 def main() -> int:
