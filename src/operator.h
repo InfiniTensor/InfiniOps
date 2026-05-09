@@ -67,6 +67,11 @@ std::vector<std::size_t> ListToVector(List<values...>) {
   return {static_cast<std::size_t>(values)...};
 }
 
+template <typename ValueType, auto... values>
+bool ListContains(ValueType value, List<values...>) {
+  return ((value == static_cast<ValueType>(values)) || ...);
+}
+
 }  // namespace infini::ops::detail
 
 template <>
@@ -213,6 +218,10 @@ class Operator : public OperatorBase {
 
   static std::vector<std::size_t> active_implementation_indices(
       Device::Type dev_type) {
+    if (!detail::ListContains(dev_type, ActiveDevices<Key>{})) {
+      return {};
+    }
+
     std::vector<std::size_t> result;
     DispatchFunc<ActiveDevices<Key>>(
         dev_type,
