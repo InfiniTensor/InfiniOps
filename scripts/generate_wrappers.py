@@ -558,7 +558,12 @@ def _get_all_ops(devices, with_torch=False):
 
     base_dirs = [_BASE_DIR]
 
-    if _GENERATED_BASE_DIR.exists():
+    # Only pull in the auto-generated torch op bases when the build is
+    # actually compiling them (`--with-torch`).  Otherwise a stale
+    # `generated/` left over from a previous configure (or rsynced into
+    # a CI container) would cause `ops.cc` to include base headers for
+    # ops that have no compiled implementation, breaking the build.
+    if with_torch and _GENERATED_BASE_DIR.exists():
         base_dirs.append(_GENERATED_BASE_DIR)
 
     impl_roots = [_SRC_DIR]
