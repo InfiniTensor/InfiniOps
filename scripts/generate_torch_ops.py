@@ -441,26 +441,80 @@ def _base_path(op_name: str) -> pathlib.Path:
     return _BASE_DIR / f"{op_name}.h"
 
 
+def _candidate_versions(version: str) -> list[str]:
+    """Return progressively-more-tolerant fallbacks for `version`:
+
+      `v2.10.0a0+b4e4ee8` → [`v2.10.0a0+b4e4ee8`, `v2.10.0a0`,
+                              `v2.10.0`, `v2.4.0`]
+
+    NVIDIA-fork wheels (e.g. `2.10.0a0+b4e4ee8`) and other nightlies
+    do not have matching pytorch GitHub tags.  Fall back to the
+    latest release we know exists when the version-suffixed tag
+    returns 404.
+    """
+
+    seen = []
+
+    def add(v: str) -> None:
+        if v and v not in seen:
+            seen.append(v)
+
+    add(version)
+    add(version.split("+", 1)[0])
+    add(re.sub(r"[a-z]\d+$", "", version.split("+", 1)[0]))
+    add(_DEFAULT_PYTORCH_VERSION)
+    return seen
+
+
 def _load_aten_yaml(version: str) -> str:
     """Return the contents of `native_functions.yaml` for `version`,
-    fetching and caching it on the first call."""
+    fetching and caching it on the first call.  Falls back to
+    increasingly stable version tags if the requested one is missing
+    on pytorch GitHub (typical for pre-release / nightly torch builds
+    like `2.10.0a0+b4e4ee8`)."""
 
-    cache_path = (
-        _REPO_ROOT / "generated" / ".cache" / f"native_functions-{version}.yaml"
-    )
-    url = (
-        f"https://raw.githubusercontent.com/pytorch/pytorch/{version}"
-        "/aten/src/ATen/native/native_functions.yaml"
-    )
+    last_error: Exception | None = None
 
-    if not cache_path.exists():
+    for candidate in _candidate_versions(version):
+        cache_path = (
+            _REPO_ROOT / "generated" / ".cache" / f"native_functions-{candidate}.yaml"
+        )
+        url = (
+            f"https://raw.githubusercontent.com/pytorch/pytorch/{candidate}"
+            "/aten/src/ATen/native/native_functions.yaml"
+        )
+
+        if cache_path.exists():
+            if candidate != version:
+                print(
+                    f"using cached `native_functions.yaml` ({candidate}) as "
+                    f"fallback for {version}.",
+                    file=sys.stderr,
+                )
+
+            return cache_path.read_text()
+
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"fetching `native_functions.yaml` ({version})...", file=sys.stderr)
+        print(f"fetching `native_functions.yaml` ({candidate})...", file=sys.stderr)
 
-        with urllib.request.urlopen(url) as response:
-            cache_path.write_bytes(response.read())
+        try:
+            with urllib.request.urlopen(url) as response:
+                cache_path.write_bytes(response.read())
+        except urllib.error.HTTPError as exc:
+            print(
+                f"`{candidate}` not found on pytorch GitHub ({exc.code}); "
+                "trying next fallback.",
+                file=sys.stderr,
+            )
+            last_error = exc
+            continue
 
-    return cache_path.read_text()
+        return cache_path.read_text()
+
+    raise RuntimeError(
+        f"could not fetch `native_functions.yaml` for any fallback of "
+        f"{version!r}: {last_error}"
+    )
 
 
 def _find_out_entries(entries: list[dict], op_name: str) -> list[dict]:
