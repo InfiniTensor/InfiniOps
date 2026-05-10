@@ -256,8 +256,28 @@ if(WITH_TORCH)
     # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
     # which we then glob below alongside any hand-written torch sources.
     find_package(Python COMPONENTS Interpreter REQUIRED)
+
+    # Pin codegen to the locally installed torch version so vendor
+    # forks (Cambricon's `torch_mlu` 2.1.0, etc.) get a schema whose
+    # `at::<op>_out` overloads match the headers they ship.  Without
+    # this, the codegen targets v2.4.0 and the build fails on older
+    # forks with no-known-conversion errors (e.g. `at::all_out`'s
+    # `int64_t dim` vs `OptionalIntArrayRef dim`).
+    execute_process(
+        COMMAND ${_TORCH_PYTHON} -c
+            "import torch; print('v' + torch.__version__.split('+')[0])"
+        OUTPUT_VARIABLE _torch_version_tag
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _torch_version_result
+    )
+    if(NOT _torch_version_result EQUAL 0 OR NOT _torch_version_tag)
+        set(_torch_version_tag "v2.4.0")
+    endif()
+    message(STATUS "Codegen schema: PyTorch ${_torch_version_tag}")
+
     execute_process(
         COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py
+            --pytorch-version ${_torch_version_tag}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE _torch_ops_result
     )

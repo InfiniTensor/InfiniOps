@@ -135,23 +135,8 @@ if(AUTO_DETECT_BACKENDS)
     endforeach()
 
     if(_TORCH_PYTHON)
-        # Cambricon's `torch_mlu` fork is pinned to an older ATen
-        # release whose `<op>_out` overloads do not match the
-        # `pytorch v2.4.0` schema we generate against (e.g.
-        # `all.dims_out` takes `int64_t dim`/`Dimname dim` instead of
-        # the `OptionalIntArrayRef dim` we emit).  Skip the auto-
-        # detection on cambricon so the generated torch backends do
-        # not poison the build.  Pass `-DWITH_TORCH=ON` explicitly to
-        # opt back in.
-        if(WITH_CAMBRICON)
-            message(STATUS
-                "Skipping PyTorch auto-detection on Cambricon "
-                "(`torch_mlu` ATen overloads incompatible with the "
-                "codegen's v2.4.0 schema).")
-        else()
-            set(WITH_TORCH ON)
-            message(STATUS "Auto-detected PyTorch (via ${_TORCH_PYTHON}).")
-        endif()
+        set(WITH_TORCH ON)
+        message(STATUS "Auto-detected PyTorch (via ${_TORCH_PYTHON}).")
     endif()
 endif()
 

@@ -26,6 +26,7 @@ time when `WITH_TORCH=ON`.
 import argparse
 import dataclasses
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -56,17 +57,15 @@ _ENUM_DEFAULTS = {
     "Contiguous": "at::MemoryFormat::Contiguous",
 }
 
-# PyTorch release tag whose `native_functions.yaml` defines the schemas
-# we generate against.  Bump in lockstep with the minimum PyTorch version
-# the generated wrappers should target.
-_PYTORCH_VERSION = "v2.4.0"
-_ATEN_YAML_URL = (
-    f"https://raw.githubusercontent.com/pytorch/pytorch/{_PYTORCH_VERSION}"
-    "/aten/src/ATen/native/native_functions.yaml"
-)
-_ATEN_YAML_CACHE = (
-    _REPO_ROOT / "generated" / ".cache" / f"native_functions-{_PYTORCH_VERSION}.yaml"
-)
+# Default PyTorch release tag whose `native_functions.yaml` defines
+# the schemas we generate against.  The build picks the actual
+# version by passing `--pytorch-version <tag>` (or
+# `INFINIOPS_PYTORCH_VERSION=<tag>` in the environment) so each
+# platform builds against its own installed torch's schema — vendor
+# forks (Cambricon's `torch_mlu` 2.1.0, Moore's `torch_musa`, …) lag
+# behind upstream and would otherwise hit overload mismatches like
+# `at::all_out`'s `int64_t dim` vs v2.4.0's `OptionalIntArrayRef dim`.
+_DEFAULT_PYTORCH_VERSION = "v2.4.0"
 
 # Order matches the device list in existing hand-written torch backends
 # (see `src/torch/add/add.cc`).
@@ -442,21 +441,26 @@ def _base_path(op_name: str) -> pathlib.Path:
     return _BASE_DIR / f"{op_name}.h"
 
 
-def _load_aten_yaml() -> str:
-    """Return the contents of `native_functions.yaml`, fetching and caching
-    the version pinned by `_PYTORCH_VERSION` on the first call."""
+def _load_aten_yaml(version: str) -> str:
+    """Return the contents of `native_functions.yaml` for `version`,
+    fetching and caching it on the first call."""
 
-    if not _ATEN_YAML_CACHE.exists():
-        _ATEN_YAML_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        print(
-            f"fetching `native_functions.yaml` ({_PYTORCH_VERSION})...",
-            file=sys.stderr,
-        )
+    cache_path = (
+        _REPO_ROOT / "generated" / ".cache" / f"native_functions-{version}.yaml"
+    )
+    url = (
+        f"https://raw.githubusercontent.com/pytorch/pytorch/{version}"
+        "/aten/src/ATen/native/native_functions.yaml"
+    )
 
-        with urllib.request.urlopen(_ATEN_YAML_URL) as response:
-            _ATEN_YAML_CACHE.write_bytes(response.read())
+    if not cache_path.exists():
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"fetching `native_functions.yaml` ({version})...", file=sys.stderr)
 
-    return _ATEN_YAML_CACHE.read_text()
+        with urllib.request.urlopen(url) as response:
+            cache_path.write_bytes(response.read())
+
+    return cache_path.read_text()
 
 
 def _find_out_entries(entries: list[dict], op_name: str) -> list[dict]:
@@ -906,13 +910,23 @@ def main() -> int:
         nargs="*",
         help="Override the op allowlist. If omitted, reads `scripts/torch_ops.yaml`.",
     )
+    parser.add_argument(
+        "--pytorch-version",
+        default=os.environ.get("INFINIOPS_PYTORCH_VERSION", _DEFAULT_PYTORCH_VERSION),
+        help=(
+            "PyTorch release tag whose `native_functions.yaml` defines the "
+            "schemas to generate against (e.g. `v2.1.0` for Cambricon's "
+            "`torch_mlu` 2.1.0 fork).  Default: `%(default)s`.  Can also be "
+            "set via the `INFINIOPS_PYTORCH_VERSION` environment variable."
+        ),
+    )
     args = parser.parse_args()
 
     global _CLANG_FORMAT
     _CLANG_FORMAT = _find_clang_format()
 
     op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
-    aten_entries = yaml.safe_load(_load_aten_yaml())
+    aten_entries = yaml.safe_load(_load_aten_yaml(args.pytorch_version))
 
     # Wipe previous outputs so files for ops that have since been removed,
     # renamed, or rejected by `cpp_type` don't linger and get picked up by
