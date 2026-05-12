@@ -10,11 +10,9 @@ on:
         default: nvidia
         options:
           - nvidia
-          - iluvatar
           - metax
           - moore
           - cambricon
-          - ascend
           - all
   push:
     branches: ["master"]
@@ -27,5 +25,5 @@ jobs:
     with:
       config_path: .github/ci_config.yml
       ci_ref: codex/prune-unused-ci-artifacts
-      platform: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'nvidia' }}
+      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,metax,moore,cambricon' || inputs.platform) || 'nvidia,metax,moore,cambricon' }}
     secrets: inherit
