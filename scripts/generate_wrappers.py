@@ -454,11 +454,27 @@ def _find_tensor_params(op_name):
     return params
 
 
+def _find_params_with_defaults(op_name):
+    """Return `{param_name: default_literal}` for scalar params with defaults."""
+    source = _find_base_header(op_name).read_text()
+    mapping = {}
+
+    for name, default in re.findall(
+        r"\b(?:bool|int(?:64_t|32_t|8_t|16_t)?|std::size_t|std::uint\w+_t|"
+        r"float|double)\s+(\w+)\s*=\s*([^,\)]+?)\s*(?:,|\))",
+        source,
+    ):
+        mapping[name] = default.strip()
+
+    return mapping
+
+
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
+    params_with_defaults = _find_params_with_defaults(operator.name)
 
     def _is_optional_tensor(arg):
         spelling = arg.type.spelling
@@ -566,6 +582,10 @@ def _generate_pybind11(operator):
 
             if _is_optional(arg):
                 parts.append(f'py::arg("{arg.spelling}") = py::none()')
+            elif arg.spelling in params_with_defaults:
+                parts.append(
+                    f'py::arg("{arg.spelling}") = {params_with_defaults[arg.spelling]}'
+                )
             else:
                 parts.append(f'py::arg("{arg.spelling}")')
 
