@@ -340,7 +340,8 @@ if(GENERATE_PYTHON_BINDINGS)
         message(STATUS "Generating wrappers - done")
     endif()
 
-    set(PYBIND11_SOURCES "${PROJECT_SOURCE_DIR}/generated/bindings/ops.cc")
+    file(GLOB_RECURSE PYBIND11_SOURCES CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/generated/bindings/*.cc")
 
     # TODO: There might be a better solution.
     if(WITH_NVIDIA OR WITH_ILUVATAR)
