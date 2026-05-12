@@ -1,6 +1,21 @@
 name: CI
 
 on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platform to run"
+        type: choice
+        required: true
+        default: nvidia
+        options:
+          - nvidia
+          - iluvatar
+          - metax
+          - moore
+          - cambricon
+          - ascend
+          - all
   push:
     branches: ["master"]
   pull_request:
@@ -12,4 +27,5 @@ jobs:
     with:
       config_path: .github/ci_config.yml
       ci_ref: codex/prune-unused-ci-artifacts
+      platform: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
     secrets: inherit
