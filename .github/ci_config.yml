@@ -76,7 +76,7 @@ platforms:
           gpu_style: none                  # MetaX: passthrough via --privileged, CUDA_VISIBLE_DEVICES controls visibility
           memory: 32GB
           shm_size: 16g
-          timeout: 3600
+          timeout: 300
         stages:
           - name: test
             run: pytest tests/ --devices metax -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
