@@ -1,6 +1,6 @@
 repo:
   url: https://github.com/InfiniTensor/InfiniOps.git
-  branch: ci/ci-online
+  branch: master
 
 github:
   status_context_prefix: "ci/infiniops"
