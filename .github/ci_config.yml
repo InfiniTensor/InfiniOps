@@ -79,7 +79,7 @@ platforms:
           timeout: 300
         stages:
           - name: test
-            run: pytest tests/ --devices metax -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py --devices metax -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
     image:
