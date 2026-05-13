@@ -171,27 +171,11 @@ def _generate_pybind11(operator):
     op_name = operator.name
     pascal_case_op_name = _snake_to_pascal(op_name)
 
-    def _overload_suffix(nodes, node):
-        def _signature(item):
-            return tuple(
-                arg.type.spelling
-                for arg in item.get_arguments()
-                if arg.spelling != "stream"
-            )
-
-        signature = _signature(node)
-        if [_signature(item) for item in nodes].count(signature) == 1:
-            return ""
-
-        return str(nodes.index(node))
-
     def _generate_init(constructor):
         constructor_params = _generate_params(constructor)
-        suffix = _overload_suffix(operator.constructors, constructor)
-
         return f"""      .def(py::init([]({constructor_params}) {{
         Config config;
-        return std::unique_ptr<Self>{{static_cast<Self*>(generated_dispatch::Make{pascal_case_op_name}{suffix}(config, {_generate_arguments(constructor)}).release())}};
+        return std::unique_ptr<Self>{{static_cast<Self*>(generated_dispatch::Make{pascal_case_op_name}(config, {_generate_arguments(constructor)}).release())}};
       }}))"""
 
     def _generate_py_args(node):
@@ -211,8 +195,6 @@ def _generate_pybind11(operator):
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
         call_args = _generate_arguments(call)
-        suffix = _overload_suffix(operator.calls, call)
-
         if not method:
             params = (
                 f"{call_params}, std::uintptr_t stream, std::size_t implementation_index"
@@ -230,12 +212,12 @@ def _generate_pybind11(operator):
                 f"    }}\n"
                 f"    Config config;\n"
                 f"    config.set_implementation_index(implementation_index);\n"
-                f"    return generated_dispatch::Call{pascal_case_op_name}{suffix}(handle, config, {call_args});\n"
+                f"    return generated_dispatch::Call{pascal_case_op_name}(handle, config, {call_args});\n"
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
         return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return generated_dispatch::Invoke{pascal_case_op_name}{suffix}(self, {call_args});
+        return generated_dispatch::Invoke{pascal_case_op_name}(self, {call_args});
       }})"""
 
     inits = "\n".join(
@@ -481,20 +463,6 @@ def _generate_generated_dispatch(operators, ops, devices):
 
         return prefix
 
-    def _overload_suffix(nodes, node):
-        def _signature(item):
-            return tuple(
-                arg.type.spelling
-                for arg in item.get_arguments()
-                if arg.spelling != "stream"
-            )
-
-        signature = _signature(node)
-        if [_signature(item) for item in nodes].count(signature) == 1:
-            return ""
-
-        return str(nodes.index(node))
-
     header_base_includes = "\n".join(
         f'#include "base/{operator.name}.h"' for operator in operators
     )
@@ -531,42 +499,40 @@ def _generate_generated_dispatch(operators, ops, devices):
         )
 
         for constructor in operator.constructors:
-            suffix = _overload_suffix(operator.constructors, constructor)
             params = _generate_params(constructor)
             args = _generate_arguments(constructor)
 
             declarations.append(
                 f"std::unique_ptr<Operator<{pascal_case_op_name}>> "
-                f"Make{pascal_case_op_name}{suffix}("
+                f"Make{pascal_case_op_name}("
                 f"{_append_optional_params('const Config& config', params)});"
             )
             definitions.append(
-                f"""std::unique_ptr<Operator<{pascal_case_op_name}>> Make{pascal_case_op_name}{suffix}({_append_optional_params("const Config& config", params)}) {{
+                f"""std::unique_ptr<Operator<{pascal_case_op_name}>> Make{pascal_case_op_name}({_append_optional_params("const Config& config", params)}) {{
   return Operator<{pascal_case_op_name}>::Make({_append_optional_args("config", args)});
 }}"""
             )
 
         for call in operator.calls:
-            suffix = _overload_suffix(operator.calls, call)
             params = _generate_params(call)
             args = _generate_arguments(call)
 
             declarations.append(
-                f"void Invoke{pascal_case_op_name}{suffix}(const "
+                f"void Invoke{pascal_case_op_name}(const "
                 f"{_append_optional_params(f'{pascal_case_op_name}& op', params)});"
             )
             definitions.append(
-                f"""void Invoke{pascal_case_op_name}{suffix}(const {_append_optional_params(f"{pascal_case_op_name}& op", params)}) {{
+                f"""void Invoke{pascal_case_op_name}(const {_append_optional_params(f"{pascal_case_op_name}& op", params)}) {{
   return static_cast<const Operator<{pascal_case_op_name}>&>(op)({args});
 }}"""
             )
 
             declarations.append(
-                f"void Call{pascal_case_op_name}{suffix}(const Handle& handle, "
+                f"void Call{pascal_case_op_name}(const Handle& handle, "
                 f"{_append_optional_params('const Config& config', params)});"
             )
             definitions.append(
-                f"""void Call{pascal_case_op_name}{suffix}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
+                f"""void Call{pascal_case_op_name}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
   return Operator<{pascal_case_op_name}>::Call({_append_optional_args("handle, config", args)});
 }}"""
             )
