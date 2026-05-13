@@ -127,6 +127,7 @@ platforms:
             run: pytest tests/test_gemm.py --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
+    runner_label: Ascend
     image:
       dockerfile: images/ascend/
       skip_build: true
