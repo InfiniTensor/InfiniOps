@@ -130,6 +130,8 @@ platforms:
     runner_label: Ascend
     image:
       dockerfile: images/ascend/
+      skip_build: true
+      source_image: infiniops-ci/ascend:prebuilt
       build_args:
         BASE_IMAGE: quay.io/ascend/vllm-ascend:v0.18.0rc1-openeuler
         PIP_INDEX_URL: https://pypi.org/simple
