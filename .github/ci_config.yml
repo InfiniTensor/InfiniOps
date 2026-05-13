@@ -137,7 +137,7 @@ platforms:
     docker_args:
       - "--runtime=runc"
       - "--privileged"
-      - "--device=/dev/davinci0"
+      - "--device=/dev/davinci1"
       - "--device=/dev/davinci_manager"
       - "--device=/dev/devmm_svm"
       - "--device=/dev/hisi_hdc"
@@ -146,6 +146,7 @@ platforms:
       - /usr/local/dcmi:/usr/local/dcmi:ro
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
+      ASCEND_VISIBLE_DEVICES: "1"
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
     setup: pip install .[dev] --no-build-isolation
     jobs:
