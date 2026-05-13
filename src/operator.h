@@ -4,6 +4,7 @@
 #include <cassert>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -142,6 +143,7 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static auto Make(const Config& config, const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
+    auto cache_args = std::forward_as_tuple(args...);
 
     DispatchFunc<ActiveDevices<Key>>(
         tensor.device().type(),
@@ -155,9 +157,13 @@ class Operator : public OperatorBase {
                 if constexpr (std::is_constructible_v<
                                   Operator<Key, kDev, kImplementationIndex>,
                                   const Tensor&, Args...>) {
-                  op_ptr = std::make_unique<
-                      Operator<Key, kDev, kImplementationIndex>>(
-                      tensor, std::forward<Args>(args)...);
+                  std::apply(
+                      [&](auto&... cached_args) {
+                        op_ptr = std::make_unique<
+                            Operator<Key, kDev, kImplementationIndex>>(
+                            tensor, cached_args...);
+                      },
+                      cache_args);
                 } else {
                   assert(false &&
                          "operator is not implemented for this device and "
