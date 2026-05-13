@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import pathlib
 import re
@@ -15,6 +16,11 @@ _BASE_DIR = _SRC_DIR / "base"
 
 _GENERATION_DIR = pathlib.Path("generated")
 
+# Base headers emitted by `generate_torch_ops.py` live alongside the
+# hand-written ones in `src/base/`, but in a parallel tree under
+# `generated/base/` so they are not committed.
+_GENERATED_BASE_DIR = _GENERATION_DIR / "base"
+
 _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 
 _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
@@ -24,37 +30,61 @@ _INCLUDE_DIR = _GENERATION_DIR / "include"
 _INDENTATION = "  "
 
 
+@functools.lru_cache(maxsize=1)
+def _get_system_include_flags():
+    """Probe the system C++ compiler for default include paths so libclang
+    can resolve standard headers when parsing an op's base header."""
+    compilers = []
+
+    for compiler in ("clang++", "g++"):
+        if shutil.which(compiler) is not None:
+            compilers.append(compiler)
+
+    system_include_flags = []
+
+    for compiler in compilers:
+        for line in subprocess.getoutput(
+            f"{compiler} -E -x c++ -v /dev/null"
+        ).splitlines():
+            if not line.startswith(" "):
+                continue
+
+            system_include_flags.append("-isystem")
+            system_include_flags.append(line.strip())
+
+    return tuple(system_include_flags)
+
+
+def _find_base_header(op_name):
+    """Resolve the base header for `op_name`, preferring the hand-written
+    `src/base/<op>.h` over the auto-generated `generated/base/<op>.h`.
+    Mirrors the include-path resolution order used at compile time."""
+    src_path = _BASE_DIR / f"{op_name}.h"
+
+    if src_path.exists():
+        return src_path
+
+    generated_path = _GENERATED_BASE_DIR / f"{op_name}.h"
+
+    if generated_path.exists():
+        return generated_path
+
+    raise FileNotFoundError(f"no base header for op {op_name!r}")
+
+
 class _OperatorExtractor:
     def __call__(self, op_name):
-        def _get_system_include_flags():
-            def _get_compilers():
-                compilers = []
-
-                for compiler in ("clang++", "g++"):
-                    if shutil.which(compiler) is not None:
-                        compilers.append(compiler)
-
-                return compilers
-
-            system_include_flags = []
-
-            for compiler in _get_compilers():
-                for line in subprocess.getoutput(
-                    f"{compiler} -E -x c++ -v /dev/null"
-                ).splitlines():
-                    if not line.startswith(" "):
-                        continue
-
-                    system_include_flags.append("-isystem")
-                    system_include_flags.append(line.strip())
-
-            return system_include_flags
-
-        system_include_flags = _get_system_include_flags()
-
         index = clang.cindex.Index.create()
-        args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
+        args = (
+            "-std=c++17",
+            "-x",
+            "c++",
+            "-I",
+            "src",
+            "-I",
+            str(_GENERATION_DIR),
+        ) + _get_system_include_flags()
+        translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -98,7 +128,7 @@ def _find_optional_tensor_params(op_name):
     headers are not fully available, so we fall back to a regex scan of the
     source text.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
@@ -107,14 +137,31 @@ def _find_vector_tensor_params(op_name):
     """Return a set of parameter names declared as `std::vector<Tensor>` in
     the base header.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
+
+
+def _find_vector_int64_params(op_name):
+    """Return a set of parameter names declared as `std::vector<int64_t>` in
+    the base header.
+
+    libclang on systems where the STL headers are not fully indexable
+    silently falls back to reporting the type as `int` for these params,
+    which then leaks into the generated bindings as `const int padding`
+    instead of `const std::vector<int64_t> padding` and breaks the call
+    to the base operator.  Regex-scan the source so the binding's
+    parameter type comes from the actual declaration.
+    """
+    source = _find_base_header(op_name).read_text()
+
+    return set(re.findall(r"std::vector<int64_t>\s+(\w+)", source))
 
 
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
+    vector_int64_params = _find_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
@@ -131,6 +178,9 @@ def _generate_pybind11(operator):
 
         return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
+    def _is_vector_int64(arg):
+        return arg.spelling in vector_int64_params
+
     def _generate_params(node):
         parts = []
 
@@ -142,6 +192,8 @@ def _generate_pybind11(operator):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
             elif _is_vector_tensor(arg):
                 parts.append(f"std::vector<py::object> {arg.spelling}")
+            elif _is_vector_int64(arg):
+                parts.append(f"const std::vector<int64_t> {arg.spelling}")
             else:
                 param = arg.type.spelling.replace("const Tensor", "py::object").replace(
                     "Tensor", "py::object"
@@ -216,16 +268,51 @@ def _generate_pybind11(operator):
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
-        return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return static_cast<const Operator<Self>&>(self)({call_args});
+        # The first lambda parameter is conventionally named `self`, but
+        # ATen schemas often have a parameter literally called `self`
+        # (e.g. `pow.Tensor_Scalar_out(Scalar self, Tensor exponent)`),
+        # so rename to `op` to avoid the collision in the generated code.
+        return f"""      .def("__call__", [](const Self& op, {call_params}) {{
+        return static_cast<const Operator<Self>&>(op)({call_args});
       }})"""
 
-    inits = "\n".join(
-        _generate_init(constructor) for constructor in operator.constructors
-    )
-    calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
+    def _overload_order_key(node):
+        """Sort key that places more-specific overloads first.
+
+        Tensor parameters are exposed to pybind as `py::object`, which
+        accepts any Python value and only fails inside
+        `TensorFromPybind11Handle`.  When a class has both Tensor and
+        scalar overloads, pybind's overload-resolver tries them in
+        registration order and stops at the first that does not raise,
+        so the scalar overload must be registered first; otherwise the
+        permissive Tensor signature swallows scalar calls and aborts at
+        runtime.
+        """
+        object_like = 0
+        total = 0
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            total += 1
+
+            if (
+                _is_optional_tensor(arg)
+                or _is_vector_tensor(arg)
+                or "Tensor" in arg.type.spelling
+            ):
+                object_like += 1
+
+        return (object_like, -total)
+
+    constructors = sorted(operator.constructors, key=_overload_order_key)
+    operator_calls = sorted(operator.calls, key=_overload_order_key)
+
+    inits = "\n".join(_generate_init(constructor) for constructor in constructors)
+    calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
     callers = "\n".join(
-        _generate_call(operator.name, call, method=False) for call in operator.calls
+        _generate_call(operator.name, call, method=False) for call in operator_calls
     )
 
     pascal_case_op_name = _snake_to_pascal(op_name)
@@ -253,7 +340,11 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
-        return Self::active_implementation_indices(DeviceTypeFromString(device));
+        auto dev_type = TryDeviceTypeFromString<Self>(device);
+        if (!dev_type.has_value()) {{
+          return std::vector<std::size_t>{{}};
+        }}
+        return Self::active_implementation_indices(*dev_type);
       }})
       .def_static("clear_cache", &Self::clear_cache);
 
@@ -268,8 +359,17 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 
 def _generate_legacy_c(operator, paths):
     def _generate_source(operator):
+        def _to_include_path(path):
+            text = str(path)
+
+            for prefix in ("src/", "generated/"):
+                if text.startswith(prefix):
+                    return text[len(prefix) :]
+
+            return text
+
         impl_includes = "\n".join(
-            f'#include "{str(path).removeprefix("src/")}"' for path in paths
+            f'#include "{_to_include_path(path)}"' for path in paths
         )
 
         return f"""#include "../../handle.h"
@@ -444,6 +544,10 @@ def _snake_to_pascal(snake_str):
     return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
+def _matches_scan_dir(impl_path, scan_dirs):
+    return any(part in scan_dirs for part in impl_path.parts)
+
+
 def _get_all_ops(devices, with_torch=False):
     scan_dirs = set(devices)
 
@@ -452,20 +556,45 @@ def _get_all_ops(devices, with_torch=False):
 
     ops = {}
 
-    for file_path in _BASE_DIR.iterdir():
-        if not file_path.is_file():
-            continue
+    base_dirs = [_BASE_DIR]
 
-        op_name = file_path.stem
+    # Only pull in the auto-generated torch op bases when the build is
+    # actually compiling them (`--with-torch`).  Otherwise a stale
+    # `generated/` left over from a previous configure (or rsynced into
+    # a CI container) would cause `ops.cc` to include base headers for
+    # ops that have no compiled implementation, breaking the build.
+    if with_torch and _GENERATED_BASE_DIR.exists():
+        base_dirs.append(_GENERATED_BASE_DIR)
 
-        ops[op_name] = []
+    impl_roots = [_SRC_DIR]
 
-        for file_path in _SRC_DIR.rglob("*.h"):
-            if file_path.parent.parent.parent.name not in scan_dirs:
+    if with_torch and (_GENERATION_DIR / "torch").exists():
+        impl_roots.append(_GENERATION_DIR)
+
+    for base_dir in base_dirs:
+        for file_path in base_dir.iterdir():
+            if not file_path.is_file():
                 continue
 
-            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
-                ops[op_name].append(file_path)
+            op_name = file_path.stem
+
+            # Hand-written `src/base/` is scanned first; the generated
+            # tree never overrides an already-known op.
+            if op_name in ops:
+                continue
+
+            ops[op_name] = []
+
+            for impl_root in impl_roots:
+                for impl_path in impl_root.rglob("*.h"):
+                    if not _matches_scan_dir(impl_path, scan_dirs):
+                        continue
+
+                    if (
+                        f"class Operator<{_snake_to_pascal(op_name)}"
+                        in impl_path.read_text()
+                    ):
+                        ops[op_name].append(impl_path)
 
     return ops
 
@@ -489,9 +618,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    _BINDINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _GENERATED_SRC_DIR.mkdir(parents=True, exist_ok=True)
-    _INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
+    # Wipe previous outputs so files for ops that have since been removed
+    # from the active set (e.g. when toggling `--with-torch`) do not linger
+    # and get globbed by a later build.
+    for d in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
+        if d.exists():
+            shutil.rmtree(d)
+
+        d.mkdir(parents=True)
 
     ops_json = pathlib.Path("ops.json")
 

@@ -252,11 +252,43 @@ if(WITH_ASCEND)
 endif()
 
 if(WITH_TORCH)
-    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS "torch/*.cc" "torch/*.cpp")
+    # Auto-generate ATen-backed operator wrappers from `scripts/torch_ops.yaml`.
+    # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
+    # which we then glob below alongside any hand-written torch sources.
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        RESULT_VARIABLE _torch_ops_result
+    )
+    if(NOT _torch_ops_result EQUAL 0)
+        message(FATAL_ERROR "Generating torch op wrappers - failed")
+    endif()
+    message(STATUS "Generating torch op wrappers - done")
+
+    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS
+        "torch/*.cc" "torch/*.cpp"
+        "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
+        "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
+    )
 
     target_compile_definitions(infiniops PUBLIC WITH_TORCH=1)
     target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
-    target_include_directories(infiniops PUBLIC ${TORCH_INCLUDE_DIRS})
+    target_include_directories(infiniops PUBLIC
+        ${TORCH_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/generated
+    )
+
+    # Each generated `<op>.cc` instantiates `at::<op>_out(...)`, which
+    # pulls in roughly 0.5-1 GB of ATen template metaprogramming.  At
+    # ninja's default parallelism (one job per CPU), a build with 451
+    # ops can blow past 30 GB of RSS and the OOM killer drops
+    # `cc1plus`.  Cap the heavyweight torch sources to 4 concurrent
+    # compilations via a Ninja job pool; the rest of the build keeps
+    # full parallelism.
+    if(CMAKE_GENERATOR MATCHES "Ninja")
+        set_property(GLOBAL APPEND PROPERTY JOB_POOLS torch_compile=4)
+    endif()
 
     if(WITH_METAX OR WITH_MOORE)
         # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
@@ -275,7 +307,13 @@ if(WITH_TORCH)
         # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
         if(WITH_METAX)
-            list(APPEND _torch_extra_flags "-DUSE_MACA=1")
+            list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
+        endif()
+        if(WITH_MOORE)
+            list(APPEND _torch_extra_flags "-DWITH_MOORE=1")
+        endif()
+        if(WITH_CPU)
+            list(APPEND _torch_extra_flags "-DWITH_CPU=1")
         endif()
         if(DEFINED TORCH_CXX11_ABI)
             list(APPEND _torch_extra_flags "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
@@ -297,11 +335,13 @@ if(WITH_TORCH)
                 COMMAND ${SYSTEM_CXX}
                     -std=c++17 -fPIC -O2
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
+                    "-I${PROJECT_SOURCE_DIR}/generated"
                     ${_torch_include_flags}
                     ${_torch_extra_flags}
                     -c "${_src}" -o "${_obj}"
                 DEPENDS "${_src}"
                 COMMENT "Compiling ${_rel} with system C++ compiler"
+                JOB_POOL torch_compile
             )
             list(APPEND TORCH_OBJECT_FILES "${_obj}")
         endforeach()
@@ -310,7 +350,18 @@ if(WITH_TORCH)
             PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
         target_sources(infiniops PRIVATE ${TORCH_OBJECT_FILES})
     else()
-        target_sources(infiniops PRIVATE ${TORCH_SOURCES})
+        # Build the heavy torch sources as their own object library so
+        # the Ninja `torch_compile` job pool throttles only those
+        # compilations and the rest of `infiniops` keeps full
+        # parallelism.
+        add_library(infiniops_torch_objs OBJECT ${TORCH_SOURCES})
+        target_link_libraries(infiniops_torch_objs PUBLIC infiniops)
+        if(CMAKE_GENERATOR MATCHES "Ninja")
+            set_target_properties(infiniops_torch_objs
+                PROPERTIES JOB_POOL_COMPILE torch_compile)
+        endif()
+        target_sources(infiniops PRIVATE
+            $<TARGET_OBJECTS:infiniops_torch_objs>)
     endif()
 endif()
 
@@ -391,4 +442,11 @@ if(GENERATE_PYTHON_BINDINGS)
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)
+
+    if(WITH_TORCH)
+        # Ship the per-op metadata alongside the bindings so the unified
+        # torch op test can discover what to exercise at runtime.
+        install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
+            DESTINATION .)
+    endif()
 endif()
