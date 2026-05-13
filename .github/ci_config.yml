@@ -10,7 +10,9 @@ platforms:
     image:
       dockerfile: images/nvidia/
       build_args:
-        BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
+        SKIP_APT: "1"
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
@@ -24,7 +26,7 @@ platforms:
         #   MY_VAR: value
         stages:
           - name: test
-            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices nvidia -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
     image:
       dockerfile: images/iluvatar/
