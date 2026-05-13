@@ -16,9 +16,9 @@ on:
           - cambricon
           - all
   push:
-    branches: ["master"]
+    branches: ["master", "ci/ci-online"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "ci/ci-online"]
 
 jobs:
   ci:
