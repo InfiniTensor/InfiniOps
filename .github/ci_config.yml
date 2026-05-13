@@ -10,7 +10,7 @@ platforms:
     image:
       dockerfile: images/nvidia/
       build_args:
-        BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.12-py3
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
