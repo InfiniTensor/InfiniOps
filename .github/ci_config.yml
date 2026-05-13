@@ -76,10 +76,10 @@ platforms:
           gpu_style: none                  # MetaX: passthrough via --privileged, CUDA_VISIBLE_DEVICES controls visibility
           memory: 32GB
           shm_size: 16g
-          timeout: 300
+          timeout: 3600
         stages:
           - name: test
-            run: pytest 'tests/test_add.py::test_add[cuda-0-dtype0-1e-07-1e-07-shape0-None-None-None]' 'tests/test_gemm.py::test_gemm[cuda-0-dtype0-0.001-0.001-False-False--1-1-a_shape0-b_shape0-c_shape0-None-None-None]' 'tests/test_swiglu.py::test_swiglu[cuda-0-dtype0-1e-07-1e-07-shape0-None-None-None]' --devices metax -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices metax -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
     image:
@@ -102,7 +102,7 @@ platforms:
           timeout: 3600
         stages:
           - name: test
-            run: pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
     image:
@@ -124,13 +124,12 @@ platforms:
           timeout: 3600
         stages:
           - name: test
-            run: pytest tests/test_gemm.py --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
     runner_label: Ascend
     image:
       dockerfile: images/ascend/
-      skip_build: true
       build_args:
         BASE_IMAGE: quay.io/ascend/vllm-ascend:v0.18.0rc1-openeuler
         PIP_INDEX_URL: https://pypi.org/simple
@@ -147,7 +146,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install scikit-build-core pybind11 libclang && pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation
     jobs:
       npu:
         type: unittest

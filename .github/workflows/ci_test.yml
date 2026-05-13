@@ -21,7 +21,7 @@ on:
           - ascend
           - all
   push:
-    branches: ["master", "ci/ci-online"]
+    branches: ["master"]
   pull_request:
     branches: ["master", "ci/ci-online"]
 
