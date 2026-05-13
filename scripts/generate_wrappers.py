@@ -172,7 +172,15 @@ def _generate_pybind11(operator):
     pascal_case_op_name = _snake_to_pascal(op_name)
 
     def _overload_suffix(nodes, node):
-        if len(nodes) == 1:
+        def _signature(item):
+            return tuple(
+                arg.type.spelling
+                for arg in item.get_arguments()
+                if arg.spelling != "stream"
+            )
+
+        signature = _signature(node)
+        if [_signature(item) for item in nodes].count(signature) == 1:
             return ""
 
         return str(nodes.index(node))
@@ -261,9 +269,9 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
-        return generated_dispatch::ActiveImplementationIndices{pascal_case_op_name}(DeviceTypeFromString(device));
+        return generated_dispatch::ActiveImplementationIndicesFor{pascal_case_op_name}(DeviceTypeFromString(device));
       }})
-      .def_static("clear_cache", &generated_dispatch::ClearCache{pascal_case_op_name});
+      .def_static("clear_cache", &generated_dispatch::ClearCacheFor{pascal_case_op_name});
 
 {callers}
 }}
@@ -458,9 +466,7 @@ def _generate_generated_dispatch(operators, ops, devices):
 
     def _generate_arguments(node):
         return ", ".join(
-            arg.spelling
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
+            arg.spelling for arg in node.get_arguments() if arg.spelling != "stream"
         )
 
     def _append_optional_args(prefix, args):
@@ -476,7 +482,15 @@ def _generate_generated_dispatch(operators, ops, devices):
         return prefix
 
     def _overload_suffix(nodes, node):
-        if len(nodes) == 1:
+        def _signature(item):
+            return tuple(
+                arg.type.spelling
+                for arg in item.get_arguments()
+                if arg.spelling != "stream"
+            )
+
+        signature = _signature(node)
+        if [_signature(item) for item in nodes].count(signature) == 1:
             return ""
 
         return str(nodes.index(node))
@@ -500,18 +514,18 @@ def _generate_generated_dispatch(operators, ops, devices):
         pascal_case_op_name = _snake_to_pascal(operator.name)
 
         declarations.append(
-            f"std::vector<std::size_t> ActiveImplementationIndices"
+            f"std::vector<std::size_t> ActiveImplementationIndicesFor"
             f"{pascal_case_op_name}(Device::Type dev_type);"
         )
         definitions.append(
-            f"""std::vector<std::size_t> ActiveImplementationIndices{pascal_case_op_name}(Device::Type dev_type) {{
+            f"""std::vector<std::size_t> ActiveImplementationIndicesFor{pascal_case_op_name}(Device::Type dev_type) {{
   return Operator<{pascal_case_op_name}>::active_implementation_indices(dev_type);
 }}"""
         )
 
-        declarations.append(f"void ClearCache{pascal_case_op_name}();")
+        declarations.append(f"void ClearCacheFor{pascal_case_op_name}();")
         definitions.append(
-            f"""void ClearCache{pascal_case_op_name}() {{
+            f"""void ClearCacheFor{pascal_case_op_name}() {{
   Operator<{pascal_case_op_name}>::clear_cache();
 }}"""
         )
@@ -542,7 +556,7 @@ def _generate_generated_dispatch(operators, ops, devices):
                 f"{_append_optional_params(f'{pascal_case_op_name}& op', params)});"
             )
             definitions.append(
-                f"""void Invoke{pascal_case_op_name}{suffix}(const {_append_optional_params(f'{pascal_case_op_name}& op', params)}) {{
+                f"""void Invoke{pascal_case_op_name}{suffix}(const {_append_optional_params(f"{pascal_case_op_name}& op", params)}) {{
   return static_cast<const Operator<{pascal_case_op_name}>&>(op)({args});
 }}"""
             )
