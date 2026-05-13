@@ -147,7 +147,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install scikit-build-core pybind11 libclang && pip install .[dev] --no-build-isolation
     jobs:
       npu:
         type: unittest
