@@ -14,6 +14,7 @@ on:
           - metax
           - moore
           - cambricon
+          - ascend
           - all
   push:
     branches: ["master", "ci/ci-online"]
@@ -26,5 +27,5 @@ jobs:
     with:
       config_path: .github/ci_config.yml
       ci_ref: codex/prune-unused-ci-artifacts
-      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon' }}
+      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon,ascend' }}
     secrets: inherit
