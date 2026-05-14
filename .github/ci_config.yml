@@ -18,9 +18,9 @@ platforms:
       gpu:
         type: unittest
         resources:
-          ngpus: 1                         # Auto allocator picks this many free GPUs
+          ngpus: 1                         # Auto allocator picks this many free GPUs.
           memory: 32GB
-          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit
+          shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
@@ -75,7 +75,7 @@ platforms:
         type: unittest
         resources:
           ngpus: 1
-          gpu_style: none                  # MetaX: passthrough via --privileged, CUDA_VISIBLE_DEVICES controls visibility
+          gpu_style: none                  # MetaX uses passthrough via `--privileged`; `CUDA_VISIBLE_DEVICES` controls visibility.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -98,7 +98,7 @@ platforms:
         type: unittest
         resources:
           ngpus: 1
-          gpu_style: none                  # Moore: passthrough via --privileged, MTHREADS_VISIBLE_DEVICES controls visibility
+          gpu_style: none                  # Moore uses passthrough via `--privileged`; `MTHREADS_VISIBLE_DEVICES` controls visibility.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -120,7 +120,7 @@ platforms:
         type: unittest
         resources:
           ngpus: 1
-          gpu_style: mlu                   # Cambricon: passthrough via --privileged, MLU_VISIBLE_DEVICES for device control
+          gpu_style: mlu                   # Cambricon uses passthrough via `--privileged`; `MLU_VISIBLE_DEVICES` controls device selection.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
