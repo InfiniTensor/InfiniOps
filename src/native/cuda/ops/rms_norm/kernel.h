@@ -48,8 +48,7 @@ class CudaRmsNorm : public RmsNorm {
                   reinterpret_cast<T*>(out.data()), stride_out_batch,
                   stride_out_nhead, reinterpret_cast<const T*>(input.data()),
                   stride_input_batch, stride_input_nhead,
-                  reinterpret_cast<const T*>(weight.data()), nhead_, dim_,
-                  eps_);
+                  reinterpret_cast<const T*>(weight.data()), nhead_, dim_, eps);
         },
         "CudaRmsNorm::operator()");
   }
