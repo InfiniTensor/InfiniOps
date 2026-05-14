@@ -7,7 +7,7 @@ github:
 
 platforms:
   nvidia:
-    runner_label: nvidia
+    runner_label: Nvidia
     execution_mode: agent_local
     image:
       dockerfile: images/nvidia/
@@ -67,7 +67,7 @@ platforms:
             run: pytest tests/ --devices iluvatar -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
-    runner_label: metax
+    runner_label: Metax
     execution_mode: agent_local
     image:
       dockerfile: images/metax/
@@ -96,7 +96,7 @@ platforms:
             run: pytest tests/ --devices metax -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
-    runner_label: moore
+    runner_label: Moore
     execution_mode: agent_local
     image:
       dockerfile: images/moore/
@@ -123,7 +123,7 @@ platforms:
             run: pytest tests/ --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
-    runner_label: cambricon
+    runner_label: Cambricon
     execution_mode: agent_local
     image:
       dockerfile: images/cambricon/
