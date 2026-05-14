@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -438,7 +439,7 @@ __C __export {_generate_destroy_func_decl(operator)};
     return _generate_source(operator), _generate_header(operator)
 
 
-def _generate_generated_dispatch(operators, ops, devices):
+def _generate_generated_dispatch_entries(operator):
     def _generate_params(node):
         return ", ".join(
             f"{arg.type.spelling} {arg.spelling}"
@@ -463,81 +464,75 @@ def _generate_generated_dispatch(operators, ops, devices):
 
         return prefix
 
+    pascal_case_op_name = _snake_to_pascal(operator.name)
+    declarations = [
+        f"std::vector<std::size_t> ActiveImplementationIndicesFor"
+        f"{pascal_case_op_name}(Device::Type dev_type);"
+    ]
+    definitions = [
+        f"""std::vector<std::size_t> ActiveImplementationIndicesFor{pascal_case_op_name}(Device::Type dev_type) {{
+  return Operator<{pascal_case_op_name}>::active_implementation_indices(dev_type);
+}}"""
+    ]
+
+    declarations.append(f"void ClearCacheFor{pascal_case_op_name}();")
+    definitions.append(
+        f"""void ClearCacheFor{pascal_case_op_name}() {{
+  Operator<{pascal_case_op_name}>::clear_cache();
+}}"""
+    )
+
+    for constructor in operator.constructors:
+        params = _generate_params(constructor)
+        args = _generate_arguments(constructor)
+
+        declarations.append(
+            f"std::unique_ptr<Operator<{pascal_case_op_name}>> "
+            f"Make{pascal_case_op_name}("
+            f"{_append_optional_params('const Config& config', params)});"
+        )
+        definitions.append(
+            f"""std::unique_ptr<Operator<{pascal_case_op_name}>> Make{pascal_case_op_name}({_append_optional_params("const Config& config", params)}) {{
+  return Operator<{pascal_case_op_name}>::Make({_append_optional_args("config", args)});
+}}"""
+        )
+
+    for call in operator.calls:
+        params = _generate_params(call)
+        args = _generate_arguments(call)
+
+        declarations.append(
+            f"void Invoke{pascal_case_op_name}(const "
+            f"{_append_optional_params(f'{pascal_case_op_name}& op', params)});"
+        )
+        definitions.append(
+            f"""void Invoke{pascal_case_op_name}(const {_append_optional_params(f"{pascal_case_op_name}& op", params)}) {{
+  return static_cast<const Operator<{pascal_case_op_name}>&>(op)({args});
+}}"""
+        )
+
+        declarations.append(
+            f"void Call{pascal_case_op_name}(const Handle& handle, "
+            f"{_append_optional_params('const Config& config', params)});"
+        )
+        definitions.append(
+            f"""void Call{pascal_case_op_name}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
+  return Operator<{pascal_case_op_name}>::Call({_append_optional_args("handle, config", args)});
+}}"""
+        )
+
+    return declarations, definitions
+
+
+def _generate_generated_dispatch_header(operators, devices, declarations):
     header_base_includes = "\n".join(
         f'#include "base/{operator.name}.h"' for operator in operators
     )
     header_device_includes = "\n".join(
         f'#include "{path}"' for path in _device_marker_headers(devices)
     )
-    impl_includes = "\n".join(
-        f'#include "{impl_path}"'
-        for impl_paths in ops.values()
-        for impl_path in impl_paths
-    )
 
-    declarations = []
-    definitions = []
-
-    for operator in operators:
-        pascal_case_op_name = _snake_to_pascal(operator.name)
-
-        declarations.append(
-            f"std::vector<std::size_t> ActiveImplementationIndicesFor"
-            f"{pascal_case_op_name}(Device::Type dev_type);"
-        )
-        definitions.append(
-            f"""std::vector<std::size_t> ActiveImplementationIndicesFor{pascal_case_op_name}(Device::Type dev_type) {{
-  return Operator<{pascal_case_op_name}>::active_implementation_indices(dev_type);
-}}"""
-        )
-
-        declarations.append(f"void ClearCacheFor{pascal_case_op_name}();")
-        definitions.append(
-            f"""void ClearCacheFor{pascal_case_op_name}() {{
-  Operator<{pascal_case_op_name}>::clear_cache();
-}}"""
-        )
-
-        for constructor in operator.constructors:
-            params = _generate_params(constructor)
-            args = _generate_arguments(constructor)
-
-            declarations.append(
-                f"std::unique_ptr<Operator<{pascal_case_op_name}>> "
-                f"Make{pascal_case_op_name}("
-                f"{_append_optional_params('const Config& config', params)});"
-            )
-            definitions.append(
-                f"""std::unique_ptr<Operator<{pascal_case_op_name}>> Make{pascal_case_op_name}({_append_optional_params("const Config& config", params)}) {{
-  return Operator<{pascal_case_op_name}>::Make({_append_optional_args("config", args)});
-}}"""
-            )
-
-        for call in operator.calls:
-            params = _generate_params(call)
-            args = _generate_arguments(call)
-
-            declarations.append(
-                f"void Invoke{pascal_case_op_name}(const "
-                f"{_append_optional_params(f'{pascal_case_op_name}& op', params)});"
-            )
-            definitions.append(
-                f"""void Invoke{pascal_case_op_name}(const {_append_optional_params(f"{pascal_case_op_name}& op", params)}) {{
-  return static_cast<const Operator<{pascal_case_op_name}>&>(op)({args});
-}}"""
-            )
-
-            declarations.append(
-                f"void Call{pascal_case_op_name}(const Handle& handle, "
-                f"{_append_optional_params('const Config& config', params)});"
-            )
-            definitions.append(
-                f"""void Call{pascal_case_op_name}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
-  return Operator<{pascal_case_op_name}>::Call({_append_optional_args("handle, config", args)});
-}}"""
-            )
-
-    header = f"""#ifndef INFINI_OPS_GENERATED_BINDINGS_GENERATED_DISPATCH_H_
+    return f"""#ifndef INFINI_OPS_GENERATED_BINDINGS_GENERATED_DISPATCH_H_
 #define INFINI_OPS_GENERATED_BINDINGS_GENERATED_DISPATCH_H_
 
 #include <cstddef>
@@ -563,7 +558,11 @@ namespace infini::ops::generated_dispatch {{
 #endif
 """
 
-    source = f"""#include "generated_dispatch.h"
+
+def _generate_generated_dispatch_source(impl_paths, definitions):
+    impl_includes = "\n".join(f'#include "{impl_path}"' for impl_path in impl_paths)
+
+    return f"""#include "generated_dispatch.h"
 
 // clang-format off
 {impl_includes}
@@ -576,7 +575,17 @@ namespace infini::ops::generated_dispatch {{
 }}  // namespace infini::ops::generated_dispatch
 """
 
-    return header, source
+
+def _dispatch_gen_batch_size():
+    raw = os.environ.get("INFINIOPS_DISPATCH_BATCH_SIZE")
+
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 8
+
+    return 8
 
 
 def _device_marker_headers(devices):
@@ -662,11 +671,14 @@ if __name__ == "__main__":
 
     bind_func_names = []
     operators = []
+    dispatch_declarations = []
+    dispatch_batches = []
 
     for op_name, impl_paths in ops.items():
         extractor = _OperatorExtractor()
         operator = extractor(op_name)
         operators.append(operator)
+        declarations, definitions = _generate_generated_dispatch_entries(operator)
 
         source_path = _GENERATED_SRC_DIR / op_name
         header_name = f"{op_name}.h"
@@ -681,12 +693,28 @@ if __name__ == "__main__":
         (_INCLUDE_DIR / header_name).write_text(legacy_c_header)
 
         bind_func_names.append(bind_func_name)
+        dispatch_declarations.extend(declarations)
+        dispatch_batches.append((impl_paths, definitions))
 
-    dispatch_header, dispatch_source = _generate_generated_dispatch(
-        operators, ops, args.devices
+    dispatch_header = _generate_generated_dispatch_header(
+        operators, args.devices, dispatch_declarations
     )
     (_BINDINGS_DIR / "generated_dispatch.h").write_text(dispatch_header)
-    (_BINDINGS_DIR / "generated_dispatch.cc").write_text(dispatch_source)
+
+    dispatch_batch_size = _dispatch_gen_batch_size()
+
+    for dispatch_batch_index, start in enumerate(
+        range(0, len(dispatch_batches), dispatch_batch_size)
+    ):
+        batch = dispatch_batches[start : start + dispatch_batch_size]
+        impl_paths = list(
+            dict.fromkeys(impl_path for paths, _ in batch for impl_path in paths)
+        )
+        definitions = [definition for _, defs in batch for definition in defs]
+        dispatch_source = _generate_generated_dispatch_source(impl_paths, definitions)
+        (_BINDINGS_DIR / f"generated_dispatch_{dispatch_batch_index}.cc").write_text(
+            dispatch_source
+        )
 
     bind_func_declarations = "\n".join(
         f"void {bind_func_name}(pybind11::module& m);"
