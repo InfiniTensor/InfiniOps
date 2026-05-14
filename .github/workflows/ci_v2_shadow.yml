@@ -27,10 +27,10 @@ on:
 
 jobs:
   ci-v2-shadow:
-    uses: InfiniTensor/ci/.github/workflows/infiniops-ci-v2-shadow.yml@193251daca4140d4635df2cdde8268573ef994b7
+    uses: InfiniTensor/ci/.github/workflows/infiniops-ci-v2-shadow.yml@8038e6528c28c134e6e3b3e919d1e959094626ee
     with:
       config_path: .github/ci_config.yml
-      ci_ref: 193251daca4140d4635df2cdde8268573ef994b7
+      ci_ref: 8038e6528c28c134e6e3b3e919d1e959094626ee
       max_parallel: 10
       platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon,ascend' }}
     secrets: inherit
