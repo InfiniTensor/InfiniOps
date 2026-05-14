@@ -13,9 +13,6 @@ namespace detail {
 // TODO: The unified FP16/BF16 branch uses `Caster` and scalar float
 // arithmetic instead of native vectorized intrinsics (e.g. `h2rcp`,
 // `__hmul2`). Profile and restore specialized paths if needed.
-//
-// Lives in `detail::` so it does not collide with the auto-generated
-// `infini::ops::Sigmoid` operator class emitted by `generate_torch_ops.py`.
 template <Device::Type kDev, typename T>
 __device__ __forceinline__ T Sigmoid(const T& x) {
   if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
