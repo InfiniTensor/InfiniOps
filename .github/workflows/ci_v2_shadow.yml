@@ -11,8 +11,9 @@ on:
         description: "Platform to run"
         type: choice
         required: true
-        default: nvidia
+        default: active
         options:
+          - active
           - nvidia
           - iluvatar
           - metax
@@ -32,5 +33,5 @@ jobs:
       config_path: .github/ci_config.yml
       ci_ref: 2b1497aa957d6b63aaf999dd45ce0be267a5373e
       max_parallel: 10
-      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon,ascend' }}
+      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform == 'active' && 'nvidia,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,metax,moore,cambricon,ascend' }}
     secrets: inherit
