@@ -7,6 +7,8 @@ github:
 
 platforms:
   nvidia:
+    runner_label: nvidia
+    execution_mode: agent_local
     image:
       dockerfile: images/nvidia/
       build_args:
@@ -22,12 +24,16 @@ platforms:
           memory: 32GB
           shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
+          queue_timeout: 1800
+          junit_path: test-results.xml
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
         stages:
           - name: test
             run: pytest tests/ --devices nvidia -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
+    runner_label: iluvatar
+    execution_mode: agent_local
     image:
       dockerfile: images/iluvatar/
       build_args:
@@ -54,11 +60,15 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 1800
+          junit_path: test-results.xml
         stages:
           - name: test
             run: pytest tests/ --devices iluvatar -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
+    runner_label: metax
+    execution_mode: agent_local
     image:
       dockerfile: images/metax/
       build_args:
@@ -79,11 +89,15 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 1800
+          junit_path: test-results.xml
         stages:
           - name: test
             run: pytest tests/ --devices metax -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
+    runner_label: moore
+    execution_mode: agent_local
     image:
       dockerfile: images/moore/
       build_args:
@@ -102,11 +116,15 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 1800
+          junit_path: test-results.xml
         stages:
           - name: test
             run: pytest tests/ --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
+    runner_label: cambricon
+    execution_mode: agent_local
     image:
       dockerfile: images/cambricon/
       build_args:
@@ -124,12 +142,15 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 1800
+          junit_path: test-results.xml
         stages:
           - name: test
             run: pytest tests/ --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
     runner_label: Ascend
+    execution_mode: agent_local
     image:
       dockerfile: images/ascend/
       buildkit: true
@@ -158,6 +179,8 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 1800
+          junit_path: test-results.xml
         stages:
           - name: test
             run: pytest tests/ -n 1 --devices ascend -v --tb=short --junitxml=/workspace/results/test-results.xml
