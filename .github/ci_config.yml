@@ -24,7 +24,7 @@ platforms:
           memory: 32GB
           shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
-          queue_timeout: 1800
+          queue_timeout: 600
           junit_path: test-results.xml
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
@@ -60,7 +60,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 1800
+          queue_timeout: 600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -89,7 +89,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 1800
+          queue_timeout: 600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -116,7 +116,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 1800
+          queue_timeout: 600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -142,7 +142,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 1800
+          queue_timeout: 600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -179,7 +179,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 1800
+          queue_timeout: 600
           junit_path: test-results.xml
         stages:
           - name: test
