@@ -7,6 +7,8 @@
 
 namespace infini::ops {
 
+namespace detail {
+
 // Optimized sigmoid function with support for FP16 and BF16 types.
 // TODO: The unified FP16/BF16 branch uses `Caster` and scalar float
 // arithmetic instead of native vectorized intrinsics (e.g. `h2rcp`,
@@ -23,6 +25,8 @@ __device__ __forceinline__ T Sigmoid(const T& x) {
     return 1.0f / (1.0f + expf(-x));
   }
 }
+
+}  // namespace detail
 
 // SwiGLU(x, gate) = Swish(x) * gate = (x * sigmoid(x)) * gate.
 template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
@@ -70,9 +74,10 @@ __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
       out[out_idx] = Caster<kDev>::template Cast<T>(
           __fmul_rn(__fmul_rn(gatef, sigf), upf));
     } else if constexpr (std::is_same_v<T, float>) {
-      out[out_idx] = __fmul_rn(__fmul_rn(gate, Sigmoid<kDev>(gate)), up);
+      out[out_idx] =
+          __fmul_rn(__fmul_rn(gate, detail::Sigmoid<kDev>(gate)), up);
     } else {
-      out[out_idx] = gate * Sigmoid<kDev>(gate) * up;
+      out[out_idx] = gate * detail::Sigmoid<kDev>(gate) * up;
     }
   }
 }
