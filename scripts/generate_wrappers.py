@@ -1,4 +1,6 @@
 import argparse
+import concurrent.futures
+import functools
 import json
 import os
 import pathlib
@@ -16,6 +18,11 @@ _BASE_DIR = _SRC_DIR / "base"
 
 _GENERATION_DIR = pathlib.Path("generated")
 
+# Base headers emitted by `generate_torch_ops.py` live alongside the
+# hand-written ones in `src/base/`, but in a parallel tree under
+# `generated/base/` so they are not committed.
+_GENERATED_BASE_DIR = _GENERATION_DIR / "base"
+
 _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 
 _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
@@ -25,37 +32,61 @@ _INCLUDE_DIR = _GENERATION_DIR / "include"
 _INDENTATION = "  "
 
 
+@functools.lru_cache(maxsize=1)
+def _get_system_include_flags():
+    """Probe the system C++ compiler for default include paths so libclang
+    can resolve standard headers when parsing an op's base header."""
+    compilers = []
+
+    for compiler in ("clang++", "g++"):
+        if shutil.which(compiler) is not None:
+            compilers.append(compiler)
+
+    system_include_flags = []
+
+    for compiler in compilers:
+        for line in subprocess.getoutput(
+            f"{compiler} -E -x c++ -v /dev/null"
+        ).splitlines():
+            if not line.startswith(" "):
+                continue
+
+            system_include_flags.append("-isystem")
+            system_include_flags.append(line.strip())
+
+    return tuple(system_include_flags)
+
+
+def _find_base_header(op_name):
+    """Resolve the base header for `op_name`, preferring the hand-written
+    `src/base/<op>.h` over the auto-generated `generated/base/<op>.h`.
+    Mirrors the include-path resolution order used at compile time."""
+    src_path = _BASE_DIR / f"{op_name}.h"
+
+    if src_path.exists():
+        return src_path
+
+    generated_path = _GENERATED_BASE_DIR / f"{op_name}.h"
+
+    if generated_path.exists():
+        return generated_path
+
+    raise FileNotFoundError(f"no base header for op {op_name!r}")
+
+
 class _OperatorExtractor:
     def __call__(self, op_name):
-        def _get_system_include_flags():
-            def _get_compilers():
-                compilers = []
-
-                for compiler in ("clang++", "g++"):
-                    if shutil.which(compiler) is not None:
-                        compilers.append(compiler)
-
-                return compilers
-
-            system_include_flags = []
-
-            for compiler in _get_compilers():
-                for line in subprocess.getoutput(
-                    f"{compiler} -E -x c++ -v /dev/null"
-                ).splitlines():
-                    if not line.startswith(" "):
-                        continue
-
-                    system_include_flags.append("-isystem")
-                    system_include_flags.append(line.strip())
-
-            return system_include_flags
-
-        system_include_flags = _get_system_include_flags()
-
         index = clang.cindex.Index.create()
-        args = ("-std=c++17", "-x", "c++", "-I", "src") + tuple(system_include_flags)
-        translation_unit = index.parse(f"src/base/{op_name}.h", args=args)
+        args = (
+            "-std=c++17",
+            "-x",
+            "c++",
+            "-I",
+            "src",
+            "-I",
+            str(_GENERATION_DIR),
+        ) + _get_system_include_flags()
+        translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
 
@@ -99,7 +130,7 @@ def _find_optional_tensor_params(op_name):
     headers are not fully available, so we fall back to a regex scan of the
     source text.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
 
@@ -108,14 +139,31 @@ def _find_vector_tensor_params(op_name):
     """Return a set of parameter names declared as `std::vector<Tensor>` in
     the base header.
     """
-    source = (_BASE_DIR / f"{op_name}.h").read_text()
+    source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::vector<Tensor>\s+(\w+)", source))
+
+
+def _find_vector_int64_params(op_name):
+    """Return a set of parameter names declared as `std::vector<int64_t>` in
+    the base header.
+
+    libclang on systems where the STL headers are not fully indexable
+    silently falls back to reporting the type as `int` for these params,
+    which then leaks into the generated bindings as `const int padding`
+    instead of `const std::vector<int64_t> padding` and breaks the call
+    to the base operator.  Regex-scan the source so the binding's
+    parameter type comes from the actual declaration.
+    """
+    source = _find_base_header(op_name).read_text()
+
+    return set(re.findall(r"std::vector<int64_t>\s+(\w+)", source))
 
 
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
+    vector_int64_params = _find_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
         if arg.spelling in optional_tensor_params:
@@ -132,6 +180,9 @@ def _generate_pybind11(operator):
 
         return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
+    def _is_vector_int64(arg):
+        return arg.spelling in vector_int64_params
+
     def _generate_params(node):
         parts = []
 
@@ -143,6 +194,8 @@ def _generate_pybind11(operator):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
             elif _is_vector_tensor(arg):
                 parts.append(f"std::vector<py::object> {arg.spelling}")
+            elif _is_vector_int64(arg):
+                parts.append(f"const std::vector<int64_t> {arg.spelling}")
             else:
                 param = arg.type.spelling.replace("const Tensor", "py::object").replace(
                     "Tensor", "py::object"
@@ -174,6 +227,7 @@ def _generate_pybind11(operator):
 
     def _generate_init(constructor):
         constructor_params = _generate_params(constructor)
+
         return f"""      .def(py::init([]({constructor_params}) {{
         Config config;
         return std::unique_ptr<Self>{{static_cast<Self*>(generated_dispatch::Make{pascal_case_op_name}(config, {_generate_arguments(constructor)}).release())}};
@@ -196,6 +250,7 @@ def _generate_pybind11(operator):
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
         call_args = _generate_arguments(call)
+
         if not method:
             params = (
                 f"{call_params}, std::uintptr_t stream, std::size_t implementation_index"
@@ -217,16 +272,52 @@ def _generate_pybind11(operator):
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
-        return f"""      .def("__call__", [](const Self& self, {call_params}) {{
-        return generated_dispatch::Invoke{pascal_case_op_name}(self, {call_args});
+        # The first lambda parameter is conventionally named `self`, but
+        # ATen schemas often have a parameter literally called `self`
+        # (e.g. `pow.Tensor_Scalar_out(Scalar self, Tensor exponent)`),
+        # so rename to `op` to avoid the collision in the generated code.
+
+        return f"""      .def("__call__", [](const Self& op, {call_params}) {{
+        return generated_dispatch::Invoke{pascal_case_op_name}(op, {call_args});
       }})"""
 
-    inits = "\n".join(
-        _generate_init(constructor) for constructor in operator.constructors
-    )
-    calls = "\n".join(_generate_call(operator.name, call) for call in operator.calls)
+    def _overload_order_key(node):
+        """Sort key that places more-specific overloads first.
+
+        Tensor parameters are exposed to pybind as `py::object`, which
+        accepts any Python value and only fails inside
+        `TensorFromPybind11Handle`.  When a class has both Tensor and
+        scalar overloads, pybind's overload-resolver tries them in
+        registration order and stops at the first that does not raise,
+        so the scalar overload must be registered first; otherwise the
+        permissive Tensor signature swallows scalar calls and aborts at
+        runtime.
+        """
+        object_like = 0
+        total = 0
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            total += 1
+
+            if (
+                _is_optional_tensor(arg)
+                or _is_vector_tensor(arg)
+                or "Tensor" in arg.type.spelling
+            ):
+                object_like += 1
+
+        return (object_like, -total)
+
+    constructors = sorted(operator.constructors, key=_overload_order_key)
+    operator_calls = sorted(operator.calls, key=_overload_order_key)
+
+    inits = "\n".join(_generate_init(constructor) for constructor in constructors)
+    calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
     callers = "\n".join(
-        _generate_call(operator.name, call, method=False) for call in operator.calls
+        _generate_call(operator.name, call, method=False) for call in operator_calls
     )
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -252,7 +343,11 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
-        return generated_dispatch::ActiveImplementationIndicesFor{pascal_case_op_name}(DeviceTypeFromString(device));
+        auto dev_type = TryDeviceTypeFromString<Self>(device);
+        if (!dev_type.has_value()) {{
+          return std::vector<std::size_t>{{}};
+        }}
+        return generated_dispatch::ActiveImplementationIndicesFor{pascal_case_op_name}(*dev_type);
       }})
       .def_static("clear_cache", &generated_dispatch::ClearCacheFor{pascal_case_op_name});
 
@@ -268,7 +363,7 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 def _generate_legacy_c(operator, paths):
     def _generate_source(operator):
         impl_includes = "\n".join(
-            f'#include "{str(path).removeprefix("src/")}"' for path in paths
+            f'#include "{_to_include_path(path)}"' for path in paths
         )
 
         return f"""#include "../../handle.h"
@@ -411,6 +506,7 @@ __C __export {_generate_destroy_func_decl(operator)};
         def _handle_tensor(spelling):
             if call:
                 return spelling.replace("Tensor", "void *")
+
             return spelling.replace("Tensor", "infiniopTensorDescriptor_t")
 
         def _handle_std_optional(spelling):
@@ -524,9 +620,9 @@ def _generate_generated_dispatch_entries(operator):
     return declarations, definitions
 
 
-def _generate_generated_dispatch_header(operators, devices, declarations):
+def _generate_generated_dispatch_header(op_names, devices, declarations):
     header_base_includes = "\n".join(
-        f'#include "base/{operator.name}.h"' for operator in operators
+        f'#include "base/{op_name}.h"' for op_name in op_names
     )
     header_device_includes = "\n".join(
         f'#include "{path}"' for path in _device_marker_headers(devices)
@@ -576,18 +672,6 @@ namespace infini::ops::generated_dispatch {{
 """
 
 
-def _dispatch_gen_batch_size():
-    raw = os.environ.get("INFINIOPS_DISPATCH_BATCH_SIZE")
-
-    if raw:
-        try:
-            return max(1, int(raw))
-        except ValueError:
-            return 8
-
-    return 8
-
-
 def _device_marker_headers(devices):
     paths = {
         "cpu": "native/cpu/device_.h",
@@ -611,6 +695,46 @@ def _snake_to_pascal(snake_str):
     return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
+def _to_include_path(path):
+    text = str(path)
+
+    for prefix in ("src/", "generated/"):
+        if text.startswith(prefix):
+            return text[len(prefix) :]
+
+    return text
+
+
+def _matches_scan_dir(impl_path, scan_dirs):
+    return any(part in scan_dirs for part in impl_path.parts)
+
+
+_OPERATOR_DECL_RE = re.compile(r"\bclass\s+Operator<\s*([A-Za-z_][A-Za-z0-9_]*)\b")
+
+
+def _index_impl_headers(impl_roots, scan_dirs):
+    """Index implementation headers by base operator class name.
+
+    The previous implementation scanned every implementation header once per
+    operator.  With the generated PyTorch backend enabled this becomes hundreds
+    of ops times hundreds of headers during CMake configure.  Read each header
+    once instead and keep the same insertion order as the old nested loops.
+    """
+    by_operator = {}
+
+    for impl_root in impl_roots:
+        for impl_path in impl_root.rglob("*.h"):
+            if not _matches_scan_dir(impl_path, scan_dirs):
+                continue
+
+            text = impl_path.read_text()
+
+            for match in _OPERATOR_DECL_RE.finditer(text):
+                by_operator.setdefault(match.group(1), []).append(impl_path)
+
+    return by_operator
+
+
 def _get_all_ops(devices, with_torch=False):
     scan_dirs = set(devices)
 
@@ -619,22 +743,98 @@ def _get_all_ops(devices, with_torch=False):
 
     ops = {}
 
-    for file_path in _BASE_DIR.iterdir():
-        if not file_path.is_file():
-            continue
+    base_dirs = [_BASE_DIR]
 
-        op_name = file_path.stem
+    # Only pull in the auto-generated torch op bases when the build is
+    # actually compiling them (`--with-torch`).  Otherwise a stale
+    # `generated/` left over from a previous configure (or rsynced into
+    # a CI container) would cause `ops.cc` to include base headers for
+    # ops that have no compiled implementation, breaking the build.
+    if with_torch and _GENERATED_BASE_DIR.exists():
+        base_dirs.append(_GENERATED_BASE_DIR)
 
-        ops[op_name] = []
+    impl_roots = [_SRC_DIR]
 
-        for file_path in _SRC_DIR.rglob("*.h"):
-            if file_path.parent.parent.parent.name not in scan_dirs:
+    if with_torch and (_GENERATION_DIR / "torch").exists():
+        impl_roots.append(_GENERATION_DIR)
+
+    impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
+
+    for base_dir in base_dirs:
+        for file_path in base_dir.iterdir():
+            if not file_path.is_file():
                 continue
 
-            if f"class Operator<{_snake_to_pascal(op_name)}" in file_path.read_text():
-                ops[op_name].append(file_path)
+            op_name = file_path.stem
+
+            # Hand-written `src/base/` is scanned first; the generated
+            # tree never overrides an already-known op.
+            if op_name in ops:
+                continue
+
+            ops[op_name] = []
+            ops[op_name].extend(
+                impl_headers_by_operator.get(_snake_to_pascal(op_name), ())
+            )
 
     return ops
+
+
+def _generate_op_artifacts(item):
+    op_name, impl_paths = item
+    extractor = _OperatorExtractor()
+    operator = extractor(op_name)
+    header_name = f"{op_name}.h"
+    legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
+    dispatch_declarations, dispatch_definitions = _generate_generated_dispatch_entries(
+        operator
+    )
+
+    return {
+        "op_name": op_name,
+        "header_name": header_name,
+        "bind_func_name": f"Bind{_snake_to_pascal(op_name)}",
+        "pybind11": _generate_pybind11(operator),
+        "binding_source": _generate_binding_source(op_name),
+        "legacy_c_source": legacy_c_source,
+        "legacy_c_header": legacy_c_header,
+        "dispatch_declarations": dispatch_declarations,
+        "dispatch_definitions": dispatch_definitions,
+        "impl_paths": impl_paths,
+    }
+
+
+def _wrapper_gen_jobs(with_torch):
+    raw = os.environ.get("INFINIOPS_WRAPPER_GEN_JOBS")
+
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 1
+
+    if not with_torch:
+        return 1
+
+    return min(os.cpu_count() or 1, 8)
+
+
+def _use_monolithic_bindings():
+    value = os.environ.get("INFINIOPS_MONOLITHIC_BINDINGS", "")
+
+    return value.upper() in {"1", "ON", "TRUE"}
+
+
+def _dispatch_gen_batch_size():
+    raw = os.environ.get("INFINIOPS_DISPATCH_BATCH_SIZE")
+
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 8
+
+    return 8
 
 
 if __name__ == "__main__":
@@ -656,6 +856,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # Wipe previous outputs so files for ops that have since been removed
+    # from the active set (e.g. when toggling `--with-torch`) do not linger
+    # and get globbed by a later build.
     for directory in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
         if directory.exists():
             shutil.rmtree(directory)
@@ -670,61 +873,96 @@ if __name__ == "__main__":
         ops = _get_all_ops(args.devices, with_torch=args.with_torch)
 
     bind_func_names = []
-    operators = []
-    dispatch_declarations = []
-    dispatch_batches = []
 
-    for op_name, impl_paths in ops.items():
-        extractor = _OperatorExtractor()
-        operator = extractor(op_name)
-        operators.append(operator)
-        declarations, definitions = _generate_generated_dispatch_entries(operator)
+    jobs = _wrapper_gen_jobs(args.with_torch)
 
+    if jobs == 1:
+        artifacts = [_generate_op_artifacts(item) for item in ops.items()]
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as executor:
+            artifacts = list(executor.map(_generate_op_artifacts, ops.items()))
+
+    op_names = [artifact["op_name"] for artifact in artifacts]
+    dispatch_declarations = [
+        declaration
+        for artifact in artifacts
+        for declaration in artifact["dispatch_declarations"]
+    ]
+    use_monolithic_bindings = _use_monolithic_bindings()
+    op_includes = []
+
+    for artifact in artifacts:
+        op_name = artifact["op_name"]
         source_path = _GENERATED_SRC_DIR / op_name
-        header_name = f"{op_name}.h"
-        bind_func_name = f"Bind{_snake_to_pascal(op_name)}"
+        header_name = artifact["header_name"]
+        bind_func_name = artifact["bind_func_name"]
 
-        (_BINDINGS_DIR / header_name).write_text(_generate_pybind11(operator))
-        (_BINDINGS_DIR / f"{op_name}.cc").write_text(_generate_binding_source(op_name))
+        (_BINDINGS_DIR / header_name).write_text(artifact["pybind11"])
 
-        legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
+        if use_monolithic_bindings:
+            op_includes.append(f'#include "{header_name}"')
+        else:
+            (_BINDINGS_DIR / f"{op_name}.cc").write_text(artifact["binding_source"])
+
         source_path.mkdir(exist_ok=True)
-        (_GENERATED_SRC_DIR / op_name / "operator.cc").write_text(legacy_c_source)
-        (_INCLUDE_DIR / header_name).write_text(legacy_c_header)
+        (_GENERATED_SRC_DIR / op_name / "operator.cc").write_text(
+            artifact["legacy_c_source"]
+        )
+        (_INCLUDE_DIR / header_name).write_text(artifact["legacy_c_header"])
 
         bind_func_names.append(bind_func_name)
-        dispatch_declarations.extend(declarations)
-        dispatch_batches.append((impl_paths, definitions))
 
     dispatch_header = _generate_generated_dispatch_header(
-        operators, args.devices, dispatch_declarations
+        op_names, args.devices, dispatch_declarations
     )
     (_BINDINGS_DIR / "generated_dispatch.h").write_text(dispatch_header)
 
     dispatch_batch_size = _dispatch_gen_batch_size()
 
     for dispatch_batch_index, start in enumerate(
-        range(0, len(dispatch_batches), dispatch_batch_size)
+        range(0, len(artifacts), dispatch_batch_size)
     ):
-        batch = dispatch_batches[start : start + dispatch_batch_size]
+        batch = artifacts[start : start + dispatch_batch_size]
         impl_paths = list(
-            dict.fromkeys(impl_path for paths, _ in batch for impl_path in paths)
+            dict.fromkeys(
+                impl_path for artifact in batch for impl_path in artifact["impl_paths"]
+            )
         )
-        definitions = [definition for _, defs in batch for definition in defs]
+        definitions = [
+            definition
+            for artifact in batch
+            for definition in artifact["dispatch_definitions"]
+        ]
         dispatch_source = _generate_generated_dispatch_source(impl_paths, definitions)
         (_BINDINGS_DIR / f"generated_dispatch_{dispatch_batch_index}.cc").write_text(
             dispatch_source
         )
 
-    bind_func_declarations = "\n".join(
-        f"void {bind_func_name}(pybind11::module& m);"
-        for bind_func_name in bind_func_names
-    )
     bind_func_calls = "\n".join(
         f"{bind_func_name}(m);" for bind_func_name in bind_func_names
     )
 
-    (_BINDINGS_DIR / "ops.cc").write_text(f"""#include <pybind11/pybind11.h>
+    if use_monolithic_bindings:
+        op_includes = "\n".join(op_includes)
+        ops_source = f"""#include <pybind11/pybind11.h>
+
+// Generated with `INFINIOPS_MONOLITHIC_BINDINGS=1`.
+{op_includes}
+
+namespace infini::ops {{
+
+PYBIND11_MODULE(ops, m) {{
+{textwrap.indent(bind_func_calls, _INDENTATION)}
+}}
+
+}}  // namespace infini::ops
+"""
+    else:
+        bind_func_declarations = "\n".join(
+            f"void {bind_func_name}(pybind11::module& m);"
+            for bind_func_name in bind_func_names
+        )
+        ops_source = f"""#include <pybind11/pybind11.h>
 
 namespace infini::ops {{
 
@@ -735,4 +973,6 @@ PYBIND11_MODULE(ops, m) {{
 }}
 
 }}  // namespace infini::ops
-""")
+"""
+
+    (_BINDINGS_DIR / "ops.cc").write_text(ops_source)
