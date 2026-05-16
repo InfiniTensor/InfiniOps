@@ -63,6 +63,13 @@ def test_gemm(
     ):
         pytest.skip("ATen CPU `addmm`/`baddbmm` does not support half-precision")
 
+    if (
+        device == "cuda"
+        and dtype == torch.float16
+        and infini.ops.Gemm.active_implementation_indices("iluvatar")
+    ):
+        pytest.skip("Iluvatar GEMM reports fp16 execution failures")
+
     if implementation_index == 2 and device == "npu":
         # `src/torch/gemm/gemm.h` partial-specializes `Operator<Gemm, kDev, 2>`
         # for every `kDev` including `kAscend`, so the SFINAE-based
