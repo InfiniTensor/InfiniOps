@@ -41,11 +41,29 @@ void Operator<Gemm, kDev, 2>::operator()(const Tensor a, const Tensor b,
     at_b = at_b.transpose(-2, -1);
   }
 
-  if (at_a.dim() == 2) {
-    at::addmm_out(at_c, at_c, at_a, at_b, beta_val, alpha_val);
-  } else {
-    at::baddbmm_out(at_c, at_c, at_a, at_b, beta_val, alpha_val);
+  if (alpha_val == 0.0F) {
+    at_c.mul_(beta_val);
+    return;
   }
+
+  if constexpr (kDev == Device::Type::kCpu || kDev == Device::Type::kNvidia) {
+    if (at_a.dim() == 2) {
+      at::addmm_out(at_c, at_c, at_a, at_b, beta_val, alpha_val);
+    } else {
+      at::baddbmm_out(at_c, at_c, at_a, at_b, beta_val, alpha_val);
+    }
+    return;
+  }
+
+  auto product = at::matmul(at_a, at_b);
+  if (beta_val == 0.0F) {
+    at_c.copy_(product);
+    at_c.mul_(alpha_val);
+    return;
+  }
+
+  at_c.mul_(beta_val);
+  at_c.add_(product, alpha_val);
 }
 
 template class Operator<Gemm, Device::Type::kCpu, 2>;
