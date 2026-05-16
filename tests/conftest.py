@@ -75,6 +75,7 @@ _NPU_UNSUPPORTED_DTYPES = {torch.float64}
 # `uint16`/`uint32`/`uint64`.
 for _bits in (16, 32, 64):
     _t = getattr(torch, f"uint{_bits}", None)
+
     if _t is not None:
         _NPU_UNSUPPORTED_DTYPES.add(_t)
 
@@ -100,6 +101,7 @@ def skip_op_without_platform_impl(request):
     `pytest_generate_tests` already prunes empty-impl pairs at collection
     time, making this check redundant (and wasteful) on those tests.
     """
+
     if not hasattr(request.node, "callspec"):
         return
 
@@ -144,6 +146,7 @@ _PLATFORM_TO_TORCH_DEVICE = {
 
 def _active_device_selectors_for_torch_device(config, torch_device):
     """Return platform or torch device names selected for a torch device type."""
+
     if not torch_device:
         return ()
 
@@ -159,11 +162,13 @@ def _active_device_selectors_for_torch_device(config, torch_device):
 
     # The pybind layer maps torch device names (e.g. "cuda") to the backend
     # compiled into the current wheel, avoiding probes of inactive CUDA siblings.
+
     return (torch_device,)
 
 
 def _resolve_device(name):
     """Map a platform name (e.g., `ascend`) to a PyTorch device type (e.g., `npu`)."""
+
     return _PLATFORM_TO_TORCH_DEVICE.get(name, name)
 
 
@@ -301,7 +306,16 @@ def pytest_pyfunc_call(pyfuncitem):
         rtol = payload.rtol
         atol = payload.atol
 
-        assert torch.allclose(output, expected, rtol=rtol, atol=atol)
+        # `torch.allclose` rejects `bool` dtypes — use `torch.equal` for
+        # non-floating outputs (bool, int) so comparison ops work.  Pass
+        # `equal_nan=True` so NaN-in-both-positions (common for special
+        # functions fed out-of-domain inputs) does not fail the test.
+        if output.dtype.is_floating_point:
+            assert torch.allclose(
+                output, expected, rtol=rtol, atol=atol, equal_nan=True
+            )
+        else:
+            assert torch.equal(output, expected)
 
         return True
 
