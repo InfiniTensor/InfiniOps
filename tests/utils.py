@@ -74,22 +74,22 @@ def rand_strided(shape, strides, *, dtype=None, device=None):
 
 def randint_strided(low, high, shape, strides, *, dtype=None, device=None):
     output = empty_strided(shape, strides, dtype=dtype, device=device)
-    output_flat = output.as_strided(
+
+    flat = output.as_strided(
         (output.untyped_storage().size() // output.element_size(),), (1,)
     )
 
     try:
-        output_flat.random_(low, high)
+        flat.random_(low, high)
     except RuntimeError as exc:
-        if "random_" not in str(exc):
+        if "random_" not in str(exc) or "not implemented" not in str(exc):
             raise
 
-        cpu_output = empty_strided(shape, strides, dtype=dtype, device="cpu")
-        cpu_flat = cpu_output.as_strided(
-            (cpu_output.untyped_storage().size() // cpu_output.element_size(),), (1,)
+        values = torch.randint(low, high, flat.shape, dtype=torch.int64).to(
+            dtype=output.dtype,
+            device=output.device,
         )
-        cpu_flat.random_(low, high)
-        output_flat.copy_(cpu_flat.to(device=output.device))
+        flat.copy_(values)
 
     return output
 
