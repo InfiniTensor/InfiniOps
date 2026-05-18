@@ -55,7 +55,7 @@ platforms:
       gpu:
         type: unittest
         resources:
-          ngpus: 1
+          ngpus: 0
           gpu_style: none
           memory: 32GB
           shm_size: 16g
@@ -112,7 +112,7 @@ platforms:
         type: unittest
         resources:
           ngpus: 1
-          gpu_style: none                  # Moore uses passthrough via `--privileged`; `MTHREADS_VISIBLE_DEVICES` controls visibility.
+          gpu_style: none                  # Moore uses passthrough via `--privileged`; `MTHREADS_VISIBLE_DEVICES` controls device selection.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
