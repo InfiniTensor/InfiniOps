@@ -14,6 +14,8 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         ((13, 4, 4), None, None),
         ((16, 5632), None, None),
         ((4, 4, 5632), None, None),
+        ((0, 16), None, None),
+        ((4, 0, 8), None, None),
     ),
 )
 @pytest.mark.parametrize(
