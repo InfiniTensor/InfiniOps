@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_SEARCHSORTED_H_
 #define INFINI_OPS_BASE_SEARCHSORTED_H_
 
+#include <string>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,7 +10,9 @@ namespace infini::ops {
 class Searchsorted : public Operator<Searchsorted> {
  public:
   Searchsorted(const Tensor sorted_sequence, const Tensor input,
-               const bool out_int32, const bool right, Tensor out)
+               const bool out_int32, const bool right,
+               std::optional<std::string> side, std::optional<Tensor> sorter,
+               Tensor out)
       : sorted_sequence_shape_{sorted_sequence.shape()},
         sorted_sequence_strides_{sorted_sequence.strides()},
         sorted_sequence_type_{sorted_sequence.dtype()},
@@ -20,10 +24,14 @@ class Searchsorted : public Operator<Searchsorted> {
         out_type_{out.dtype()},
         out_int32_{out_int32},
         right_{right},
+        side_{side},
+        has_sorter_{sorter.has_value()},
         device_index_{out.device().index()} {}
 
   Searchsorted(const Tensor sorted_sequence, const double input,
-               const bool out_int32, const bool right, Tensor out)
+               const bool out_int32, const bool right,
+               std::optional<std::string> side, std::optional<Tensor> sorter,
+               Tensor out)
       : sorted_sequence_shape_{sorted_sequence.shape()},
         sorted_sequence_strides_{sorted_sequence.strides()},
         sorted_sequence_type_{sorted_sequence.dtype()},
@@ -32,16 +40,20 @@ class Searchsorted : public Operator<Searchsorted> {
         out_type_{out.dtype()},
         out_int32_{out_int32},
         right_{right},
+        side_{side},
+        has_sorter_{sorter.has_value()},
         input_{input},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor sorted_sequence, const Tensor input,
                           const bool out_int32, const bool right,
-                          Tensor out) const = 0;
+                          std::optional<std::string> side,
+                          std::optional<Tensor> sorter, Tensor out) const = 0;
 
   virtual void operator()(const Tensor sorted_sequence, const double input,
                           const bool out_int32, const bool right,
-                          Tensor out) const = 0;
+                          std::optional<std::string> side,
+                          std::optional<Tensor> sorter, Tensor out) const = 0;
 
  protected:
   Tensor::Shape sorted_sequence_shape_;
@@ -65,6 +77,10 @@ class Searchsorted : public Operator<Searchsorted> {
   bool out_int32_{};
 
   bool right_{};
+
+  std::optional<std::string> side_{};
+
+  bool has_sorter_{false};
 
   double input_{};
 
