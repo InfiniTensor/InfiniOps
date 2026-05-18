@@ -47,10 +47,11 @@ platforms:
       - "--ipc=host"
     volumes:
       - /dev:/dev
+      - /usr/local/corex-4.3.0/bin:/usr/local/corex-4.3.0.20250624/bin:ro
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
-    setup: pip install .[dev] --no-build-isolation
+    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 && python -m pip install . --no-build-isolation --no-deps
     jobs:
       gpu:
         type: unittest
