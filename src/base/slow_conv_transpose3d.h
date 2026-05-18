@@ -8,7 +8,8 @@ namespace infini::ops {
 class SlowConvTranspose3d : public Operator<SlowConvTranspose3d> {
  public:
   SlowConvTranspose3d(const Tensor input, const Tensor weight,
-                      const Tensor bias, const std::vector<int64_t> kernel_size,
+                      std::optional<Tensor> bias,
+                      const std::vector<int64_t> kernel_size,
                       const std::vector<int64_t> stride,
                       const std::vector<int64_t> padding,
                       const std::vector<int64_t> output_padding,
@@ -19,9 +20,7 @@ class SlowConvTranspose3d : public Operator<SlowConvTranspose3d> {
         weight_shape_{weight.shape()},
         weight_strides_{weight.strides()},
         weight_type_{weight.dtype()},
-        bias_shape_{bias.shape()},
-        bias_strides_{bias.strides()},
-        bias_type_{bias.dtype()},
+        has_bias_{bias.has_value()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
@@ -33,7 +32,7 @@ class SlowConvTranspose3d : public Operator<SlowConvTranspose3d> {
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          const Tensor bias,
+                          std::optional<Tensor> bias,
                           const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
@@ -54,11 +53,7 @@ class SlowConvTranspose3d : public Operator<SlowConvTranspose3d> {
 
   DataType weight_type_;
 
-  Tensor::Shape bias_shape_;
-
-  Tensor::Strides bias_strides_;
-
-  DataType bias_type_;
+  bool has_bias_{false};
 
   Tensor::Shape out_shape_;
 
