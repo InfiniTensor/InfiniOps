@@ -7,11 +7,14 @@ namespace infini::ops {
 
 class BatchNormElemt : public Operator<BatchNormElemt> {
  public:
-  BatchNormElemt(const Tensor input, const Tensor mean, const Tensor invstd,
-                 const double eps, Tensor out)
+  BatchNormElemt(const Tensor input, std::optional<Tensor> weight,
+                 std::optional<Tensor> bias, const Tensor mean,
+                 const Tensor invstd, const double eps, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
+        has_weight_{weight.has_value()},
+        has_bias_{bias.has_value()},
         mean_shape_{mean.shape()},
         mean_strides_{mean.strides()},
         mean_type_{mean.dtype()},
@@ -24,7 +27,8 @@ class BatchNormElemt : public Operator<BatchNormElemt> {
         eps_{eps},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const Tensor mean,
+  virtual void operator()(const Tensor input, std::optional<Tensor> weight,
+                          std::optional<Tensor> bias, const Tensor mean,
                           const Tensor invstd, const double eps,
                           Tensor out) const = 0;
 
@@ -34,6 +38,10 @@ class BatchNormElemt : public Operator<BatchNormElemt> {
   Tensor::Strides input_strides_;
 
   DataType input_type_;
+
+  bool has_weight_{false};
+
+  bool has_bias_{false};
 
   Tensor::Shape mean_shape_;
 
