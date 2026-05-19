@@ -5,45 +5,37 @@ repo:
 github:
   status_context_prefix: "ci/infiniops"
 
-# Uncomment and replace the URLs below with actual host IPs to dispatch jobs to remote
-# machines via `agent.py run`. Required on the trigger machine when each platform's
-# agent runs on a separate host. See the README for multi-machine deployment details.
-# agents:
-#   nvidia:
-#     url: http://nvidia-host:8080
-#   iluvatar:
-#     url: http://iluvatar-host:8080
-#   metax:
-#     url: http://metax-host:8080
-#   moore:
-#     url: http://moore-host:8080
-#   cambricon:
-#     url: http://cambricon-host:8080
-
 platforms:
   nvidia:
+    runner_label: Nvidia
+    execution_mode: agent_local
     image:
-      dockerfile: .ci/images/nvidia/
+      dockerfile: images/nvidia/
       build_args:
-        BASE_IMAGE: nvcr.io/nvidia/pytorch:25.12-py3
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
+        SKIP_APT: "1"
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
+        type: unittest
         resources:
-          ngpus: 1                         # Scheduler auto-picks this many free GPUs.
-          gpu_ids: auto                    # `auto`: dynamic allocation; or pin with `"0"`, `"0,2"`, `"all"`.
+          ngpus: 1                         # Auto allocator picks this many free GPUs.
           memory: 32GB
           shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
         stages:
           - name: test
-            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
-
+            run: pytest tests/ --devices nvidia -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
+    runner_label: iluvatar
+    execution_mode: agent_local
     image:
-      dockerfile: .ci/images/iluvatar/
+      dockerfile: images/iluvatar/
       build_args:
         BASE_IMAGE: corex:qs_pj20250825
         APT_MIRROR: http://archive.ubuntu.com/ubuntu
@@ -55,25 +47,31 @@ platforms:
       - "--ipc=host"
     volumes:
       - /dev:/dev
+      - /usr/local/corex-4.3.0/bin:/usr/local/corex-4.3.0.20250624/bin:ro
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
-    setup: pip install .[dev] --no-build-isolation
+    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps
     jobs:
       gpu:
+        type: unittest
         resources:
-          ngpus: 1
-          gpu_ids: auto
+          ngpus: 0
+          gpu_style: none
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices iluvatar -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
+    runner_label: Metax
+    execution_mode: agent_local
     image:
-      dockerfile: .ci/images/metax/
+      dockerfile: images/metax/
       build_args:
         BASE_IMAGE: cr.metax-tech.com/public-library/maca-pytorch:3.2.1.4-torch2.4-py310-ubuntu22.04-amd64
         APT_MIRROR: http://archive.ubuntu.com/ubuntu
@@ -85,19 +83,24 @@ platforms:
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
+        type: unittest
         resources:
           ngpus: 1
-          gpu_ids: auto
+          gpu_style: none                  # MetaX uses passthrough via `--privileged`; `CUDA_VISIBLE_DEVICES` controls visibility.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices metax -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
+    runner_label: Moore
+    execution_mode: agent_local
     image:
-      dockerfile: .ci/images/moore/
+      dockerfile: images/moore/
       build_args:
         BASE_IMAGE: sh-harbor.mthreads.com/mcctest/vllm_musa:20251112_hygon
         APT_MIRROR: http://archive.ubuntu.com/ubuntu
@@ -107,19 +110,24 @@ platforms:
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
+        type: unittest
         resources:
           ngpus: 1
-          gpu_ids: auto
+          gpu_style: none                  # Moore uses passthrough via `--privileged`; `MTHREADS_VISIBLE_DEVICES` controls device selection.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/test_add.py tests/test_gemm.py tests/test_swiglu.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
+    runner_label: Cambricon
+    execution_mode: agent_local
     image:
-      dockerfile: .ci/images/cambricon/
+      dockerfile: images/cambricon/
       build_args:
         BASE_IMAGE: cambricon/pytorch:v1.25.3-torch2.1-anolisos8.8-py310
         PIP_INDEX_URL: https://pypi.org/simple
@@ -128,26 +136,31 @@ platforms:
     setup: pip install .[dev] --no-build-isolation
     jobs:
       gpu:
+        type: unittest
         resources:
           ngpus: 1
-          gpu_ids: auto
+          gpu_style: mlu                   # Cambricon uses passthrough via `--privileged`; `MLU_VISIBLE_DEVICES` controls device selection.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/test_gemm.py -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
-  ascend:                                  # TODO: Ascend image is not ready yet.
+  ascend:
+    runner_label: Ascend
+    execution_mode: agent_local
     image:
-      dockerfile: .ci/images/ascend/
+      dockerfile: images/ascend/
+      buildkit: true
       build_args:
         BASE_IMAGE: quay.io/ascend/vllm-ascend:v0.18.0rc1-openeuler
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--runtime=runc"
       - "--privileged"
-      - "--device=/dev/davinci0"
       - "--device=/dev/davinci_manager"
       - "--device=/dev/devmm_svm"
       - "--device=/dev/hisi_hdc"
@@ -160,12 +173,15 @@ platforms:
     setup: pip install .[dev] --no-build-isolation
     jobs:
       npu:
+        type: unittest
         resources:
           ngpus: 1
-          gpu_ids: auto
+          gpu_style: none
           memory: 32GB
           shm_size: 16g
           timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
         stages:
           - name: test
             run: pytest tests/ -n 1 --devices ascend -v --tb=short --junitxml=/workspace/results/test-results.xml
