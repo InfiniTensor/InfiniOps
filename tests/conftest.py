@@ -16,7 +16,7 @@ def pytest_addoption(parser):
         "--devices",
         nargs="+",
         default=None,
-        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
+        help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `hygon`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
     )
 
 
@@ -138,6 +138,7 @@ _PLATFORM_TO_TORCH_DEVICE = {
     "nvidia": "cuda",
     "metax": "cuda",
     "iluvatar": "cuda",
+    "hygon": "cuda",
     "moore": "musa",
     "cambricon": "mlu",
     "ascend": "npu",

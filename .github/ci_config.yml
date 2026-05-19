@@ -149,6 +149,41 @@ platforms:
           - name: test
             run: pytest tests/ --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
+  hygon:
+    runner_label: Hygon
+    execution_mode: agent_local
+    image:
+      dockerfile: images/hygon/
+      build_args:
+        BASE_IMAGE: image.sourcefind.cn:5000/dcu/admin/base/pytorch:2.4.1-ubuntu22.04-dtk25.04.1-py3.10
+        APT_MIRROR: http://archive.ubuntu.com/ubuntu
+        PIP_INDEX_URL: https://pypi.org/simple
+    docker_args:
+      - "--privileged"
+      - "--network=host"
+      - "--ipc=host"
+      - "--device=/dev/kfd"
+      - "--device=/dev/mkfd"
+      - "--device=/dev/dri"
+      - "--group-add=video"
+    volumes:
+      - /opt/hyhal:/opt/hyhal:ro
+    setup: pip install .[dev] --no-build-isolation
+    jobs:
+      gpu:
+        type: unittest
+        resources:
+          ngpus: 1
+          gpu_style: none
+          memory: 32GB
+          shm_size: 64g
+          timeout: 3600
+          queue_timeout: 600
+          junit_path: test-results.xml
+        stages:
+          - name: test
+            run: pytest tests/ --devices hygon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+
   ascend:
     runner_label: Ascend
     execution_mode: agent_local
