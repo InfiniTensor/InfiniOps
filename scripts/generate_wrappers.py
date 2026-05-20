@@ -9,8 +9,12 @@ import shutil
 import subprocess
 import textwrap
 
-import clang.cindex
-from clang.cindex import CursorKind
+try:
+    import clang.cindex
+    from clang.cindex import CursorKind
+except ImportError:
+    clang = None
+    CursorKind = None
 
 _SRC_DIR = pathlib.Path("src")
 
@@ -29,7 +33,55 @@ _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 
 _INCLUDE_DIR = _GENERATION_DIR / "include"
 
+
 _INDENTATION = "  "
+
+_OP_NAMESPACE_PREFIXES = ("special", "linalg", "fft")
+
+
+def _op_namespace_parts(op_name):
+    parts = op_name.split("_")
+    namespaces = []
+
+    if parts and parts[0] == "internal":
+        namespaces.append(parts.pop(0))
+
+    if parts and parts[0] in _OP_NAMESPACE_PREFIXES:
+        namespaces.append(parts.pop(0))
+
+    return tuple(namespaces)
+
+
+def _op_class_stem(op_name):
+    parts = op_name.split("_")
+
+    if parts and parts[0] == "internal":
+        parts.pop(0)
+
+    if parts and parts[0] in _OP_NAMESPACE_PREFIXES:
+        parts.pop(0)
+
+    return "_".join(parts)
+
+
+def _op_class_name(op_name):
+    return _snake_to_pascal(_op_class_stem(op_name))
+
+
+def _op_symbol_name(op_name):
+    return _snake_to_pascal(op_name)
+
+
+def _op_cpp_type(op_name):
+    parts = (*_op_namespace_parts(op_name), _op_class_name(op_name))
+
+    return "::infini::ops::" + "::".join(parts)
+
+
+def _op_relative_type(op_name):
+    parts = (*_op_namespace_parts(op_name), _op_class_name(op_name))
+
+    return "::".join(parts)
 
 
 @functools.lru_cache(maxsize=1)
@@ -74,8 +126,30 @@ def _find_base_header(op_name):
     raise FileNotFoundError(f"no base header for op {op_name!r}")
 
 
+class _ParsedType:
+    def __init__(self, spelling):
+        self.spelling = spelling
+
+
+class _ParsedArgument:
+    def __init__(self, type_spelling, spelling):
+        self.type = _ParsedType(type_spelling)
+        self.spelling = spelling
+
+
+class _ParsedFunction:
+    def __init__(self, arguments):
+        self._arguments = arguments
+
+    def get_arguments(self):
+        return self._arguments
+
+
 class _OperatorExtractor:
     def __call__(self, op_name):
+        if clang is None:
+            return _parse_operator_header(op_name)
+
         index = clang.cindex.Index.create()
         args = (
             "-std=c++17",
@@ -103,16 +177,138 @@ class _OperatorExtractor:
 
     @staticmethod
     def _find(node, op_name):
-        pascal_case_op_name = _snake_to_pascal(op_name)
+        class_name = _op_class_name(op_name)
 
-        if (
-            node.semantic_parent
-            and node.semantic_parent.spelling == pascal_case_op_name
-        ):
+        if node.semantic_parent and node.semantic_parent.spelling == class_name:
             yield node
 
         for child in node.get_children():
             yield from _OperatorExtractor._find(child, op_name)
+
+
+def _parse_operator_header(op_name):
+    class_name = _op_class_name(op_name)
+    source = _strip_cpp_comments(_find_base_header(op_name).read_text())
+    class_body = _extract_class_body(source, class_name)
+    constructors = [
+        _ParsedFunction(_parse_parameter_list(params))
+        for params in _find_signature_parameters(
+            class_body, rf"(?:explicit\s+)?{class_name}\s*\("
+        )
+    ]
+    calls = [
+        _ParsedFunction(_parse_parameter_list(params))
+        for params in _find_signature_parameters(
+            class_body, r"(?:virtual\s+)?void\s+operator\s*\(\s*\)\s*\("
+        )
+    ]
+
+    return _Operator(op_name, constructors, calls)
+
+
+def _strip_cpp_comments(source):
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return re.sub(r"//.*", "", source)
+
+
+def _extract_class_body(source, class_name):
+    match = re.search(rf"\bclass\s+{class_name}\b[^{{]*{{", source)
+
+    if match is None:
+        raise ValueError(f"no class definition for {class_name!r}")
+
+    start = match.end()
+    depth = 1
+    index = start
+
+    while index < len(source):
+        char = source[index]
+
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index]
+
+        index += 1
+
+    raise ValueError(f"unterminated class definition for {class_name!r}")
+
+
+def _find_signature_parameters(source, pattern):
+    params = []
+
+    for match in re.finditer(pattern, source):
+        opening_paren = match.end() - 1
+
+        if opening_paren < 0 or source[opening_paren] != "(":
+            continue
+
+        closing_paren = _find_matching_delimiter(source, opening_paren, "(", ")")
+        params.append(source[opening_paren + 1 : closing_paren])
+
+    return params
+
+
+def _find_matching_delimiter(source, start, opening, closing):
+    depth = 0
+
+    for index in range(start, len(source)):
+        char = source[index]
+
+        if char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+
+    raise ValueError(f"unmatched delimiter {opening!r}")
+
+
+def _parse_parameter_list(params):
+    arguments = []
+
+    for param in _split_top_level(params, ","):
+        param = _strip_default_argument(param.strip())
+
+        if not param or param == "void":
+            continue
+
+        match = re.match(r"(.+?[\s*&]+)([A-Za-z_][A-Za-z0-9_]*)$", param)
+
+        if match is None:
+            raise ValueError(f"could not parse parameter {param!r}")
+
+        arguments.append(_ParsedArgument(match.group(1).strip(), match.group(2)))
+
+    return arguments
+
+
+def _split_top_level(text, delimiter):
+    parts = []
+    start = 0
+    depth = 0
+    pairs = {"<": ">", "(": ")", "[": "]", "{": "}"}
+    closing = {value: key for key, value in pairs.items()}
+
+    for index, char in enumerate(text):
+        if char in pairs:
+            depth += 1
+        elif char in closing:
+            depth -= 1
+        elif char == delimiter and depth == 0:
+            parts.append(text[start:index])
+            start = index + 1
+
+    parts.append(text[start:])
+    return parts
+
+
+def _strip_default_argument(param):
+    parts = _split_top_level(param, "=")
+    return parts[0].strip()
 
 
 class _Operator:
@@ -133,6 +329,24 @@ def _find_optional_tensor_params(op_name):
     source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::optional<Tensor>\s+(\w+)", source))
+
+
+def _find_optional_non_tensor_params(op_name):
+    """Return parameter names declared as non-Tensor `std::optional`.
+
+    Some generated ATen bases have overloads that reuse a parameter name across
+    different optional kinds, e.g. `clamp(..., std::optional<double> min, ...)`
+    and `clamp(..., std::optional<Tensor> min, ...)`. The optional-Tensor
+    regex fallback is name-based, so record non-Tensor optionals too to avoid
+    treating the scalar overload as a Tensor overload.
+    """
+    source = _find_base_header(op_name).read_text()
+
+    return {
+        name
+        for cpp_type, name in re.findall(r"std::optional<([^>]+)>\s+(\w+)", source)
+        if "Tensor" not in cpp_type
+    }
 
 
 def _find_vector_tensor_params(op_name):
@@ -162,14 +376,20 @@ def _find_vector_int64_params(op_name):
 
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
+    optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
-        if arg.spelling in optional_tensor_params:
-            return True
+        spelling = arg.type.spelling
 
-        return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+        if "std::optional" in spelling:
+            return "Tensor" in spelling
+
+        if arg.spelling in optional_non_tensor_params:
+            return False
+
+        return arg.spelling in optional_tensor_params
 
     def _is_optional(arg):
         return "std::optional" in arg.type.spelling
@@ -223,14 +443,36 @@ def _generate_pybind11(operator):
         return ", ".join(args)
 
     op_name = operator.name
-    pascal_case_op_name = _snake_to_pascal(op_name)
+    op_type = _op_cpp_type(op_name)
+    symbol_name = _op_symbol_name(op_name)
+
+    def _first_tensor_arg(node):
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+            if _is_optional_tensor(arg) or _is_vector_tensor(arg):
+                continue
+            if "Tensor" in arg.type.spelling:
+                return arg.spelling
+        return None
+
+    def _default_impl_index_expr(node):
+        first_tensor = _first_tensor_arg(node)
+        if first_tensor is None:
+            return "0"
+        return (
+            f"DefaultImplementationIndexFor{symbol_name}("
+            f"DeviceFromPybind11Handle({first_tensor}).type())"
+        )
 
     def _generate_init(constructor):
         constructor_params = _generate_params(constructor)
+        default_impl_index = _default_impl_index_expr(constructor)
 
         return f"""      .def(py::init([]({constructor_params}) {{
         Config config;
-        return std::unique_ptr<Self>{{static_cast<Self*>(generated_dispatch::Make{pascal_case_op_name}(config, {_generate_arguments(constructor)}).release())}};
+        config.set_implementation_index({default_impl_index});
+        return std::unique_ptr<Self>{{static_cast<Self*>(generated_dispatch::Make{symbol_name}(config, {_generate_arguments(constructor)}).release())}};
       }}))"""
 
     def _generate_py_args(node):
@@ -253,12 +495,15 @@ def _generate_pybind11(operator):
 
         if not method:
             params = (
-                f"{call_params}, std::uintptr_t stream, std::size_t implementation_index"
+                f"{call_params}, std::uintptr_t stream, "
+                "std::optional<std::size_t> implementation_index"
                 if call_params
-                else "std::uintptr_t stream, std::size_t implementation_index"
+                else "std::uintptr_t stream, "
+                "std::optional<std::size_t> implementation_index"
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
+            default_impl_index = _default_impl_index_expr(call)
 
             return (
                 f'  m.def("{op_name}", []({params}) {{\n'
@@ -267,9 +512,10 @@ def _generate_pybind11(operator):
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
                 f"    }}\n"
                 f"    Config config;\n"
-                f"    config.set_implementation_index(implementation_index);\n"
-                f"    return generated_dispatch::Call{pascal_case_op_name}(handle, config, {call_args});\n"
-                f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
+                f"    config.set_implementation_index(\n"
+                f"        implementation_index.value_or({default_impl_index}));\n"
+                f"    return generated_dispatch::Call{symbol_name}(handle, config, {call_args});\n"
+                f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = py::none());'
             )
 
         # The first lambda parameter is conventionally named `self`, but
@@ -278,7 +524,7 @@ def _generate_pybind11(operator):
         # so rename to `op` to avoid the collision in the generated code.
 
         return f"""      .def("__call__", [](const Self& op, {call_params}) {{
-        return generated_dispatch::Invoke{pascal_case_op_name}(op, {call_args});
+        return generated_dispatch::Invoke{symbol_name}(op, {call_args});
       }})"""
 
     def _overload_order_key(node):
@@ -336,10 +582,19 @@ namespace py = pybind11;
 
 namespace infini::ops {{
 
-void Bind{pascal_case_op_name}(py::module& m) {{
-  using Self = {pascal_case_op_name};
+std::size_t DefaultImplementationIndexFor{symbol_name}(Device::Type dev_type) {{
+  auto indices = generated_dispatch::ActiveImplementationIndicesFor{symbol_name}(dev_type);
+  if (indices.empty()) {{
+    throw py::value_error("No active implementation for {symbol_name} on device " +
+                          std::string{{Device::StringFromType(dev_type)}});
+  }}
+  return indices.front();
+}}
 
-  py::class_<Self>(m, "{pascal_case_op_name}")
+void Bind{symbol_name}(py::module& m) {{
+  using Self = {op_type};
+
+  py::class_<Self>(m, "{symbol_name}")
 {inits}
 {calls}
       .def_static("active_implementation_indices", [](const std::string& device) {{
@@ -347,9 +602,9 @@ void Bind{pascal_case_op_name}(py::module& m) {{
         if (!dev_type.has_value()) {{
           return std::vector<std::size_t>{{}};
         }}
-        return generated_dispatch::ActiveImplementationIndicesFor{pascal_case_op_name}(*dev_type);
+        return generated_dispatch::ActiveImplementationIndicesFor{symbol_name}(*dev_type);
       }})
-      .def_static("clear_cache", &generated_dispatch::ClearCacheFor{pascal_case_op_name});
+      .def_static("clear_cache", &generated_dispatch::ClearCacheFor{symbol_name});
 
 {callers}
 }}
@@ -361,6 +616,9 @@ void Bind{pascal_case_op_name}(py::module& m) {{
 
 
 def _generate_legacy_c(operator, paths):
+    op_type = _op_cpp_type(operator.name)
+    symbol_name = _op_symbol_name(operator.name)
+
     def _generate_source(operator):
         impl_includes = "\n".join(
             f'#include "{_to_include_path(path)}"' for path in paths
@@ -427,7 +685,7 @@ __C {_generate_destroy_func_def(operator)}
 
 #include "base/{operator.name.lower()}.h"
 
-typedef struct infini::ops::Operator<infini::ops::{operator.name}> *infiniop{operator.name}Descriptor_t;
+typedef struct infini::ops::Operator<{op_type}> *infiniop{symbol_name}Descriptor_t;
 
 __C __export {_generate_create_func_decl(operator)};
 
@@ -441,11 +699,10 @@ __C __export {_generate_destroy_func_decl(operator)};
 """
 
     def _generate_create_func_def(operator):
-        name = operator.name
         constructor = operator.constructors[-1]
 
         return f"""{_generate_create_func_decl(operator)} {{
-    *desc_ptr = infini::ops::Operator<infini::ops::{name}>::Make({_generate_arguments(constructor)}).release();
+    *desc_ptr = infini::ops::Operator<{op_type}>::Make({_generate_arguments(constructor)}).release();
 
     return INFINI_STATUS_SUCCESS;
 }}"""
@@ -474,34 +731,44 @@ __C __export {_generate_destroy_func_decl(operator)};
 }}"""
 
     def _generate_create_func_decl(operator):
-        name = operator.name
         constructor = operator.constructors[-1]
         params = _generate_params(constructor)
 
-        return f"infiniStatus_t infiniopCreate{name}Descriptor(infiniopHandle_t handle, infiniop{name}Descriptor_t *desc_ptr, {params})"
+        return f"infiniStatus_t infiniopCreate{symbol_name}Descriptor(infiniopHandle_t handle, infiniop{symbol_name}Descriptor_t *desc_ptr, {params})"
 
     def _generate_get_workspace_size_func_decl(operator):
-        name = operator.name
-
-        return f"infiniStatus_t infiniopGet{name}WorkspaceSize(infiniop{name}Descriptor_t desc, size_t *size)"
+        return f"infiniStatus_t infiniopGet{symbol_name}WorkspaceSize(infiniop{symbol_name}Descriptor_t desc, size_t *size)"
 
     def _generate_call_func_decl(operator):
-        name = operator.name
         call = operator.calls[-1]
         params = _generate_params(call, call=True)
         params = params.replace("void * stream, ", "")
 
-        return f"infiniStatus_t infiniop{name}(infiniop{name}Descriptor_t desc, void *workspace, size_t workspace_size, {params}, void *stream)"
+        return f"infiniStatus_t infiniop{symbol_name}(infiniop{symbol_name}Descriptor_t desc, void *workspace, size_t workspace_size, {params}, void *stream)"
 
     def _generate_destroy_func_decl(operator):
-        name = operator.name
-
-        return f"infiniStatus_t infiniopDestroy{name}Descriptor(infiniop{name}Descriptor_t desc)"
+        return f"infiniStatus_t infiniopDestroy{symbol_name}Descriptor(infiniop{symbol_name}Descriptor_t desc)"
 
     def _generate_params(node, call=False):
         arguments = tuple(node.get_arguments())
 
         arguments = (arguments[-1], *arguments[:-1])
+
+        def _unwrap_std_optional(spelling):
+            prefix = "std::optional<"
+
+            if not spelling.startswith(prefix):
+                return spelling
+
+            inner = spelling[len(prefix) :]
+
+            if inner.endswith(" >"):
+                return inner[:-2] + ">"
+
+            if inner.endswith(">"):
+                return inner[:-1]
+
+            return inner
 
         def _handle_tensor(spelling):
             if call:
@@ -510,7 +777,7 @@ __C __export {_generate_destroy_func_decl(operator)};
             return spelling.replace("Tensor", "infiniopTensorDescriptor_t")
 
         def _handle_std_optional(spelling):
-            return spelling.replace("std::optional<", "").replace(">", "")
+            return _unwrap_std_optional(spelling)
 
         return ", ".join(
             f"{_handle_std_optional(_handle_tensor(arg.type.spelling))} {arg.spelling}"
@@ -537,14 +804,20 @@ __C __export {_generate_destroy_func_decl(operator)};
 
 def _generate_generated_dispatch_entries(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
+    optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
-        if arg.spelling in optional_tensor_params:
-            return True
+        spelling = arg.type.spelling
 
-        return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+        if "std::optional" in spelling:
+            return "Tensor" in spelling
+
+        if arg.spelling in optional_non_tensor_params:
+            return False
+
+        return arg.spelling in optional_tensor_params
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -590,21 +863,22 @@ def _generate_generated_dispatch_entries(operator):
 
         return prefix
 
-    pascal_case_op_name = _snake_to_pascal(operator.name)
+    symbol_name = _op_symbol_name(operator.name)
+    op_type = _op_cpp_type(operator.name)
     declarations = [
         f"std::vector<std::size_t> ActiveImplementationIndicesFor"
-        f"{pascal_case_op_name}(Device::Type dev_type);"
+        f"{symbol_name}(Device::Type dev_type);"
     ]
     definitions = [
-        f"""std::vector<std::size_t> ActiveImplementationIndicesFor{pascal_case_op_name}(Device::Type dev_type) {{
-  return Operator<{pascal_case_op_name}>::active_implementation_indices(dev_type);
+        f"""std::vector<std::size_t> ActiveImplementationIndicesFor{symbol_name}(Device::Type dev_type) {{
+  return Operator<{op_type}>::active_implementation_indices(dev_type);
 }}"""
     ]
 
-    declarations.append(f"void ClearCacheFor{pascal_case_op_name}();")
+    declarations.append(f"void ClearCacheFor{symbol_name}();")
     definitions.append(
-        f"""void ClearCacheFor{pascal_case_op_name}() {{
-  Operator<{pascal_case_op_name}>::clear_cache();
+        f"""void ClearCacheFor{symbol_name}() {{
+  Operator<{op_type}>::clear_cache();
 }}"""
     )
 
@@ -613,13 +887,13 @@ def _generate_generated_dispatch_entries(operator):
         args = _generate_arguments(constructor)
 
         declarations.append(
-            f"std::unique_ptr<Operator<{pascal_case_op_name}>> "
-            f"Make{pascal_case_op_name}("
+            f"std::unique_ptr<Operator<{op_type}>> "
+            f"Make{symbol_name}("
             f"{_append_optional_params('const Config& config', params)});"
         )
         definitions.append(
-            f"""std::unique_ptr<Operator<{pascal_case_op_name}>> Make{pascal_case_op_name}({_append_optional_params("const Config& config", params)}) {{
-  return Operator<{pascal_case_op_name}>::Make({_append_optional_args("config", args)});
+            f"""std::unique_ptr<Operator<{op_type}>> Make{symbol_name}({_append_optional_params("const Config& config", params)}) {{
+  return Operator<{op_type}>::Make({_append_optional_args("config", args)});
 }}"""
         )
 
@@ -628,22 +902,22 @@ def _generate_generated_dispatch_entries(operator):
         args = _generate_arguments(call)
 
         declarations.append(
-            f"void Invoke{pascal_case_op_name}(const "
-            f"{_append_optional_params(f'{pascal_case_op_name}& op', params)});"
+            f"void Invoke{symbol_name}(const "
+            f"{_append_optional_params(f'{op_type}& op', params)});"
         )
         definitions.append(
-            f"""void Invoke{pascal_case_op_name}(const {_append_optional_params(f"{pascal_case_op_name}& op", params)}) {{
-  return static_cast<const Operator<{pascal_case_op_name}>&>(op)({args});
+            f"""void Invoke{symbol_name}(const {_append_optional_params(f"{op_type}& op", params)}) {{
+  return static_cast<const Operator<{op_type}>&>(op)({args});
 }}"""
         )
 
         declarations.append(
-            f"void Call{pascal_case_op_name}(const Handle& handle, "
+            f"void Call{symbol_name}(const Handle& handle, "
             f"{_append_optional_params('const Config& config', params)});"
         )
         definitions.append(
-            f"""void Call{pascal_case_op_name}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
-  return Operator<{pascal_case_op_name}>::Call({_append_optional_args("handle, config", args)});
+            f"""void Call{symbol_name}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
+  return Operator<{op_type}>::Call({_append_optional_args("handle, config", args)});
 }}"""
         )
 
@@ -732,7 +1006,7 @@ def _generate_operator_call_instantiation_entries(operator):
 
         return prefix
 
-    pascal_case_op_name = _snake_to_pascal(operator.name)
+    op_type = _op_cpp_type(operator.name)
     declarations = []
     definitions = []
 
@@ -743,8 +1017,7 @@ def _generate_operator_call_instantiation_entries(operator):
             "const Handle& handle, const Config& config", params
         )
         instantiation = (
-            f"Operator<{pascal_case_op_name}>::Call<{template_arguments}>"
-            f"({function_params})"
+            f"Operator<{op_type}>::Call<{template_arguments}>({function_params})"
         )
 
         declarations.append(f"extern template auto {instantiation};")
@@ -808,7 +1081,6 @@ def _device_marker_headers(devices):
     paths = {
         "cpu": "native/cpu/device_.h",
         "nvidia": "native/cuda/nvidia/device_.h",
-        "hygon": "native/cuda/hygon/device_.h",
         "cambricon": "native/cambricon/device_.h",
         "ascend": "native/ascend/device_.h",
         "metax": "native/cuda/metax/device_.h",
@@ -842,7 +1114,9 @@ def _matches_scan_dir(impl_path, scan_dirs):
     return any(part in scan_dirs for part in impl_path.parts)
 
 
-_OPERATOR_DECL_RE = re.compile(r"\bclass\s+Operator<\s*([A-Za-z_][A-Za-z0-9_]*)\b")
+_OPERATOR_DECL_RE = re.compile(
+    r"\bclass\s+Operator<\s*((?:[A-Za-z_][A-Za-z0-9_]*::)*[A-Za-z_][A-Za-z0-9_]*)\b"
+)
 
 
 def _index_impl_headers(impl_roots, scan_dirs):
@@ -881,7 +1155,7 @@ def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
     base_dirs = [_BASE_DIR]
 
     # Only pull in the auto-generated torch op bases when the build is
-    # actually compiling them (`--with-torch`).  Otherwise a stale
+    # actually compiling them (`--with-torch`). Otherwise a stale
     # `generated/` left over from a previous configure (or rsynced into
     # a CI container) would cause `ops.cc` to include base headers for
     # ops that have no compiled implementation, breaking the build.
@@ -907,10 +1181,14 @@ def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
             if op_name in ops:
                 continue
 
-            ops[op_name] = []
-            ops[op_name].extend(
-                impl_headers_by_operator.get(_snake_to_pascal(op_name), ())
+            impl_paths = list(
+                impl_headers_by_operator.get(_op_relative_type(op_name), ())
             )
+
+            if not impl_paths:
+                continue
+
+            ops[op_name] = impl_paths
 
     return ops
 
@@ -932,7 +1210,7 @@ def _generate_op_artifacts(item):
     return {
         "op_name": op_name,
         "header_name": header_name,
-        "bind_func_name": f"Bind{_snake_to_pascal(op_name)}",
+        "bind_func_name": f"Bind{_op_symbol_name(op_name)}",
         "pybind11": _generate_pybind11(operator),
         "binding_source": _generate_binding_source(op_name),
         "legacy_c_source": legacy_c_source,
@@ -953,9 +1231,6 @@ def _wrapper_gen_jobs(with_torch):
             return max(1, int(raw))
         except ValueError:
             return 1
-
-    if not with_torch:
-        return 1
 
     return min(os.cpu_count() or 1, 8)
 
@@ -1101,26 +1376,19 @@ if __name__ == "__main__":
             dispatch_source
         )
 
-    for call_instantiation_batch_index, start in enumerate(
-        range(0, len(artifacts), dispatch_batch_size)
-    ):
-        batch = artifacts[start : start + dispatch_batch_size]
-        impl_paths = list(
-            dict.fromkeys(
-                impl_path for artifact in batch for impl_path in artifact["impl_paths"]
-            )
-        )
-        definitions = [
+        call_instantiation_definitions = [
             definition
             for artifact in batch
             for definition in artifact["call_instantiation_definitions"]
         ]
         call_instantiation_source = _generate_operator_call_instantiation_source(
-            args.devices, impl_paths, definitions
+            args.devices,
+            impl_paths,
+            call_instantiation_definitions,
         )
         (
             _GENERATED_SRC_DIR
-            / f"operator_call_instantiations_{call_instantiation_batch_index}.cc"
+            / f"operator_call_instantiations_{dispatch_batch_index}.cc"
         ).write_text(call_instantiation_source)
 
     bind_func_calls = "\n".join(

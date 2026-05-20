@@ -52,6 +52,12 @@ def test_mul(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
 
+    impl_indices = infini.ops.Mul.active_implementation_indices(device)
+    if impl_indices == [8] and dtype in _UINT_DTYPES:
+        pytest.skip(
+            "The PyTorch backend does not support unsigned integer `mul` on this accelerator."
+        )
+
     if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
         input = randint_strided(
             0, 100, shape, input_strides, dtype=dtype, device=device

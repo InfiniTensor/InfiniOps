@@ -2,6 +2,7 @@
 #define INFINI_OPS_HASH_H_
 
 #include <functional>
+#include <optional>
 #include <vector>
 
 template <typename T>
@@ -15,6 +16,14 @@ inline void HashCombine(std::size_t& seed, const std::vector<T>& v) {
   HashCombine(seed, v.size());
   for (const auto& elem : v) {
     HashCombine(seed, elem);
+  }
+}
+
+template <typename T>
+inline void HashCombine(std::size_t& seed, const std::optional<T>& v) {
+  HashCombine(seed, v.has_value());
+  if (v.has_value()) {
+    HashCombine(seed, *v);
   }
 }
 

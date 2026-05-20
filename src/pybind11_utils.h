@@ -110,6 +110,16 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
   return std::nullopt;
 }
 
+inline Device DeviceFromPybind11Handle(py::handle obj) {
+  auto device_obj{obj.attr("device")};
+  auto device_type_str{device_obj.attr("type").cast<std::string>()};
+  auto device_index_obj{device_obj.attr("index")};
+  auto device_index{device_index_obj.is_none() ? 0
+                                               : device_index_obj.cast<int>()};
+
+  return Device{DeviceTypeFromString(device_type_str), device_index};
+}
+
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
   auto data{
       reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
@@ -121,12 +131,7 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
   auto dtype{DataTypeFromString(
       pos == std::string::npos ? dtype_str : dtype_str.substr(pos + 1))};
 
-  auto device_obj{obj.attr("device")};
-  auto device_type_str{device_obj.attr("type").cast<std::string>()};
-  auto device_index_obj{device_obj.attr("index")};
-  auto device_index{device_index_obj.is_none() ? 0
-                                               : device_index_obj.cast<int>()};
-  Device device{DeviceTypeFromString(device_type_str), device_index};
+  auto device{DeviceFromPybind11Handle(obj)};
 
   auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
 
