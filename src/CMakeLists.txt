@@ -70,6 +70,34 @@ if(WITH_ILUVATAR)
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
 
+if(WITH_HYGON)
+    set(HYGON_PATTERNS
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/*.cu"
+        "native/cuda/hygon/*.cc"
+        "native/cuda/hygon/*.cpp"
+        "native/cuda/hygon/*.cu"
+    )
+
+    file(GLOB_RECURSE HYGON_SOURCES CONFIGURE_DEPENDS ${HYGON_PATTERNS})
+
+    enable_language(CUDA)
+
+    target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
+    target_sources(infiniops PRIVATE ${HYGON_SOURCES})
+
+    find_package(CUDAToolkit REQUIRED)
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
+
+    set_target_properties(infiniops PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+    )
+
+    list(APPEND DEVICE_LIST "hygon")
+endif()
+
 if(WITH_METAX)
     set(METAX_PATTERNS
         "native/cuda/*.cc"
@@ -517,7 +545,7 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
     list(APPEND PYBIND11_COMPILE_SOURCES ${PYBIND11_DISPATCH_SOURCES})
 
-    if(WITH_NVIDIA)
+    if(WITH_NVIDIA OR WITH_HYGON)
         set_source_files_properties(${PYBIND11_COMPILE_SOURCES} PROPERTIES LANGUAGE CUDA)
     elseif(WITH_ILUVATAR)
         set(_iluvatar_dispatch_include_flags
@@ -607,6 +635,13 @@ if(GENERATE_PYTHON_BINDINGS)
         target_compile_options(ops PRIVATE "-x" "musa")
     endif()
 
+    if(WITH_HYGON)
+        set_target_properties(ops PROPERTIES
+            RULE_LAUNCH_COMPILE "${_HYGON_RULE_LAUNCH_ENV}"
+            RULE_LAUNCH_LINK "${_HYGON_RULE_LAUNCH_ENV}"
+        )
+    endif()
+
     target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
     target_link_libraries(ops PRIVATE infiniops)
 
@@ -620,9 +655,13 @@ if(GENERATE_PYTHON_BINDINGS)
         target_link_libraries(ops PRIVATE
             -Wl,--whole-archive no_workspace_kernel -Wl,--no-whole-archive)
     endif()
+    set(_INFINIOPS_INSTALL_RPATH "$ORIGIN")
+    if(WITH_TORCH)
+        list(APPEND _INFINIOPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
+    endif()
 
-    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "$ORIGIN")
-    set_target_properties(ops PROPERTIES INSTALL_RPATH "$ORIGIN")
+    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
+    set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
 
     install(TARGETS infiniops ops DESTINATION .)
 
