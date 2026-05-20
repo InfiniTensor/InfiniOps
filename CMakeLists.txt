@@ -25,6 +25,8 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
+option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
+
 # Default OFF until CANN's `extract_host_stub.py` path handling is fixed for
 # `scikit-build-core` temp-dir builds (triggers `KeyError` on the preprocessed
 # object path). Enable explicitly with `-DBUILD_CUSTOM_KERNEL=ON` when the
@@ -291,6 +293,14 @@ endforeach()
 
 if(_gpu_backend_count GREATER 1)
     message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_METAX`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
+endif()
+
+if(WITH_NINETOOTHED AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "`WITH_NINETOOTHED` currently requires `WITH_NVIDIA=ON` because NineToothed AOT uses `caller=\"cuda\"`.")
+endif()
+
+if(WITH_NINETOOTHED)
+    set(NINETOOTHED_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run NineToothed code generation")
 endif()
 
 if(WITH_NVIDIA)

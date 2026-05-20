@@ -1017,11 +1017,13 @@ def _index_impl_headers(impl_roots, scan_dirs):
     return by_operator
 
 
-def _get_all_ops(devices, with_torch=False):
+def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
     scan_dirs = set(devices)
 
     if with_torch:
         scan_dirs.add("torch")
+    if with_ninetoothed:
+        scan_dirs.add("ninetoothed")
 
     ops = {}
 
@@ -1140,6 +1142,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Include PyTorch C++ backend implementations.",
     )
+    parser.add_argument(
+        "--with-ninetoothed",
+        action="store_true",
+        help="Include NineToothed backend implementations.",
+    )
 
     args = parser.parse_args()
 
@@ -1159,7 +1166,11 @@ if __name__ == "__main__":
     if ops_json.exists():
         ops = json.loads(ops_json.read_text())
     else:
-        ops = _get_all_ops(args.devices, with_torch=args.with_torch)
+        ops = _get_all_ops(
+            args.devices,
+            with_torch=args.with_torch,
+            with_ninetoothed=args.with_ninetoothed,
+        )
 
     bind_func_names = []
 
