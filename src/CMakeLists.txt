@@ -363,7 +363,7 @@ if(WITH_TORCH)
     target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
     target_include_directories(infiniops PUBLIC
         ${TORCH_INCLUDE_DIRS}
-        ${PROJECT_SOURCE_DIR}/generated
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated>
     )
 
     # Each generated `<op>.cc` instantiates `at::<op>_out(...)`, which
@@ -467,14 +467,20 @@ if(WITH_TORCH)
     endif()
 endif()
 
-target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(infiniops
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 
-if(GENERATE_PYTHON_BINDINGS)
+if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
-    # Always regenerate bindings so the included kernel headers match the
-    # active device list.  Stale generated files (e.g., committed for one
-    # platform) would omit specializations for other enabled backends,
-    # causing link-time or runtime failures.
+    # Always regenerate wrappers so the generated functional API and pybind11
+    # dispatch code match the active device list. Stale generated files (e.g.,
+    # committed for one platform) would omit specializations for other enabled
+    # backends, causing link-time or runtime failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
     if(WITH_TORCH)
@@ -493,6 +499,18 @@ if(GENERATE_PYTHON_BINDINGS)
         message(STATUS "Generating wrappers - done")
     endif()
 
+    file(GLOB_RECURSE FUNCTIONAL_API_SOURCES CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/generated/src/functional_ops_*.cc")
+
+    if(WITH_NVIDIA OR WITH_ILUVATAR)
+        set_source_files_properties(${FUNCTIONAL_API_SOURCES}
+            PROPERTIES LANGUAGE CUDA)
+    endif()
+
+    target_sources(infiniops PRIVATE ${FUNCTIONAL_API_SOURCES})
+endif()
+
+if(GENERATE_PYTHON_BINDINGS)
     file(GLOB_RECURSE PYBIND11_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/bindings/*.cc")
 
@@ -642,7 +660,11 @@ if(GENERATE_PYTHON_BINDINGS)
         )
     endif()
 
-    target_include_directories(ops PRIVATE ${PROJECT_SOURCE_DIR})
+    target_include_directories(ops PRIVATE
+        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/generated/include
+    )
     target_link_libraries(ops PRIVATE infiniops)
 
     # Custom `AscendC` kernel objects must be linked directly into ops
@@ -675,3 +697,71 @@ if(GENERATE_PYTHON_BINDINGS)
             DESTINATION .)
     endif()
 endif()
+
+include(CMakePackageConfigHelpers)
+
+configure_file(
+    ${PROJECT_SOURCE_DIR}/cmake/infiniops.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/infiniops.pc
+    @ONLY
+)
+
+configure_package_config_file(
+    ${PROJECT_SOURCE_DIR}/cmake/InfiniOpsConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(TARGETS infiniops
+    EXPORT InfiniOpsTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(FILES ${PROJECT_SOURCE_DIR}/include/infini/ops.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
+)
+
+if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
+    install(FILES ${PROJECT_SOURCE_DIR}/generated/include/infini/functional_ops.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
+    )
+endif()
+
+install(FILES
+    ${PROJECT_SOURCE_DIR}/src/config.h
+    ${PROJECT_SOURCE_DIR}/src/data_type.h
+    ${PROJECT_SOURCE_DIR}/src/device.h
+    ${PROJECT_SOURCE_DIR}/src/handle.h
+    ${PROJECT_SOURCE_DIR}/src/hash.h
+    ${PROJECT_SOURCE_DIR}/src/tensor.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(FILES
+    ${PROJECT_SOURCE_DIR}/src/common/constexpr_map.h
+    ${PROJECT_SOURCE_DIR}/src/common/traits.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/common
+)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/infiniops.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+)
+
+install(EXPORT InfiniOpsTargets
+    NAMESPACE InfiniOps::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps
+)
