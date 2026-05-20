@@ -61,18 +61,11 @@ if(WITH_ILUVATAR)
 
     file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
 
-    enable_language(CUDA)
-
     target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
     target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
-
-    set_target_properties(infiniops PROPERTIES
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED ON
-    )
 
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
@@ -552,9 +545,56 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
     list(APPEND PYBIND11_COMPILE_SOURCES ${PYBIND11_DISPATCH_SOURCES})
 
-    # TODO: There might be a better solution.
-    if(WITH_NVIDIA OR WITH_ILUVATAR OR WITH_HYGON)
+    if(WITH_NVIDIA OR WITH_HYGON)
         set_source_files_properties(${PYBIND11_COMPILE_SOURCES} PROPERTIES LANGUAGE CUDA)
+    elseif(WITH_ILUVATAR)
+        set(_iluvatar_dispatch_include_flags
+            "-I${CMAKE_CURRENT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}/generated")
+        foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
+            list(APPEND _iluvatar_dispatch_include_flags "-I${_dir}")
+        endforeach()
+
+        set(_iluvatar_dispatch_defs -DWITH_ILUVATAR=1)
+        if(WITH_TORCH)
+            list(APPEND _iluvatar_dispatch_defs -DWITH_TORCH=1)
+        endif()
+        if(DEFINED TORCH_CXX11_ABI)
+            list(APPEND _iluvatar_dispatch_defs "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
+        endif()
+
+        set(ILUVATAR_DISPATCH_OBJECTS)
+        set(_iluvatar_dispatch_object_dir "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_dispatch_objs")
+        foreach(_src IN LISTS PYBIND11_DISPATCH_SOURCES)
+            get_filename_component(_name "${_src}" NAME_WE)
+            set(_obj "${_iluvatar_dispatch_object_dir}/${_name}.o")
+            set(_dep "${_obj}.d")
+            set(_depfile_arg)
+            if(CMAKE_GENERATOR MATCHES "Ninja")
+                set(_depfile_arg DEPFILE "${_dep}")
+            endif()
+            add_custom_command(
+                OUTPUT "${_obj}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${_iluvatar_dispatch_object_dir}"
+                COMMAND ${ILUVATAR_CUDA_COMPILER}
+                    ${_iluvatar_dispatch_defs}
+                    ${_iluvatar_dispatch_include_flags}
+                    ${ILUVATAR_CUDA_FLAGS}
+                    -MMD -MF "${_dep}"
+                    -c "${_src}" -o "${_obj}"
+                DEPENDS "${_src}"
+                ${_depfile_arg}
+                COMMENT "Compiling ${_name}.cc with CoreX clang++"
+                VERBATIM
+            )
+            list(APPEND ILUVATAR_DISPATCH_OBJECTS "${_obj}")
+        endforeach()
+
+        list(REMOVE_ITEM PYBIND11_COMPILE_SOURCES ${PYBIND11_DISPATCH_SOURCES})
+        set_source_files_properties(${ILUVATAR_DISPATCH_OBJECTS}
+            PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        list(APPEND PYBIND11_COMPILE_SOURCES ${ILUVATAR_DISPATCH_OBJECTS})
     endif()
 
     find_package(Python COMPONENTS Interpreter Development)

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.18)
 project(InfiniOps LANGUAGES CXX)
 
+if(POLICY CMP0116)
+    cmake_policy(SET CMP0116 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -292,34 +296,24 @@ if(WITH_NVIDIA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# Iluvatar: CUDA-compatible device, uses `clang++` with `-x ivcore` (not `nvcc`).
+# Iluvatar: CUDA-compatible device. CoreX clang++ works for `-x ivcore`
+# compilation, but CMake's CUDA language path appends `-x cuda` and can crash
+# the compiler. Keep CMake's CUDA language disabled for this backend and
+# compile the few generated dispatch sources that need CUDA syntax via custom
+# clang++ commands.
 # Reference: `InfiniCore` `xmake/iluvatar.lua`.
 if(WITH_ILUVATAR)
     add_compile_definitions(WITH_ILUVATAR=1)
     set(ILUVATAR_ARCH "ivcore20" CACHE STRING "Iluvatar GPU architecture")
-    find_program(CLANGXX NAMES clang++)
-    if(CLANGXX)
-        set(CMAKE_CUDA_COMPILER "${CLANGXX}" CACHE STRING "Iluvatar CUDA compiler (clang++)")
-    else()
-        set(CMAKE_CUDA_COMPILER "clang++" CACHE STRING "Iluvatar CUDA compiler (clang++)")
+    find_program(ILUVATAR_CUDA_COMPILER NAMES clang++ HINTS /usr/local/corex/bin)
+    if(NOT ILUVATAR_CUDA_COMPILER)
+        message(FATAL_ERROR "`WITH_ILUVATAR` is `ON` but CoreX `clang++` was not found.")
     endif()
-    # `-x ivcore` must not be in `CMAKE_CUDA_FLAGS` — CMake passes those flags
-    # to both compile and link steps. During linking, `-x ivcore` causes
-    # `clang++` to re-parse `.o` files as source code.
-    set(CMAKE_CUDA_FLAGS "--cuda-gpu-arch=${ILUVATAR_ARCH} -fPIC -Wno-error=unused-variable -Wno-error=unused-private-field -Wno-unused-variable -std=c++17" CACHE STRING "Iluvatar CUDA flags")
-    set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for Iluvatar")
-    set(CMAKE_CUDA_ARCHITECTURES OFF CACHE STRING "Iluvatar CUDA architectures (passed via CMAKE_CUDA_FLAGS)")
-    # Iluvatar does not ship `libcudadevrt`, which CMake's compiler test
-    # tries to link. Disable automatic CUDA runtime linking and link
-    # manually via `find_package(CUDAToolkit)` instead.
-    set(CMAKE_CUDA_RUNTIME_LIBRARY NONE)
-    message(STATUS "Iluvatar: CUDA compiler ${CMAKE_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
-    enable_language(CUDA)
+    set(ILUVATAR_CUDA_FLAGS
+        "--cuda-gpu-arch=${ILUVATAR_ARCH};-fPIC;-Wno-error=unused-variable;-Wno-error=unused-private-field;-Wno-unused-variable;-std=c++17;--cuda-path=/usr/local/corex;-x;ivcore"
+        CACHE STRING "Iluvatar CUDA compiler flags")
+    message(STATUS "Iluvatar: CUDA compiler ${ILUVATAR_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
     find_package(CUDAToolkit REQUIRED)
-    # Add `-x ivcore` as a compile-only flag so it is not passed during
-    # linking, where it would cause `clang++` to re-parse `.o` files as
-    # source.
-    add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-x$<SEMICOLON>ivcore>)
 endif()
 
 if(WITH_HYGON)
