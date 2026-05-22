@@ -20,20 +20,25 @@ def main():
         default=40,
         help="Max rows to print per diff section (default: 40)",
     )
+    parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        default=None,
+        help="Optional JSON path for writing the full diff report.",
+    )
     args = parser.parse_args()
 
-    left_summary = _load_json(args.left)
-    right_summary = _load_json(args.right)
-    left_details = _load_details(args.left)
-    right_details = _load_details(args.right)
+    diff_report = _build_diff_report(args.left, args.right)
+    rendered = _render_report(diff_report, args.limit)
+    print(rendered)
 
-    print(_run_header("left", args.left, left_summary))
-    print(_run_header("right", args.right, right_summary))
-    print()
-
-    _print_operator_summary_diff(left_summary, right_summary, args.limit)
-    print()
-    _print_case_diff(left_details, right_details, args.limit)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(diff_report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"\nfull diff report written to {args.output}")
 
 
 def _run_header(label, path, summary):
@@ -52,7 +57,31 @@ def _run_header(label, path, summary):
     )
 
 
-def _print_operator_summary_diff(left_summary, right_summary, limit):
+def _build_diff_report(left_path, right_path):
+    left_summary = _load_json(left_path)
+    right_summary = _load_json(right_path)
+    left_details, left_detail_path = _load_details(left_path)
+    right_details, right_detail_path = _load_details(right_path)
+
+    return {
+        "left": {
+            "summary_path": str(left_path),
+            "detail_path": str(left_detail_path),
+            "detail_exists": left_detail_path.exists(),
+            "summary": left_summary,
+        },
+        "right": {
+            "summary_path": str(right_path),
+            "detail_path": str(right_detail_path),
+            "detail_exists": right_detail_path.exists(),
+            "summary": right_summary,
+        },
+        "operator_diff": _build_operator_summary_diff(left_summary, right_summary),
+        "case_diff": _build_case_diff(left_details, right_details),
+    }
+
+
+def _build_operator_summary_diff(left_summary, right_summary):
     left_ops = {
         _operator_key(row): row for row in left_summary.get("operators", [])
     }
@@ -68,44 +97,38 @@ def _print_operator_summary_diff(left_summary, right_summary, limit):
         if _operator_payload(left_ops[key]) != _operator_payload(right_ops[key])
     ]
 
-    print("Operator Diff")
-    print(f"  only_left={len(left_only)} only_right={len(right_only)} changed={len(changed)}")
-
-    if left_only:
-        print("  only in left:")
-        for key in left_only[:limit]:
-            print(f"    {key}")
-
-    if right_only:
-        print("  only in right:")
-        for key in right_only[:limit]:
-            print(f"    {key}")
-
-    if changed:
-        print("  changed outcomes:")
-        for key in changed[:limit]:
-            left_row = left_ops[key]
-            right_row = right_ops[key]
-            print(
-                "    "
-                f"{key}: "
-                f"left={left_row['outcomes']} "
-                f"right={right_row['outcomes']}"
-            )
-
-            left_reasons = Counter(
-                {entry["reason"]: entry["count"] for entry in left_row["skip_reasons"]}
-            )
-            right_reasons = Counter(
-                {entry["reason"]: entry["count"] for entry in right_row["skip_reasons"]}
-            )
-
-            if left_reasons != right_reasons:
-                print(f"      left_skip_reasons={dict(left_reasons)}")
-                print(f"      right_skip_reasons={dict(right_reasons)}")
+    return {
+        "only_left_count": len(left_only),
+        "only_right_count": len(right_only),
+        "changed_count": len(changed),
+        "only_left": [
+            {"key": key, "row": left_ops[key]}
+            for key in left_only
+        ],
+        "only_right": [
+            {"key": key, "row": right_ops[key]}
+            for key in right_only
+        ],
+        "changed": [
+            {
+                "key": key,
+                "left": left_ops[key],
+                "right": right_ops[key],
+                "left_skip_reasons": {
+                    entry["reason"]: entry["count"]
+                    for entry in left_ops[key]["skip_reasons"]
+                },
+                "right_skip_reasons": {
+                    entry["reason"]: entry["count"]
+                    for entry in right_ops[key]["skip_reasons"]
+                },
+            }
+            for key in changed
+        ],
+    }
 
 
-def _print_case_diff(left_details, right_details, limit):
+def _build_case_diff(left_details, right_details):
     left_cases = {_case_key(record): record for record in left_details if record.get("operator")}
     right_cases = {_case_key(record): record for record in right_details if record.get("operator")}
 
@@ -117,34 +140,148 @@ def _print_case_diff(left_details, right_details, limit):
         if _case_payload(left_cases[key]) != _case_payload(right_cases[key])
     ]
 
-    print("Case Diff")
-    print(f"  only_left={len(left_only)} only_right={len(right_only)} changed={len(changed)}")
+    return {
+        "only_left_count": len(left_only),
+        "only_right_count": len(right_only),
+        "changed_count": len(changed),
+        "only_left": [
+            {"key": key, "record": left_cases[key]}
+            for key in left_only
+        ],
+        "only_right": [
+            {"key": key, "record": right_cases[key]}
+            for key in right_only
+        ],
+        "changed": [
+            {
+                "key": key,
+                "left": left_cases[key],
+                "right": right_cases[key],
+            }
+            for key in changed
+        ],
+    }
 
-    if left_only:
-        print("  cases only in left:")
-        for key in left_only[:limit]:
-            print(f"    {key}")
 
-    if right_only:
-        print("  cases only in right:")
-        for key in right_only[:limit]:
-            print(f"    {key}")
+def _render_report(diff_report, limit):
+    lines = []
+    left = diff_report["left"]
+    right = diff_report["right"]
 
-    if changed:
-        print("  same case, different result:")
-        for key in changed[:limit]:
-            left_record = left_cases[key]
-            right_record = right_cases[key]
-            print(
+    lines.append(_run_header("left", left["summary_path"], left["summary"]))
+    lines.append(_run_header("right", right["summary_path"], right["summary"]))
+    lines.append("")
+
+    if not left["detail_exists"] or not right["detail_exists"]:
+        missing = []
+
+        if not left["detail_exists"]:
+            missing.append(left["detail_path"])
+
+        if not right["detail_exists"]:
+            missing.append(right["detail_path"])
+
+        lines.append("Warning")
+        lines.append(
+            "  Missing detail file(s): "
+            + ", ".join(missing)
+        )
+        lines.append(
+            "  Case Diff needs both sibling `.details.jsonl` files."
+        )
+        lines.append("")
+
+    lines.extend(_render_operator_summary_diff(diff_report["operator_diff"], limit))
+    lines.append("")
+    lines.extend(_render_case_diff(diff_report["case_diff"], limit))
+
+    return "\n".join(lines)
+
+
+def _render_operator_summary_diff(operator_diff, limit):
+    lines = []
+
+    lines.append("Operator Diff")
+    lines.append(
+        "  "
+        f"only_left={operator_diff['only_left_count']} "
+        f"only_right={operator_diff['only_right_count']} "
+        f"changed={operator_diff['changed_count']}"
+    )
+
+    if operator_diff["only_left"]:
+        lines.append("  only in left:")
+
+        for entry in operator_diff["only_left"][:limit]:
+            lines.append(f"    {entry['key']}")
+
+    if operator_diff["only_right"]:
+        lines.append("  only in right:")
+
+        for entry in operator_diff["only_right"][:limit]:
+            lines.append(f"    {entry['key']}")
+
+    if operator_diff["changed"]:
+        lines.append("  changed outcomes:")
+
+        for entry in operator_diff["changed"][:limit]:
+            lines.append(
                 "    "
-                f"{key}: "
-                f"left={left_record['outcome']} "
-                f"right={right_record['outcome']}"
+                f"{entry['key']}: "
+                f"left={entry['left']['outcomes']} "
+                f"right={entry['right']['outcomes']}"
             )
 
-            if left_record.get("reason") != right_record.get("reason"):
-                print(f"      left_reason={left_record.get('reason')}")
-                print(f"      right_reason={right_record.get('reason')}")
+            if entry["left_skip_reasons"] != entry["right_skip_reasons"]:
+                lines.append(
+                    f"      left_skip_reasons={entry['left_skip_reasons']}"
+                )
+                lines.append(
+                    f"      right_skip_reasons={entry['right_skip_reasons']}"
+                )
+
+    return lines
+
+
+def _render_case_diff(case_diff, limit):
+    lines = []
+
+    lines.append("Case Diff")
+    lines.append(
+        "  "
+        f"only_left={case_diff['only_left_count']} "
+        f"only_right={case_diff['only_right_count']} "
+        f"changed={case_diff['changed_count']}"
+    )
+
+    if case_diff["only_left"]:
+        lines.append("  cases only in left:")
+
+        for entry in case_diff["only_left"][:limit]:
+            lines.append(f"    {entry['key']}")
+
+    if case_diff["only_right"]:
+        lines.append("  cases only in right:")
+
+        for entry in case_diff["only_right"][:limit]:
+            lines.append(f"    {entry['key']}")
+
+    if case_diff["changed"]:
+        lines.append("  same case, different result:")
+
+        for entry in case_diff["changed"][:limit]:
+            lines.append(
+                "    "
+                f"{entry['key']}: "
+                f"left={entry['left']['outcome']} "
+                f"right={entry['right']['outcome']}"
+            )
+
+            if entry["left"].get("reason") != entry["right"].get("reason"):
+                lines.append(f"      left_reason={entry['left'].get('reason')}")
+                lines.append(f"      right_reason={entry['right'].get('reason')}")
+
+    return lines
 
 
 def _operator_key(row):
@@ -190,13 +327,16 @@ def _load_details(summary_path):
     detail_path = summary_path.with_name(f"{summary_path.stem}.details.jsonl")
 
     if not detail_path.exists():
-        return []
+        return [], detail_path
 
-    return [
-        json.loads(line)
-        for line in detail_path.read_text(encoding="utf-8").splitlines()
-        if line
-    ]
+    return (
+        [
+            json.loads(line)
+            for line in detail_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ],
+        detail_path,
+    )
 
 
 if __name__ == "__main__":
