@@ -211,6 +211,7 @@ _VENDOR_CRASH_OPS = frozenset(
         ("npu", "mse_loss"),
         ("npu", "nonzero"),
         ("npu", "nuclear_norm"),
+        ("npu", "smooth_l1_loss"),
         ("npu", "_linalg_svd"),
         ("npu", "svd"),
     }
