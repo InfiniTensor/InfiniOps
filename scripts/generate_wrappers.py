@@ -869,7 +869,7 @@ def _generate_c_api_entries(operator):
         signature = _format_c_api_signature(f"infiniOps{pascal_case_op_name}", params)
         declarations.append(f"INFINI_OPS_API {signature};")
         definitions.append(
-            f"""{signature} {{
+            f"""INFINI_OPS_API {signature} {{
   try {{
 {validations}
     const infini::ops::Handle default_handle;

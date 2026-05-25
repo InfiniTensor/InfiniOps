@@ -338,8 +338,9 @@ InfiniOpsStatus ValidateTensor(const char* name,
 
 extern "C" {
 
-InfiniOpsStatus infiniOpsGetLastError(char* buffer, size_t capacity,
-                                      size_t* required_size) {
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetLastError(char* buffer,
+                                                     size_t capacity,
+                                                     size_t* required_size) {
   const size_t required = last_error.size() + 1;
   if (required_size != nullptr) {
     *required_size = required;
@@ -358,7 +359,7 @@ InfiniOpsStatus infiniOpsGetLastError(char* buffer, size_t capacity,
   return INFINI_OPS_STATUS_SUCCESS;
 }
 
-InfiniOpsStatus infiniOpsCreateHandle(
+INFINI_OPS_API InfiniOpsStatus infiniOpsCreateHandle(
     const InfiniOpsHandleAttributes* attributes, InfiniOpsHandle* handle) {
   try {
     if (handle == nullptr) {
@@ -397,13 +398,13 @@ InfiniOpsStatus infiniOpsCreateHandle(
   }
 }
 
-InfiniOpsStatus infiniOpsDestroyHandle(InfiniOpsHandle handle) {
+INFINI_OPS_API InfiniOpsStatus infiniOpsDestroyHandle(InfiniOpsHandle handle) {
   delete handle;
   SetLastError("");
   return INFINI_OPS_STATUS_SUCCESS;
 }
 
-InfiniOpsStatus infiniOpsCreateConfig(
+INFINI_OPS_API InfiniOpsStatus infiniOpsCreateConfig(
     const InfiniOpsConfigAttributes* attributes, InfiniOpsConfig* config) {
   try {
     if (config == nullptr) {
@@ -435,7 +436,7 @@ InfiniOpsStatus infiniOpsCreateConfig(
   }
 }
 
-InfiniOpsStatus infiniOpsDestroyConfig(InfiniOpsConfig config) {
+INFINI_OPS_API InfiniOpsStatus infiniOpsDestroyConfig(InfiniOpsConfig config) {
   delete config;
   SetLastError("");
   return INFINI_OPS_STATUS_SUCCESS;

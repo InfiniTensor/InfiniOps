@@ -65,9 +65,7 @@ def test_c_api_add_smoke(tmp_path):
             "-Werror",
             *_include_flags(),
             str(source),
-            f"-L{library_dir}",
-            "-linfiniops",
-            f"-Wl,-rpath,{library_dir}",
+            *_library_link_flags(library_dir),
             "-o",
             str(binary),
         ]
@@ -81,6 +79,9 @@ def _compiler(env_name, default):
     if not compiler:
         pytest.skip(f"`{env_name}` is not configured.")
 
+    if env_name == "CXX" and "cu-bridge" in compiler:
+        compiler = default
+
     return compiler
 
 
@@ -90,7 +91,7 @@ def _include_flags(require_cpp_api=False):
     if install_prefix:
         return [f"-I{Path(install_prefix) / 'include'}"]
 
-    flags = [f"-I{PROJECT_ROOT / 'include'}"]
+    flags = [f"-I{PROJECT_ROOT / 'include'}", f"-I{PROJECT_ROOT / 'src'}"]
     generated_include_dir = PROJECT_ROOT / "generated" / "include"
 
     if generated_include_dir.exists():
@@ -126,6 +127,49 @@ def _installed_library_dir():
         )
 
     return Path(infini.ops.__file__).resolve().parent
+
+
+def _library_link_flags(library_dir):
+    flags = [f"-L{library_dir}", "-linfiniops", f"-Wl,-rpath,{library_dir}"]
+
+    for runtime_dir in _python_runtime_library_dirs():
+        flags.extend(
+            [
+                f"-L{runtime_dir}",
+                f"-Wl,-rpath,{runtime_dir}",
+                f"-Wl,-rpath-link,{runtime_dir}",
+            ]
+        )
+
+        if (runtime_dir / "libiomp5.so").exists():
+            flags.append("-liomp5")
+        elif (runtime_dir / "libomp.so").exists():
+            flags.append("-lomp")
+
+    return flags
+
+
+def _python_runtime_library_dirs():
+    runtime_dirs = []
+
+    try:
+        import torch
+    except ImportError:
+        return runtime_dirs
+
+    site_packages = Path(torch.__file__).resolve().parents[1]
+    for name in ("torch/lib", "torch.libs"):
+        runtime_dir = site_packages / name
+        if runtime_dir.exists():
+            runtime_dirs.append(runtime_dir)
+
+    maca_path = os.environ.get("MACA_PATH")
+    if maca_path:
+        runtime_dir = Path(maca_path) / "mxgpu_llvm" / "lib"
+        if runtime_dir.exists():
+            runtime_dirs.append(runtime_dir)
+
+    return runtime_dirs
 
 
 def _run(command):
