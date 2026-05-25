@@ -1,0 +1,10 @@
+INFINIOPS_1 {
+  global:
+    extern "C++" {
+      infini::ops::*;
+      infini::ops::functional::*;
+    };
+    infiniOps*;
+  local:
+    *;
+};

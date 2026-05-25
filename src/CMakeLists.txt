@@ -2,6 +2,32 @@ add_library(infiniops SHARED)
 
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
+target_sources(infiniops PRIVATE infini/ops.cc)
+target_compile_definitions(infiniops PRIVATE INFINI_OPS_BUILD_SHARED=1)
+
+target_include_directories(infiniops
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/generated/src
+)
+
+set_target_properties(infiniops PROPERTIES
+    VERSION 1.0.0
+    SOVERSION 1
+)
+
+if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(infiniops PRIVATE
+        "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/infini/ops.map"
+    )
+    set_target_properties(infiniops PROPERTIES
+        LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/infini/ops.map"
+    )
+endif()
 
 set(DEVICE_LIST "")
 
@@ -477,14 +503,6 @@ if(WITH_TORCH)
     endif()
 endif()
 
-target_include_directories(infiniops
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-
 if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
     # Always regenerate wrappers so the generated functional API and pybind11
@@ -809,7 +827,9 @@ install(FILES ${PROJECT_SOURCE_DIR}/include/infini/ops.h
 )
 
 if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
-    install(FILES ${PROJECT_SOURCE_DIR}/generated/include/infini/functional_ops.h
+    install(FILES
+        ${PROJECT_SOURCE_DIR}/generated/include/infini/functional_ops.h
+        ${PROJECT_SOURCE_DIR}/generated/include/infini/c_ops.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
     )
 endif()
