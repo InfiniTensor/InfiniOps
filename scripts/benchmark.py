@@ -177,35 +177,69 @@ def measure(infiniops_fn, ref_fn, args, kwargs, ref_args, ref_kwargs,
         infiniops_fn(*args, **kwargs)
     _synchronize(device)
 
-    # Measure InfiniOps
-    stmt = "func(*args, **kwargs)"
-    func_timer = benchmark.Timer(
-        stmt=stmt,
-        globals={"func": infiniops_fn, "args": args, "kwargs": kwargs},
-    )
-    func_measurement = func_timer.blocked_autorange(min_run_time=min_time)
-    _synchronize(device)
+    if device == "cpu":
+        # CPU: use blocked_autorange (ops are synchronous)
+        stmt = "func(*args, **kwargs)"
+        func_timer = benchmark.Timer(
+            stmt=stmt,
+            globals={"func": infiniops_fn, "args": args, "kwargs": kwargs},
+        )
+        func_measurement = func_timer.blocked_autorange(min_run_time=min_time)
 
-    # Measure reference
-    ref_timer = benchmark.Timer(
-        stmt=stmt,
-        globals={"func": ref_fn, "args": ref_args, "kwargs": ref_kwargs},
-    )
-    ref_measurement = ref_timer.blocked_autorange(min_run_time=min_time)
-    _synchronize(device)
+        ref_timer = benchmark.Timer(
+            stmt=stmt,
+            globals={"func": ref_fn, "args": ref_args, "kwargs": ref_kwargs},
+        )
+        ref_measurement = ref_timer.blocked_autorange(min_run_time=min_time)
 
-    func_stats = (
-        func_measurement.median * 1e6,
-        func_measurement.mean * 1e6,
-        func_measurement.iqr * 1e6,
-        len(func_measurement.times),
-    )
-    ref_stats = (
-        ref_measurement.median * 1e6,
-        ref_measurement.mean * 1e6,
-        ref_measurement.iqr * 1e6,
-        len(ref_measurement.times),
-    )
+        func_stats = (
+            func_measurement.median * 1e6,
+            func_measurement.mean * 1e6,
+            func_measurement.iqr * 1e6,
+            len(func_measurement.times),
+        )
+        ref_stats = (
+            ref_measurement.median * 1e6,
+            ref_measurement.mean * 1e6,
+            ref_measurement.iqr * 1e6,
+            len(ref_measurement.times),
+        )
+    else:
+        # GPU/MLU/NPU: per-iteration sync to measure actual execution time.
+        # Each iteration: sync → start timer → execute → sync → stop timer.
+        n_iters = 100
+
+        # Warmup for InfiniOps
+        for _ in range(warmup):
+            infiniops_fn(*args, **kwargs)
+        _synchronize(device)
+
+        total = 0.0
+        for _ in range(n_iters):
+            _synchronize(device)
+            t0 = time.perf_counter()
+            infiniops_fn(*args, **kwargs)
+            _synchronize(device)
+            total += time.perf_counter() - t0
+        infiniops_us = total / n_iters * 1e6
+
+        # Warmup for reference
+        for _ in range(warmup):
+            ref_fn(*ref_args, **ref_kwargs)
+        _synchronize(device)
+
+        total = 0.0
+        for _ in range(n_iters):
+            _synchronize(device)
+            t0 = time.perf_counter()
+            ref_fn(*ref_args, **ref_kwargs)
+            _synchronize(device)
+            total += time.perf_counter() - t0
+        ref_us = total / n_iters * 1e6
+
+        func_stats = (infiniops_us, infiniops_us, 0.0, n_iters)
+        ref_stats = (ref_us, ref_us, 0.0, n_iters)
+
     return func_stats, ref_stats
 
 
@@ -1191,7 +1225,7 @@ _NTOPS_SCALAR_DEFAULTS = {
 _INT_ONLY_OPS = {"bitwise_and", "bitwise_or", "bitwise_not"}
 
 # Ops that use native slot 0 instead of ATen slot 8
-_NATIVE_SLOT_OPS = {"add", "rms_norm"}
+_NATIVE_SLOT_OPS = {"rms_norm"}
 
 # Ops not available in InfiniOps — benchmark PyTorch only
 _PYTORCH_ONLY_OPS = {"relu", "matmul", "clamp"}
@@ -1517,8 +1551,13 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             return rms_out
 
         def ref_fn():
-            result = torch.nn.functional.rms_norm(inputs[0].float(), (shape[-1],),
-                                                   weight=weight.float(), eps=1e-6)
+            _rms_norm_fn = getattr(torch.nn.functional, "rms_norm", None)
+            if _rms_norm_fn is not None:
+                result = _rms_norm_fn(inputs[0].float(), (shape[-1],),
+                                      weight=weight.float(), eps=1e-6)
+            else:
+                variance = torch.mean(inputs[0].float() ** 2, dim=-1, keepdim=True)
+                result = (inputs[0].float() / torch.sqrt(variance + 1e-6)) * weight.float()
             rms_out.copy_(result.to(effective_dtype))
             return rms_out
 
@@ -1632,8 +1671,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
                     return out
             elif op_name == "mean":
                 def ref_fn():
-                    torch.mean(inputs[0], out=out)
-                    return out
+                    return torch.mean(inputs[0])
             elif op_name == "cumsum":
                 def ref_fn():
                     torch.cumsum(inputs[0], dim=-1, out=out)
@@ -1742,8 +1780,11 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
                     )
             call_args = (*inputs, *scalar_args, out)
 
+            stream_val = get_stream(device)
+
             def infiniops_fn():
                 getattr(infini.ops, op_name)(*call_args,
+                                             stream=stream_val,
                                              implementation_index=_PYTORCH_SLOT)
                 return out
 
@@ -1767,9 +1808,11 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
         else:
             # No metadata: try generic unary/binary
             n_inputs = len(inputs)
+            stream_val = get_stream(device)
 
             def infiniops_fn():
                 getattr(infini.ops, op_name)(*inputs, out,
+                                             stream=stream_val,
                                              implementation_index=_PYTORCH_SLOT)
                 return out
 
