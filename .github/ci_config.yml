@@ -47,7 +47,6 @@ platforms:
       - "--ipc=host"
     volumes:
       - /dev:/dev
-      - /usr/local/corex-4.3.0/bin:/usr/local/corex-4.3.0.20250624/bin:ro
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
