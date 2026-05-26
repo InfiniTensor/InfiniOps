@@ -133,6 +133,21 @@ _NULLOPT_BY_TYPE = {
 }
 _HARDCODE_NULLOPT_TYPES = frozenset(_NULLOPT_BY_TYPE)
 
+# Optional ATen parameters remain hidden by default, but a small allowlist can
+# opt specific parameters into the public InfiniOps signature once the
+# codegenerator knows how to forward them correctly.  `clamp`/`clip` are the
+# first such cases: hardcoding both `min`/`max` to nullopt makes the wrappers
+# unusable, because the op requires at least one bound.
+_VISIBLE_OPTIONAL_PARAMS = frozenset(
+    {
+        ("clamp", "min"),
+        ("clamp", "max"),
+        ("clip", "min"),
+        ("clip", "max"),
+        ("index", "indices"),
+    }
+)
+
 
 @dataclasses.dataclass
 class Param:
@@ -140,6 +155,7 @@ class Param:
     aten_type: str
     default: str | None
     keyword_only: bool
+    force_visible: bool = False
 
     @property
     def is_tensor(self) -> bool:
@@ -169,7 +185,7 @@ class Param:
         """If `True`, the param is omitted from the user-facing API and
         passed as `at::nullopt` to ATen."""
 
-        return self.aten_type in _HARDCODE_NULLOPT_TYPES
+        return not self.force_visible and self.aten_type in _HARDCODE_NULLOPT_TYPES
 
     @property
     def is_hidden(self) -> bool:
@@ -184,10 +200,10 @@ class Param:
         semantic controls.  They are now exposed and forwarded to ATen.
 
         Optional ATen types (\\`Tensor?\\`, \\`Scalar?\\`, \\`int?\\`, …) remain
-        hidden for now — exposing them would require teaching the torch
-        source to thread \\`std::optional\\` through to ATen, which is a
-        separate refactor.  The same goes for ATen-internal types like
-        \\`Generator?\\`/\\`Layout?\\` that have no InfiniOps analogue.
+        hidden by default.  A small per-op allowlist can opt individual params
+        in once codegen knows how to thread their \\`std::optional\\` values
+        through to ATen correctly.  ATen-internal types like
+        \\`Generator?\\`/\\`Layout?\\` still stay hidden.
         """
 
         return self.is_hardcoded_nullopt
@@ -251,6 +267,23 @@ class Param:
             # so the `cpp_type` is irrelevant.
 
             return "void"
+
+        if self.aten_type == "Tensor?[]":
+            return "std::vector<std::optional<Tensor>>"
+
+        if self.aten_type.endswith("?"):
+            bare = self.aten_type[:-1]
+
+            if bare == "Tensor":
+                return "std::optional<Tensor>"
+
+            try:
+                return f"std::optional<{_SCALAR_TYPE_MAP[bare]}>"
+            except KeyError as exc:
+                raise NotImplementedError(
+                    f"unsupported visible optional ATen type {self.aten_type!r} "
+                    f"for param {self.name!r}"
+                ) from exc
 
         bare = self.aten_type.rstrip("?")
         # Required `int[N]` / `SymInt[N]` (no default) — pybind11 accepts
@@ -378,11 +411,17 @@ def _parse_func(func_str: str) -> Op:
     if not m:
         raise ValueError(f"could not parse func: {func_str!r}")
 
-    return Op(
+    op = Op(
         aten_name=m.group("name"),
         overload=m.group("overload") or "",
         params=_parse_args(m.group("args")),
     )
+
+    for param in op.params:
+        if (op.aten_name, param.name) in _VISIBLE_OPTIONAL_PARAMS:
+            param.force_visible = True
+
+    return op
 
 
 def _parse_args(args_str: str) -> list[Param]:
@@ -783,9 +822,48 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             f"      {param.name}_type_, device_index_);"
         )
 
+    for param in op.visible_params:
+        if param.aten_type == "Scalar?":
+            conversion_lines.append(
+                f"  c10::optional<at::Scalar> at_{param.name};\n"
+                f"  if ({param.name}.has_value()) {{\n"
+                f"    at_{param.name} = at::Scalar({param.name}.value());\n"
+                f"  }}"
+            )
+        elif param.aten_type == "Tensor?":
+            conversion_lines.append(
+                f"  c10::optional<at::Tensor> at_{param.name};\n"
+                f"  if ({param.name}.has_value()) {{\n"
+                f"    const auto& {param.name}_value = {param.name}.value();\n"
+                f"    at_{param.name} = ToAtenTensor<kDev>(\n"
+                f"        const_cast<void*>({param.name}_value.data()),\n"
+                f"        {param.name}_value.shape(), {param.name}_value.strides(),\n"
+                f"        {param.name}_value.dtype(), {param.name}_value.device().index());\n"
+                f"  }}"
+            )
+        elif param.aten_type == "Tensor?[]":
+            conversion_lines.append(
+                f"  c10::List<c10::optional<at::Tensor>> at_{param.name};\n"
+                f"  at_{param.name}.reserve({param.name}.size());\n"
+                f"  for (const auto& {param.name}_value : {param.name}) {{\n"
+                f"    if ({param.name}_value.has_value()) {{\n"
+                f"      const auto& {param.name}_tensor = {param.name}_value.value();\n"
+                f"      at_{param.name}.push_back(ToAtenTensor<kDev>(\n"
+                f"          const_cast<void*>({param.name}_tensor.data()),\n"
+                f"          {param.name}_tensor.shape(), {param.name}_tensor.strides(),\n"
+                f"          {param.name}_tensor.dtype(), {param.name}_tensor.device().index()));\n"
+                f"    }} else {{\n"
+                f"      at_{param.name}.push_back(c10::optional<at::Tensor>{{}});\n"
+                f"    }}\n"
+                f"  }}"
+            )
+
     def _render_arg(p):
         if p.is_hidden:
             return p.hidden_value()
+
+        if p.aten_type in {"Scalar?", "Tensor?", "Tensor?[]"}:
+            return f"at_{p.name}"
 
         if p.is_tensor:
             return f"at_{p.name}"
@@ -840,6 +918,40 @@ def _generate_torch_source(name: str, ops: list[Op]) -> str:
         methods=methods,
         instantiations=instantiations,
     )
+
+
+def _metadata_param_dicts(op: Op) -> list[dict]:
+    """Render metadata for the user-visible params of `op`.
+
+    `reference_keyword_only` is slightly broader than the schema-level
+    `keyword_only` bit: once ATen-only optional parameters are hidden from the
+    public API, any later visible parameter must be passed by keyword when we
+    call the Python reference, or Python will bind it to the hidden slot.
+    `argmax(input, keepdim=False)` is the motivating example: ATen keeps
+    `dim=None` before `keepdim`, so the visible `keepdim` value has to travel as
+    `keepdim=...` in the reference call.
+    """
+
+    rendered = []
+    hidden_prefix = False
+
+    for param in op.params:
+        if param.is_hidden:
+            hidden_prefix = True
+            continue
+
+        rendered.append(
+            {
+                "name": param.name,
+                "type": param.aten_type,
+                "is_tensor": param.is_tensor,
+                "is_out": param.is_out,
+                "keyword_only": param.keyword_only,
+                "reference_keyword_only": param.keyword_only or hidden_prefix,
+            }
+        )
+
+    return rendered
 
 
 _BASE_TEMPLATE = """\
@@ -1071,15 +1183,7 @@ def main() -> int:
                     "name": public_name,
                     "aten_name": op.aten_name,
                     "overload_name": op.infini_name,
-                    "params": [
-                        {
-                            "name": p.name,
-                            "type": p.aten_type,
-                            "is_tensor": p.is_tensor,
-                            "is_out": p.is_out,
-                        }
-                        for p in op.visible_params
-                    ],
+                    "params": _metadata_param_dicts(op),
                 }
             )
 
