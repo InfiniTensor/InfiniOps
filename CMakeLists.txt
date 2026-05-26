@@ -312,10 +312,13 @@ if(WITH_ILUVATAR)
     if(NOT ILUVATAR_CUDA_COMPILER)
         message(FATAL_ERROR "`WITH_ILUVATAR` is `ON` but CoreX `clang++` was not found.")
     endif()
+    get_filename_component(ILUVATAR_CUDA_BIN_DIR "${ILUVATAR_CUDA_COMPILER}" DIRECTORY)
+    get_filename_component(ILUVATAR_CUDA_ROOT "${ILUVATAR_CUDA_BIN_DIR}/.." ABSOLUTE)
+    set(CUDAToolkit_ROOT "${ILUVATAR_CUDA_ROOT}" CACHE PATH "Iluvatar CoreX toolkit root")
     set(ILUVATAR_CUDA_FLAGS
-        "--cuda-gpu-arch=${ILUVATAR_ARCH};-fPIC;-Wno-error=unused-variable;-Wno-error=unused-private-field;-Wno-unused-variable;-std=c++17;--cuda-path=/usr/local/corex;-x;ivcore"
+        "--cuda-gpu-arch=${ILUVATAR_ARCH};-fPIC;-Wno-error=unused-variable;-Wno-error=unused-private-field;-Wno-unused-variable;-std=c++17;--cuda-path=${ILUVATAR_CUDA_ROOT};-x;ivcore"
         CACHE STRING "Iluvatar CUDA compiler flags")
-    message(STATUS "Iluvatar: CUDA compiler ${ILUVATAR_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
+    message(STATUS "Iluvatar: CUDA compiler ${ILUVATAR_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}, toolkit ${ILUVATAR_CUDA_ROOT}")
     find_package(CUDAToolkit REQUIRED)
 endif()
 
@@ -433,6 +436,7 @@ if(WITH_MOORE)
     find_library(MUSA_LIB   NAMES musa   HINTS "${MUSA_ROOT}/lib" REQUIRED)
     find_library(MUSART_LIB NAMES musart HINTS "${MUSA_ROOT}/lib" REQUIRED)
     find_library(MUBLAS_LIB NAMES mublas HINTS "${MUSA_ROOT}/lib" REQUIRED)
+    find_library(MUSA_OPENMP_LIB NAMES omp iomp5 HINTS "${MUSA_ROOT}/lib" REQUIRED)
 endif()
 
 if(WITH_CAMBRICON)

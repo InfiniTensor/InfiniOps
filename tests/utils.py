@@ -1,5 +1,8 @@
 import contextlib
 import dataclasses
+import functools
+import subprocess
+import sys
 from collections.abc import Callable
 
 import torch
@@ -29,13 +32,36 @@ def get_available_devices():
     if hasattr(torch, "mlu") and torch.mlu.is_available():
         devices.append("mlu")
 
-    if hasattr(torch, "musa") and torch.musa.is_available():
+    if hasattr(torch, "musa") and torch.musa.is_available() and _musa_smoke_passes():
         devices.append("musa")
 
     if hasattr(torch, "npu") and torch.npu.is_available():
         devices.append("npu")
 
     return tuple(devices)
+
+
+@functools.cache
+def _musa_smoke_passes():
+    script = (
+        "import torch; "
+        "x = torch.empty((1,), device='musa'); "
+        "x.zero_(); "
+        "torch.musa.synchronize()"
+    )
+
+    try:
+        subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+    return True
 
 
 with contextlib.suppress(ImportError, ModuleNotFoundError):

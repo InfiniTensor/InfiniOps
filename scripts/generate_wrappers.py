@@ -929,8 +929,11 @@ namespace infini::ops::functional {{
 """
 
 
-def _generate_functional_source(op_names, impl_paths, definitions):
+def _generate_functional_source(op_names, devices, impl_paths, definitions):
     base_includes = "\n".join(f'#include "base/{op_name}.h"' for op_name in op_names)
+    device_includes = "\n".join(
+        f'#include "{path}"' for path in _device_marker_headers(devices)
+    )
     impl_includes = "\n".join(
         f'#include "{_to_include_path(impl_path)}"' for impl_path in impl_paths
     )
@@ -938,6 +941,7 @@ def _generate_functional_source(op_names, impl_paths, definitions):
     return f"""#include "infini/functional_ops.h"
 
 // clang-format off
+{device_includes}
 {base_includes}
 {impl_includes}
 // clang-format on
@@ -1238,6 +1242,7 @@ if __name__ == "__main__":
         ]
         functional_source = _generate_functional_source(
             [artifact["op_name"] for artifact in batch],
+            args.devices,
             impl_paths,
             functional_definitions,
         )

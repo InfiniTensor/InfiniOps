@@ -142,7 +142,11 @@ if(WITH_MOORE)
     target_sources(infiniops PRIVATE ${MOORE_SOURCES})
 
     target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
-    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
+    target_link_libraries(infiniops PUBLIC
+        ${MUSA_LIB}
+        ${MUSART_LIB}
+        ${MUBLAS_LIB}
+        ${MUSA_OPENMP_LIB})
 
     list(APPEND DEVICE_LIST "moore")
 endif()
@@ -174,10 +178,15 @@ if(WITH_CAMBRICON)
         endforeach()
         get_directory_property(CAMBRICON_OBJECT_FILES CAMBRICON_OBJECTS)
         if(CAMBRICON_OBJECT_FILES)
+            set_source_files_properties(${CAMBRICON_OBJECT_FILES}
+                PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
             target_sources(infiniops PRIVATE ${CAMBRICON_OBJECT_FILES})
         endif()
     else()
-        message(WARNING "cncc compiler not found. MLU kernels will not be compiled.")
+        if(CAMBRICON_MLU_SOURCES)
+            message(FATAL_ERROR
+                "cncc compiler not found. Cambricon .mlu kernels cannot be compiled.")
+        endif()
     endif()
     target_compile_definitions(infiniops PRIVATE WITH_CAMBRICON=1)
 
@@ -317,7 +326,7 @@ if(WITH_TORCH)
     endif()
     message(STATUS "Generating torch op wrappers - done")
 
-    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS
+    file(GLOB_RECURSE TORCH_SOURCES
         "torch/*.cc" "torch/*.cpp"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
@@ -499,19 +508,74 @@ if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
         message(STATUS "Generating wrappers - done")
     endif()
 
-    file(GLOB_RECURSE FUNCTIONAL_API_SOURCES CONFIGURE_DEPENDS
+    file(GLOB_RECURSE FUNCTIONAL_API_SOURCES
         "${PROJECT_SOURCE_DIR}/generated/src/functional_ops_*.cc")
 
-    if(WITH_NVIDIA OR WITH_ILUVATAR)
+    if(WITH_NVIDIA)
         set_source_files_properties(${FUNCTIONAL_API_SOURCES}
             PROPERTIES LANGUAGE CUDA)
-    endif()
+        target_sources(infiniops PRIVATE ${FUNCTIONAL_API_SOURCES})
+    elseif(WITH_ILUVATAR)
+        set(_iluvatar_functional_include_flags
+            "-I${CMAKE_CURRENT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}/generated"
+            "-I${PROJECT_SOURCE_DIR}/generated/include")
+        foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
+            list(APPEND _iluvatar_functional_include_flags "-I${_dir}")
+        endforeach()
 
-    target_sources(infiniops PRIVATE ${FUNCTIONAL_API_SOURCES})
+        set(_iluvatar_functional_defs -DWITH_ILUVATAR=1)
+        if(WITH_CPU)
+            list(APPEND _iluvatar_functional_defs -DWITH_CPU=1)
+        endif()
+        if(WITH_TORCH)
+            list(APPEND _iluvatar_functional_defs -DWITH_TORCH=1)
+        endif()
+        if(DEFINED TORCH_CXX11_ABI)
+            list(APPEND _iluvatar_functional_defs
+                "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
+        endif()
+
+        set(ILUVATAR_FUNCTIONAL_OBJECTS)
+        set(_iluvatar_functional_object_dir
+            "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_functional_objs")
+        foreach(_src IN LISTS FUNCTIONAL_API_SOURCES)
+            get_filename_component(_name "${_src}" NAME_WE)
+            set(_obj "${_iluvatar_functional_object_dir}/${_name}.o")
+            set(_dep "${_obj}.d")
+            set(_depfile_arg)
+            if(CMAKE_GENERATOR MATCHES "Ninja")
+                set(_depfile_arg DEPFILE "${_dep}")
+            endif()
+            add_custom_command(
+                OUTPUT "${_obj}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_iluvatar_functional_object_dir}"
+                COMMAND ${ILUVATAR_CUDA_COMPILER}
+                    ${_iluvatar_functional_defs}
+                    ${_iluvatar_functional_include_flags}
+                    ${ILUVATAR_CUDA_FLAGS}
+                    -MMD -MF "${_dep}"
+                    -c "${_src}" -o "${_obj}"
+                DEPENDS "${_src}"
+                ${_depfile_arg}
+                COMMENT "Compiling ${_name}.cc with CoreX clang++"
+                VERBATIM
+            )
+            list(APPEND ILUVATAR_FUNCTIONAL_OBJECTS "${_obj}")
+        endforeach()
+
+        set_source_files_properties(${ILUVATAR_FUNCTIONAL_OBJECTS}
+            PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        target_sources(infiniops PRIVATE ${ILUVATAR_FUNCTIONAL_OBJECTS})
+    else()
+        target_sources(infiniops PRIVATE ${FUNCTIONAL_API_SOURCES})
+    endif()
 endif()
 
 if(GENERATE_PYTHON_BINDINGS)
-    file(GLOB_RECURSE PYBIND11_SOURCES CONFIGURE_DEPENDS
+    file(GLOB_RECURSE PYBIND11_SOURCES
         "${PROJECT_SOURCE_DIR}/generated/bindings/*.cc")
 
     set(PYBIND11_DISPATCH_SOURCES)
@@ -667,6 +731,14 @@ if(GENERATE_PYTHON_BINDINGS)
     )
     target_link_libraries(ops PRIVATE infiniops)
 
+    # Cambricon generated dispatch is compiled into the Python extension and
+    # directly references host launch stubs emitted from `.mlu` sources. Link
+    # those objects into `ops` too so import does not depend on re-exporting
+    # internal C++ symbols from `libinfiniops`.
+    if(WITH_CAMBRICON AND CAMBRICON_OBJECT_FILES)
+        target_sources(ops PRIVATE ${CAMBRICON_OBJECT_FILES})
+    endif()
+
     # Custom `AscendC` kernel objects must be linked directly into ops
     # because the `AscendC` toolchain compiles host stubs with hidden
     # visibility — `libinfiniops.so` cannot re-export those symbols.
@@ -680,6 +752,9 @@ if(GENERATE_PYTHON_BINDINGS)
     set(_INFINIOPS_INSTALL_RPATH "$ORIGIN")
     if(WITH_TORCH)
         list(APPEND _INFINIOPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
+    endif()
+    if(WITH_MOORE)
+        list(APPEND _INFINIOPS_INSTALL_RPATH "${MUSA_ROOT}/lib")
     endif()
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
