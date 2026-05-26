@@ -208,7 +208,11 @@ _VENDOR_HANG_OPS = frozenset(
 _VENDOR_CRASH_OPS = frozenset(
     {
         ("npu", "mish"),
+        ("npu", "mse_loss"),
+        ("npu", "nonzero"),
         ("npu", "nuclear_norm"),
+        ("npu", "smooth_l1_loss"),
+        ("npu", "soft_margin_loss"),
         ("npu", "_linalg_svd"),
         ("npu", "svd"),
     }
