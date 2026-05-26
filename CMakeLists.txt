@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
-project(InfiniOps LANGUAGES CXX)
+project(InfiniOps VERSION 0.1.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
 
 if(POLICY CMP0116)
     cmake_policy(SET CMP0116 NEW)
@@ -32,6 +34,7 @@ option(BUILD_CUSTOM_KERNEL "Build custom AscendC kernel PyTorch extension (requi
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
+option(GENERATE_CPP_OPERATOR_API "Generate public C++ operator API" ON)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
 set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")
@@ -309,10 +312,13 @@ if(WITH_ILUVATAR)
     if(NOT ILUVATAR_CUDA_COMPILER)
         message(FATAL_ERROR "`WITH_ILUVATAR` is `ON` but CoreX `clang++` was not found.")
     endif()
+    get_filename_component(ILUVATAR_CUDA_BIN_DIR "${ILUVATAR_CUDA_COMPILER}" DIRECTORY)
+    get_filename_component(ILUVATAR_CUDA_ROOT "${ILUVATAR_CUDA_BIN_DIR}/.." ABSOLUTE)
+    set(CUDAToolkit_ROOT "${ILUVATAR_CUDA_ROOT}" CACHE PATH "Iluvatar CoreX toolkit root")
     set(ILUVATAR_CUDA_FLAGS
-        "--cuda-gpu-arch=${ILUVATAR_ARCH};-fPIC;-Wno-error=unused-variable;-Wno-error=unused-private-field;-Wno-unused-variable;-std=c++17;--cuda-path=/usr/local/corex;-x;ivcore"
+        "--cuda-gpu-arch=${ILUVATAR_ARCH};-fPIC;-Wno-error=unused-variable;-Wno-error=unused-private-field;-Wno-unused-variable;-std=c++17;--cuda-path=${ILUVATAR_CUDA_ROOT};-x;ivcore"
         CACHE STRING "Iluvatar CUDA compiler flags")
-    message(STATUS "Iluvatar: CUDA compiler ${ILUVATAR_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}")
+    message(STATUS "Iluvatar: CUDA compiler ${ILUVATAR_CUDA_COMPILER}, arch ${ILUVATAR_ARCH}, toolkit ${ILUVATAR_CUDA_ROOT}")
     find_package(CUDAToolkit REQUIRED)
 endif()
 
@@ -430,6 +436,7 @@ if(WITH_MOORE)
     find_library(MUSA_LIB   NAMES musa   HINTS "${MUSA_ROOT}/lib" REQUIRED)
     find_library(MUSART_LIB NAMES musart HINTS "${MUSA_ROOT}/lib" REQUIRED)
     find_library(MUBLAS_LIB NAMES mublas HINTS "${MUSA_ROOT}/lib" REQUIRED)
+    find_library(MUSA_OPENMP_LIB NAMES omp iomp5 HINTS "${MUSA_ROOT}/lib" REQUIRED)
 endif()
 
 if(WITH_CAMBRICON)
@@ -464,6 +471,7 @@ endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.
 if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
+    set(WITH_CPU ON CACHE BOOL "Enable CPU backend" FORCE)
     add_compile_definitions(WITH_CPU=1)
 endif()
 
