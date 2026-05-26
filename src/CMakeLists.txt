@@ -236,6 +236,7 @@ if(WITH_ASCEND)
     else()
         message(FATAL_ERROR "libascend_hal.so not found (tried ${ASCEND_HAL_REAL}, ${ASCEND_HAL_STUB}, and ${ASCEND_HAL_DEVLIB})")
     endif()
+    get_filename_component(ASCEND_HAL_DIR "${ASCEND_HAL_LIB}" DIRECTORY)
 
     target_include_directories(infiniops PUBLIC
         "${ASCEND_HOME}/include"
@@ -755,6 +756,9 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
     if(WITH_MOORE)
         list(APPEND _INFINIOPS_INSTALL_RPATH "${MUSA_ROOT}/lib")
+    endif()
+    if(WITH_ASCEND)
+        list(APPEND _INFINIOPS_INSTALL_RPATH "${ASCEND_HOME}/lib64" "${ASCEND_HAL_DIR}")
     endif()
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
