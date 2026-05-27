@@ -61,49 +61,85 @@ typedef enum InfiniOpsDeviceType {
   INFINI_OPS_DEVICE_TYPE_ILUVATAR,
 } InfiniOpsDeviceType;
 
-typedef struct InfiniOpsTensor {
-  size_t structure_size;
-  void* data;
-  size_t byte_size;
-  InfiniOpsDataType data_type;
-  InfiniOpsDeviceType device_type;
-  int32_t rank;
-  const int64_t* shape;
-  const int64_t* stride;
-  uint64_t reserved[8];
-} InfiniOpsTensor;
-
 typedef struct InfiniOpsStreamPrivate* InfiniOpsStream;
+typedef struct InfiniOpsTensorPrivate* InfiniOpsTensor;
 typedef struct InfiniOpsHandlePrivate* InfiniOpsHandle;
 typedef struct InfiniOpsConfigPrivate* InfiniOpsConfig;
-
-typedef struct InfiniOpsHandleAttributes {
-  size_t structure_size;
-  InfiniOpsStream stream;
-  void* workspace;
-  size_t workspace_byte_size;
-  uint64_t reserved[8];
-} InfiniOpsHandleAttributes;
-
-typedef struct InfiniOpsConfigAttributes {
-  size_t structure_size;
-  size_t implementation_index;
-  uint64_t reserved[8];
-} InfiniOpsConfigAttributes;
 
 INFINI_OPS_API InfiniOpsStatus infiniOpsGetLastError(char* buffer,
                                                      size_t capacity,
                                                      size_t* required_size);
 
-INFINI_OPS_API InfiniOpsStatus infiniOpsCreateHandle(
-    const InfiniOpsHandleAttributes* attributes, InfiniOpsHandle* handle);
+INFINI_OPS_API InfiniOpsStatus infiniOpsCreateTensor(InfiniOpsTensor* tensor);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsDestroyTensor(InfiniOpsTensor tensor);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetTensorData(InfiniOpsTensor tensor,
+                                                      void* data);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetTensorData(InfiniOpsTensor tensor,
+                                                      void** data);
+
+INFINI_OPS_API InfiniOpsStatus
+infiniOpsSetTensorByteSize(InfiniOpsTensor tensor, size_t byte_size);
+
+INFINI_OPS_API InfiniOpsStatus
+infiniOpsGetTensorByteSize(InfiniOpsTensor tensor, size_t* byte_size);
+
+INFINI_OPS_API InfiniOpsStatus
+infiniOpsSetTensorDataType(InfiniOpsTensor tensor, InfiniOpsDataType data_type);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetTensorDataType(
+    InfiniOpsTensor tensor, InfiniOpsDataType* data_type);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetTensorDeviceType(
+    InfiniOpsTensor tensor, InfiniOpsDeviceType device_type);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetTensorDeviceType(
+    InfiniOpsTensor tensor, InfiniOpsDeviceType* device_type);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetTensorShape(InfiniOpsTensor tensor,
+                                                       int32_t rank,
+                                                       const int64_t* shape);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetTensorShape(InfiniOpsTensor tensor,
+                                                       int32_t* rank,
+                                                       const int64_t** shape);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetTensorStride(InfiniOpsTensor tensor,
+                                                        const int64_t* stride);
+
+INFINI_OPS_API InfiniOpsStatus
+infiniOpsClearTensorStride(InfiniOpsTensor tensor);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetTensorStride(InfiniOpsTensor tensor,
+                                                        const int64_t** stride);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsCreateHandle(InfiniOpsHandle* handle);
 
 INFINI_OPS_API InfiniOpsStatus infiniOpsDestroyHandle(InfiniOpsHandle handle);
 
-INFINI_OPS_API InfiniOpsStatus infiniOpsCreateConfig(
-    const InfiniOpsConfigAttributes* attributes, InfiniOpsConfig* config);
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetHandleStream(InfiniOpsHandle handle,
+                                                        InfiniOpsStream stream);
+
+INFINI_OPS_API InfiniOpsStatus
+infiniOpsGetHandleStream(InfiniOpsHandle handle, InfiniOpsStream* stream);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetHandleWorkspace(
+    InfiniOpsHandle handle, void* workspace, size_t byte_size);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetHandleWorkspace(
+    InfiniOpsHandle handle, void** workspace, size_t* byte_size);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsCreateConfig(InfiniOpsConfig* config);
 
 INFINI_OPS_API InfiniOpsStatus infiniOpsDestroyConfig(InfiniOpsConfig config);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsSetConfigImplementationIndex(
+    InfiniOpsConfig config, size_t implementation_index);
+
+INFINI_OPS_API InfiniOpsStatus infiniOpsGetConfigImplementationIndex(
+    InfiniOpsConfig config, size_t* implementation_index);
 
 #include <infini/c_ops.h>
 

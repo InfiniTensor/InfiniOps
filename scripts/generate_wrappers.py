@@ -916,11 +916,8 @@ def _format_c_api_signature(name, params):
 
 
 def _c_api_param(arg):
-    if arg.type.spelling == "const Tensor":
-        return f"const InfiniOpsTensor* {arg.spelling}"
-
-    if arg.type.spelling == "Tensor":
-        return f"InfiniOpsTensor* {arg.spelling}"
+    if arg.type.spelling in {"const Tensor", "Tensor"}:
+        return f"InfiniOpsTensor {arg.spelling}"
 
     raise ValueError(
         f"unsupported C API parameter {arg.spelling!r}: {arg.type.spelling!r}"

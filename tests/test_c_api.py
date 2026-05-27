@@ -189,6 +189,33 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
     #include <stddef.h>
     #include <stdint.h>
 
+    static int create_tensor(float* data, size_t byte_size, const int64_t* shape,
+                             InfiniOpsTensor* tensor) {
+      if (infiniOpsCreateTensor(tensor) != INFINI_OPS_STATUS_SUCCESS) {
+        return 1;
+      }
+      if (infiniOpsSetTensorData(*tensor, data) != INFINI_OPS_STATUS_SUCCESS) {
+        return 2;
+      }
+      if (infiniOpsSetTensorByteSize(*tensor, byte_size) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 3;
+      }
+      if (infiniOpsSetTensorDataType(*tensor, INFINI_OPS_DATA_TYPE_FLOAT32) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 4;
+      }
+      if (infiniOpsSetTensorDeviceType(*tensor, INFINI_OPS_DEVICE_TYPE_CPU) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 5;
+      }
+      if (infiniOpsSetTensorShape(*tensor, 1, shape) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 6;
+      }
+      return 0;
+    }
+
     int main(void) {
       int64_t shape[1] = {3};
 
@@ -196,54 +223,67 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
       float other_data[3] = {4.0f, 5.0f, 6.0f};
       float output_data[3] = {0.0f, 0.0f, 0.0f};
 
-      InfiniOpsTensor input = {0};
-      input.structure_size = sizeof(input);
-      input.data = input_data;
-      input.byte_size = sizeof(input_data);
-      input.data_type = INFINI_OPS_DATA_TYPE_FLOAT32;
-      input.device_type = INFINI_OPS_DEVICE_TYPE_CPU;
-      input.rank = 1;
-      input.shape = shape;
-
-      InfiniOpsTensor other = input;
-      other.data = other_data;
-      other.byte_size = sizeof(other_data);
-
-      InfiniOpsTensor output = input;
-      output.data = output_data;
-      output.byte_size = sizeof(output_data);
-
-      InfiniOpsHandleAttributes handle_attributes = {0};
-      handle_attributes.structure_size = sizeof(handle_attributes);
-      InfiniOpsHandle handle = NULL;
-      if (infiniOpsCreateHandle(&handle_attributes, &handle) !=
-          INFINI_OPS_STATUS_SUCCESS) {
+      InfiniOpsTensor input = NULL;
+      InfiniOpsTensor other = NULL;
+      InfiniOpsTensor output = NULL;
+      if (create_tensor(input_data, sizeof(input_data), shape, &input) != 0) {
         return 1;
       }
-
-      InfiniOpsConfigAttributes config_attributes = {0};
-      config_attributes.structure_size = sizeof(config_attributes);
-      InfiniOpsConfig config = NULL;
-      if (infiniOpsCreateConfig(&config_attributes, &config) !=
-          INFINI_OPS_STATUS_SUCCESS) {
+      if (create_tensor(other_data, sizeof(other_data), shape, &other) != 0) {
         return 2;
       }
-
-      if (infiniOpsAdd(handle, config, &input, &other, &output) !=
-          INFINI_OPS_STATUS_SUCCESS) {
+      if (create_tensor(output_data, sizeof(output_data), shape, &output) != 0) {
         return 3;
+      }
+
+      int32_t rank = 0;
+      const int64_t* stored_shape = NULL;
+      if (infiniOpsGetTensorShape(input, &rank, &stored_shape) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 4;
+      }
+      if (rank != 1 || stored_shape == NULL || stored_shape[0] != 3) {
+        return 5;
+      }
+
+      InfiniOpsHandle handle = NULL;
+      if (infiniOpsCreateHandle(&handle) != INFINI_OPS_STATUS_SUCCESS) {
+        return 6;
+      }
+
+      InfiniOpsConfig config = NULL;
+      if (infiniOpsCreateConfig(&config) != INFINI_OPS_STATUS_SUCCESS) {
+        return 7;
+      }
+      if (infiniOpsSetConfigImplementationIndex(config, 0) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 8;
+      }
+
+      if (infiniOpsAdd(handle, config, input, other, output) !=
+          INFINI_OPS_STATUS_SUCCESS) {
+        return 9;
       }
 
       if (output_data[0] != 5.0f || output_data[1] != 7.0f ||
           output_data[2] != 9.0f) {
-        return 4;
+        return 10;
       }
 
       if (infiniOpsDestroyConfig(config) != INFINI_OPS_STATUS_SUCCESS) {
-        return 5;
+        return 11;
       }
       if (infiniOpsDestroyHandle(handle) != INFINI_OPS_STATUS_SUCCESS) {
-        return 6;
+        return 12;
+      }
+      if (infiniOpsDestroyTensor(output) != INFINI_OPS_STATUS_SUCCESS) {
+        return 13;
+      }
+      if (infiniOpsDestroyTensor(other) != INFINI_OPS_STATUS_SUCCESS) {
+        return 14;
+      }
+      if (infiniOpsDestroyTensor(input) != INFINI_OPS_STATUS_SUCCESS) {
+        return 15;
       }
       return 0;
     }

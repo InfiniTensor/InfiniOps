@@ -824,7 +824,6 @@ install(TARGETS infiniops
 
 install(FILES
     ${PROJECT_SOURCE_DIR}/include/infini/ops.h
-    ${PROJECT_SOURCE_DIR}/include/infini/c_ops.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
 )
 
