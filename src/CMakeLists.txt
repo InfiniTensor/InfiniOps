@@ -49,6 +49,39 @@ if(WITH_NVIDIA)
     )
 endif()
 
+if(WITH_NINETOOTHED)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+
+    if(NINETOOTHED_PYTHON_EXECUTABLE)
+        set(_ninetoothed_python "${NINETOOTHED_PYTHON_EXECUTABLE}")
+    elseif(_TORCH_PYTHON)
+        set(_ninetoothed_python "${_TORCH_PYTHON}")
+    else()
+        set(_ninetoothed_python "${Python_EXECUTABLE}")
+    endif()
+    message(STATUS "NineToothed codegen Python: ${_ninetoothed_python}")
+
+    set(_ninetoothed_output_dir "${CMAKE_CURRENT_BINARY_DIR}/ninetoothed")
+    set(_ninetoothed_generator_args
+        "${PROJECT_SOURCE_DIR}/scripts/generate_ninetoothed_ops.py"
+        --output-dir "${_ninetoothed_output_dir}")
+
+    execute_process(
+        COMMAND "${_ninetoothed_python}" ${_ninetoothed_generator_args}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        RESULT_VARIABLE _ninetoothed_generation_result
+    )
+
+    if(NOT _ninetoothed_generation_result EQUAL 0)
+        message(FATAL_ERROR "Generating NineToothed operator sources failed with `${_ninetoothed_python}`. Set `NINETOOTHED_PYTHON_EXECUTABLE` to a Python with `ninetoothed`, `ntops`, `triton`, `sympy`, and CUDA dependencies installed.")
+    endif()
+
+    include("${_ninetoothed_output_dir}/manifest.cmake")
+    target_include_directories(infiniops PRIVATE
+        ${INFINIOPS_NINETOOTHED_INCLUDE_DIRS})
+    target_sources(infiniops PRIVATE ${INFINIOPS_NINETOOTHED_SOURCES})
+endif()
+
 if(WITH_ILUVATAR)
     set(ILUVATAR_PATTERNS
         "native/cuda/*.cc"
@@ -496,6 +529,9 @@ if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
     if(WITH_TORCH)
         list(APPEND GENERATOR_ARGS --with-torch)
     endif()
+    if(WITH_NINETOOTHED)
+        list(APPEND GENERATOR_ARGS --with-ninetoothed)
+    endif()
 
     execute_process(
         COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py ${GENERATOR_ARGS}
@@ -730,6 +766,10 @@ if(GENERATE_PYTHON_BINDINGS)
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/generated/include
     )
+    if(WITH_NINETOOTHED)
+        target_include_directories(ops PRIVATE
+            ${INFINIOPS_NINETOOTHED_INCLUDE_DIRS})
+    endif()
     target_link_libraries(ops PRIVATE infiniops)
 
     # Cambricon generated dispatch is compiled into the Python extension and
