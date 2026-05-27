@@ -207,6 +207,8 @@ def _generate_pybind11(operator):
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_optional_tensor_params = _find_vector_optional_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
+    torch_header_path = _GENERATION_DIR / "torch" / operator.name / f"{operator.name}.h"
+    has_torch_fast_path = torch_header_path.exists()
 
     def _is_optional_tensor(arg):
         if _is_vector_optional_tensor(arg):
@@ -296,6 +298,26 @@ def _generate_pybind11(operator):
 
         return ", ".join(args)
 
+    def _generate_slot8_arguments(node):
+        args = []
+
+        for arg in node.get_arguments():
+            if arg.spelling == "stream":
+                continue
+
+            if _is_vector_optional_tensor(arg):
+                args.append(f"VectorOptionalAtenTensorFromPybind11Handle({arg.spelling})")
+            elif _is_optional_tensor(arg):
+                args.append(f"OptionalAtenTensorFromPybind11Handle({arg.spelling})")
+            elif _is_vector_tensor(arg):
+                args.append(f"VectorAtenTensorFromPybind11Handle({arg.spelling})")
+            elif "Tensor" in arg.type.spelling:
+                args.append(f"AtenTensorFromPybind11Handle({arg.spelling})")
+            else:
+                args.append(arg.spelling)
+
+        return ", ".join(args)
+
     op_name = operator.name
     pascal_case_op_name = _snake_to_pascal(op_name)
 
@@ -324,6 +346,7 @@ def _generate_pybind11(operator):
     def _generate_call(op_name, call, method=True):
         call_params = _generate_params(call)
         call_args = _generate_arguments(call)
+        slot8_args = _generate_slot8_arguments(call)
 
         if not method:
             params = (
@@ -333,6 +356,14 @@ def _generate_pybind11(operator):
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
+            slot8_branch = ""
+
+            if has_torch_fast_path:
+                slot8_branch = (
+                    f"    if (implementation_index == 8) {{\n"
+                    f"      return infini::ops::DirectAtenCall{pascal_case_op_name}({slot8_args});\n"
+                    f"    }}\n"
+                )
 
             return (
                 f'  m.def("{op_name}", []({params}) {{\n'
@@ -342,6 +373,7 @@ def _generate_pybind11(operator):
                 f"    }}\n"
                 f"    Config config;\n"
                 f"    config.set_implementation_index(implementation_index);\n"
+                f"{slot8_branch}"
                 f"    return generated_dispatch::Call{pascal_case_op_name}(handle, config, {call_args});\n"
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
@@ -406,6 +438,7 @@ def _generate_pybind11(operator):
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
 #include "pybind11_utils.h"
+{f'#include "torch/{op_name}/{op_name}.h"' if has_torch_fast_path else ''}
 
 namespace py = pybind11;
 
@@ -440,6 +473,31 @@ def _generate_legacy_c(operator, paths):
         impl_includes = "\n".join(
             f'#include "{_to_include_path(path)}"' for path in paths
         )
+        dtype_map_entries = ",\n".join(
+            [
+                "            {INFINI_DTYPE_BOOL, infini::ops::DataType::kBool}",
+                "            {INFINI_DTYPE_I8, infini::ops::DataType::kInt8}",
+                "            {INFINI_DTYPE_I16, infini::ops::DataType::kInt16}",
+                "            {INFINI_DTYPE_I32, infini::ops::DataType::kInt32}",
+                "            {INFINI_DTYPE_I64, infini::ops::DataType::kInt64}",
+                "            {INFINI_DTYPE_U8, infini::ops::DataType::kUInt8}",
+                "            {INFINI_DTYPE_U16, infini::ops::DataType::kUInt16}",
+                "            {INFINI_DTYPE_U32, infini::ops::DataType::kUInt32}",
+                "            {INFINI_DTYPE_U64, infini::ops::DataType::kUInt64}",
+                "            {INFINI_DTYPE_F16, infini::ops::DataType::kFloat16}",
+                "            {INFINI_DTYPE_BF16, infini::ops::DataType::kBFloat16}",
+                "            {INFINI_DTYPE_F32, infini::ops::DataType::kFloat32}",
+                "            {INFINI_DTYPE_F64, infini::ops::DataType::kFloat64}",
+                "            {INFINI_DTYPE_C32, infini::ops::DataType::kComplex32}",
+                "            {INFINI_DTYPE_C64, infini::ops::DataType::kComplex64}",
+                "            {INFINI_DTYPE_C128, infini::ops::DataType::kComplex128}",
+            ]
+        )
+        dtype_map_block = (
+            "          {{{{{{\n"
+            f"{dtype_map_entries}\n"
+            "          }}}}}}};"
+        )
 
         return f"""#include "../../handle.h"
 #include "../../tensor.h"
@@ -449,20 +507,9 @@ def _generate_legacy_c(operator, paths):
 static infini::ops::DataType DataTypeFromInfiniDType(
     const infiniDtype_t& dtype) {{
   static constexpr infini::ops::ConstexprMap<infiniDtype_t,
-                                             infini::ops::DataType, 12>
+                                             infini::ops::DataType, 16>
       kInfiniDTypeToDataType{{
-          {{{{{{INFINI_DTYPE_I8, infini::ops::DataType::kInt8}},
-            {{INFINI_DTYPE_I16, infini::ops::DataType::kInt16}},
-            {{INFINI_DTYPE_I32, infini::ops::DataType::kInt32}},
-            {{INFINI_DTYPE_I64, infini::ops::DataType::kInt64}},
-            {{INFINI_DTYPE_U8, infini::ops::DataType::kUInt8}},
-            {{INFINI_DTYPE_U16, infini::ops::DataType::kUInt16}},
-            {{INFINI_DTYPE_U32, infini::ops::DataType::kUInt32}},
-            {{INFINI_DTYPE_U64, infini::ops::DataType::kUInt64}},
-            {{INFINI_DTYPE_F16, infini::ops::DataType::kFloat16}},
-            {{INFINI_DTYPE_BF16, infini::ops::DataType::kBFloat16}},
-            {{INFINI_DTYPE_F32, infini::ops::DataType::kFloat32}},
-            {{INFINI_DTYPE_F64, infini::ops::DataType::kFloat64}}}}}}}};
+{dtype_map_block}
 
   return kInfiniDTypeToDataType.at(dtype);
 }}

@@ -234,7 +234,11 @@ if(WITH_TORCH)
     find_library(TORCH_LIB torch HINTS ${_torch_lib_dirs} REQUIRED)
     find_library(TORCH_CPU_LIB torch_cpu HINTS ${_torch_lib_dirs} REQUIRED)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
+    find_library(TORCH_PYTHON_LIB torch_python HINTS ${_torch_lib_dirs})
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
+    if(TORCH_PYTHON_LIB)
+        list(APPEND TORCH_LIBRARIES ${TORCH_PYTHON_LIB})
+    endif()
 
     # `auditwheel`-repaired `torch` wheels bundle transitive dependencies
     # (e.g. `libgfortran-<hash>.so`, `libopenblasp-<hash>.so`) in a sibling
