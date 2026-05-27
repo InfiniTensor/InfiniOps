@@ -26,16 +26,23 @@ _PYTORCH_SLOT = 8
 _INSTALLED_METADATA_PATH = (
     pathlib.Path(infini.ops.__file__).resolve().with_name("torch_ops_metadata.json")
 )
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SOURCE_METADATA_PATH = (
-    pathlib.Path(__file__).resolve().parent.parent
-    / "generated"
-    / "torch_ops_metadata.json"
+    _REPO_ROOT / "generated" / "torch_ops_metadata.json"
+)
+
+_OPS_MODULE_PATH = pathlib.Path(infini.ops.__file__).resolve()
+_PREFER_SOURCE_METADATA = _REPO_ROOT in _OPS_MODULE_PATH.parents
+_METADATA_CANDIDATES = (
+    (_SOURCE_METADATA_PATH, _INSTALLED_METADATA_PATH)
+    if _PREFER_SOURCE_METADATA
+    else (_INSTALLED_METADATA_PATH, _SOURCE_METADATA_PATH)
 )
 
 _METADATA_PATH = next(
     (
         path
-        for path in (_SOURCE_METADATA_PATH, _INSTALLED_METADATA_PATH)
+        for path in _METADATA_CANDIDATES
         if path.exists()
     ),
     _SOURCE_METADATA_PATH,
@@ -250,6 +257,8 @@ _SCALAR_VALUES = {
     ("_convert_indices_from_coo_to_csr", "size"): 3,
     ("_linalg_eigh", "UPLO"): "L",
     ("_linalg_eigh", "compute_v"): True,
+    ("svd", "some"): True,
+    ("svd", "compute_uv"): True,
     ("cholesky", "upper"): False,
     ("avg_pool2d_backward", "kernel_size"): [2, 2],
     ("avg_pool2d_backward", "stride"): [2, 2],
@@ -499,6 +508,7 @@ _OP_DTYPES = {
     "slow_conv3d_forward": (torch.float32, torch.bfloat16),
     "slow_conv_transpose2d": (torch.float32, torch.bfloat16),
     "slow_conv_transpose3d": (torch.float32, torch.bfloat16),
+    "svd": (torch.float32,),
     "thnn_conv2d": (torch.float32, torch.bfloat16),
 }
 
@@ -662,7 +672,10 @@ _DEVICE_ASSERTING_OPS = frozenset(
         # `[0, 0]` defaults our harness substitutes for required `int[N]`
         # parameters.
         "cudnn_convolution",
+        "_slow_conv2d_forward",
+        "_slow_conv2d_backward",
         "slow_conv3d",
+        "slow_conv3d_forward",
         "slow_conv_transpose2d",
         "slow_conv_transpose3d",
         "thnn_conv2d",
