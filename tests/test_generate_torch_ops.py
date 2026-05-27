@@ -152,5 +152,18 @@ def test_generate_torch_method_source_converts_visible_optional_tensor_list():
 
     assert "c10::List<c10::optional<at::Tensor>> at_indices;" in source
     assert "at_indices.reserve(indices.size());" in source
-    assert "at_indices.push_back(ToAtenTensor<kDev>(" in source
+    assert "at_indices.push_back(ToAtenTensor<kDev>(indices_tensor));" in source
     assert "at::index_out(at_out, at_input, at_indices)" in source
+
+
+def test_generate_torch_method_source_prefers_functional_copy_for_selected_ops():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "fft_rfftn.out(Tensor self, SymInt[1]? s=None, int[1]? dim=None, "
+        "str? norm=None, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+
+    source = module._generate_torch_method_source("fft_rfftn", op)
+
+    assert "at_out.copy_(at::fft_rfftn(" in source
+    assert "at::fft_rfftn_out(" not in source

@@ -12,6 +12,7 @@
 namespace infini::ops {
 
 enum class DataType : std::int8_t {
+  kBool,
   kInt8,
   kInt16,
   kInt32,
@@ -23,10 +24,14 @@ enum class DataType : std::int8_t {
   kFloat16,
   kBFloat16,
   kFloat32,
-  kFloat64
+  kFloat64,
+  kComplex32,
+  kComplex64,
+  kComplex128
 };
 
-constexpr ConstexprMap<DataType, std::size_t, 12> kDataTypeToSize{{{
+constexpr ConstexprMap<DataType, std::size_t, 16> kDataTypeToSize{{{
+    {DataType::kBool, 1},
     {DataType::kInt8, 1},
     {DataType::kInt16, 2},
     {DataType::kInt32, 4},
@@ -39,9 +44,13 @@ constexpr ConstexprMap<DataType, std::size_t, 12> kDataTypeToSize{{{
     {DataType::kBFloat16, 2},
     {DataType::kFloat32, 4},
     {DataType::kFloat64, 8},
+    {DataType::kComplex32, 4},
+    {DataType::kComplex64, 8},
+    {DataType::kComplex128, 16},
 }}};
 
-constexpr ConstexprMap<DataType, std::string_view, 12> kDataTypeToDesc{{{
+constexpr ConstexprMap<DataType, std::string_view, 16> kDataTypeToDesc{{{
+    {DataType::kBool, "bool"},
     {DataType::kInt8, "int8"},
     {DataType::kInt16, "int16"},
     {DataType::kInt32, "int32"},
@@ -54,9 +63,13 @@ constexpr ConstexprMap<DataType, std::string_view, 12> kDataTypeToDesc{{{
     {DataType::kBFloat16, "bfloat16"},
     {DataType::kFloat32, "float32"},
     {DataType::kFloat64, "float64"},
+    {DataType::kComplex32, "complex32"},
+    {DataType::kComplex64, "complex64"},
+    {DataType::kComplex128, "complex128"},
 }}};
 
-constexpr ConstexprMap<std::string_view, DataType, 12> kStringToDataType{{{
+constexpr ConstexprMap<std::string_view, DataType, 16> kStringToDataType{{{
+    {"bool", DataType::kBool},
     {"int8", DataType::kInt8},
     {"int16", DataType::kInt16},
     {"int32", DataType::kInt32},
@@ -69,6 +82,9 @@ constexpr ConstexprMap<std::string_view, DataType, 12> kStringToDataType{{{
     {"bfloat16", DataType::kBFloat16},
     {"float32", DataType::kFloat32},
     {"float64", DataType::kFloat64},
+    {"complex32", DataType::kComplex32},
+    {"complex64", DataType::kComplex64},
+    {"complex128", DataType::kComplex128},
 }}};
 
 struct Float16 {

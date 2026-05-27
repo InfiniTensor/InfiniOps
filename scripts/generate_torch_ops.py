@@ -148,6 +148,18 @@ _VISIBLE_OPTIONAL_PARAMS = frozenset(
     }
 )
 
+# A small set of ATen ops whose `_out` variants do not behave robustly across
+# all backends under our generated call pattern. For these, prefer the
+# functional/default form and materialize into the caller-provided `out`
+# buffer via `copy_`.
+_PREFER_FUNCTIONAL_COPY_OPS = frozenset(
+    {
+        "fft_ihfft2",
+        "fft_rfftn",
+        "im2col",
+    }
+)
+
 
 @dataclasses.dataclass
 class Param:
@@ -796,12 +808,17 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
     op_calls = "\n\n".join(
         f"  void operator()({_format_signature(op)}) const override;" for op in ops
     )
+    direct_calls = "\n".join(
+        f"void DirectAtenCall{pascal}({_format_direct_aten_signature(op)});"
+        for op in ops
+    )
 
     return _TORCH_HEADER_TEMPLATE.format(
         name_uc=name.upper(),
         name=name,
         pascal=pascal,
         op_calls=op_calls,
+        direct_calls=direct_calls,
         slot=_PYTORCH_SLOT,
     )
 
@@ -811,15 +828,8 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
     conversion_lines = []
 
     for param in op.tensor_params:
-        data_expr = (
-            f"{param.name}.data()"
-            if param.is_mutable_tensor
-            else f"const_cast<void*>({param.name}.data())"
-        )
         conversion_lines.append(
-            f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
-            f"      {data_expr}, {param.name}_shape_, {param.name}_strides_,\n"
-            f"      {param.name}_type_, device_index_);"
+            f"  auto at_{param.name} = ToAtenTensor<kDev>({param.name});"
         )
 
     for param in op.visible_params:
@@ -835,10 +845,7 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
                 f"  c10::optional<at::Tensor> at_{param.name};\n"
                 f"  if ({param.name}.has_value()) {{\n"
                 f"    const auto& {param.name}_value = {param.name}.value();\n"
-                f"    at_{param.name} = ToAtenTensor<kDev>(\n"
-                f"        const_cast<void*>({param.name}_value.data()),\n"
-                f"        {param.name}_value.shape(), {param.name}_value.strides(),\n"
-                f"        {param.name}_value.dtype(), {param.name}_value.device().index());\n"
+                f"    at_{param.name} = ToAtenTensor<kDev>({param.name}_value);\n"
                 f"  }}"
             )
         elif param.aten_type == "Tensor?[]":
@@ -848,44 +855,14 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
                 f"  for (const auto& {param.name}_value : {param.name}) {{\n"
                 f"    if ({param.name}_value.has_value()) {{\n"
                 f"      const auto& {param.name}_tensor = {param.name}_value.value();\n"
-                f"      at_{param.name}.push_back(ToAtenTensor<kDev>(\n"
-                f"          const_cast<void*>({param.name}_tensor.data()),\n"
-                f"          {param.name}_tensor.shape(), {param.name}_tensor.strides(),\n"
-                f"          {param.name}_tensor.dtype(), {param.name}_tensor.device().index()));\n"
+                f"      at_{param.name}.push_back(ToAtenTensor<kDev>({param.name}_tensor));\n"
                 f"    }} else {{\n"
                 f"      at_{param.name}.push_back(c10::optional<at::Tensor>{{}});\n"
                 f"    }}\n"
                 f"  }}"
             )
 
-    def _render_arg(p):
-        if p.is_hidden:
-            return p.hidden_value()
-
-        if p.aten_type in {"Scalar?", "Tensor?", "Tensor?[]"}:
-            return f"at_{p.name}"
-
-        if p.is_tensor:
-            return f"at_{p.name}"
-
-        return p.name
-
-    if op.is_inplace:
-        # In-place ATen calls keep the mutable input in positional order,
-        # unlike `_out` calls which place output tensors first.
-        input_param = op.params[0]
-        arg_order = op.params[1:]
-        aten_call = (
-            f"at_{input_param.name}.{op.aten_name}"
-            f"({', '.join(_render_arg(p) for p in arg_order)})"
-        )
-    else:
-        # ATen `_out` form puts all out tensors first, then non-out params
-        # in YAML order.  Hardcoded-nullopt params become `at::nullopt`.
-        arg_order = op.out_params + [p for p in op.params if not p.is_out]
-        aten_call = (
-            f"at::{op.aten_name}_out({', '.join(_render_arg(p) for p in arg_order)})"
-        )
+    aten_call = _generate_aten_call(op)
 
     return _TORCH_METHOD_TEMPLATE.format(
         pascal=pascal,
@@ -898,9 +875,126 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
     )
 
 
+def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
+    def _render_arg(p):
+        if p.is_hidden:
+            return p.hidden_value()
+
+        if p.aten_type in {"Scalar?", "Tensor?", "Tensor?[]"}:
+            return f"{tensor_prefix}{p.name}"
+
+        if p.is_tensor:
+            return f"{tensor_prefix}{p.name}"
+
+        return p.name
+
+    def _render_functional_call() -> str:
+        arg_order = [p for p in op.params if not p.is_out]
+        return f"at::{op.aten_name}({', '.join(_render_arg(p) for p in arg_order)})"
+
+    if op.is_inplace:
+        # In-place ATen calls keep the mutable input in positional order,
+        # unlike `_out` calls which place output tensors first.
+        input_param = op.params[0]
+        arg_order = op.params[1:]
+        aten_call = (
+            f"at_{input_param.name}.{op.aten_name}"
+            f"({', '.join(_render_arg(p) for p in arg_order)})"
+        )
+    else:
+        if op.aten_name in _PREFER_FUNCTIONAL_COPY_OPS:
+            assert (
+                len(op.out_params) == 1
+            ), f"functional-copy path assumes single out tensor for {op.aten_name}"
+            out = op.out_params[0]
+            return f"{tensor_prefix}{out.name}.copy_({_render_functional_call()})"
+
+        # ATen `_out` form puts all out tensors first, then non-out params
+        # in YAML order.  Hardcoded-nullopt params become `at::nullopt`.
+        arg_order = op.out_params + [p for p in op.params if not p.is_out]
+        return (
+            f"at::{op.aten_name}_out({', '.join(_render_arg(p) for p in arg_order)})"
+        )
+
+    return aten_call
+
+
+def _format_direct_aten_signature(op: Op) -> str:
+    parts = []
+
+    for param in op.visible_params:
+        if param.aten_type == "Tensor?[]":
+            parts.append(
+                f"const std::vector<std::optional<at::Tensor>>& {param.name}"
+            )
+            continue
+
+        if param.aten_type == "Tensor?":
+            parts.append(f"const std::optional<at::Tensor>& {param.name}")
+            continue
+
+        if param.is_tensor:
+            parts.append(f"const at::Tensor& {param.name}")
+            continue
+
+        parts.append(f"{param.cpp_type} {param.name}")
+
+    return ", ".join(parts)
+
+
+def _generate_direct_aten_method_source(name: str, op: Op) -> str:
+    pascal = _snake_to_pascal(name)
+    conversion_lines = []
+
+    for param in op.tensor_params:
+        if param.is_mutable_tensor:
+            conversion_lines.append(f"  auto at_{param.name} = {param.name};")
+        else:
+            conversion_lines.append(f"  const auto& at_{param.name} = {param.name};")
+
+    for param in op.visible_params:
+        if param.aten_type == "Scalar?":
+            conversion_lines.append(
+                f"  c10::optional<at::Scalar> at_{param.name};\n"
+                f"  if ({param.name}.has_value()) {{\n"
+                f"    at_{param.name} = at::Scalar({param.name}.value());\n"
+                f"  }}"
+            )
+        elif param.aten_type == "Tensor?":
+            conversion_lines.append(
+                f"  c10::optional<at::Tensor> at_{param.name};\n"
+                f"  if ({param.name}.has_value()) {{\n"
+                f"    at_{param.name} = {param.name}.value();\n"
+                f"  }}"
+            )
+        elif param.aten_type == "Tensor?[]":
+            conversion_lines.append(
+                f"  c10::List<c10::optional<at::Tensor>> at_{param.name};\n"
+                f"  at_{param.name}.reserve({param.name}.size());\n"
+                f"  for (const auto& {param.name}_value : {param.name}) {{\n"
+                f"    if ({param.name}_value.has_value()) {{\n"
+                f"      at_{param.name}.push_back({param.name}_value.value());\n"
+                f"    }} else {{\n"
+                f"      at_{param.name}.push_back(c10::optional<at::Tensor>{{}});\n"
+                f"    }}\n"
+                f"  }}"
+            )
+
+    return _TORCH_DIRECT_METHOD_TEMPLATE.format(
+        pascal=pascal,
+        direct_call_signature=_format_direct_aten_signature(op),
+        tensor_conversions="\n".join(conversion_lines),
+        aten_call=_generate_aten_call(op),
+        slot=_PYTORCH_SLOT,
+    )
+
+
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     pascal = _snake_to_pascal(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
+    direct_methods = "\n\n".join(
+        _generate_direct_aten_method_source(name, op) for op in ops
+    )
     # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
     # so a build that only enables a subset of devices does not pay the
     # ATen template-instantiation cost (and memory pressure) for the
@@ -916,6 +1010,7 @@ def _generate_torch_source(name: str, ops: list[Op]) -> str:
     return _TORCH_SOURCE_TEMPLATE.format(
         name=name,
         methods=methods,
+        direct_methods=direct_methods,
         instantiations=instantiations,
     )
 
@@ -982,6 +1077,8 @@ _TORCH_HEADER_TEMPLATE = """\
 #ifndef INFINI_OPS_TORCH_{name_uc}_H_
 #define INFINI_OPS_TORCH_{name_uc}_H_
 
+#include <torch/torch.h>
+
 #include "base/{name}.h"
 
 namespace infini::ops {{
@@ -993,6 +1090,8 @@ class Operator<{pascal}, kDev, {slot}> : public {pascal} {{
 
 {op_calls}
 }};
+
+{direct_calls}
 
 }}  // namespace infini::ops
 
@@ -1010,6 +1109,15 @@ void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
 """
 
 
+_TORCH_DIRECT_METHOD_TEMPLATE = """\
+void DirectAtenCall{pascal}({direct_call_signature}) {{
+{tensor_conversions}
+
+  {aten_call};
+}}
+"""
+
+
 _TORCH_SOURCE_TEMPLATE = """\
 #include "torch/{name}/{name}.h"
 
@@ -1018,6 +1126,8 @@ _TORCH_SOURCE_TEMPLATE = """\
 namespace infini::ops {{
 
 {methods}
+
+{direct_methods}
 
 {instantiations}
 

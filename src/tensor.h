@@ -2,6 +2,7 @@
 #define INFINI_OPS_TENSOR_H_
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -100,6 +101,14 @@ class Tensor {
 
   bool IsContiguous() const;
 
+  void set_aten_tensor_handle(std::shared_ptr<void> aten_tensor_handle) {
+    aten_tensor_handle_ = std::move(aten_tensor_handle);
+  }
+
+  const std::shared_ptr<void>& aten_tensor_handle() const {
+    return aten_tensor_handle_;
+  }
+
  private:
   static const DataType DefaultDataType();
 
@@ -120,6 +129,12 @@ class Tensor {
   Device device_;
 
   Strides strides_;
+
+  // When a Tensor originates from a Python `torch.Tensor`, the pybind11
+  // bridge can stash a typed ATen handle here. Torch-backed generated ops
+  // should prefer that handle over re-wrapping the raw storage with
+  // `from_blob`, which some vendor backends reject for bool/complex tensors.
+  std::shared_ptr<void> aten_tensor_handle_{};
 };
 
 }  // namespace infini::ops
