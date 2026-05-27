@@ -1,13 +1,15 @@
 #ifndef INFINI_OPS_BASE_LINALG_EIGVALSH_H_
 #define INFINI_OPS_BASE_LINALG_EIGVALSH_H_
 
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgEigvalsh : public Operator<LinalgEigvalsh> {
+class Eigvalsh : public Operator<Eigvalsh> {
  public:
-  LinalgEigvalsh(const Tensor input, const std::string UPLO, Tensor out)
+  Eigvalsh(const Tensor input, const std::string UPLO, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -38,6 +40,6 @@ class LinalgEigvalsh : public Operator<LinalgEigvalsh> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

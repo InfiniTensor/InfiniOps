@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialBesselJ0 : public Operator<SpecialBesselJ0> {
+class BesselJ0 : public Operator<BesselJ0> {
  public:
-  SpecialBesselJ0(const Tensor input, Tensor out)
+  BesselJ0(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -34,6 +34,6 @@ class SpecialBesselJ0 : public Operator<SpecialBesselJ0> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

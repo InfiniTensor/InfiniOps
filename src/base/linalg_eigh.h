@@ -1,14 +1,16 @@
 #ifndef INFINI_OPS_BASE_LINALG_EIGH_H_
 #define INFINI_OPS_BASE_LINALG_EIGH_H_
 
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgEigh : public Operator<LinalgEigh> {
+class Eigh : public Operator<Eigh> {
  public:
-  LinalgEigh(const Tensor input, const std::string UPLO, Tensor eigvals,
-             Tensor eigvecs)
+  Eigh(const Tensor input, const std::string UPLO, Tensor eigvals,
+       Tensor eigvecs)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -48,6 +50,6 @@ class LinalgEigh : public Operator<LinalgEigh> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

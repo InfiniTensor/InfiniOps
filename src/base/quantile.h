@@ -1,13 +1,16 @@
 #ifndef INFINI_OPS_BASE_QUANTILE_H_
 #define INFINI_OPS_BASE_QUANTILE_H_
 
+#include <optional>
+#include <string>
+
 #include "operator.h"
 
 namespace infini::ops {
 
 class Quantile : public Operator<Quantile> {
  public:
-  Quantile(const Tensor input, const Tensor q, const int64_t dim,
+  Quantile(const Tensor input, const Tensor q, const std::optional<int64_t> dim,
            const bool keepdim, const std::string interpolation, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -23,7 +26,7 @@ class Quantile : public Operator<Quantile> {
         interpolation_{interpolation},
         device_index_{out.device().index()} {}
 
-  Quantile(const Tensor input, const double q, const int64_t dim,
+  Quantile(const Tensor input, const double q, const std::optional<int64_t> dim,
            const bool keepdim, const std::string interpolation, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -37,12 +40,14 @@ class Quantile : public Operator<Quantile> {
         q_{q},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const Tensor q, const int64_t dim,
-                          const bool keepdim, const std::string interpolation,
+  virtual void operator()(const Tensor input, const Tensor q,
+                          const std::optional<int64_t> dim, const bool keepdim,
+                          const std::string interpolation,
                           Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const double q, const int64_t dim,
-                          const bool keepdim, const std::string interpolation,
+  virtual void operator()(const Tensor input, const double q,
+                          const std::optional<int64_t> dim, const bool keepdim,
+                          const std::string interpolation,
                           Tensor out) const = 0;
 
  protected:
@@ -64,7 +69,7 @@ class Quantile : public Operator<Quantile> {
 
   DataType out_type_;
 
-  int64_t dim_{};
+  std::optional<int64_t> dim_{};
 
   bool keepdim_{};
 

@@ -1,14 +1,16 @@
 #ifndef INFINI_OPS_BASE_SPECIAL_LOGSUMEXP_H_
 #define INFINI_OPS_BASE_SPECIAL_LOGSUMEXP_H_
 
+#include <vector>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialLogsumexp : public Operator<SpecialLogsumexp> {
+class Logsumexp : public Operator<Logsumexp> {
  public:
-  SpecialLogsumexp(const Tensor input, const std::vector<int64_t> dim,
-                   const bool keepdim, Tensor out)
+  Logsumexp(const Tensor input, const std::vector<int64_t> dim,
+            const bool keepdim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -42,6 +44,6 @@ class SpecialLogsumexp : public Operator<SpecialLogsumexp> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

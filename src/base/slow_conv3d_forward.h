@@ -1,39 +1,44 @@
 #ifndef INFINI_OPS_BASE_SLOW_CONV3D_FORWARD_H_
 #define INFINI_OPS_BASE_SLOW_CONV3D_FORWARD_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
 
 class SlowConv3dForward : public Operator<SlowConv3dForward> {
  public:
-  SlowConv3dForward(const Tensor input, const Tensor weight, const Tensor bias,
+  SlowConv3dForward(const Tensor input, const Tensor weight,
                     const std::vector<int64_t> kernel_size,
+                    const std::optional<Tensor> bias,
                     const std::vector<int64_t> stride,
-                    const std::vector<int64_t> padding, Tensor out)
+                    const std::vector<int64_t> padding, Tensor output)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         weight_shape_{weight.shape()},
         weight_strides_{weight.strides()},
         weight_type_{weight.dtype()},
-        bias_shape_{bias.shape()},
-        bias_strides_{bias.strides()},
-        bias_type_{bias.dtype()},
-        out_shape_{out.shape()},
-        out_strides_{out.strides()},
-        out_type_{out.dtype()},
+        output_shape_{output.shape()},
+        output_strides_{output.strides()},
+        output_type_{output.dtype()},
+        has_bias_{bias.has_value()},
+        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
+        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         kernel_size_{kernel_size},
         stride_{stride},
         padding_{padding},
-        device_index_{out.device().index()} {}
+        device_index_{output.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          const Tensor bias,
                           const std::vector<int64_t> kernel_size,
+                          const std::optional<Tensor> bias,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
-                          Tensor out) const = 0;
+                          Tensor output) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
@@ -48,17 +53,19 @@ class SlowConv3dForward : public Operator<SlowConv3dForward> {
 
   DataType weight_type_;
 
+  Tensor::Shape output_shape_;
+
+  Tensor::Strides output_strides_;
+
+  DataType output_type_;
+
+  bool has_bias_{false};
+
   Tensor::Shape bias_shape_;
 
   Tensor::Strides bias_strides_;
 
-  DataType bias_type_;
-
-  Tensor::Shape out_shape_;
-
-  Tensor::Strides out_strides_;
-
-  DataType out_type_;
+  DataType bias_type_{DataType::kFloat32};
 
   std::vector<int64_t> kernel_size_{};
 

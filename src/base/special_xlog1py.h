@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialXlog1py : public Operator<SpecialXlog1py> {
+class Xlog1py : public Operator<Xlog1py> {
  public:
-  SpecialXlog1py(const Tensor input, const Tensor other, Tensor out)
+  Xlog1py(const Tensor input, const Tensor other, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -19,7 +19,7 @@ class SpecialXlog1py : public Operator<SpecialXlog1py> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  SpecialXlog1py(const Tensor input, const double other, Tensor out)
+  Xlog1py(const Tensor input, const double other, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -59,6 +59,6 @@ class SpecialXlog1py : public Operator<SpecialXlog1py> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

@@ -1,23 +1,31 @@
 #ifndef INFINI_OPS_BASE_FFT_RFFT_H_
 #define INFINI_OPS_BASE_FFT_RFFT_H_
 
+#include <optional>
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::fft {
 
-class FftRfft : public Operator<FftRfft> {
+class Rfft : public Operator<Rfft> {
  public:
-  FftRfft(const Tensor input, const int64_t dim, Tensor out)
+  Rfft(const Tensor input, const std::optional<int64_t> n, const int64_t dim,
+       const std::optional<std::string> norm, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        n_{n},
         dim_{dim},
+        norm_{norm},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
+  virtual void operator()(const Tensor input, const std::optional<int64_t> n,
+                          const int64_t dim,
+                          const std::optional<std::string> norm,
                           Tensor out) const = 0;
 
  protected:
@@ -33,11 +41,15 @@ class FftRfft : public Operator<FftRfft> {
 
   DataType out_type_;
 
+  std::optional<int64_t> n_{};
+
   int64_t dim_{};
+
+  std::optional<std::string> norm_{};
 
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::fft
 
 #endif

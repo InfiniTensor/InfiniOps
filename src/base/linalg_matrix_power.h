@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgMatrixPower : public Operator<LinalgMatrixPower> {
+class MatrixPower : public Operator<MatrixPower> {
  public:
-  LinalgMatrixPower(const Tensor input, const int64_t n, Tensor out)
+  MatrixPower(const Tensor input, const int64_t n, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -38,6 +38,6 @@ class LinalgMatrixPower : public Operator<LinalgMatrixPower> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

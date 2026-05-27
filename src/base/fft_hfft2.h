@@ -1,23 +1,34 @@
 #ifndef INFINI_OPS_BASE_FFT_HFFT2_H_
 #define INFINI_OPS_BASE_FFT_HFFT2_H_
 
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::fft {
 
-class FftHfft2 : public Operator<FftHfft2> {
+class Hfft2 : public Operator<Hfft2> {
  public:
-  FftHfft2(const Tensor input, const std::vector<int64_t> dim, Tensor out)
+  Hfft2(const Tensor input, const std::optional<std::vector<int64_t>> s,
+        const std::vector<int64_t> dim, const std::optional<std::string> norm,
+        Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        s_{s},
         dim_{dim},
+        norm_{norm},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const std::vector<int64_t> dim,
+  virtual void operator()(const Tensor input,
+                          const std::optional<std::vector<int64_t>> s,
+                          const std::vector<int64_t> dim,
+                          const std::optional<std::string> norm,
                           Tensor out) const = 0;
 
  protected:
@@ -33,11 +44,15 @@ class FftHfft2 : public Operator<FftHfft2> {
 
   DataType out_type_;
 
+  std::optional<std::vector<int64_t>> s_{};
+
   std::vector<int64_t> dim_{};
+
+  std::optional<std::string> norm_{};
 
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::fft
 
 #endif

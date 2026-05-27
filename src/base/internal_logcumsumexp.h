@@ -1,27 +1,23 @@
-#ifndef INFINI_OPS_BASE_RRELU_H_
-#define INFINI_OPS_BASE_RRELU_H_
+#ifndef INFINI_OPS_BASE_INTERNAL_LOGCUMSUMEXP_H_
+#define INFINI_OPS_BASE_INTERNAL_LOGCUMSUMEXP_H_
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::internal {
 
-class Rrelu : public Operator<Rrelu> {
+class Logcumsumexp : public Operator<Logcumsumexp> {
  public:
-  Rrelu(const Tensor input, const double lower, const double upper,
-        const bool training, Tensor out)
+  Logcumsumexp(const Tensor input, const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
-        lower_{lower},
-        upper_{upper},
-        training_{training},
+        dim_{dim},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const double lower,
-                          const double upper, const bool training,
+  virtual void operator()(const Tensor input, const int64_t dim,
                           Tensor out) const = 0;
 
  protected:
@@ -37,15 +33,11 @@ class Rrelu : public Operator<Rrelu> {
 
   DataType out_type_;
 
-  double lower_{};
-
-  double upper_{};
-
-  bool training_{};
+  int64_t dim_{};
 
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::internal
 
 #endif

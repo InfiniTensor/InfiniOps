@@ -1,14 +1,18 @@
 #ifndef INFINI_OPS_BASE_LINALG_LSTSQ_H_
 #define INFINI_OPS_BASE_LINALG_LSTSQ_H_
 
+#include <optional>
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgLstsq : public Operator<LinalgLstsq> {
+class Lstsq : public Operator<Lstsq> {
  public:
-  LinalgLstsq(const Tensor input, const Tensor b, Tensor solution,
-              Tensor residuals, Tensor rank, Tensor singular_values)
+  Lstsq(const Tensor input, const Tensor b, const std::optional<double> rcond,
+        const std::optional<std::string> driver, Tensor solution,
+        Tensor residuals, Tensor rank, Tensor singular_values)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -27,10 +31,14 @@ class LinalgLstsq : public Operator<LinalgLstsq> {
         singular_values_shape_{singular_values.shape()},
         singular_values_strides_{singular_values.strides()},
         singular_values_type_{singular_values.dtype()},
+        rcond_{rcond},
+        driver_{driver},
         device_index_{solution.device().index()} {}
 
-  virtual void operator()(const Tensor input, const Tensor b, Tensor solution,
-                          Tensor residuals, Tensor rank,
+  virtual void operator()(const Tensor input, const Tensor b,
+                          const std::optional<double> rcond,
+                          const std::optional<std::string> driver,
+                          Tensor solution, Tensor residuals, Tensor rank,
                           Tensor singular_values) const = 0;
 
  protected:
@@ -70,9 +78,13 @@ class LinalgLstsq : public Operator<LinalgLstsq> {
 
   DataType singular_values_type_;
 
+  std::optional<double> rcond_{};
+
+  std::optional<std::string> driver_{};
+
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

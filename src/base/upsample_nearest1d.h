@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_UPSAMPLE_NEAREST1D_H_
 #define INFINI_OPS_BASE_UPSAMPLE_NEAREST1D_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,7 +11,7 @@ namespace infini::ops {
 class UpsampleNearest1d : public Operator<UpsampleNearest1d> {
  public:
   UpsampleNearest1d(const Tensor input, const std::vector<int64_t> output_size,
-                    Tensor out)
+                    const std::optional<double> scales, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -16,10 +19,12 @@ class UpsampleNearest1d : public Operator<UpsampleNearest1d> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         output_size_{output_size},
+        scales_{scales},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input,
                           const std::vector<int64_t> output_size,
+                          const std::optional<double> scales,
                           Tensor out) const = 0;
 
  protected:
@@ -36,6 +41,8 @@ class UpsampleNearest1d : public Operator<UpsampleNearest1d> {
   DataType out_type_;
 
   std::vector<int64_t> output_size_{};
+
+  std::optional<double> scales_{};
 
   int device_index_{0};
 };

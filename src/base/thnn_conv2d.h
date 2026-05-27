@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_THNN_CONV2D_H_
 #define INFINI_OPS_BASE_THNN_CONV2D_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -9,6 +12,7 @@ class ThnnConv2d : public Operator<ThnnConv2d> {
  public:
   ThnnConv2d(const Tensor input, const Tensor weight,
              const std::vector<int64_t> kernel_size,
+             const std::optional<Tensor> bias,
              const std::vector<int64_t> stride,
              const std::vector<int64_t> padding, Tensor out)
       : input_shape_{input.shape()},
@@ -20,6 +24,10 @@ class ThnnConv2d : public Operator<ThnnConv2d> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        has_bias_{bias.has_value()},
+        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
+        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         kernel_size_{kernel_size},
         stride_{stride},
         padding_{padding},
@@ -27,6 +35,7 @@ class ThnnConv2d : public Operator<ThnnConv2d> {
 
   virtual void operator()(const Tensor input, const Tensor weight,
                           const std::vector<int64_t> kernel_size,
+                          const std::optional<Tensor> bias,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           Tensor out) const = 0;
@@ -49,6 +58,14 @@ class ThnnConv2d : public Operator<ThnnConv2d> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  bool has_bias_{false};
+
+  Tensor::Shape bias_shape_;
+
+  Tensor::Strides bias_strides_;
+
+  DataType bias_type_{DataType::kFloat32};
 
   std::vector<int64_t> kernel_size_{};
 

@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_NLL_LOSS_BACKWARD_H_
 #define INFINI_OPS_BASE_NLL_LOSS_BACKWARD_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,9 +10,9 @@ namespace infini::ops {
 class NllLossBackward : public Operator<NllLossBackward> {
  public:
   NllLossBackward(const Tensor grad_output, const Tensor input,
-                  const Tensor target, const int64_t reduction,
-                  const int64_t ignore_index, const Tensor total_weight,
-                  Tensor grad_input)
+                  const Tensor target, const std::optional<Tensor> weight,
+                  const int64_t reduction, const int64_t ignore_index,
+                  const Tensor total_weight, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -26,13 +28,19 @@ class NllLossBackward : public Operator<NllLossBackward> {
         grad_input_shape_{grad_input.shape()},
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
+        has_weight_{weight.has_value()},
+        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
+        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{reduction},
         ignore_index_{ignore_index},
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
-                          const Tensor target, const int64_t reduction,
-                          const int64_t ignore_index, const Tensor total_weight,
+                          const Tensor target,
+                          const std::optional<Tensor> weight,
+                          const int64_t reduction, const int64_t ignore_index,
+                          const Tensor total_weight,
                           Tensor grad_input) const = 0;
 
  protected:
@@ -65,6 +73,14 @@ class NllLossBackward : public Operator<NllLossBackward> {
   Tensor::Strides grad_input_strides_;
 
   DataType grad_input_type_;
+
+  bool has_weight_{false};
+
+  Tensor::Shape weight_shape_;
+
+  Tensor::Strides weight_strides_;
+
+  DataType weight_type_{DataType::kFloat32};
 
   int64_t reduction_{};
 

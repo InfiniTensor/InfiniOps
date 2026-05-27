@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_CUDNN_CONVOLUTION_H_
 #define INFINI_OPS_BASE_CUDNN_CONVOLUTION_H_
 
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {

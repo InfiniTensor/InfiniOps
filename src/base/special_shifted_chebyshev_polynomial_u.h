@@ -3,12 +3,12 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialShiftedChebyshevPolynomialU
-    : public Operator<SpecialShiftedChebyshevPolynomialU> {
+class ShiftedChebyshevPolynomialU
+    : public Operator<ShiftedChebyshevPolynomialU> {
  public:
-  SpecialShiftedChebyshevPolynomialU(const Tensor x, const Tensor n, Tensor out)
+  ShiftedChebyshevPolynomialU(const Tensor x, const Tensor n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -20,7 +20,7 @@ class SpecialShiftedChebyshevPolynomialU
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  SpecialShiftedChebyshevPolynomialU(const Tensor x, const double n, Tensor out)
+  ShiftedChebyshevPolynomialU(const Tensor x, const double n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -58,6 +58,6 @@ class SpecialShiftedChebyshevPolynomialU
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

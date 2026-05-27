@@ -1,14 +1,17 @@
 #ifndef INFINI_OPS_BASE_LINALG_SVD_H_
 #define INFINI_OPS_BASE_LINALG_SVD_H_
 
+#include <optional>
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgSvd : public Operator<LinalgSvd> {
+class Svd : public Operator<Svd> {
  public:
-  LinalgSvd(const Tensor A, const bool full_matrices, Tensor U, Tensor S,
-            Tensor Vh)
+  Svd(const Tensor A, const bool full_matrices,
+      const std::optional<std::string> driver, Tensor U, Tensor S, Tensor Vh)
       : A_shape_{A.shape()},
         A_strides_{A.strides()},
         A_type_{A.dtype()},
@@ -22,9 +25,11 @@ class LinalgSvd : public Operator<LinalgSvd> {
         Vh_strides_{Vh.strides()},
         Vh_type_{Vh.dtype()},
         full_matrices_{full_matrices},
+        driver_{driver},
         device_index_{U.device().index()} {}
 
-  virtual void operator()(const Tensor A, const bool full_matrices, Tensor U,
+  virtual void operator()(const Tensor A, const bool full_matrices,
+                          const std::optional<std::string> driver, Tensor U,
                           Tensor S, Tensor Vh) const = 0;
 
  protected:
@@ -54,9 +59,11 @@ class LinalgSvd : public Operator<LinalgSvd> {
 
   bool full_matrices_{};
 
+  std::optional<std::string> driver_{};
+
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

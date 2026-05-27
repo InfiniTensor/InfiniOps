@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_AVG_POOL2D_BACKWARD_H_
 #define INFINI_OPS_BASE_AVG_POOL2D_BACKWARD_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -11,7 +14,9 @@ class AvgPool2dBackward : public Operator<AvgPool2dBackward> {
                     const std::vector<int64_t> kernel_size,
                     const std::vector<int64_t> stride,
                     const std::vector<int64_t> padding, const bool ceil_mode,
-                    const bool count_include_pad, Tensor grad_input)
+                    const bool count_include_pad,
+                    const std::optional<int64_t> divisor_override,
+                    Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -26,6 +31,7 @@ class AvgPool2dBackward : public Operator<AvgPool2dBackward> {
         padding_{padding},
         ceil_mode_{ceil_mode},
         count_include_pad_{count_include_pad},
+        divisor_override_{divisor_override},
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
@@ -33,6 +39,7 @@ class AvgPool2dBackward : public Operator<AvgPool2dBackward> {
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           const bool ceil_mode, const bool count_include_pad,
+                          const std::optional<int64_t> divisor_override,
                           Tensor grad_input) const = 0;
 
  protected:
@@ -63,6 +70,8 @@ class AvgPool2dBackward : public Operator<AvgPool2dBackward> {
   bool ceil_mode_{};
 
   bool count_include_pad_{};
+
+  std::optional<int64_t> divisor_override_{};
 
   int device_index_{0};
 };

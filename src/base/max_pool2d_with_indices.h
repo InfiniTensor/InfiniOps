@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_MAX_POOL2D_WITH_INDICES_H_
 #define INFINI_OPS_BASE_MAX_POOL2D_WITH_INDICES_H_
 
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {

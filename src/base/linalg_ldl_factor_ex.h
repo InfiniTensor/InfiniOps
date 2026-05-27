@@ -3,13 +3,12 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgLdlFactorEx : public Operator<LinalgLdlFactorEx> {
+class LdlFactorEx : public Operator<LdlFactorEx> {
  public:
-  LinalgLdlFactorEx(const Tensor input, const bool hermitian,
-                    const bool check_errors, Tensor LD, Tensor pivots,
-                    Tensor info)
+  LdlFactorEx(const Tensor input, const bool hermitian, const bool check_errors,
+              Tensor LD, Tensor pivots, Tensor info)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -62,6 +61,6 @@ class LinalgLdlFactorEx : public Operator<LinalgLdlFactorEx> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

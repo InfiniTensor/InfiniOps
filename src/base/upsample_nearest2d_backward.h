@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_UPSAMPLE_NEAREST2D_BACKWARD_H_
 #define INFINI_OPS_BASE_UPSAMPLE_NEAREST2D_BACKWARD_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -10,7 +13,8 @@ class UpsampleNearest2dBackward : public Operator<UpsampleNearest2dBackward> {
   UpsampleNearest2dBackward(const Tensor grad_output,
                             const std::vector<int64_t> output_size,
                             const std::vector<int64_t> input_size,
-                            const double scales_h, const double scales_w,
+                            const std::optional<double> scales_h,
+                            const std::optional<double> scales_w,
                             Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
@@ -27,7 +31,8 @@ class UpsampleNearest2dBackward : public Operator<UpsampleNearest2dBackward> {
   virtual void operator()(const Tensor grad_output,
                           const std::vector<int64_t> output_size,
                           const std::vector<int64_t> input_size,
-                          const double scales_h, const double scales_w,
+                          const std::optional<double> scales_h,
+                          const std::optional<double> scales_w,
                           Tensor grad_input) const = 0;
 
  protected:
@@ -47,9 +52,9 @@ class UpsampleNearest2dBackward : public Operator<UpsampleNearest2dBackward> {
 
   std::vector<int64_t> input_size_{};
 
-  double scales_h_{};
+  std::optional<double> scales_h_{};
 
-  double scales_w_{};
+  std::optional<double> scales_w_{};
 
   int device_index_{0};
 };

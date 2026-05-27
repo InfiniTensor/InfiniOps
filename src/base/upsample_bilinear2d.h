@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_UPSAMPLE_BILINEAR2D_H_
 #define INFINI_OPS_BASE_UPSAMPLE_BILINEAR2D_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,7 +11,9 @@ namespace infini::ops {
 class UpsampleBilinear2d : public Operator<UpsampleBilinear2d> {
  public:
   UpsampleBilinear2d(const Tensor input, const std::vector<int64_t> output_size,
-                     const bool align_corners, Tensor out)
+                     const bool align_corners,
+                     const std::optional<double> scales_h,
+                     const std::optional<double> scales_w, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -17,11 +22,16 @@ class UpsampleBilinear2d : public Operator<UpsampleBilinear2d> {
         out_type_{out.dtype()},
         output_size_{output_size},
         align_corners_{align_corners},
+        scales_h_{scales_h},
+        scales_w_{scales_w},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input,
                           const std::vector<int64_t> output_size,
-                          const bool align_corners, Tensor out) const = 0;
+                          const bool align_corners,
+                          const std::optional<double> scales_h,
+                          const std::optional<double> scales_w,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
@@ -39,6 +49,10 @@ class UpsampleBilinear2d : public Operator<UpsampleBilinear2d> {
   std::vector<int64_t> output_size_{};
 
   bool align_corners_{};
+
+  std::optional<double> scales_h_{};
+
+  std::optional<double> scales_w_{};
 
   int device_index_{0};
 };

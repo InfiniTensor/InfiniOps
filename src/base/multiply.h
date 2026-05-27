@@ -19,8 +19,28 @@ class Multiply : public Operator<Multiply> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
+  Multiply(Tensor input, const Tensor other)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        other_shape_{other.shape()},
+        other_strides_{other.strides()},
+        other_type_{other.dtype()},
+        device_index_{input.device().index()} {}
+
+  Multiply(Tensor input, const double other)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        other_{other},
+        device_index_{input.device().index()} {}
+
   virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;
+
+  virtual void operator()(Tensor input, const Tensor other) const = 0;
+
+  virtual void operator()(Tensor input, const double other) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
@@ -40,6 +60,8 @@ class Multiply : public Operator<Multiply> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  double other_{};
 
   int device_index_{0};
 };

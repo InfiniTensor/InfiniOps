@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialExpit : public Operator<SpecialExpit> {
+class Expit : public Operator<Expit> {
  public:
-  SpecialExpit(const Tensor input, Tensor out)
+  Expit(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -34,6 +34,6 @@ class SpecialExpit : public Operator<SpecialExpit> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

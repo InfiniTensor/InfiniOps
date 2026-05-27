@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_MKLDNN_ADAPTIVE_AVG_POOL2D_H_
 #define INFINI_OPS_BASE_MKLDNN_ADAPTIVE_AVG_POOL2D_H_
 
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {

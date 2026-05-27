@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgEig : public Operator<LinalgEig> {
+class Eig : public Operator<Eig> {
  public:
-  LinalgEig(const Tensor input, Tensor eigenvalues, Tensor eigenvectors)
+  Eig(const Tensor input, Tensor eigenvalues, Tensor eigenvectors)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -44,6 +44,6 @@ class LinalgEig : public Operator<LinalgEig> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

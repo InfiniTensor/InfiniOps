@@ -1,15 +1,19 @@
 #ifndef INFINI_OPS_BASE_LINALG_MATRIX_NORM_H_
 #define INFINI_OPS_BASE_LINALG_MATRIX_NORM_H_
 
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgMatrixNorm : public Operator<LinalgMatrixNorm> {
+class MatrixNorm : public Operator<MatrixNorm> {
  public:
-  LinalgMatrixNorm(const Tensor input, const double ord,
-                   const std::vector<int64_t> dim, const bool keepdim,
-                   Tensor out)
+  MatrixNorm(const Tensor input, const double ord,
+             const std::vector<int64_t> dim, const bool keepdim,
+             const std::optional<DataType> dtype, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -19,11 +23,12 @@ class LinalgMatrixNorm : public Operator<LinalgMatrixNorm> {
         ord_{ord},
         dim_{dim},
         keepdim_{keepdim},
+        dtype_{dtype},
         device_index_{out.device().index()} {}
 
-  LinalgMatrixNorm(const Tensor input, const std::string ord,
-                   const std::vector<int64_t> dim, const bool keepdim,
-                   Tensor out)
+  MatrixNorm(const Tensor input, const std::string ord,
+             const std::vector<int64_t> dim, const bool keepdim,
+             const std::optional<DataType> dtype, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -32,14 +37,17 @@ class LinalgMatrixNorm : public Operator<LinalgMatrixNorm> {
         out_type_{out.dtype()},
         dim_{dim},
         keepdim_{keepdim},
+        dtype_{dtype},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const double ord,
                           const std::vector<int64_t> dim, const bool keepdim,
+                          const std::optional<DataType> dtype,
                           Tensor out) const = 0;
 
   virtual void operator()(const Tensor input, const std::string ord,
                           const std::vector<int64_t> dim, const bool keepdim,
+                          const std::optional<DataType> dtype,
                           Tensor out) const = 0;
 
  protected:
@@ -61,9 +69,11 @@ class LinalgMatrixNorm : public Operator<LinalgMatrixNorm> {
 
   bool keepdim_{};
 
+  std::optional<DataType> dtype_{};
+
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

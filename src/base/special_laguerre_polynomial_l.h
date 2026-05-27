@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialLaguerrePolynomialL : public Operator<SpecialLaguerrePolynomialL> {
+class LaguerrePolynomialL : public Operator<LaguerrePolynomialL> {
  public:
-  SpecialLaguerrePolynomialL(const Tensor x, const Tensor n, Tensor out)
+  LaguerrePolynomialL(const Tensor x, const Tensor n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -19,7 +19,7 @@ class SpecialLaguerrePolynomialL : public Operator<SpecialLaguerrePolynomialL> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  SpecialLaguerrePolynomialL(const Tensor x, const double n, Tensor out)
+  LaguerrePolynomialL(const Tensor x, const double n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -57,6 +57,6 @@ class SpecialLaguerrePolynomialL : public Operator<SpecialLaguerrePolynomialL> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

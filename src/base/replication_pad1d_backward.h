@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_REPLICATION_PAD1D_BACKWARD_H_
 #define INFINI_OPS_BASE_REPLICATION_PAD1D_BACKWARD_H_
 
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {

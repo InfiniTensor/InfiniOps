@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialZeta : public Operator<SpecialZeta> {
+class Zeta : public Operator<Zeta> {
  public:
-  SpecialZeta(const Tensor input, const Tensor other, Tensor out)
+  Zeta(const Tensor input, const Tensor other, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -19,7 +19,7 @@ class SpecialZeta : public Operator<SpecialZeta> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  SpecialZeta(const Tensor input, const double other, Tensor out)
+  Zeta(const Tensor input, const double other, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -59,6 +59,6 @@ class SpecialZeta : public Operator<SpecialZeta> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

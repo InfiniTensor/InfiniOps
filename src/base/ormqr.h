@@ -7,17 +7,17 @@ namespace infini::ops {
 
 class Ormqr : public Operator<Ormqr> {
  public:
-  Ormqr(const Tensor input, const Tensor tau, const Tensor other,
+  Ormqr(const Tensor input, const Tensor input2, const Tensor input3,
         const bool left, const bool transpose, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
-        tau_shape_{tau.shape()},
-        tau_strides_{tau.strides()},
-        tau_type_{tau.dtype()},
-        other_shape_{other.shape()},
-        other_strides_{other.strides()},
-        other_type_{other.dtype()},
+        input2_shape_{input2.shape()},
+        input2_strides_{input2.strides()},
+        input2_type_{input2.dtype()},
+        input3_shape_{input3.shape()},
+        input3_strides_{input3.strides()},
+        input3_type_{input3.dtype()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
@@ -25,8 +25,8 @@ class Ormqr : public Operator<Ormqr> {
         transpose_{transpose},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const Tensor tau,
-                          const Tensor other, const bool left,
+  virtual void operator()(const Tensor input, const Tensor input2,
+                          const Tensor input3, const bool left,
                           const bool transpose, Tensor out) const = 0;
 
  protected:
@@ -36,17 +36,17 @@ class Ormqr : public Operator<Ormqr> {
 
   DataType input_type_;
 
-  Tensor::Shape tau_shape_;
+  Tensor::Shape input2_shape_;
 
-  Tensor::Strides tau_strides_;
+  Tensor::Strides input2_strides_;
 
-  DataType tau_type_;
+  DataType input2_type_;
 
-  Tensor::Shape other_shape_;
+  Tensor::Shape input3_shape_;
 
-  Tensor::Strides other_strides_;
+  Tensor::Strides input3_strides_;
 
-  DataType other_type_;
+  DataType input3_type_;
 
   Tensor::Shape out_shape_;
 

@@ -7,19 +7,19 @@ namespace infini::ops {
 
 class Orgqr : public Operator<Orgqr> {
  public:
-  Orgqr(const Tensor input, const Tensor tau, Tensor out)
+  Orgqr(const Tensor input, const Tensor input2, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
-        tau_shape_{tau.shape()},
-        tau_strides_{tau.strides()},
-        tau_type_{tau.dtype()},
+        input2_shape_{input2.shape()},
+        input2_strides_{input2.strides()},
+        input2_type_{input2.dtype()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const Tensor tau,
+  virtual void operator()(const Tensor input, const Tensor input2,
                           Tensor out) const = 0;
 
  protected:
@@ -29,11 +29,11 @@ class Orgqr : public Operator<Orgqr> {
 
   DataType input_type_;
 
-  Tensor::Shape tau_shape_;
+  Tensor::Shape input2_shape_;
 
-  Tensor::Strides tau_strides_;
+  Tensor::Strides input2_strides_;
 
-  DataType tau_type_;
+  DataType input2_type_;
 
   Tensor::Shape out_shape_;
 

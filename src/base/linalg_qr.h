@@ -1,13 +1,15 @@
 #ifndef INFINI_OPS_BASE_LINALG_QR_H_
 #define INFINI_OPS_BASE_LINALG_QR_H_
 
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgQr : public Operator<LinalgQr> {
+class Qr : public Operator<Qr> {
  public:
-  LinalgQr(const Tensor A, const std::string mode, Tensor Q, Tensor R)
+  Qr(const Tensor A, const std::string mode, Tensor Q, Tensor R)
       : A_shape_{A.shape()},
         A_strides_{A.strides()},
         A_type_{A.dtype()},
@@ -47,6 +49,6 @@ class LinalgQr : public Operator<LinalgQr> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

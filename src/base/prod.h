@@ -1,24 +1,16 @@
 #ifndef INFINI_OPS_BASE_PROD_H_
 #define INFINI_OPS_BASE_PROD_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
 
 class Prod : public Operator<Prod> {
  public:
-  Prod(const Tensor input, const DataType dtype, Tensor out)
-      : input_shape_{input.shape()},
-        input_strides_{input.strides()},
-        input_type_{input.dtype()},
-        out_shape_{out.shape()},
-        out_strides_{out.strides()},
-        out_type_{out.dtype()},
-        dtype_{dtype},
-        device_index_{out.device().index()} {}
-
   Prod(const Tensor input, const int64_t dim, const bool keepdim,
-       const DataType dtype, Tensor out)
+       const std::optional<DataType> dtype, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -30,11 +22,9 @@ class Prod : public Operator<Prod> {
         dtype_{dtype},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const DataType dtype,
-                          Tensor out) const = 0;
-
   virtual void operator()(const Tensor input, const int64_t dim,
-                          const bool keepdim, const DataType dtype,
+                          const bool keepdim,
+                          const std::optional<DataType> dtype,
                           Tensor out) const = 0;
 
  protected:
@@ -54,7 +44,7 @@ class Prod : public Operator<Prod> {
 
   bool keepdim_{};
 
-  DataType dtype_{};
+  std::optional<DataType> dtype_{};
 
   int device_index_{0};
 };

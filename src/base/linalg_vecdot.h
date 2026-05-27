@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgVecdot : public Operator<LinalgVecdot> {
+class Vecdot : public Operator<Vecdot> {
  public:
-  LinalgVecdot(const Tensor x, const Tensor y, const int64_t dim, Tensor out)
+  Vecdot(const Tensor x, const Tensor y, const int64_t dim, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -47,6 +47,6 @@ class LinalgVecdot : public Operator<LinalgVecdot> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialMultigammaln : public Operator<SpecialMultigammaln> {
+class Multigammaln : public Operator<Multigammaln> {
  public:
-  SpecialMultigammaln(const Tensor input, const int64_t p, Tensor out)
+  Multigammaln(const Tensor input, const int64_t p, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -38,6 +38,6 @@ class SpecialMultigammaln : public Operator<SpecialMultigammaln> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

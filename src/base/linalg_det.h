@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgDet : public Operator<LinalgDet> {
+class Det : public Operator<Det> {
  public:
-  LinalgDet(const Tensor A, Tensor out)
+  Det(const Tensor A, Tensor out)
       : A_shape_{A.shape()},
         A_strides_{A.strides()},
         A_type_{A.dtype()},
@@ -34,6 +34,6 @@ class LinalgDet : public Operator<LinalgDet> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

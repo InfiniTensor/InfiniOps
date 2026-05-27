@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialErfcx : public Operator<SpecialErfcx> {
+class Erfcx : public Operator<Erfcx> {
  public:
-  SpecialErfcx(const Tensor input, Tensor out)
+  Erfcx(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -34,6 +34,6 @@ class SpecialErfcx : public Operator<SpecialErfcx> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

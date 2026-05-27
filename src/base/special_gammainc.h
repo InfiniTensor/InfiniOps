@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialGammainc : public Operator<SpecialGammainc> {
+class Gammainc : public Operator<Gammainc> {
  public:
-  SpecialGammainc(const Tensor input, const Tensor other, Tensor out)
+  Gammainc(const Tensor input, const Tensor other, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -44,6 +44,6 @@ class SpecialGammainc : public Operator<SpecialGammainc> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

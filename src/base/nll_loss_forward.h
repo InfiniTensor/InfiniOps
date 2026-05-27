@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_NLL_LOSS_FORWARD_H_
 #define INFINI_OPS_BASE_NLL_LOSS_FORWARD_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,8 +10,8 @@ namespace infini::ops {
 class NllLossForward : public Operator<NllLossForward> {
  public:
   NllLossForward(const Tensor input, const Tensor target,
-                 const int64_t reduction, const int64_t ignore_index,
-                 Tensor output, Tensor total_weight)
+                 const std::optional<Tensor> weight, const int64_t reduction,
+                 const int64_t ignore_index, Tensor output, Tensor total_weight)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -22,11 +24,16 @@ class NllLossForward : public Operator<NllLossForward> {
         total_weight_shape_{total_weight.shape()},
         total_weight_strides_{total_weight.strides()},
         total_weight_type_{total_weight.dtype()},
+        has_weight_{weight.has_value()},
+        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
+        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{reduction},
         ignore_index_{ignore_index},
         device_index_{output.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor target,
+                          const std::optional<Tensor> weight,
                           const int64_t reduction, const int64_t ignore_index,
                           Tensor output, Tensor total_weight) const = 0;
 
@@ -54,6 +61,14 @@ class NllLossForward : public Operator<NllLossForward> {
   Tensor::Strides total_weight_strides_;
 
   DataType total_weight_type_;
+
+  bool has_weight_{false};
+
+  Tensor::Shape weight_shape_;
+
+  Tensor::Strides weight_strides_;
+
+  DataType weight_type_{DataType::kFloat32};
 
   int64_t reduction_{};
 

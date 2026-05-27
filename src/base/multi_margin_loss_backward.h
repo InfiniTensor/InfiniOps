@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_MULTI_MARGIN_LOSS_BACKWARD_H_
 #define INFINI_OPS_BASE_MULTI_MARGIN_LOSS_BACKWARD_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -9,8 +11,9 @@ class MultiMarginLossBackward : public Operator<MultiMarginLossBackward> {
  public:
   MultiMarginLossBackward(const Tensor grad_output, const Tensor input,
                           const Tensor target, const double p,
-                          const double margin, const int64_t reduction,
-                          Tensor grad_input)
+                          const double margin,
+                          const std::optional<Tensor> weight,
+                          const int64_t reduction, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -23,6 +26,10 @@ class MultiMarginLossBackward : public Operator<MultiMarginLossBackward> {
         grad_input_shape_{grad_input.shape()},
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
+        has_weight_{weight.has_value()},
+        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
+        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         p_{p},
         margin_{margin},
         reduction_{reduction},
@@ -30,8 +37,9 @@ class MultiMarginLossBackward : public Operator<MultiMarginLossBackward> {
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
                           const Tensor target, const double p,
-                          const double margin, const int64_t reduction,
-                          Tensor grad_input) const = 0;
+                          const double margin,
+                          const std::optional<Tensor> weight,
+                          const int64_t reduction, Tensor grad_input) const = 0;
 
  protected:
   Tensor::Shape grad_output_shape_;
@@ -57,6 +65,14 @@ class MultiMarginLossBackward : public Operator<MultiMarginLossBackward> {
   Tensor::Strides grad_input_strides_;
 
   DataType grad_input_type_;
+
+  bool has_weight_{false};
+
+  Tensor::Shape weight_shape_;
+
+  Tensor::Strides weight_strides_;
+
+  DataType weight_type_{DataType::kFloat32};
 
   double p_{};
 

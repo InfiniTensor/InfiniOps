@@ -3,12 +3,12 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgSolveTriangular : public Operator<LinalgSolveTriangular> {
+class SolveTriangular : public Operator<SolveTriangular> {
  public:
-  LinalgSolveTriangular(const Tensor input, const Tensor B, const bool upper,
-                        const bool left, const bool unitriangular, Tensor out)
+  SolveTriangular(const Tensor input, const Tensor B, const bool upper,
+                  const bool left, const bool unitriangular, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -55,6 +55,6 @@ class LinalgSolveTriangular : public Operator<LinalgSolveTriangular> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

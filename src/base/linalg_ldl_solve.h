@@ -3,12 +3,12 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgLdlSolve : public Operator<LinalgLdlSolve> {
+class LdlSolve : public Operator<LdlSolve> {
  public:
-  LinalgLdlSolve(const Tensor LD, const Tensor pivots, const Tensor B,
-                 const bool hermitian, Tensor out)
+  LdlSolve(const Tensor LD, const Tensor pivots, const Tensor B,
+           const bool hermitian, Tensor out)
       : LD_shape_{LD.shape()},
         LD_strides_{LD.strides()},
         LD_type_{LD.dtype()},
@@ -57,6 +57,6 @@ class LinalgLdlSolve : public Operator<LinalgLdlSolve> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

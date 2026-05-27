@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgCholesky : public Operator<LinalgCholesky> {
+class Cholesky : public Operator<Cholesky> {
  public:
-  LinalgCholesky(const Tensor input, const bool upper, Tensor out)
+  Cholesky(const Tensor input, const bool upper, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -38,6 +38,6 @@ class LinalgCholesky : public Operator<LinalgCholesky> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

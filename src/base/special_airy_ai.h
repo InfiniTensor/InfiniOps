@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialAiryAi : public Operator<SpecialAiryAi> {
+class AiryAi : public Operator<AiryAi> {
  public:
-  SpecialAiryAi(const Tensor x, Tensor out)
+  AiryAi(const Tensor x, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -34,6 +34,6 @@ class SpecialAiryAi : public Operator<SpecialAiryAi> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

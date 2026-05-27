@@ -1,22 +1,16 @@
 #ifndef INFINI_OPS_BASE_LINALG_COND_H_
 #define INFINI_OPS_BASE_LINALG_COND_H_
 
+#include <optional>
+#include <string>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgCond : public Operator<LinalgCond> {
+class Cond : public Operator<Cond> {
  public:
-  LinalgCond(const Tensor input, Tensor out)
-      : input_shape_{input.shape()},
-        input_strides_{input.strides()},
-        input_type_{input.dtype()},
-        out_shape_{out.shape()},
-        out_strides_{out.strides()},
-        out_type_{out.dtype()},
-        device_index_{out.device().index()} {}
-
-  LinalgCond(const Tensor input, const std::string p, Tensor out)
+  Cond(const Tensor input, const std::optional<double> p, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -26,7 +20,17 @@ class LinalgCond : public Operator<LinalgCond> {
         p_{p},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, Tensor out) const = 0;
+  Cond(const Tensor input, const std::string p, Tensor out)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        device_index_{out.device().index()} {}
+
+  virtual void operator()(const Tensor input, const std::optional<double> p,
+                          Tensor out) const = 0;
 
   virtual void operator()(const Tensor input, const std::string p,
                           Tensor out) const = 0;
@@ -44,11 +48,11 @@ class LinalgCond : public Operator<LinalgCond> {
 
   DataType out_type_;
 
-  std::string p_{};
+  std::optional<double> p_{};
 
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

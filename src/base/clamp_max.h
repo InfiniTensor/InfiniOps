@@ -29,11 +29,22 @@ class ClampMax : public Operator<ClampMax> {
         max_type_{max.dtype()},
         device_index_{out.device().index()} {}
 
+  ClampMax(Tensor input, const Tensor max)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        max_shape_{max.shape()},
+        max_strides_{max.strides()},
+        max_type_{max.dtype()},
+        device_index_{input.device().index()} {}
+
   virtual void operator()(const Tensor input, const double max,
                           Tensor out) const = 0;
 
   virtual void operator()(const Tensor input, const Tensor max,
                           Tensor out) const = 0;
+
+  virtual void operator()(Tensor input, const Tensor max) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

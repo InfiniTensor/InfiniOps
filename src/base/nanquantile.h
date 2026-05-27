@@ -1,13 +1,17 @@
 #ifndef INFINI_OPS_BASE_NANQUANTILE_H_
 #define INFINI_OPS_BASE_NANQUANTILE_H_
 
+#include <optional>
+#include <string>
+
 #include "operator.h"
 
 namespace infini::ops {
 
 class Nanquantile : public Operator<Nanquantile> {
  public:
-  Nanquantile(const Tensor input, const Tensor q, const bool keepdim,
+  Nanquantile(const Tensor input, const Tensor q,
+              const std::optional<int64_t> dim, const bool keepdim,
               const std::string interpolation, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -18,11 +22,13 @@ class Nanquantile : public Operator<Nanquantile> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        dim_{dim},
         keepdim_{keepdim},
         interpolation_{interpolation},
         device_index_{out.device().index()} {}
 
-  Nanquantile(const Tensor input, const double q, const bool keepdim,
+  Nanquantile(const Tensor input, const double q,
+              const std::optional<int64_t> dim, const bool keepdim,
               const std::string interpolation, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -30,17 +36,20 @@ class Nanquantile : public Operator<Nanquantile> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        dim_{dim},
         keepdim_{keepdim},
         interpolation_{interpolation},
         q_{q},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor q,
-                          const bool keepdim, const std::string interpolation,
+                          const std::optional<int64_t> dim, const bool keepdim,
+                          const std::string interpolation,
                           Tensor out) const = 0;
 
   virtual void operator()(const Tensor input, const double q,
-                          const bool keepdim, const std::string interpolation,
+                          const std::optional<int64_t> dim, const bool keepdim,
+                          const std::string interpolation,
                           Tensor out) const = 0;
 
  protected:
@@ -61,6 +70,8 @@ class Nanquantile : public Operator<Nanquantile> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  std::optional<int64_t> dim_{};
 
   bool keepdim_{};
 

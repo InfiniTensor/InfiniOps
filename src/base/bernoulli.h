@@ -16,7 +16,16 @@ class Bernoulli : public Operator<Bernoulli> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
+  Bernoulli(Tensor input, const double p)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        p_{p},
+        device_index_{input.device().index()} {}
+
   virtual void operator()(const Tensor input, Tensor out) const = 0;
+
+  virtual void operator()(Tensor input, const double p) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
@@ -30,6 +39,8 @@ class Bernoulli : public Operator<Bernoulli> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  double p_{};
 
   int device_index_{0};
 };

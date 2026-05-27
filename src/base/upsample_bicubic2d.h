@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_UPSAMPLE_BICUBIC2D_H_
 #define INFINI_OPS_BASE_UPSAMPLE_BICUBIC2D_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,8 +11,9 @@ namespace infini::ops {
 class UpsampleBicubic2d : public Operator<UpsampleBicubic2d> {
  public:
   UpsampleBicubic2d(const Tensor input, const std::vector<int64_t> output_size,
-                    const bool align_corners, std::optional<double> scales_h,
-                    std::optional<double> scales_w, Tensor out)
+                    const bool align_corners,
+                    const std::optional<double> scales_h,
+                    const std::optional<double> scales_w, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -25,8 +29,9 @@ class UpsampleBicubic2d : public Operator<UpsampleBicubic2d> {
   virtual void operator()(const Tensor input,
                           const std::vector<int64_t> output_size,
                           const bool align_corners,
-                          std::optional<double> scales_h,
-                          std::optional<double> scales_w, Tensor out) const = 0;
+                          const std::optional<double> scales_h,
+                          const std::optional<double> scales_w,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

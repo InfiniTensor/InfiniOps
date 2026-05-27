@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_MULTI_MARGIN_LOSS_H_
 #define INFINI_OPS_BASE_MULTI_MARGIN_LOSS_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,7 +10,8 @@ namespace infini::ops {
 class MultiMarginLoss : public Operator<MultiMarginLoss> {
  public:
   MultiMarginLoss(const Tensor input, const Tensor target, const double p,
-                  const double margin, const int64_t reduction, Tensor out)
+                  const double margin, const std::optional<Tensor> weight,
+                  const int64_t reduction, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -18,6 +21,10 @@ class MultiMarginLoss : public Operator<MultiMarginLoss> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        has_weight_{weight.has_value()},
+        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
+        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         p_{p},
         margin_{margin},
         reduction_{reduction},
@@ -25,6 +32,7 @@ class MultiMarginLoss : public Operator<MultiMarginLoss> {
 
   virtual void operator()(const Tensor input, const Tensor target,
                           const double p, const double margin,
+                          const std::optional<Tensor> weight,
                           const int64_t reduction, Tensor out) const = 0;
 
  protected:
@@ -45,6 +53,14 @@ class MultiMarginLoss : public Operator<MultiMarginLoss> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  bool has_weight_{false};
+
+  Tensor::Shape weight_shape_;
+
+  Tensor::Strides weight_strides_;
+
+  DataType weight_type_{DataType::kFloat32};
 
   double p_{};
 

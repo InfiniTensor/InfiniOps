@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialRound : public Operator<SpecialRound> {
+class Round : public Operator<Round> {
  public:
-  SpecialRound(const Tensor input, const int64_t decimals, Tensor out)
+  Round(const Tensor input, const int64_t decimals, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -38,6 +38,6 @@ class SpecialRound : public Operator<SpecialRound> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

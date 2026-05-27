@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialNdtri : public Operator<SpecialNdtri> {
+class Ndtri : public Operator<Ndtri> {
  public:
-  SpecialNdtri(const Tensor input, Tensor out)
+  Ndtri(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -34,6 +34,6 @@ class SpecialNdtri : public Operator<SpecialNdtri> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

@@ -1,13 +1,17 @@
 #ifndef INFINI_OPS_BASE_LINALG_TENSORSOLVE_H_
 #define INFINI_OPS_BASE_LINALG_TENSORSOLVE_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgTensorsolve : public Operator<LinalgTensorsolve> {
+class Tensorsolve : public Operator<Tensorsolve> {
  public:
-  LinalgTensorsolve(const Tensor input, const Tensor other, Tensor out)
+  Tensorsolve(const Tensor input, const Tensor other,
+              const std::optional<std::vector<int64_t>> dims, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -17,9 +21,11 @@ class LinalgTensorsolve : public Operator<LinalgTensorsolve> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        dims_{dims},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor other,
+                          const std::optional<std::vector<int64_t>> dims,
                           Tensor out) const = 0;
 
  protected:
@@ -41,9 +47,11 @@ class LinalgTensorsolve : public Operator<LinalgTensorsolve> {
 
   DataType out_type_;
 
+  std::optional<std::vector<int64_t>> dims_{};
+
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_BINARY_CROSS_ENTROPY_H_
 #define INFINI_OPS_BASE_BINARY_CROSS_ENTROPY_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,6 +10,7 @@ namespace infini::ops {
 class BinaryCrossEntropy : public Operator<BinaryCrossEntropy> {
  public:
   BinaryCrossEntropy(const Tensor input, const Tensor target,
+                     const std::optional<Tensor> weight,
                      const int64_t reduction, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -18,10 +21,15 @@ class BinaryCrossEntropy : public Operator<BinaryCrossEntropy> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        has_weight_{weight.has_value()},
+        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
+        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{reduction},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor target,
+                          const std::optional<Tensor> weight,
                           const int64_t reduction, Tensor out) const = 0;
 
  protected:
@@ -42,6 +50,14 @@ class BinaryCrossEntropy : public Operator<BinaryCrossEntropy> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  bool has_weight_{false};
+
+  Tensor::Shape weight_shape_;
+
+  Tensor::Strides weight_strides_;
+
+  DataType weight_type_{DataType::kFloat32};
 
   int64_t reduction_{};
 

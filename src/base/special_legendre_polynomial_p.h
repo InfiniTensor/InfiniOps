@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialLegendrePolynomialP : public Operator<SpecialLegendrePolynomialP> {
+class LegendrePolynomialP : public Operator<LegendrePolynomialP> {
  public:
-  SpecialLegendrePolynomialP(const Tensor x, const Tensor n, Tensor out)
+  LegendrePolynomialP(const Tensor x, const Tensor n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -19,7 +19,7 @@ class SpecialLegendrePolynomialP : public Operator<SpecialLegendrePolynomialP> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  SpecialLegendrePolynomialP(const Tensor x, const double n, Tensor out)
+  LegendrePolynomialP(const Tensor x, const double n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -57,6 +57,6 @@ class SpecialLegendrePolynomialP : public Operator<SpecialLegendrePolynomialP> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

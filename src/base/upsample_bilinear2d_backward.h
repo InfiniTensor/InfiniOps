@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_UPSAMPLE_BILINEAR2D_BACKWARD_H_
 #define INFINI_OPS_BASE_UPSAMPLE_BILINEAR2D_BACKWARD_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -10,7 +13,10 @@ class UpsampleBilinear2dBackward : public Operator<UpsampleBilinear2dBackward> {
   UpsampleBilinear2dBackward(const Tensor grad_output,
                              const std::vector<int64_t> output_size,
                              const std::vector<int64_t> input_size,
-                             const bool align_corners, Tensor grad_input)
+                             const bool align_corners,
+                             const std::optional<double> scales_h,
+                             const std::optional<double> scales_w,
+                             Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -20,12 +26,16 @@ class UpsampleBilinear2dBackward : public Operator<UpsampleBilinear2dBackward> {
         output_size_{output_size},
         input_size_{input_size},
         align_corners_{align_corners},
+        scales_h_{scales_h},
+        scales_w_{scales_w},
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output,
                           const std::vector<int64_t> output_size,
                           const std::vector<int64_t> input_size,
                           const bool align_corners,
+                          const std::optional<double> scales_h,
+                          const std::optional<double> scales_w,
                           Tensor grad_input) const = 0;
 
  protected:
@@ -46,6 +56,10 @@ class UpsampleBilinear2dBackward : public Operator<UpsampleBilinear2dBackward> {
   std::vector<int64_t> input_size_{};
 
   bool align_corners_{};
+
+  std::optional<double> scales_h_{};
+
+  std::optional<double> scales_w_{};
 
   int device_index_{0};
 };

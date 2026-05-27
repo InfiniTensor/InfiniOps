@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_UPSAMPLE_TRILINEAR3D_BACKWARD_H_
 #define INFINI_OPS_BASE_UPSAMPLE_TRILINEAR3D_BACKWARD_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -11,8 +14,10 @@ class UpsampleTrilinear3dBackward
   UpsampleTrilinear3dBackward(const Tensor grad_output,
                               const std::vector<int64_t> output_size,
                               const std::vector<int64_t> input_size,
-                              const bool align_corners, const double scales_h,
-                              const double scales_w, const double scales_d,
+                              const bool align_corners,
+                              const std::optional<double> scales_d,
+                              const std::optional<double> scales_h,
+                              const std::optional<double> scales_w,
                               Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
@@ -23,16 +28,18 @@ class UpsampleTrilinear3dBackward
         output_size_{output_size},
         input_size_{input_size},
         align_corners_{align_corners},
+        scales_d_{scales_d},
         scales_h_{scales_h},
         scales_w_{scales_w},
-        scales_d_{scales_d},
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output,
                           const std::vector<int64_t> output_size,
                           const std::vector<int64_t> input_size,
-                          const bool align_corners, const double scales_h,
-                          const double scales_w, const double scales_d,
+                          const bool align_corners,
+                          const std::optional<double> scales_d,
+                          const std::optional<double> scales_h,
+                          const std::optional<double> scales_w,
                           Tensor grad_input) const = 0;
 
  protected:
@@ -54,11 +61,11 @@ class UpsampleTrilinear3dBackward
 
   bool align_corners_{};
 
-  double scales_h_{};
+  std::optional<double> scales_d_{};
 
-  double scales_w_{};
+  std::optional<double> scales_h_{};
 
-  double scales_d_{};
+  std::optional<double> scales_w_{};
 
   int device_index_{0};
 };

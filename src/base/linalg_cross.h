@@ -3,12 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgCross : public Operator<LinalgCross> {
+class Cross : public Operator<Cross> {
  public:
-  LinalgCross(const Tensor input, const Tensor other, const int64_t dim,
-              Tensor out)
+  Cross(const Tensor input, const Tensor other, const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -48,6 +47,6 @@ class LinalgCross : public Operator<LinalgCross> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

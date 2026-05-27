@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgLuFactor : public Operator<LinalgLuFactor> {
+class LuFactor : public Operator<LuFactor> {
  public:
-  LinalgLuFactor(const Tensor A, const bool pivot, Tensor LU, Tensor pivots)
+  LuFactor(const Tensor A, const bool pivot, Tensor LU, Tensor pivots)
       : A_shape_{A.shape()},
         A_strides_{A.strides()},
         A_type_{A.dtype()},
@@ -47,6 +47,6 @@ class LinalgLuFactor : public Operator<LinalgLuFactor> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

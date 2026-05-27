@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgSolve : public Operator<LinalgSolve> {
+class Solve : public Operator<Solve> {
  public:
-  LinalgSolve(const Tensor A, const Tensor B, const bool left, Tensor out)
+  Solve(const Tensor A, const Tensor B, const bool left, Tensor out)
       : A_shape_{A.shape()},
         A_strides_{A.strides()},
         A_type_{A.dtype()},
@@ -47,6 +47,6 @@ class LinalgSolve : public Operator<LinalgSolve> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

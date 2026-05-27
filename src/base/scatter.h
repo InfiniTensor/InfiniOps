@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_SCATTER_H_
 #define INFINI_OPS_BASE_SCATTER_H_
 
+#include <string>
+
 #include "operator.h"
 
 namespace infini::ops {

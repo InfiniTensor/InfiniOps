@@ -3,12 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialChebyshevPolynomialW
-    : public Operator<SpecialChebyshevPolynomialW> {
+class ChebyshevPolynomialW : public Operator<ChebyshevPolynomialW> {
  public:
-  SpecialChebyshevPolynomialW(const Tensor x, const Tensor n, Tensor out)
+  ChebyshevPolynomialW(const Tensor x, const Tensor n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -20,7 +19,7 @@ class SpecialChebyshevPolynomialW
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  SpecialChebyshevPolynomialW(const Tensor x, const double n, Tensor out)
+  ChebyshevPolynomialW(const Tensor x, const double n, Tensor out)
       : x_shape_{x.shape()},
         x_strides_{x.strides()},
         x_type_{x.dtype()},
@@ -58,6 +57,6 @@ class SpecialChebyshevPolynomialW
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

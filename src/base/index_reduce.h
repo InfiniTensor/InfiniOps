@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_INDEX_REDUCE_H_
 #define INFINI_OPS_BASE_INDEX_REDUCE_H_
 
+#include <string>
+
 #include "operator.h"
 
 namespace infini::ops {

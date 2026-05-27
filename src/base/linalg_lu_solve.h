@@ -3,12 +3,12 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::linalg {
 
-class LinalgLuSolve : public Operator<LinalgLuSolve> {
+class LuSolve : public Operator<LuSolve> {
  public:
-  LinalgLuSolve(const Tensor LU, const Tensor pivots, const Tensor B,
-                const bool left, const bool adjoint, Tensor out)
+  LuSolve(const Tensor LU, const Tensor pivots, const Tensor B, const bool left,
+          const bool adjoint, Tensor out)
       : LU_shape_{LU.shape()},
         LU_strides_{LU.strides()},
         LU_type_{LU.dtype()},
@@ -61,6 +61,6 @@ class LinalgLuSolve : public Operator<LinalgLuSolve> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::linalg
 
 #endif

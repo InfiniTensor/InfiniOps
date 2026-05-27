@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_BASE_FRACTIONAL_MAX_POOL2D_H_
 #define INFINI_OPS_BASE_FRACTIONAL_MAX_POOL2D_H_
 
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {

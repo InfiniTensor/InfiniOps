@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_SLOW_CONV_TRANSPOSE2D_H_
 #define INFINI_OPS_BASE_SLOW_CONV_TRANSPOSE2D_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -8,8 +11,8 @@ namespace infini::ops {
 class SlowConvTranspose2d : public Operator<SlowConvTranspose2d> {
  public:
   SlowConvTranspose2d(const Tensor input, const Tensor weight,
-                      std::optional<Tensor> bias,
                       const std::vector<int64_t> kernel_size,
+                      const std::optional<Tensor> bias,
                       const std::vector<int64_t> stride,
                       const std::vector<int64_t> padding,
                       const std::vector<int64_t> output_padding,
@@ -20,10 +23,13 @@ class SlowConvTranspose2d : public Operator<SlowConvTranspose2d> {
         weight_shape_{weight.shape()},
         weight_strides_{weight.strides()},
         weight_type_{weight.dtype()},
-        has_bias_{bias.has_value()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        has_bias_{bias.has_value()},
+        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
+        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         kernel_size_{kernel_size},
         stride_{stride},
         padding_{padding},
@@ -32,8 +38,8 @@ class SlowConvTranspose2d : public Operator<SlowConvTranspose2d> {
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          std::optional<Tensor> bias,
                           const std::vector<int64_t> kernel_size,
+                          const std::optional<Tensor> bias,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           const std::vector<int64_t> output_padding,
@@ -53,13 +59,19 @@ class SlowConvTranspose2d : public Operator<SlowConvTranspose2d> {
 
   DataType weight_type_;
 
-  bool has_bias_{false};
-
   Tensor::Shape out_shape_;
 
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  bool has_bias_{false};
+
+  Tensor::Shape bias_shape_;
+
+  Tensor::Strides bias_strides_;
+
+  DataType bias_type_{DataType::kFloat32};
 
   std::vector<int64_t> kernel_size_{};
 

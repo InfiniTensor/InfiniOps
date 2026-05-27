@@ -1,13 +1,16 @@
 #ifndef INFINI_OPS_BASE_LOGIT_BACKWARD_H_
 #define INFINI_OPS_BASE_LOGIT_BACKWARD_H_
 
+#include <optional>
+
 #include "operator.h"
 
 namespace infini::ops {
 
 class LogitBackward : public Operator<LogitBackward> {
  public:
-  LogitBackward(const Tensor grad_output, const Tensor input, Tensor grad_input)
+  LogitBackward(const Tensor grad_output, const Tensor input,
+                const std::optional<double> eps, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -17,9 +20,11 @@ class LogitBackward : public Operator<LogitBackward> {
         grad_input_shape_{grad_input.shape()},
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
+        eps_{eps},
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
+                          const std::optional<double> eps,
                           Tensor grad_input) const = 0;
 
  protected:
@@ -40,6 +45,8 @@ class LogitBackward : public Operator<LogitBackward> {
   Tensor::Strides grad_input_strides_;
 
   DataType grad_input_type_;
+
+  std::optional<double> eps_{};
 
   int device_index_{0};
 };

@@ -3,11 +3,11 @@
 
 #include "operator.h"
 
-namespace infini::ops {
+namespace infini::ops::special {
 
-class SpecialSinc : public Operator<SpecialSinc> {
+class Sinc : public Operator<Sinc> {
  public:
-  SpecialSinc(const Tensor input, Tensor out)
+  Sinc(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -34,6 +34,6 @@ class SpecialSinc : public Operator<SpecialSinc> {
   int device_index_{0};
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::special
 
 #endif

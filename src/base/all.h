@@ -1,6 +1,9 @@
 #ifndef INFINI_OPS_BASE_ALL_H_
 #define INFINI_OPS_BASE_ALL_H_
 
+#include <optional>
+#include <vector>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -18,7 +21,8 @@ class All : public Operator<All> {
         keepdim_{keepdim},
         device_index_{out.device().index()} {}
 
-  All(const Tensor input, const bool keepdim, Tensor out)
+  All(const Tensor input, const std::optional<std::vector<int64_t>> dim,
+      const bool keepdim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -40,8 +44,9 @@ class All : public Operator<All> {
   virtual void operator()(const Tensor input, const int64_t dim,
                           const bool keepdim, Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const bool keepdim,
-                          Tensor out) const = 0;
+  virtual void operator()(const Tensor input,
+                          const std::optional<std::vector<int64_t>> dim,
+                          const bool keepdim, Tensor out) const = 0;
 
   virtual void operator()(const Tensor input, Tensor out) const = 0;
 
