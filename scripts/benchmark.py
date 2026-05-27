@@ -151,6 +151,7 @@ class BenchmarkConfig:
     dtypes: list = field(default_factory=list)
     ops: list = field(default_factory=list)
     category: str = "all"
+    device_display_names: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -1508,8 +1509,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
     is_pytorch_only = op_name in _PYTORCH_ONLY_OPS or op_cls is None
 
     if not is_pytorch_only:
-        slot = 0 if op_name in _NATIVE_SLOT_OPS else _PYTORCH_SLOT
-        if slot not in op_cls.active_implementation_indices(device):
+        if not op_cls.active_implementation_indices(device):
             is_pytorch_only = True
 
     # Get PyTorch reference
@@ -1582,11 +1582,13 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
 
     elif op_name in ("add", "mul"):
         a, b, o = inputs[0], inputs[1], out
+        active = op_cls.active_implementation_indices(device)
+        add_mul_slot = active[0] if active else _PYTORCH_SLOT
 
         def infiniops_fn():
             getattr(infini.ops, op_name)(a, b, o,
                                          stream=get_stream(device),
-                                         implementation_index=0)
+                                         implementation_index=add_mul_slot)
             return o
 
         def ref_fn():
@@ -1624,8 +1626,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             return out
 
         def ref_fn():
-            torch.amax(inputs[0], dim=-1, out=out)
-            return out
+            return torch.amax(inputs[0], dim=-1)
 
         all_args = (inputs[0], out)
         ref_args = _clone(all_args)
@@ -1641,8 +1642,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             return out
 
         def ref_fn():
-            torch.amin(inputs[0], dim=-1, out=out)
-            return out
+            return torch.amin(inputs[0], dim=-1)
 
         all_args = (inputs[0], out)
         ref_args = _clone(all_args)
@@ -1667,8 +1667,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             # Use _out API for fair comparison
             if op_name == "sum":
                 def ref_fn():
-                    torch.sum(inputs[0], dim=None, out=out)
-                    return out
+                    return torch.sum(inputs[0])
             elif op_name == "mean":
                 def ref_fn():
                     return torch.mean(inputs[0])
@@ -1729,8 +1728,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             return out
 
         def ref_fn():
-            torch.index_select(inputs[0], 0, idx, out=out)
-            return out
+            return torch.index_select(inputs[0], 0, idx)
 
         all_args = (inputs[0], idx, out)
         ref_args = _clone(all_args)
@@ -1762,8 +1760,7 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             return out
 
         def ref_fn():
-            torch.argmax(inputs[0], out=out)
-            return out
+            return torch.argmax(inputs[0])
 
         all_args = (inputs[0], out)
         ref_args = _clone(all_args)
@@ -1793,15 +1790,14 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
             if _ref_out is not None:
                 ref_fn = _ref_out
             else:
-                def ref_fn():
-                    ref = _ntops_resolve_ref(op_name)
-                    if ref is None:
+                ref_func = _ntops_resolve_ref(op_name)
+                if ref_func is not None:
+                    def ref_fn():
+                        return ref_func(*inputs)
+                else:
+                    def ref_fn():
                         out.fill_(0)
                         return out
-                    result = ref(*inputs)
-                    if isinstance(result, torch.Tensor):
-                        out.copy_(result)
-                    return out
 
             all_args = call_args
             ref_args = _clone(all_args)
@@ -1816,12 +1812,10 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
                                              implementation_index=_PYTORCH_SLOT)
                 return out
 
-            def ref_fn():
-                ref = _ntops_resolve_ref(op_name)
-                if ref:
-                    result = ref(*inputs)
-                    if isinstance(result, torch.Tensor):
-                        out.copy_(result)
+            ref_func = _ntops_resolve_ref(op_name)
+            if ref_func:
+                def ref_fn():
+                    return ref_func(*inputs)
                 return out
 
             all_args = (*inputs, out)
@@ -1942,7 +1936,7 @@ def _ntops_build_inputs(op_name, op_type, op_meta, device, dtype, shape):
 # Output formatting
 # ---------------------------------------------------------------------------
 
-def _format_table(results, device, mode):
+def _format_table(results, device, mode, display_name=None):
     """Format benchmark results as a console table."""
     # Filter to successful results
     ok_results = [r for r in results if r.status == "ok"]
@@ -1970,7 +1964,7 @@ def _format_table(results, device, mode):
 
     print()
     print("=" * len(header))
-    print(f"InfiniOps Performance Benchmark | Device: {device} | Mode: {mode}")
+    print(f"InfiniOps Performance Benchmark | Device: {display_name or device} | Mode: {mode}")
     print("=" * len(header))
     print(header)
     print(sep)
@@ -2005,8 +1999,7 @@ def _format_table(results, device, mode):
         avg_speedup = sum(r.speedup for r in ok_results) / len(ok_results)
         native_count = sum(1 for r in ok_results if r.category == "native")
         torch_count = sum(1 for r in ok_results if r.category == "torch")
-        print(f"\nSummary: {len(ok_results)} benchmarks "
-              f"({native_count} native + {torch_count} torch ops) | "
+        print(f"\nSummary: {len(ok_results)} benchmarks | "
               f"Avg speedup: {avg_speedup:.2f}x")
     print("=" * len(header))
     print()
@@ -2107,14 +2100,23 @@ def parse_args():
 
 
 def resolve_devices(args):
-    """Resolve device list from CLI args."""
+    """Resolve device list from CLI args. Returns (devices, display_names)."""
+    display_names = {}
     if args.devices:
         resolved = []
         for d in args.devices:
-            resolved.append(_PLATFORM_TO_TORCH_DEVICE.get(d, d))
+            torch_dev = _PLATFORM_TO_TORCH_DEVICE.get(d, d)
+            if torch_dev not in display_names:
+                display_names[torch_dev] = d
+            if torch_dev not in resolved:
+                resolved.append(torch_dev)
         available = get_available_devices()
-        return [d for d in resolved if d in available]
-    return get_available_devices()
+        result = [d for d in resolved if d in available]
+    else:
+        result = get_available_devices()
+        for d in result:
+            display_names[d] = d
+    return result, display_names
 
 
 def resolve_dtypes(args):
@@ -2185,7 +2187,7 @@ def main():
         return
 
     # Resolve config
-    devices = resolve_devices(args)
+    devices, display_names = resolve_devices(args)
     dtypes = resolve_dtypes(args)
 
     config = BenchmarkConfig(
@@ -2193,6 +2195,7 @@ def main():
         warmup=args.warmup,
         min_time=args.min_time,
         devices=devices,
+        device_display_names=display_names,
         dtypes=dtypes,
         ops=args.ops or [],
         category=args.category,
@@ -2233,7 +2236,8 @@ def main():
     if not args.json_only:
         for device in config.devices:
             device_results = [r for r in results if r.device == device]
-            _format_table(device_results, device, config.mode)
+            _format_table(device_results, device, config.mode,
+                          display_name=config.device_display_names.get(device, device))
 
     if not args.no_json and args.output:
         output_path = _format_json(results, config, args.output)
