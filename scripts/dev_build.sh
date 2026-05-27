@@ -109,7 +109,8 @@ case "$platform" in
 esac
 
 build_dir="${repo_root}/build-${platform}"
-install_dir="${build_dir}/install"
+install_root="${build_dir}/install"
+install_dir="${install_root}/infini"
 generator="${CMAKE_GENERATOR:-}"
 
 if [[ -z "${generator}" && -f "${build_dir}/CMakeCache.txt" ]]; then
@@ -124,7 +125,8 @@ echo "[dev_build] repo      : ${repo_root}"
 echo "[dev_build] platform  : ${platform}"
 echo "[dev_build] python    : ${python_bin}"
 echo "[dev_build] build dir : ${build_dir}"
-echo "[dev_build] install   : ${install_dir}"
+echo "[dev_build] install   : ${install_root}"
+echo "[dev_build] package   : ${install_dir}"
 echo "[dev_build] generator : ${generator}"
 echo "[dev_build] jobs      : build=${jobs} torch=${torch_jobs} binding=${binding_jobs}"
 
@@ -141,6 +143,13 @@ cmake -S "${repo_root}" -B "${build_dir}" -G "${generator}" \
     -DINFINIOPS_BINDING_COMPILE_JOBS="${binding_jobs}"
 
 cmake --build "${build_dir}" --target ops -j "${jobs}"
+mkdir -p "${install_root}" "${install_dir}"
+rm -f \
+    "${install_root}/__init__.py" \
+    "${install_root}/libinfiniops.so" \
+    "${install_root}/torch_ops_metadata.json" \
+    "${install_root}"/ops*.so
+mkdir -p "${install_dir}"
 cmake --install "${build_dir}" --prefix "${install_dir}"
 
 cat <<EOF
@@ -148,12 +157,12 @@ cat <<EOF
 [dev_build] done
 
 Use this build in pytest with:
-  PYTHONPATH="${install_dir}:\$PYTHONPATH" pytest ...
+  PYTHONPATH="${install_root}:\$PYTHONPATH" pytest ...
 
 For example:
-  PYTHONPATH="${install_dir}:\$PYTHONPATH" pytest --devices ${platform}
+  PYTHONPATH="${install_root}:\$PYTHONPATH" pytest --devices ${platform}
 
 Installed files:
-  ${install_dir}/infini/ops*.so
-  ${install_dir}/infini/torch_ops_metadata.json
+  ${install_dir}/ops*.so
+  ${install_dir}/torch_ops_metadata.json
 EOF

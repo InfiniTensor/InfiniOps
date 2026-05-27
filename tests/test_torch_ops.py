@@ -70,6 +70,10 @@ _INTEGER_TEST_DTYPES = tuple(
 )
 
 _DTYPE_TOLERANCES = {
+    torch.bool: (0.0, 0.0),
+    torch.complex32: (1e-2, 1e-2),
+    torch.complex64: (1e-5, 1e-5),
+    torch.complex128: (1e-8, 1e-8),
     torch.float64: (1e-8, 1e-8),
     torch.float32: (1e-5, 1e-5),
     torch.float16: (1e-2, 1e-2),
@@ -455,12 +459,12 @@ _SCALAR_VALUES = {
 _TYPE_DEFAULTS = {"int": 0, "SymInt": 0, "bool": False, "str": "none"}
 
 # Mirrors `kStringToDataType` in `src/data_type.h`.  Any tensor passed to
-# an InfiniOps op must have one of these dtypes; others (`bool`, complex,
-# quantised types) abort the process inside `DataTypeFromString`.  Some
-# vendor torch forks lag behind upstream and lack `uint16` / `uint32` /
+# These torch dtypes are currently representable by InfiniOps `DataType`.
+# Some vendor torch forks lag behind upstream and lack `uint16` / `uint32` /
 # `uint64` (added in PyTorch 2.3); resolve them lazily and keep the
 # attributes that actually exist.
 _SUPPORTED_DTYPE_NAMES = (
+    "bool",
     "int8",
     "int16",
     "int32",
@@ -473,13 +477,29 @@ _SUPPORTED_DTYPE_NAMES = (
     "bfloat16",
     "float32",
     "float64",
+    "complex32",
+    "complex64",
+    "complex128",
 )
 _SUPPORTED_DTYPES = frozenset(
     getattr(torch, name) for name in _SUPPORTED_DTYPE_NAMES if hasattr(torch, name)
 )
 
 _OP_DTYPES = {
+    "_fft_c2c": tuple(
+        dtype
+        for dtype in (torch.complex32, torch.complex64, torch.complex128)
+        if hasattr(torch, str(dtype).removeprefix("torch."))
+    ),
+    "_fft_c2r": tuple(
+        dtype
+        for dtype in (torch.complex32, torch.complex64, torch.complex128)
+        if hasattr(torch, str(dtype).removeprefix("torch."))
+    ),
     "cholesky": (torch.float32,),
+    "complex": tuple(
+        dtype for dtype in (torch.float16, torch.float32, torch.float64) if dtype is not None
+    ),
     "bitwise_and": _INTEGER_TEST_DTYPES,
     "bitwise_and_": _INTEGER_TEST_DTYPES,
     "bitwise_left_shift": _INTEGER_TEST_DTYPES,
@@ -504,6 +524,9 @@ _OP_DTYPES = {
     "linalg_lu_factor": (torch.float32,),
     "linalg_lu_factor_ex": (torch.float32,),
     "linalg_matrix_norm": (torch.float32, torch.float64),
+    "polar": tuple(
+        dtype for dtype in (torch.float16, torch.float32, torch.float64) if dtype is not None
+    ),
     "slow_conv3d": (torch.float32, torch.bfloat16),
     "slow_conv3d_forward": (torch.float32, torch.bfloat16),
     "slow_conv_transpose2d": (torch.float32, torch.bfloat16),
@@ -547,6 +570,21 @@ def _dtypes_for_op(op_name):
 
 
 def _rand_tensor(shape, dtype, device, *, low=None, high=None):
+    if dtype == torch.bool:
+        return rand_strided(shape, None, dtype=torch.float32, device=device) > 0.5
+
+    if dtype.is_complex:
+        if dtype == torch.complex32:
+            real_dtype = torch.float16
+        elif dtype == torch.complex64:
+            real_dtype = torch.float32
+        else:
+            real_dtype = torch.float64
+
+        real = randn_strided(shape, None, dtype=real_dtype, device=device)
+        imag = randn_strided(shape, None, dtype=real_dtype, device=device)
+        return torch.complex(real, imag)
+
     if dtype.is_floating_point:
         return randn_strided(shape, None, dtype=dtype, device=device)
 
@@ -1288,10 +1326,23 @@ def _reference_kwargs(op_name):
 
 
 def _assert_close(actual, expected, rtol, atol):
-    if actual.dtype.is_floating_point:
-        assert torch.allclose(actual, expected, rtol=rtol, atol=atol, equal_nan=True)
+    compare_actual = actual
+    compare_expected = expected
+
+    if actual.device.type != "cpu" and (actual.dtype.is_complex or actual.dtype == torch.bool):
+        compare_actual = actual.detach().cpu()
+        compare_expected = expected.detach().cpu()
+
+    if compare_actual.dtype.is_floating_point or compare_actual.dtype.is_complex:
+        assert torch.allclose(
+            compare_actual,
+            compare_expected,
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        )
     else:
-        assert torch.equal(actual, expected)
+        assert torch.equal(compare_actual, compare_expected)
 
 
 def _testable_ops():
@@ -1475,10 +1526,8 @@ def test_op(op_meta, shape, dtype, device):
             f"schema declares {len(out_params)}"
         )
 
-    # InfiniOps `DataType` supports only `int{8,16,32,64}`,
-    # `uint{8,16,32,64}`, `float{16,32,64}`, and `bfloat16`.  Tensors with
-    # any other torch dtype (`bool`, `complex64`, `complex128`, etc.) abort
-    # on `DataTypeFromString`, so skip the test rather than crash the process.
+    # Skip dtypes that InfiniOps still cannot represent in its `DataType`
+    # bridge yet, rather than crashing the process in `DataTypeFromString`.
     tensors = [*ref_outs, *(x for x in inputs if isinstance(x, torch.Tensor))]
     unsupported = next(
         (t.dtype for t in tensors if t.dtype not in _SUPPORTED_DTYPES), None

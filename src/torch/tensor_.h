@@ -50,6 +50,8 @@ inline at::ScalarType ToAtenUnsignedDataType(DataType dtype) {
 
 inline at::ScalarType ToAtenDataType(DataType dtype) {
   switch (dtype) {
+    case DataType::kBool:
+      return at::kBool;
     case DataType::kInt8:
       return at::kChar;
     case DataType::kInt16:
@@ -72,15 +74,28 @@ inline at::ScalarType ToAtenDataType(DataType dtype) {
       return at::kFloat;
     case DataType::kFloat64:
       return at::kDouble;
+    case DataType::kComplex32:
+      return at::kComplexHalf;
+    case DataType::kComplex64:
+      return at::kComplexFloat;
+    case DataType::kComplex128:
+      return at::kComplexDouble;
     default:
       assert(false && "unsupported dtype for ATen conversion");
       return at::kFloat;
   }
 }
 
-// Build an ATen tensor from explicit metadata. Use this instead of reading
-// shape/strides from the `Tensor` parameter, which may have been moved-from
-// by the `Call()` dispatch path (see `operator.h`).
+inline const at::Tensor* BorrowAtenTensor(const Tensor& tensor) {
+  const auto& handle = tensor.aten_tensor_handle();
+
+  if (!handle) {
+    return nullptr;
+  }
+
+  return static_cast<const at::Tensor*>(handle.get());
+}
+
 template <Device::Type kDev>
 inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
                                const Tensor::Strides& strides, DataType dtype,
@@ -98,6 +113,17 @@ inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
   }
 
   return at::from_blob(data, at_shape, at_strides, options);
+}
+
+template <Device::Type kDev>
+inline at::Tensor ToAtenTensor(const Tensor& tensor) {
+  if (const auto* at_tensor = BorrowAtenTensor(tensor)) {
+    return *at_tensor;
+  }
+
+  return ToAtenTensor<kDev>(const_cast<void*>(tensor.data()), tensor.shape(),
+                            tensor.strides(), tensor.dtype(),
+                            tensor.device().index());
 }
 
 }  // namespace infini::ops

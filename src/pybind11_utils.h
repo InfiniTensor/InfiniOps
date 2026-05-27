@@ -6,6 +6,12 @@
 
 #include <algorithm>
 
+#ifdef WITH_TORCH
+#include <torch/torch.h>
+#include <torch/csrc/autograd/python_variable.h>
+#include <torch/csrc/utils/pybind.h>
+#endif
+
 #include "tensor.h"
 #include "torch/device_.h"
 
@@ -130,8 +136,61 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
 
   auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
 
-  return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
+  Tensor tensor{data, std::move(shape), dtype, device, std::move(strides)};
+
+#ifdef WITH_TORCH
+  if (THPVariable_Check(obj.ptr())) {
+    tensor.set_aten_tensor_handle(
+        std::make_shared<at::Tensor>(THPVariable_Unpack(obj.ptr())));
+  }
+#endif
+
+  return tensor;
 }
+
+#ifdef WITH_TORCH
+inline at::Tensor AtenTensorFromPybind11Handle(py::handle obj) {
+  return py::reinterpret_borrow<py::object>(obj).cast<at::Tensor>();
+}
+
+inline std::optional<at::Tensor> OptionalAtenTensorFromPybind11Handle(
+    const std::optional<py::object>& obj) {
+  if (!obj.has_value() || obj->is_none()) {
+    return std::nullopt;
+  }
+
+  return AtenTensorFromPybind11Handle(*obj);
+}
+
+inline std::vector<at::Tensor> VectorAtenTensorFromPybind11Handle(
+    const std::vector<py::object>& objs) {
+  std::vector<at::Tensor> result;
+  result.reserve(objs.size());
+
+  for (const auto& obj : objs) {
+    result.push_back(AtenTensorFromPybind11Handle(obj));
+  }
+
+  return result;
+}
+
+inline std::vector<std::optional<at::Tensor>>
+VectorOptionalAtenTensorFromPybind11Handle(
+    const std::vector<py::object>& objs) {
+  std::vector<std::optional<at::Tensor>> result;
+  result.reserve(objs.size());
+
+  for (const auto& obj : objs) {
+    if (obj.is_none()) {
+      result.push_back(std::nullopt);
+    } else {
+      result.push_back(AtenTensorFromPybind11Handle(obj));
+    }
+  }
+
+  return result;
+}
+#endif
 
 inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
     const std::optional<py::object>& obj) {
