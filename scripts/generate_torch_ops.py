@@ -781,6 +781,9 @@ def _default_call_value(param: Param) -> str:
     if param.aten_type in _NULLOPT_BY_TYPE:
         return _NULLOPT_BY_TYPE[param.aten_type]
 
+    if param.default is not None:
+        return _translate_default(param)
+
     return param.hidden_value()
 
 
@@ -1144,6 +1147,8 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
 def _generate_torch_method_source(name: str, op: Op) -> str:
     op_type = _op_cpp_type(name)
     conversion_lines = []
+    out_device_index = f"{op.out_params[0].api_name}.device().index()"
+    conversion_lines.append(f"  const auto device_index = {out_device_index};")
 
     def _optional_aten_type(param: Param) -> str:
         return _NULLOPT_BY_TYPE[param.aten_type].removesuffix("{}")
@@ -1157,7 +1162,7 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             return (
                 f"ToAtenTensor<kDev>({data_expr}, {api_name}->shape(), "
                 f"{api_name}->strides(), {api_name}->dtype(), "
-                f"device_index_)"
+                f"device_index)"
             )
 
         if schema_param.aten_type == "Scalar?":
@@ -1211,7 +1216,7 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         conversion_lines.append(
             f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
             f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
-            f"      {api_name}_type_, device_index_);"
+            f"      {api_name}_type_, device_index);"
         )
 
     for schema_index, param in enumerate(op.params):

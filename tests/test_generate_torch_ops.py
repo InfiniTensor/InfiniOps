@@ -165,6 +165,30 @@ def test_existing_base_overload_can_omit_optional_schema_params():
     assert "at::slow_conv3d_out" in source
 
 
+def test_existing_base_overload_can_omit_defaulted_schema_params():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1, "
+        "Tensor(a!) out) -> Tensor(a!)"
+    )
+    signature = [
+        ("const Tensor", "input"),
+        ("const Tensor", "other"),
+        ("Tensor", "out"),
+    ]
+
+    bound = module._bind_base_signature(op, signature)
+
+    assert bound is not None
+
+    source = module._generate_torch_method_source("add", bound)
+
+    assert "double alpha" not in source
+    assert "const auto device_index = out.device().index();" in source
+    assert "device_index_)" not in source
+    assert "at::add_out(at_out, at_self, at_other, 1)" in source
+
+
 def test_existing_base_overload_matches_by_name_when_types_repeat():
     module = _load_generator_module()
     op = module._parse_func(

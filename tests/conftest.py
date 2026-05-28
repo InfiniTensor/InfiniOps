@@ -120,6 +120,9 @@ def skip_op_without_platform_impl(request):
     op_cls = _op_class_from_module(request.node.module)
 
     if op_cls is None:
+        if "op_meta" in params:
+            return
+
         pytest.skip("operator wrapper is not available in this build")
 
     if not hasattr(op_cls, "active_implementation_indices"):

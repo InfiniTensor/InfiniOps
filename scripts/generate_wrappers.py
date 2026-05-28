@@ -33,7 +33,6 @@ _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 
 _INCLUDE_DIR = _GENERATION_DIR / "include"
 
-
 _INDENTATION = "  "
 
 _OP_NAMESPACE_PREFIXES = ("special", "linalg", "fft")
