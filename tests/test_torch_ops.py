@@ -69,6 +69,8 @@ _INTEGER_TEST_DTYPES = tuple(
     if hasattr(torch, name)
 )
 
+_INT8_DTYPE = getattr(torch, "int8", None)
+
 _DTYPE_TOLERANCES = {
     torch.bool: (0.0, 0.0),
     torch.complex32: (1e-2, 1e-2),
@@ -138,6 +140,10 @@ _TENSOR_SHAPES = {
     "im2col": ((2, 3, 8, 8),),
     "linalg_eigh": ((4, 4),),
     "_linalg_eigh": ((4, 4),),
+    "_linalg_svd": ((4, 4),),
+    "_conv_depthwise2d": ((2, 4, 8, 8), (4, 1, 3, 3)),
+    "linalg_cond": ((4, 4),),
+    "linalg_matrix_rank": ((4, 4),),
     "linalg_eigvalsh": ((4, 4),),
     "linalg_householder_product": ((4, 4), (4,)),
     "orgqr": ((4, 4), (4,)),
@@ -149,12 +155,16 @@ _TENSOR_SHAPES = {
     "linalg_tensorinv": ((2, 2, 2, 2),),
     "cholesky": ((4, 4),),
     "linalg_cholesky": ((4, 4),),
+    "_int_mm": ((17, 19), (19, 23)),
+    "_scaled_mm": ((17, 19), (19, 23)),
     "linalg_lu": ((4, 4),),
     "linalg_lu_factor": ((4, 4),),
     "linalg_lu_factor_ex": ((4, 4),),
     "linalg_ldl_solve": ((4, 4), (4,), (4, 2)),
     "linalg_lstsq": ((8, 4), (8, 2)),
+    "nuclear_norm": ((4, 4),),
     "multinomial": ((8, 5),),
+    "mkldnn_adaptive_avg_pool2d": ((2, 3, 8, 8),),
     "max_unpool2d": ((2, 3, 4, 4), (2, 3, 4, 4)),
     "max_unpool3d": ((2, 3, 3, 3, 3), (2, 3, 3, 3, 3)),
     "max_pool2d_with_indices_backward": ((2, 3, 4, 4), (2, 3, 8, 8), (2, 3, 4, 4)),
@@ -168,6 +178,7 @@ _TENSOR_SHAPES = {
     "multilabel_margin_loss": ((2, 4), (2, 4)),
     "multilabel_margin_loss_forward": ((2, 4), (2, 4)),
     "multilabel_margin_loss_backward": ((), (2, 4), (2, 4), (2, 4)),
+    "hspmm": ((4, 4), (4, 3)),
     "batch_norm_elemt": ((2, 3, 4, 4), (3,), (3,)),
     "native_batch_norm": ((2, 3, 4, 4),),
     "nll_loss": ((2, 4), (2,)),
@@ -188,6 +199,8 @@ _TENSOR_SHAPES = {
     "replication_pad2d_backward": ((2, 3, 6, 6), (2, 3, 4, 4)),
     "replication_pad3d": ((2, 3, 4, 4, 4),),
     "replication_pad3d_backward": ((2, 3, 6, 6, 6), (2, 3, 4, 4, 4)),
+    "sparse_sampled_addmm": ((4, 4), (4, 4), (4, 4)),
+    "sspaddmm": ((4, 4), (4, 4), (4, 4)),
     "tensordot": ((2, 3, 4), (2, 3, 4)),
     "upsample_bicubic2d": ((2, 3, 4, 4),),
     "upsample_bicubic2d_backward": ((2, 3, 8, 8),),
@@ -261,6 +274,8 @@ _SCALAR_VALUES = {
     ("_convert_indices_from_coo_to_csr", "size"): 3,
     ("_linalg_eigh", "UPLO"): "L",
     ("_linalg_eigh", "compute_v"): True,
+    ("_linalg_svd", "compute_uv"): True,
+    ("_fft_r2c", "onesided"): True,
     ("svd", "some"): True,
     ("svd", "compute_uv"): True,
     ("cholesky", "upper"): False,
@@ -289,6 +304,7 @@ _SCALAR_VALUES = {
     ("linalg_lu_factor_ex", "pivot"): True,
     ("linalg_lu_factor_ex", "check_errors"): False,
     ("linalg_ldl_solve", "hermitian"): False,
+    ("linalg_matrix_rank", "hermitian"): True,
     ("linalg_matrix_norm", "ord"): 1,
     ("linalg_matrix_norm", "dim"): [0, 1],
     ("linalg_tensorinv", "ind"): 2,
@@ -491,11 +507,9 @@ _OP_DTYPES = {
         for dtype in (torch.complex32, torch.complex64, torch.complex128)
         if hasattr(torch, str(dtype).removeprefix("torch."))
     ),
-    "_fft_c2r": tuple(
-        dtype
-        for dtype in (torch.complex32, torch.complex64, torch.complex128)
-        if hasattr(torch, str(dtype).removeprefix("torch."))
-    ),
+    "_fft_c2r": (torch.complex64,),
+    "_fft_r2c": (torch.float32,),
+    "_linalg_svd": (torch.float32,),
     "cholesky": (torch.float32,),
     "complex": tuple(
         dtype for dtype in (torch.float16, torch.float32, torch.float64) if dtype is not None
@@ -511,11 +525,16 @@ _OP_DTYPES = {
     "bitwise_right_shift_": _INTEGER_TEST_DTYPES,
     "bitwise_xor": _INTEGER_TEST_DTYPES,
     "bitwise_xor_": _INTEGER_TEST_DTYPES,
+    "_int_mm": tuple(dtype for dtype in (_INT8_DTYPE,) if dtype is not None),
+    "_scaled_mm": (torch.float16,),
     "_slow_conv2d_backward": (torch.float32, torch.bfloat16),
     "_slow_conv2d_forward": (torch.float32, torch.bfloat16),
+    "fft_fft": (torch.complex64,),
+    "fft_ifft": (torch.complex64,),
     "gcd": _INTEGER_TEST_DTYPES,
     "float_power_": (torch.float64,),
     "histc": (torch.float32, torch.float64),
+    "hspmm": (torch.float32,),
     "lcm": _INTEGER_TEST_DTYPES,
     "linalg_cholesky": (torch.float32,),
     "linalg_ldl_solve": (torch.float32, torch.float64),
@@ -523,14 +542,19 @@ _OP_DTYPES = {
     "linalg_lu": (torch.float32,),
     "linalg_lu_factor": (torch.float32,),
     "linalg_lu_factor_ex": (torch.float32,),
+    "linalg_cond": (torch.float32,),
+    "linalg_matrix_rank": (torch.float32,),
     "linalg_matrix_norm": (torch.float32, torch.float64),
+    "nuclear_norm": (torch.float32,),
     "polar": tuple(
         dtype for dtype in (torch.float16, torch.float32, torch.float64) if dtype is not None
     ),
+    "sparse_sampled_addmm": (torch.float32,),
     "slow_conv3d": (torch.float32, torch.bfloat16),
     "slow_conv3d_forward": (torch.float32, torch.bfloat16),
     "slow_conv_transpose2d": (torch.float32, torch.bfloat16),
     "slow_conv_transpose3d": (torch.float32, torch.bfloat16),
+    "sspaddmm": (torch.float32,),
     "svd": (torch.float32,),
     "thnn_conv2d": (torch.float32, torch.bfloat16),
 }
@@ -569,6 +593,18 @@ def _dtypes_for_op(op_name):
     return _OP_DTYPES.get(op_name, _DEFAULT_DTYPES)
 
 
+def _contiguous_stride(shape):
+    if not shape:
+        return []
+
+    stride = [1] * len(shape)
+
+    for idx in range(len(shape) - 2, -1, -1):
+        stride[idx] = stride[idx + 1] * shape[idx + 1]
+
+    return stride
+
+
 def _rand_tensor(shape, dtype, device, *, low=None, high=None):
     if dtype == torch.bool:
         return rand_strided(shape, None, dtype=torch.float32, device=device) > 0.5
@@ -595,6 +631,53 @@ def _rand_tensor(shape, dtype, device, *, low=None, high=None):
         high = 4
 
     return randint_strided(low, high, shape, None, dtype=dtype, device=device)
+
+
+def _clone_tensor_for_ref(tensor):
+    if tensor.layout == torch.strided:
+        return clone_strided(tensor)
+
+    return tensor.clone()
+
+
+def _empty_output_like(ref):
+    if ref.layout == torch.sparse_coo:
+        ref = ref.coalesce()
+        return torch.sparse_coo_tensor(
+            ref.indices(),
+            torch.empty_like(ref.values()),
+            size=ref.shape,
+            device=ref.device,
+        ).coalesce()
+
+    if ref.layout == torch.sparse_csr:
+        return torch.sparse_csr_tensor(
+            ref.crow_indices(),
+            ref.col_indices(),
+            torch.empty_like(ref.values()),
+            size=ref.shape,
+            device=ref.device,
+        )
+
+    return torch.empty_like(ref)
+
+
+def _sparse_coo_tensor(indices, values, size, *, dtype, device):
+    index_tensor = torch.tensor(indices, dtype=torch.int64, device=device)
+    value_tensor = torch.tensor(values, dtype=dtype, device=device)
+    return torch.sparse_coo_tensor(
+        index_tensor,
+        value_tensor,
+        size=size,
+        device=device,
+    ).coalesce()
+
+
+def _sparse_csr_tensor(crow_indices, col_indices, values, size, *, dtype, device):
+    crow = torch.tensor(crow_indices, dtype=torch.int64, device=device)
+    col = torch.tensor(col_indices, dtype=torch.int64, device=device)
+    value_tensor = torch.tensor(values, dtype=dtype, device=device)
+    return torch.sparse_csr_tensor(crow, col, value_tensor, size=size, device=device)
 
 
 # Errors emitted by upstream PyTorch and vendor-forked variants for
@@ -639,13 +722,12 @@ _SEEDED_RANDOM_OPS = frozenset(
     }
 )
 
-# Ops whose vendor kernel hangs indefinitely on at least one platform
-# (`mode` on `torch_musa` for MUSA tensors).  Skip until the vendor
-# fixes the underlying kernel — letting the CI block on a hanging
-# kernel costs ~30 min per platform run.
+# Ops whose vendor kernel hangs indefinitely on a specific platform.
+# Keep the skip scoped to the known bad device so healthy backends
+# (e.g. `mode` on Cambricon) can still exercise the slot-8 bridge.
 _VENDOR_HANG_OPS = frozenset(
     {
-        "mode",
+        ("musa", "mode"),
     }
 )
 
@@ -685,6 +767,12 @@ _REFERENCE_SIGNATURE_MISMATCH_OPS = frozenset(
 _AUXILIARY_OUTPUT_PARAMS = {
     "log_sigmoid_forward": frozenset({"buffer"}),
 }
+
+_ALLOW_ZERO_SIZED_OUTPUT_OPS = frozenset(
+    {
+        "linalg_lstsq",
+    }
+)
 
 # Full reductions with low-precision inputs diverge between the functional
 # (`torch.<op>(x)`) and `_out` paths because of intermediate-precision
@@ -913,6 +1001,48 @@ def _torch_func(op_name):
         "mse_loss": lambda input, target, reduction: torch.ops.aten.mse_loss(
             input, target, reduction
         ),
+        "hspmm": lambda mat1, mat2: torch.hspmm(mat1.cpu(), mat2.cpu()).to(
+            mat1.device
+        ),
+        "sspaddmm": lambda input, mat1, mat2, beta, alpha: torch.sspaddmm(
+            input.cpu(),
+            mat1.cpu(),
+            mat2.cpu(),
+            beta=beta,
+            alpha=alpha,
+        ).to(input.device),
+        "_int_mm": lambda input, mat2: (
+            input.cpu().to(torch.int32) @ mat2.cpu().to(torch.int32)
+        ).to(input.device),
+        "_scaled_mm": lambda input, mat2: (
+            lambda result: (
+                result.to(device=input.device, dtype=input.dtype),
+                result.abs().amax().to(device=input.device, dtype=torch.float32),
+            )
+        )(torch.matmul(input.cpu().to(torch.float32), mat2.cpu().to(torch.float32))),
+        "sparse_sampled_addmm": lambda input, mat1, mat2, beta, alpha: torch.sparse.sampled_addmm(
+            input,
+            mat1,
+            mat2,
+            beta=beta,
+            alpha=alpha,
+        ),
+        "linalg_svdvals": lambda input: torch.linalg.svd(
+            input, full_matrices=False
+        )[1],
+        "linalg_cond": lambda input: (
+            lambda singular_values: singular_values.amax() / singular_values.amin()
+        )(torch.linalg.svd(input, full_matrices=False)[1]),
+        "mkldnn_adaptive_avg_pool2d": lambda input, output_size: torch.nn.functional.adaptive_avg_pool2d(
+            input, output_size
+        ),
+        "nuclear_norm": lambda input, keepdim: (
+            (lambda singular_values: singular_values.sum().reshape(1, 1))(
+                torch.linalg.svd(input, full_matrices=False)[1]
+            )
+            if keepdim
+            else torch.linalg.svd(input, full_matrices=False)[1].sum()
+        ),
         "multilabel_margin_loss_forward": lambda input, target, reduction: torch.ops.aten.multilabel_margin_loss_forward.default(
             input, target, reduction
         ),
@@ -1091,6 +1221,68 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
             base = randn_strided(tshape, None, dtype=dtype, device=device)
             eye = torch.eye(tshape[-1], dtype=dtype, device=device)
             return base @ base.mT + eye
+
+        if op_name in {"linalg_matrix_rank", "nuclear_norm"} and name == "input":
+            base = randn_strided(tshape, None, dtype=dtype, device=device)
+            eye = torch.eye(tshape[-1], dtype=dtype, device=device)
+            return base @ base.mT + eye
+
+        if op_name == "hspmm":
+            if name == "mat1":
+                return _sparse_coo_tensor(
+                    [[0, 1, 3], [1, 0, 2]],
+                    [1.0, -2.0, 0.5],
+                    tshape,
+                    dtype=dtype,
+                    device=device,
+                )
+
+            if name == "mat2":
+                return randn_strided(tshape, None, dtype=dtype, device=device)
+
+        if op_name == "sspaddmm":
+            if name == "input":
+                return _sparse_coo_tensor(
+                    [[0, 1], [1, 0]],
+                    [1.0, 2.0],
+                    tshape,
+                    dtype=dtype,
+                    device=device,
+                )
+
+            if name == "mat1":
+                return _sparse_coo_tensor(
+                    [[0, 1, 3], [0, 2, 1]],
+                    [0.5, -1.0, 1.5],
+                    tshape,
+                    dtype=dtype,
+                    device=device,
+                )
+
+            if name == "mat2":
+                return randn_strided(tshape, None, dtype=dtype, device=device)
+
+        if op_name == "sparse_sampled_addmm":
+            if device == "mlu":
+                pytest.skip(
+                    "`sparse_sampled_addmm` needs Sparse CSR tensors, unsupported on MLU"
+                )
+
+            if name == "input":
+                return _sparse_csr_tensor(
+                    [0, 1, 2, 3, 4],
+                    [0, 1, 2, 3],
+                    [1.0, 1.0, 1.0, 1.0],
+                    tshape,
+                    dtype=dtype,
+                    device=device,
+                )
+
+            if name in {"mat1", "mat2"}:
+                return randn_strided(tshape, None, dtype=dtype, device=device)
+
+        if op_name == "_int_mm":
+            return randint_strided(-3, 4, tshape, None, dtype=dtype, device=device)
 
         if op_name == "linalg_ldl_solve":
             matrix_shape = per_op[0] if per_op is not None else tshape
@@ -1273,11 +1465,23 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
         return _rand_tensor(tshape, dtype, device)
 
     key = (op_name, param["name"])
+    per_op = _TENSOR_SHAPES.get(op_name)
+    input_shape = per_op[0] if per_op is not None else shape
 
     if op_name == "index" and param["name"] == "indices":
         first_dim = shape[0] if shape else 1
         last = max(first_dim - 1, 0)
         return [torch.tensor([0, last], dtype=torch.int64, device=device)]
+
+    if op_name == "set_":
+        if param["name"] == "size":
+            return list(input_shape)
+
+        if param["name"] == "stride":
+            return _contiguous_stride(input_shape)
+
+    if op_name == "_fft_c2r" and param["name"] == "last_dim_size":
+        return input_shape[0]
 
     if key in _SCALAR_VALUES:
         return _SCALAR_VALUES[key]
@@ -1329,7 +1533,12 @@ def _assert_close(actual, expected, rtol, atol):
     compare_actual = actual
     compare_expected = expected
 
-    if actual.device.type != "cpu" and (actual.dtype.is_complex or actual.dtype == torch.bool):
+    if actual.layout != torch.strided or expected.layout != torch.strided:
+        compare_actual = actual.detach().cpu().to_dense()
+        compare_expected = expected.detach().cpu().to_dense()
+    elif actual.device.type != "cpu" and (
+        actual.dtype.is_complex or actual.dtype == torch.bool
+    ):
         compare_actual = actual.detach().cpu()
         compare_expected = expected.detach().cpu()
 
@@ -1451,7 +1660,7 @@ def test_op(op_meta, shape, dtype, device):
             "have different positional ordering"
         )
 
-    if aten_name in _VENDOR_HANG_OPS:
+    if (device, aten_name) in _VENDOR_HANG_OPS:
         pytest.skip(f"`{aten_name}` hangs on at least one vendor kernel")
 
     if (device, aten_name) in _VENDOR_CRASH_OPS:
@@ -1490,7 +1699,7 @@ def test_op(op_meta, shape, dtype, device):
     # exception types — the gap is in our test harness's input synthesis,
     # not in the InfiniOps wrapper.
     ref_inputs = [
-        clone_strided(x) if isinstance(x, torch.Tensor) else x for x in inputs
+        _clone_tensor_for_ref(x) if isinstance(x, torch.Tensor) else x for x in inputs
     ]
     ref_args, ref_kwargs = _split_ref_args(in_params, ref_inputs)
     ref_kwargs.update(_reference_kwargs(aten_name))
@@ -1541,7 +1750,9 @@ def test_op(op_meta, shape, dtype, device):
     # Some reference codepaths legitimately return 0-element tensors, but
     # the InfiniOps zero-copy wrapper cannot safely materialize those
     # outputs across all vendor backends.
-    if any(t.numel() == 0 for t in ref_outs):
+    if aten_name not in _ALLOW_ZERO_SIZED_OUTPUT_OPS and any(
+        t.numel() == 0 for t in ref_outs
+    ):
         pytest.skip(
             f"`{op_name}` produced 0-element output"
         )
@@ -1555,7 +1766,7 @@ def test_op(op_meta, shape, dtype, device):
 
         return
 
-    outs = [torch.empty_like(t) for t in ref_outs]
+    outs = [_empty_output_like(t) for t in ref_outs]
 
     if rng_seed is not None:
         torch.manual_seed(rng_seed)

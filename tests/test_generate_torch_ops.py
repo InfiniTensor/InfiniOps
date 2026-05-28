@@ -167,3 +167,95 @@ def test_generate_torch_method_source_prefers_functional_copy_for_selected_ops()
 
     assert "at_out.copy_(at::fft_rfftn(" in source
     assert "at::fft_rfftn_out(" not in source
+
+
+def test_generate_torch_method_source_prefers_functional_copy_for_multi_out_ops():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "mode.values(Tensor self, int dim=0, bool keepdim=False, *, "
+        "Tensor(a!) values, Tensor(b!) indices) -> (Tensor(a!) values, Tensor(b!) indices)"
+    )
+
+    source = module._generate_torch_method_source("mode", op)
+
+    assert "auto result = at::mode(" in source
+    assert "at_values.copy_(std::get<0>(result))" in source
+    assert "at_indices.copy_(std::get<1>(result))" in source
+    assert "at::mode_out(" not in source
+
+
+def test_generate_torch_method_source_uses_svd_for_svdvals_and_nuclear_norm():
+    module = _load_generator_module()
+
+    svdvals_op = module._parse_func(
+        "linalg_svdvals.out(Tensor A, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    svdvals_source = module._generate_torch_method_source("linalg_svdvals", svdvals_op)
+    assert "std::get<1>(at::linalg_svd(" in svdvals_source
+    assert "compute_uv" not in svdvals_source
+
+    nuclear_norm_op = module._parse_func(
+        "nuclear_norm.out(Tensor self, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    nuclear_norm_source = module._generate_torch_method_source("nuclear_norm", nuclear_norm_op)
+    assert "std::get<1>(at::linalg_svd(" in nuclear_norm_source
+    assert "singular_values.sum()" in nuclear_norm_source
+
+
+def test_generate_torch_method_source_uses_semantic_bridges_for_selected_ops():
+    module = _load_generator_module()
+
+    cond_op = module._parse_func(
+        "linalg_cond.out(Tensor self, Scalar? p=None, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    cond_source = module._generate_torch_method_source("linalg_cond", cond_op)
+    assert "std::get<1>(at::linalg_svd(" in cond_source
+    assert "singular_values.max() / singular_values.min()" in cond_source
+
+    pool_op = module._parse_func(
+        "mkldnn_adaptive_avg_pool2d.out(Tensor self, int[2] output_size, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    pool_source = module._generate_torch_method_source(
+        "mkldnn_adaptive_avg_pool2d", pool_op
+    )
+    assert "at::adaptive_avg_pool2d(" in pool_source
+    assert "mkldnn_adaptive_avg_pool2d_out" not in pool_source
+
+    depthwise_op = module._parse_func(
+        "_conv_depthwise2d.out(Tensor self, Tensor weight, int[2] kernel_size, Tensor? bias, int[2] stride, SymInt[2] padding, int[2] dilation, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    depthwise_source = module._generate_torch_method_source(
+        "aten_conv_depthwise2d", depthwise_op
+    )
+    assert "at::conv2d(" in depthwise_source
+    assert ".size(1))" in depthwise_source
+
+    hspmm_op = module._parse_func(
+        "hspmm.out(Tensor mat1, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    hspmm_source = module._generate_torch_method_source("hspmm", hspmm_op)
+    assert "at::hspmm(at_mat1.cpu(), at_mat2.cpu())" in hspmm_source
+    assert ".to(at_mat1.device())" in hspmm_source
+
+    sspaddmm_op = module._parse_func(
+        "sspaddmm.out(Tensor self, Tensor mat1, Tensor mat2, *, Scalar beta=1, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)"
+    )
+    sspaddmm_source = module._generate_torch_method_source("sspaddmm", sspaddmm_op)
+    assert "at::sspaddmm(at_input.cpu(), at_mat1.cpu(), at_mat2.cpu()," in sspaddmm_source
+    assert ".to(at_input.device())" in sspaddmm_source
+
+    int_mm_op = module._parse_func(
+        "_int_mm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    int_mm_source = module._generate_torch_method_source("aten_int_mm", int_mm_op)
+    assert "at::matmul(at_input.cpu().to(at::kInt), at_mat2.cpu().to(at::kInt))" in int_mm_source
+    assert ".to(at_input.device())" in int_mm_source
+
+    scaled_mm_op = module._parse_func(
+        "_scaled_mm.out(Tensor self, Tensor mat2, *, Tensor(a!) out, Tensor(b!) out_amax) -> (Tensor(a!), Tensor(b!))"
+    )
+    scaled_mm_source = module._generate_torch_method_source(
+        "aten_scaled_mm", scaled_mm_op
+    )
+    assert "auto result = at::matmul(" in scaled_mm_source
+    assert "result.abs().amax()" in scaled_mm_source
