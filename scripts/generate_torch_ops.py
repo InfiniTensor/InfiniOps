@@ -157,6 +157,7 @@ _PREFER_FUNCTIONAL_COPY_OPS = frozenset(
         "fft_ihfft2",
         "fft_rfftn",
         "im2col",
+        "mode",
     }
 )
 
@@ -809,7 +810,7 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
         f"  void operator()({_format_signature(op)}) const override;" for op in ops
     )
     direct_calls = "\n".join(
-        f"void DirectAtenCall{pascal}({_format_direct_aten_signature(op)});"
+        f"#if !defined(WITH_METAX)\nvoid DirectAtenCall{pascal}({_format_direct_aten_signature(op)});\n#endif"
         for op in ops
     )
 
@@ -903,11 +904,140 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
         )
     else:
         if op.aten_name in _PREFER_FUNCTIONAL_COPY_OPS:
-            assert (
-                len(op.out_params) == 1
-            ), f"functional-copy path assumes single out tensor for {op.aten_name}"
+            if len(op.out_params) == 1:
+                out = op.out_params[0]
+                return f"{tensor_prefix}{out.name}.copy_({_render_functional_call()})"
+
+            copy_lines = [f"auto result = {_render_functional_call()}"]
+            copy_lines.extend(
+                f"{tensor_prefix}{out.name}.copy_(std::get<{idx}>(result))"
+                for idx, out in enumerate(op.out_params)
+            )
+            body = ";\n    ".join(copy_lines)
+            return f"([&] {{\n    {body};\n  }}())"
+
+        if op.aten_name == "linalg_svdvals":
+            assert len(op.out_params) == 1, "linalg_svdvals should have one out tensor"
             out = op.out_params[0]
-            return f"{tensor_prefix}{out.name}.copy_({_render_functional_call()})"
+            input_arg = _render_arg(next(p for p in op.params if not p.is_out))
+            return (
+                f"{tensor_prefix}{out.name}.copy_("
+                f"std::get<1>(at::linalg_svd({input_arg}, false)))"
+            )
+
+        if op.aten_name == "linalg_cond" and op.overload == "out":
+            assert len(op.out_params) == 1, "linalg_cond should have one out tensor"
+            out = op.out_params[0]
+            input_arg = _render_arg(next(p for p in op.params if not p.is_out))
+            return (
+                f"([&] {{\n"
+                f"    auto singular_values = std::get<1>(at::linalg_svd({input_arg}, false));\n"
+                f"    auto value = singular_values.max() / singular_values.min();\n"
+                f"    {tensor_prefix}{out.name}.copy_(value);\n"
+                f"  }}())"
+            )
+
+        if op.aten_name == "nuclear_norm" and all(
+            p.name != "dim" for p in op.params if not p.is_out
+        ):
+            assert len(op.out_params) == 1, "nuclear_norm should have one out tensor"
+            out = op.out_params[0]
+            input_arg = _render_arg(next(p for p in op.params if not p.is_out))
+            keepdim_arg = _render_arg(
+                next(p for p in op.params if p.name == "keepdim")
+            )
+            return (
+                f"([&] {{\n"
+                f"    auto singular_values = std::get<1>(at::linalg_svd({input_arg}, false));\n"
+                f"    auto value = singular_values.sum();\n"
+                f"    if ({keepdim_arg}) {{\n"
+                f"      {tensor_prefix}{out.name}.copy_(value.reshape({{1, 1}}));\n"
+                f"    }} else {{\n"
+                f"      {tensor_prefix}{out.name}.copy_(value);\n"
+                f"    }}\n"
+                f"  }}())"
+            )
+
+        if op.aten_name == "mkldnn_adaptive_avg_pool2d":
+            assert len(op.out_params) == 1, "mkldnn_adaptive_avg_pool2d should have one out tensor"
+            out = op.out_params[0]
+            input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
+            output_size_arg = _render_arg(
+                next(p for p in op.params if p.name == "output_size")
+            )
+            return (
+                f"{tensor_prefix}{out.name}.copy_("
+                f"at::adaptive_avg_pool2d({input_arg}, {output_size_arg}))"
+            )
+
+        if op.aten_name == "_conv_depthwise2d":
+            assert len(op.out_params) == 1, "_conv_depthwise2d should have one out tensor"
+            out = op.out_params[0]
+            input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
+            weight_arg = _render_arg(next(p for p in op.params if p.name == "weight"))
+            stride_arg = _render_arg(next(p for p in op.params if p.name == "stride"))
+            padding_arg = _render_arg(next(p for p in op.params if p.name == "padding"))
+            dilation_arg = _render_arg(
+                next(p for p in op.params if p.name == "dilation")
+            )
+            return (
+                f"{tensor_prefix}{out.name}.copy_("
+                f"at::conv2d({input_arg}, {weight_arg}, c10::optional<at::Tensor>{{}}, "
+                f"{stride_arg}, {padding_arg}, {dilation_arg}, {input_arg}.size(1)))"
+            )
+
+        if op.aten_name == "hspmm":
+            assert len(op.out_params) == 1, "hspmm should have one out tensor"
+            out = op.out_params[0]
+            mat1_arg = _render_arg(next(p for p in op.params if p.name == "mat1"))
+            mat2_arg = _render_arg(next(p for p in op.params if p.name == "mat2"))
+            return (
+                f"{tensor_prefix}{out.name}.copy_("
+                f"at::hspmm({mat1_arg}.cpu(), {mat2_arg}.cpu()).to({mat1_arg}.device()))"
+            )
+
+        if op.aten_name == "sspaddmm":
+            assert len(op.out_params) == 1, "sspaddmm should have one out tensor"
+            out = op.out_params[0]
+            input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
+            mat1_arg = _render_arg(next(p for p in op.params if p.name == "mat1"))
+            mat2_arg = _render_arg(next(p for p in op.params if p.name == "mat2"))
+            beta_arg = _render_arg(next(p for p in op.params if p.name == "beta"))
+            alpha_arg = _render_arg(next(p for p in op.params if p.name == "alpha"))
+            return (
+                f"{tensor_prefix}{out.name}.copy_("
+                f"at::sspaddmm("
+                f"{input_arg}.cpu(), {mat1_arg}.cpu(), {mat2_arg}.cpu(), "
+                f"{beta_arg}, {alpha_arg}).to({input_arg}.device()))"
+            )
+
+        if op.aten_name == "_int_mm":
+            assert len(op.out_params) == 1, "_int_mm should have one out tensor"
+            out = op.out_params[0]
+            input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
+            mat2_arg = _render_arg(next(p for p in op.params if p.name == "mat2"))
+            return (
+                f"{tensor_prefix}{out.name}.copy_("
+                f"at::matmul({input_arg}.cpu().to(at::kInt), "
+                f"{mat2_arg}.cpu().to(at::kInt)).to({input_arg}.device()))"
+            )
+
+        if op.aten_name == "_scaled_mm":
+            assert len(op.out_params) == 2, "_scaled_mm should have two out tensors"
+            out, out_amax = op.out_params
+            input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
+            mat2_arg = _render_arg(next(p for p in op.params if p.name == "mat2"))
+            return (
+                f"([&] {{\n"
+                f"    auto result = at::matmul("
+                f"{input_arg}.cpu().to(at::kFloat), "
+                f"{mat2_arg}.cpu().to(at::kFloat));\n"
+                f"    {tensor_prefix}{out.name}.copy_("
+                f"result.to({input_arg}.device()).to({tensor_prefix}{out.name}.scalar_type()));\n"
+                f"    {tensor_prefix}{out_amax.name}.copy_("
+                f"result.abs().amax().to({input_arg}.device()).to({tensor_prefix}{out_amax.name}.scalar_type()));\n"
+                f"  }}())"
+            )
 
         # ATen `_out` form puts all out tensors first, then non-out params
         # in YAML order.  Hardcoded-nullopt params become `at::nullopt`.
@@ -993,7 +1123,8 @@ def _generate_torch_source(name: str, ops: list[Op]) -> str:
     pascal = _snake_to_pascal(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
     direct_methods = "\n\n".join(
-        _generate_direct_aten_method_source(name, op) for op in ops
+        f"#if !defined(WITH_METAX)\n{_generate_direct_aten_method_source(name, op)}\n#endif"
+        for op in ops
     )
     # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
     # so a build that only enables a subset of devices does not pay the
@@ -1077,7 +1208,9 @@ _TORCH_HEADER_TEMPLATE = """\
 #ifndef INFINI_OPS_TORCH_{name_uc}_H_
 #define INFINI_OPS_TORCH_{name_uc}_H_
 
+#if !defined(WITH_METAX)
 #include <torch/torch.h>
+#endif
 
 #include "base/{name}.h"
 
@@ -1120,6 +1253,8 @@ void DirectAtenCall{pascal}({direct_call_signature}) {{
 
 _TORCH_SOURCE_TEMPLATE = """\
 #include "torch/{name}/{name}.h"
+
+#include <tuple>
 
 #include "torch/tensor_.h"
 

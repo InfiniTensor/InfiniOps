@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#ifdef WITH_TORCH
+#if defined(WITH_TORCH) && !defined(WITH_METAX)
 #include <torch/torch.h>
 #include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/utils/pybind.h>
@@ -138,7 +138,7 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
 
   Tensor tensor{data, std::move(shape), dtype, device, std::move(strides)};
 
-#ifdef WITH_TORCH
+#if defined(WITH_TORCH) && !defined(WITH_METAX)
   if (THPVariable_Check(obj.ptr())) {
     tensor.set_aten_tensor_handle(
         std::make_shared<at::Tensor>(THPVariable_Unpack(obj.ptr())));
@@ -148,7 +148,7 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
   return tensor;
 }
 
-#ifdef WITH_TORCH
+#if defined(WITH_TORCH) && !defined(WITH_METAX)
 inline at::Tensor AtenTensorFromPybind11Handle(py::handle obj) {
   return py::reinterpret_borrow<py::object>(obj).cast<at::Tensor>();
 }

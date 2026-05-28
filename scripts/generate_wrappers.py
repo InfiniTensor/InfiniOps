@@ -360,9 +360,11 @@ def _generate_pybind11(operator):
 
             if has_torch_fast_path:
                 slot8_branch = (
+                    "#if defined(WITH_TORCH) && !defined(WITH_METAX)\n"
                     f"    if (implementation_index == 8) {{\n"
                     f"      return infini::ops::DirectAtenCall{pascal_case_op_name}({slot8_args});\n"
                     f"    }}\n"
+                    "#endif\n"
                 )
 
             return (
@@ -426,6 +428,15 @@ def _generate_pybind11(operator):
     callers = "\n".join(
         _generate_call(operator.name, call, method=False) for call in operator_calls
     )
+    torch_fast_path_include = ""
+
+    if has_torch_fast_path:
+        torch_fast_path_include = (
+            f'#if defined(WITH_TORCH) && !defined(WITH_METAX)\n'
+            f'#include "torch/{op_name}/{op_name}.h"\n'
+            f'#endif\n'
+        )
+
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -438,8 +449,9 @@ def _generate_pybind11(operator):
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
 #include "pybind11_utils.h"
-{f'#include "torch/{op_name}/{op_name}.h"' if has_torch_fast_path else ''}
+{torch_fast_path_include}
 
+namespace py = pybind11;
 namespace py = pybind11;
 
 namespace infini::ops {{
