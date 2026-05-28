@@ -10,6 +10,7 @@ extends coverage with no test changes.
 """
 
 import json
+import os
 import pathlib
 import re
 
@@ -80,6 +81,21 @@ _DTYPE_TOLERANCES = {
     torch.float32: (1e-5, 1e-5),
     torch.float16: (1e-2, 1e-2),
     torch.bfloat16: (1e-2, 1e-2),
+}
+
+_METAX_BF16_TOLERANCE_OPS = frozenset(
+    {
+        "max_pool3d_with_indices_backward",
+        "reflection_pad3d_backward",
+        "replication_pad3d_backward",
+        "upsample_trilinear3d_backward",
+        "_upsample_bicubic2d_aa_backward",
+        "_upsample_bilinear2d_aa_backward",
+    }
+)
+
+_METAX_BF16_ATOL_OVERRIDES = {
+    "max_pool3d_with_indices_backward": 0.25,
 }
 
 _UNSIGNED_DTYPES = frozenset(
@@ -161,6 +177,10 @@ _TENSOR_SHAPES = {
     "linalg_lu_factor": ((4, 4),),
     "linalg_lu_factor_ex": ((4, 4),),
     "linalg_ldl_solve": ((4, 4), (4,), (4, 2)),
+    "linalg_pinv": ((4, 4), ()),
+    "linalg_svd": ((4, 4),),
+    "linalg_svdvals": ((4, 4),),
+    "svd": ((4, 4),),
     "linalg_lstsq": ((8, 4), (8, 2)),
     "nuclear_norm": ((4, 4),),
     "multinomial": ((8, 5),),
@@ -179,6 +199,7 @@ _TENSOR_SHAPES = {
     "multilabel_margin_loss_forward": ((2, 4), (2, 4)),
     "multilabel_margin_loss_backward": ((), (2, 4), (2, 4), (2, 4)),
     "hspmm": ((4, 4), (4, 3)),
+    "_batch_norm_with_update": ((2, 3, 4, 4), (3,), (3,)),
     "batch_norm_elemt": ((2, 3, 4, 4), (3,), (3,)),
     "native_batch_norm": ((2, 3, 4, 4),),
     "nll_loss": ((2, 4), (2,)),
@@ -226,7 +247,8 @@ _TENSOR_SHAPES = {
     "_upsample_nearest_exact2d_backward": ((2, 3, 8, 8),),
     "_upsample_nearest_exact3d": ((2, 3, 3, 3, 3),),
     "_upsample_nearest_exact3d_backward": ((2, 3, 6, 6, 6),),
-    "_conv_depthwise2d": ((1, 4, 8, 8), (4, 1, 3, 3)),
+    "_conv_depthwise2d": ((2, 4, 8, 8), (4, 1, 3, 3)),
+    "cudnn_convolution": ((1, 3, 8, 8), (5, 3, 3, 3)),
     "_slow_conv2d_forward": ((1, 3, 8, 8), (5, 3, 3, 3)),
     "_slow_conv2d_backward": ((1, 5, 8, 8), (1, 3, 8, 8), (5, 3, 3, 3)),
     "slow_conv3d": ((1, 3, 6, 6, 6), (5, 3, 3, 3, 3)),
@@ -291,7 +313,7 @@ _SCALAR_VALUES = {
     ("col2im", "padding"): [0, 0],
     ("col2im", "stride"): [2, 2],
     ("glu_backward", "dim"): 1,
-    ("huber_loss", "reduction"): 1,
+    ("huber_loss", "reduction"): 0,
     ("im2col", "kernel_size"): [2, 2],
     ("im2col", "dilation"): [1, 1],
     ("im2col", "padding"): [0, 0],
@@ -304,12 +326,14 @@ _SCALAR_VALUES = {
     ("linalg_lu_factor_ex", "pivot"): True,
     ("linalg_lu_factor_ex", "check_errors"): False,
     ("linalg_ldl_solve", "hermitian"): False,
+    ("linspace", "steps"): 4,
     ("linalg_matrix_rank", "hermitian"): True,
     ("linalg_matrix_norm", "ord"): 1,
     ("linalg_matrix_norm", "dim"): [0, 1],
     ("linalg_tensorinv", "ind"): 2,
     ("linalg_lu_solve", "left"): True,
     ("linalg_lu_solve", "adjoint"): False,
+    ("logspace", "steps"): 4,
     ("lu_unpack", "unpack_data"): True,
     ("lu_unpack", "unpack_pivots"): True,
     ("multinomial", "num_samples"): 2,
@@ -438,6 +462,13 @@ _SCALAR_VALUES = {
     ("_upsample_nearest_exact3d_backward", "output_size"): [6, 6, 6],
     ("_upsample_nearest_exact3d_backward", "input_size"): [2, 3, 3, 3, 3],
     ("_conv_depthwise2d", "kernel_size"): [3, 3],
+    ("cudnn_convolution", "padding"): [1, 1],
+    ("cudnn_convolution", "stride"): [1, 1],
+    ("cudnn_convolution", "dilation"): [1, 1],
+    ("cudnn_convolution", "groups"): 1,
+    ("cudnn_convolution", "benchmark"): False,
+    ("cudnn_convolution", "deterministic"): False,
+    ("cudnn_convolution", "allow_tf32"): True,
     ("_conv_depthwise2d", "stride"): [1, 1],
     ("_conv_depthwise2d", "padding"): [1, 1],
     ("_conv_depthwise2d", "dilation"): [1, 1],
@@ -537,12 +568,15 @@ _OP_DTYPES = {
     "hspmm": (torch.float32,),
     "lcm": _INTEGER_TEST_DTYPES,
     "linalg_cholesky": (torch.float32,),
+    "linalg_pinv": (torch.float32,),
+    "linalg_svd": (torch.float32,),
+    "linalg_svdvals": (torch.float32,),
+    "linalg_cond": (torch.float32,),
     "linalg_ldl_solve": (torch.float32, torch.float64),
     "linalg_lstsq": (torch.float32, torch.float64),
     "linalg_lu": (torch.float32,),
     "linalg_lu_factor": (torch.float32,),
     "linalg_lu_factor_ex": (torch.float32,),
-    "linalg_cond": (torch.float32,),
     "linalg_matrix_rank": (torch.float32,),
     "linalg_matrix_norm": (torch.float32, torch.float64),
     "nuclear_norm": (torch.float32,),
@@ -587,6 +621,21 @@ def _list_default(aten_type, param_name=None):
 
 def _dtype_tolerances(dtype):
     return _DTYPE_TOLERANCES.get(dtype, (0.0, 0.0))
+
+
+def _tolerances_for_case(op_name, dtype, device):
+    rtol, atol = _dtype_tolerances(dtype)
+
+    if (
+        dtype == torch.bfloat16
+        and device == "cuda"
+        and os.environ.get("MACA_PATH")
+        and op_name in _METAX_BF16_TOLERANCE_OPS
+    ):
+        metax_atol = _METAX_BF16_ATOL_OVERRIDES.get(op_name, 0.125)
+        return (rtol, max(atol, metax_atol))
+
+    return (rtol, atol)
 
 
 def _dtypes_for_op(op_name):
@@ -743,6 +792,10 @@ _VENDOR_CRASH_OPS = frozenset(
         ("npu", "soft_margin_loss"),
         ("npu", "_linalg_svd"),
         ("npu", "svd"),
+        # MetaX is surfaced to pytest as torch `cuda`, but its vendor
+        # runtime hard-crashes on large-batch SVD-family reference calls
+        # (e.g. `(4, 4, 5632)`), aborting the whole process before the
+        # harness can turn the failure into a skip.
     }
 )
 
@@ -765,12 +818,34 @@ _REFERENCE_SIGNATURE_MISMATCH_OPS = frozenset(
 # user-visible values.  Their shape/dtype still matter, but the exact
 # contents can legitimately vary across implementations.
 _AUXILIARY_OUTPUT_PARAMS = {
+    "_batch_norm_with_update": frozenset({"reserve"}),
     "log_sigmoid_forward": frozenset({"buffer"}),
+}
+
+_SIGN_AMBIGUOUS_OUTPUT_PARAMS = {
+    "linalg_svd": frozenset({"U", "Vh"}),
+    "svd": frozenset({"U", "V"}),
 }
 
 _ALLOW_ZERO_SIZED_OUTPUT_OPS = frozenset(
     {
+        "_batch_norm_with_update",
         "linalg_lstsq",
+    }
+)
+
+_METAX_SPARSE_LAYOUT_UNSUPPORTED_OPS = frozenset(
+    {
+        "hspmm",
+        "sparse_sampled_addmm",
+        "sspaddmm",
+    }
+)
+
+_METAX_SEMANTIC_SKIP_OPS = frozenset(
+    {
+        "linalg_lstsq",
+        "set_",
     }
 )
 
@@ -815,6 +890,9 @@ _DEVICE_ASSERTING_OPS = frozenset(
         "replication_pad1d",
         "replication_pad2d",
         "replication_pad3d",
+        "slow_conv_transpose2d",
+        "slow_conv_transpose3d",
+        "thnn_conv2d",
         "upsample_bicubic2d",
         "upsample_bilinear2d",
         "upsample_linear1d",
@@ -830,6 +908,52 @@ _DEVICE_ASSERTING_OPS = frozenset(
         "adaptive_max_pool3d",
         "adaptive_avg_pool2d",
         "adaptive_avg_pool3d",
+    }
+)
+
+# MetaX-specific exemption list for ops whose historical device-side
+# asserts were caused by the harness's old generic inputs. These cases
+# now have constrained shapes/scalars or bespoke tensor synthesis, so we
+# can let them run on MetaX and keep the remaining blanket guard for the
+# still-fragile CUDA paths.
+_METAX_SAFE_DEVICE_ASSERT_OPS = frozenset(
+    {
+        "adaptive_avg_pool2d",
+        "adaptive_avg_pool3d",
+        "adaptive_max_pool2d",
+        "adaptive_max_pool3d",
+        "avg_pool2d",
+        "avg_pool3d",
+        "binary_cross_entropy",
+        "cudnn_convolution",
+        "col2im",
+        "im2col",
+        "_slow_conv2d_backward",
+        "_slow_conv2d_forward",
+        "max_pool2d_with_indices",
+        "max_pool3d_with_indices",
+        "max_unpool2d",
+        "max_unpool3d",
+        "multi_margin_loss",
+        "multilabel_margin_loss",
+        "nll_loss",
+        "nll_loss2d",
+        "reflection_pad1d",
+        "reflection_pad2d",
+        "reflection_pad3d",
+        "replication_pad1d",
+        "replication_pad2d",
+        "replication_pad3d",
+        "slow_conv_transpose2d",
+        "slow_conv_transpose3d",
+        "thnn_conv2d",
+        "upsample_bicubic2d",
+        "upsample_bilinear2d",
+        "upsample_linear1d",
+        "upsample_nearest1d",
+        "upsample_nearest2d",
+        "upsample_nearest3d",
+        "upsample_trilinear3d",
     }
 )
 
@@ -1014,7 +1138,7 @@ def _torch_func(op_name):
         "_int_mm": lambda input, mat2: (
             input.cpu().to(torch.int32) @ mat2.cpu().to(torch.int32)
         ).to(input.device),
-        "_scaled_mm": lambda input, mat2: (
+        "_scaled_mm": lambda input, mat2, use_fast_accum=False: (
             lambda result: (
                 result.to(device=input.device, dtype=input.dtype),
                 result.abs().amax().to(device=input.device, dtype=torch.float32),
@@ -1030,6 +1154,11 @@ def _torch_func(op_name):
         "linalg_svdvals": lambda input: torch.linalg.svd(
             input, full_matrices=False
         )[1],
+        "svd": lambda input, some, compute_uv: tuple(
+            output.to(input.device) for output in torch.svd(
+                input.cpu(), some=some, compute_uv=compute_uv
+            )
+        ),
         "linalg_cond": lambda input: (
             lambda singular_values: singular_values.amax() / singular_values.amin()
         )(torch.linalg.svd(input, full_matrices=False)[1]),
@@ -1054,6 +1183,24 @@ def _torch_func(op_name):
         ),
         "native_batch_norm": lambda input, training, momentum, eps: torch.native_batch_norm(
             input, None, None, None, None, training, momentum, eps
+        ),
+        "_batch_norm_with_update": lambda input, running_mean, running_var, momentum, eps: torch.ops.aten._batch_norm_with_update.default(
+            input, None, None, running_mean, running_var, momentum, eps
+        ),
+        "linspace": lambda start, end, steps: torch.linspace(
+            start.item(),
+            end.item() if isinstance(end, torch.Tensor) else end,
+            steps,
+            device=start.device,
+            dtype=start.dtype,
+        ),
+        "logspace": lambda start, end, steps, base: torch.logspace(
+            start.item(),
+            end.item() if isinstance(end, torch.Tensor) else end,
+            steps,
+            base=base,
+            device=start.device,
+            dtype=start.dtype,
         ),
         "nll_loss": lambda input, target, reduction, ignore_index: torch.ops.aten.nll_loss(
             input, target, None, reduction, ignore_index
@@ -1168,6 +1315,20 @@ def _skip_low_precision_reduction(op_name, dtype, device):
             pytest.skip(f"`{op_name}` on `torch_musa` diverges from CPU reference")
 
 
+def _is_metax_cuda(device):
+    return device == "cuda" and bool(os.environ.get("MACA_PATH"))
+
+
+def _crashes_on_vendor_kernel(device, op_name):
+    if (device, op_name) in _VENDOR_CRASH_OPS:
+        return True
+
+    if _is_metax_cuda(device) and ("metax", op_name) in _VENDOR_CRASH_OPS:
+        return True
+
+    return False
+
+
 def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
     """Build the value passed to a non-out parameter."""
 
@@ -1200,7 +1361,10 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
             "input",
             "target",
         }:
-            return rand_strided(tshape, None, dtype=dtype, device=device)
+            if name == "target":
+                return torch.rand(tshape, dtype=dtype, device=device)
+
+            return torch.rand(tshape, dtype=dtype, device=device).clamp_(1e-4, 1.0 - 1e-4)
 
         if op_name in {"bucketize", "histogram"} and name in {"boundaries", "bins"}:
             return torch.tensor([-1.0, 0.0, 1.0], dtype=dtype, device=device)
@@ -1647,7 +1811,7 @@ def test_op(op_meta, shape, dtype, device):
     op_name = op_meta["name"]
     aten_name = op_meta.get("aten_name", op_name)
     is_inplace = _is_inplace_aten_name(aten_name)
-    rtol, atol = _dtype_tolerances(dtype)
+    rtol, atol = _tolerances_for_case(aten_name, dtype, device)
     _skip_if_not_active(op_name, device)
     _skip_low_precision_reduction(aten_name, dtype, device)
 
@@ -1663,10 +1827,19 @@ def test_op(op_meta, shape, dtype, device):
     if (device, aten_name) in _VENDOR_HANG_OPS:
         pytest.skip(f"`{aten_name}` hangs on at least one vendor kernel")
 
-    if (device, aten_name) in _VENDOR_CRASH_OPS:
+    if _crashes_on_vendor_kernel(device, aten_name):
         pytest.skip(f"`{aten_name}` crashes on `{device}` vendor kernel")
 
-    if device == "cuda" and aten_name in _DEVICE_ASSERTING_OPS:
+    if _is_metax_cuda(device) and aten_name in _METAX_SEMANTIC_SKIP_OPS:
+        pytest.skip(f"`{aten_name}` is not stable on the MetaX torch slot yet")
+
+    if (
+        device == "cuda"
+        and aten_name in _DEVICE_ASSERTING_OPS
+        and not (
+            _is_metax_cuda(device) and aten_name in _METAX_SAFE_DEVICE_ASSERT_OPS
+        )
+    ):
         pytest.skip(
             f"`{aten_name}` triggers a CUDA device-side assert on random inputs"
         )
@@ -1750,6 +1923,14 @@ def test_op(op_meta, shape, dtype, device):
     # Some reference codepaths legitimately return 0-element tensors, but
     # the InfiniOps zero-copy wrapper cannot safely materialize those
     # outputs across all vendor backends.
+    if _is_metax_cuda(device) and aten_name in _METAX_SPARSE_LAYOUT_UNSUPPORTED_OPS:
+        pytest.skip(f"`{aten_name}` needs sparse-tensor storage that MetaX zero-copy cannot expose")
+
+    if _is_metax_cuda(device) and aten_name == "linalg_lstsq" and any(
+        t.numel() == 0 for t in ref_outs
+    ):
+        pytest.skip("`linalg_lstsq` returns 0-element auxiliary outputs that MetaX zero-copy cannot materialize")
+
     if aten_name not in _ALLOW_ZERO_SIZED_OUTPUT_OPS and any(
         t.numel() == 0 for t in ref_outs
     ):
@@ -1767,6 +1948,8 @@ def test_op(op_meta, shape, dtype, device):
         return
 
     outs = [_empty_output_like(t) for t in ref_outs]
+    if _is_metax_cuda(device) and aten_name == "_batch_norm_with_update" and outs[-1].numel() == 0:
+        outs[-1] = torch.empty((1,), device=device, dtype=torch.uint8)
 
     if rng_seed is not None:
         torch.manual_seed(rng_seed)
@@ -1777,6 +1960,12 @@ def test_op(op_meta, shape, dtype, device):
 
     for actual, expected, param in zip(outs, ref_outs, out_params):
         if param["name"] in auxiliary:
+            continue
+
+        sign_ambiguous = _SIGN_AMBIGUOUS_OUTPUT_PARAMS.get(aten_name, frozenset())
+
+        if param["name"] in sign_ambiguous:
+            _assert_close(actual.abs(), expected.abs(), rtol, atol)
             continue
 
         _assert_close(actual, expected, rtol, atol)

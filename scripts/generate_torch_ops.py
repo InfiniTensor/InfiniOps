@@ -810,7 +810,7 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
         f"  void operator()({_format_signature(op)}) const override;" for op in ops
     )
     direct_calls = "\n".join(
-        f"void DirectAtenCall{pascal}({_format_direct_aten_signature(op)});"
+        f"#if !defined(WITH_METAX)\nvoid DirectAtenCall{pascal}({_format_direct_aten_signature(op)});\n#endif"
         for op in ops
     )
 
@@ -1125,7 +1125,8 @@ def _generate_torch_source(name: str, ops: list[Op]) -> str:
     pascal = _snake_to_pascal(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
     direct_methods = "\n\n".join(
-        _generate_direct_aten_method_source(name, op) for op in ops
+        f"#if !defined(WITH_METAX)\n{_generate_direct_aten_method_source(name, op)}\n#endif"
+        for op in ops
     )
     # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
     # so a build that only enables a subset of devices does not pay the
@@ -1209,7 +1210,9 @@ _TORCH_HEADER_TEMPLATE = """\
 #ifndef INFINI_OPS_TORCH_{name_uc}_H_
 #define INFINI_OPS_TORCH_{name_uc}_H_
 
+#if !defined(WITH_METAX)
 #include <torch/torch.h>
+#endif
 
 #include "base/{name}.h"
 
