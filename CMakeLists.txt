@@ -34,6 +34,8 @@ option(BUILD_CUSTOM_KERNEL "Build custom AscendC kernel PyTorch extension (requi
 
 option(AUTO_DETECT_DEVICES "Automatically detect available devices" OFF)
 option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
+option(GENERATE_OPERATOR_CALL_INSTANTIATIONS
+    "Generate explicit operator call instantiations" ON)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
 set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")

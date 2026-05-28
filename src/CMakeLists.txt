@@ -1,5 +1,7 @@
 add_library(infiniops SHARED)
 
+include(GNUInstallDirs)
+
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
@@ -500,14 +502,20 @@ if(WITH_TORCH)
     endif()
 endif()
 
-target_include_directories(infiniops PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(infiniops
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 
-if(GENERATE_PYTHON_BINDINGS)
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
-    # Always regenerate bindings so the included kernel headers match the
-    # active device list.  Stale generated files (e.g., committed for one
-    # platform) would omit specializations for other enabled backends,
-    # causing link-time or runtime failures.
+    # Always regenerate wrappers so emitted call instantiations and bindings
+    # match the active device list.  Stale generated files would omit
+    # specializations for enabled backends, causing link-time or runtime
+    # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
     if(WITH_TORCH)
@@ -528,7 +536,76 @@ if(GENERATE_PYTHON_BINDINGS)
     else()
         message(STATUS "Generating wrappers - done")
     endif()
+endif()
 
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
+
+    if(WITH_NVIDIA OR WITH_HYGON)
+        set_source_files_properties(${OPERATOR_CALL_INSTANTIATION_SOURCES}
+            PROPERTIES LANGUAGE CUDA)
+        target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
+    elseif(WITH_ILUVATAR)
+        set(_iluvatar_call_instantiation_include_flags
+            "-I${CMAKE_CURRENT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}/generated"
+            "-I${PROJECT_SOURCE_DIR}/generated/include")
+        foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
+            list(APPEND _iluvatar_call_instantiation_include_flags "-I${_dir}")
+        endforeach()
+
+        set(_iluvatar_call_instantiation_defs -DWITH_ILUVATAR=1)
+        if(WITH_CPU)
+            list(APPEND _iluvatar_call_instantiation_defs -DWITH_CPU=1)
+        endif()
+        if(WITH_TORCH)
+            list(APPEND _iluvatar_call_instantiation_defs -DWITH_TORCH=1)
+        endif()
+        if(DEFINED TORCH_CXX11_ABI)
+            list(APPEND _iluvatar_call_instantiation_defs
+                "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
+        endif()
+
+        set(ILUVATAR_CALL_INSTANTIATION_OBJECTS)
+        set(_iluvatar_call_instantiation_object_dir
+            "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_call_instantiation_objs")
+        foreach(_src IN LISTS OPERATOR_CALL_INSTANTIATION_SOURCES)
+            get_filename_component(_name "${_src}" NAME_WE)
+            set(_obj "${_iluvatar_call_instantiation_object_dir}/${_name}.o")
+            set(_dep "${_obj}.d")
+            set(_depfile_arg)
+            if(CMAKE_GENERATOR MATCHES "Ninja")
+                set(_depfile_arg DEPFILE "${_dep}")
+            endif()
+            add_custom_command(
+                OUTPUT "${_obj}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_iluvatar_call_instantiation_object_dir}"
+                COMMAND ${ILUVATAR_CUDA_COMPILER}
+                    ${_iluvatar_call_instantiation_defs}
+                    ${_iluvatar_call_instantiation_include_flags}
+                    ${ILUVATAR_CUDA_FLAGS}
+                    -MMD -MF "${_dep}"
+                    -c "${_src}" -o "${_obj}"
+                DEPENDS "${_src}"
+                ${_depfile_arg}
+                COMMENT "Compiling ${_name}.cc with CoreX clang++"
+                VERBATIM
+            )
+            list(APPEND ILUVATAR_CALL_INSTANTIATION_OBJECTS "${_obj}")
+        endforeach()
+
+        set_source_files_properties(${ILUVATAR_CALL_INSTANTIATION_OBJECTS}
+            PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        target_sources(infiniops PRIVATE ${ILUVATAR_CALL_INSTANTIATION_OBJECTS})
+    else()
+        target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
+    endif()
+endif()
+
+if(GENERATE_PYTHON_BINDINGS)
     file(GLOB_RECURSE PYBIND11_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/bindings/*.cc")
 
@@ -726,4 +803,45 @@ if(GENERATE_PYTHON_BINDINGS)
         install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
             DESTINATION .)
     endif()
+endif()
+
+install(TARGETS infiniops
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    install(FILES
+        ${PROJECT_SOURCE_DIR}/generated/include/infini/operator_call_instantiations.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
+    )
+endif()
+
+file(GLOB INFINIOPS_PUBLIC_CORE_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
+
+install(FILES ${INFINIOPS_PUBLIC_CORE_HEADERS}
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/base/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/base
+    FILES_MATCHING PATTERN "*.h"
+)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/common/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/common
+    FILES_MATCHING PATTERN "*.h"
+)
+
+if(EXISTS ${PROJECT_SOURCE_DIR}/generated/base)
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/generated/base/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/base
+        FILES_MATCHING PATTERN "*.h"
+    )
 endif()

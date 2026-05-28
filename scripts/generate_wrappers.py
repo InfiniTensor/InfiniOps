@@ -702,10 +702,113 @@ namespace infini::ops::generated_dispatch {{
 """
 
 
+def _strip_top_level_const(type_spelling):
+    type_spelling = " ".join(type_spelling.split())
+
+    while type_spelling.startswith("const "):
+        type_spelling = type_spelling[len("const ") :]
+
+    return type_spelling
+
+
+def _generate_operator_call_instantiation_entries(operator):
+    def _generate_template_arguments(node):
+        return ", ".join(
+            _strip_top_level_const(arg.type.spelling)
+            for arg in node.get_arguments()
+            if arg.spelling != "stream"
+        )
+
+    def _generate_parameters(node):
+        return ", ".join(
+            f"const {_strip_top_level_const(arg.type.spelling)}& {arg.spelling}"
+            for arg in node.get_arguments()
+            if arg.spelling != "stream"
+        )
+
+    def _append_optional_params(prefix, params):
+        if params:
+            return f"{prefix}, {params}"
+
+        return prefix
+
+    pascal_case_op_name = _snake_to_pascal(operator.name)
+    declarations = []
+    definitions = []
+
+    for call in operator.calls:
+        template_arguments = _generate_template_arguments(call)
+        params = _generate_parameters(call)
+        function_params = _append_optional_params(
+            "const Handle& handle, const Config& config", params
+        )
+        instantiation = (
+            f"Operator<{pascal_case_op_name}>::Call<{template_arguments}>"
+            f"({function_params})"
+        )
+
+        declarations.append(f"extern template auto {instantiation};")
+        definitions.append(f"template auto {instantiation};")
+
+    return declarations, definitions
+
+
+def _generate_operator_call_instantiation_header(op_names, declarations):
+    header_base_includes = "\n".join(
+        f'#include "base/{op_name}.h"' for op_name in op_names
+    )
+
+    return f"""#ifndef INFINI_OPS_OPERATOR_CALL_INSTANTIATIONS_H_
+#define INFINI_OPS_OPERATOR_CALL_INSTANTIATIONS_H_
+
+#include <cstdint>
+#include <optional>
+#include <vector>
+
+#include "config.h"
+#include "handle.h"
+#include "operator.h"
+
+{header_base_includes}
+
+namespace infini::ops {{
+
+{chr(10).join(declarations)}
+
+}}  // namespace infini::ops
+
+#endif
+"""
+
+
+def _generate_operator_call_instantiation_source(devices, impl_paths, definitions):
+    device_includes = "\n".join(
+        f'#include "{path}"' for path in _device_marker_headers(devices)
+    )
+    impl_includes = "\n".join(
+        f'#include "{_to_include_path(impl_path)}"' for impl_path in impl_paths
+    )
+
+    return f"""#include "infini/operator_call_instantiations.h"
+
+// clang-format off
+{device_includes}
+{impl_includes}
+// clang-format on
+
+namespace infini::ops {{
+
+{chr(10).join(definitions)}
+
+}}  // namespace infini::ops
+"""
+
+
 def _device_marker_headers(devices):
     paths = {
         "cpu": "native/cpu/device_.h",
         "nvidia": "native/cuda/nvidia/device_.h",
+        "hygon": "native/cuda/hygon/device_.h",
         "cambricon": "native/cambricon/device_.h",
         "ascend": "native/ascend/device_.h",
         "metax": "native/cuda/metax/device_.h",
@@ -821,6 +924,10 @@ def _generate_op_artifacts(item):
     dispatch_declarations, dispatch_definitions = _generate_generated_dispatch_entries(
         operator
     )
+    (
+        call_instantiation_declarations,
+        call_instantiation_definitions,
+    ) = _generate_operator_call_instantiation_entries(operator)
 
     return {
         "op_name": op_name,
@@ -832,6 +939,8 @@ def _generate_op_artifacts(item):
         "legacy_c_header": legacy_c_header,
         "dispatch_declarations": dispatch_declarations,
         "dispatch_definitions": dispatch_definitions,
+        "call_instantiation_declarations": call_instantiation_declarations,
+        "call_instantiation_definitions": call_instantiation_definitions,
         "impl_paths": impl_paths,
     }
 
@@ -929,6 +1038,11 @@ if __name__ == "__main__":
         for artifact in artifacts
         for declaration in artifact["dispatch_declarations"]
     ]
+    call_instantiation_declarations = [
+        declaration
+        for artifact in artifacts
+        for declaration in artifact["call_instantiation_declarations"]
+    ]
     use_monolithic_bindings = _use_monolithic_bindings()
     op_includes = []
 
@@ -958,6 +1072,14 @@ if __name__ == "__main__":
     )
     (_BINDINGS_DIR / "generated_dispatch.h").write_text(dispatch_header)
 
+    call_instantiation_header = _generate_operator_call_instantiation_header(
+        op_names, call_instantiation_declarations
+    )
+    (_INCLUDE_DIR / "infini").mkdir(exist_ok=True)
+    (_INCLUDE_DIR / "infini" / "operator_call_instantiations.h").write_text(
+        call_instantiation_header
+    )
+
     dispatch_batch_size = _dispatch_gen_batch_size()
 
     for dispatch_batch_index, start in enumerate(
@@ -978,6 +1100,28 @@ if __name__ == "__main__":
         (_BINDINGS_DIR / f"generated_dispatch_{dispatch_batch_index}.cc").write_text(
             dispatch_source
         )
+
+    for call_instantiation_batch_index, start in enumerate(
+        range(0, len(artifacts), dispatch_batch_size)
+    ):
+        batch = artifacts[start : start + dispatch_batch_size]
+        impl_paths = list(
+            dict.fromkeys(
+                impl_path for artifact in batch for impl_path in artifact["impl_paths"]
+            )
+        )
+        definitions = [
+            definition
+            for artifact in batch
+            for definition in artifact["call_instantiation_definitions"]
+        ]
+        call_instantiation_source = _generate_operator_call_instantiation_source(
+            args.devices, impl_paths, definitions
+        )
+        (
+            _GENERATED_SRC_DIR
+            / f"operator_call_instantiations_{call_instantiation_batch_index}.cc"
+        ).write_text(call_instantiation_source)
 
     bind_func_calls = "\n".join(
         f"{bind_func_name}(m);" for bind_func_name in bind_func_names
