@@ -482,6 +482,9 @@ if(WITH_TORCH)
 
         # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
+        if(WITH_TORCH)
+            list(APPEND _torch_extra_flags "-DWITH_TORCH=1")
+        endif()
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
         endif()
