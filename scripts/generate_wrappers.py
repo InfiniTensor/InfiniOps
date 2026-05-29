@@ -38,6 +38,40 @@ _PUBLIC_INCLUDE_DIR = _INCLUDE_DIR / "infini"
 _INDENTATION = "  "
 
 
+def _write_text_if_changed(path: pathlib.Path, content: str) -> bool:
+    """Write `content` only when the file's bytes would change."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists() and path.read_text() == content:
+        return False
+
+    path.write_text(content)
+    return True
+
+
+def _prune_empty_dirs(root: pathlib.Path) -> None:
+    if not root.exists():
+        return
+
+    for child in sorted(root.iterdir(), reverse=True):
+        if child.is_dir():
+            _prune_empty_dirs(child)
+
+    if root.is_dir() and not any(root.iterdir()):
+        root.rmdir()
+
+
+def _remove_stale_files(root: pathlib.Path, expected_files: set[pathlib.Path]) -> None:
+    if not root.exists():
+        return
+
+    for path in sorted(root.rglob("*"), reverse=True):
+        if path.is_file() and path not in expected_files:
+            path.unlink()
+
+    _prune_empty_dirs(root)
+
+
 @functools.lru_cache(maxsize=1)
 def _get_system_include_flags():
     """Probe the system C++ compiler for default include paths so libclang
@@ -1284,14 +1318,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Wipe previous outputs so files for ops that have since been removed
-    # from the active set (e.g. when toggling `--with-torch`) do not linger
-    # and get globbed by a later build.
     for directory in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
-        if directory.exists():
-            shutil.rmtree(directory)
-
-        directory.mkdir(parents=True)
+        directory.mkdir(parents=True, exist_ok=True)
 
     _PUBLIC_INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1317,6 +1345,9 @@ if __name__ == "__main__":
             artifacts = list(executor.map(_generate_op_artifacts, ops.items()))
 
     op_names = [artifact["op_name"] for artifact in artifacts]
+    expected_binding_files: set[pathlib.Path] = set()
+    expected_generated_src_files: set[pathlib.Path] = set()
+    expected_include_files: set[pathlib.Path] = set()
     dispatch_declarations = [
         declaration
         for artifact in artifacts
@@ -1335,26 +1366,35 @@ if __name__ == "__main__":
         source_path = _GENERATED_SRC_DIR / op_name
         header_name = artifact["header_name"]
         bind_func_name = artifact["bind_func_name"]
+        binding_header_path = _BINDINGS_DIR / header_name
 
-        (_BINDINGS_DIR / header_name).write_text(artifact["pybind11"])
+        _write_text_if_changed(binding_header_path, artifact["pybind11"])
+        expected_binding_files.add(binding_header_path)
 
         if use_monolithic_bindings:
             op_includes.append(f'#include "{header_name}"')
         else:
-            (_BINDINGS_DIR / f"{op_name}.cc").write_text(artifact["binding_source"])
+            binding_source_path = _BINDINGS_DIR / f"{op_name}.cc"
+            _write_text_if_changed(binding_source_path, artifact["binding_source"])
+            expected_binding_files.add(binding_source_path)
 
         source_path.mkdir(exist_ok=True)
-        (_GENERATED_SRC_DIR / op_name / "operator.cc").write_text(
-            artifact["legacy_c_source"]
-        )
-        (_INCLUDE_DIR / header_name).write_text(artifact["legacy_c_header"])
+        legacy_source_path = _GENERATED_SRC_DIR / op_name / "operator.cc"
+        _write_text_if_changed(legacy_source_path, artifact["legacy_c_source"])
+        expected_generated_src_files.add(legacy_source_path)
+
+        include_path = _INCLUDE_DIR / header_name
+        _write_text_if_changed(include_path, artifact["legacy_c_header"])
+        expected_include_files.add(include_path)
 
         bind_func_names.append(bind_func_name)
 
     dispatch_header = _generate_generated_dispatch_header(
         op_names, args.devices, dispatch_declarations
     )
-    (_BINDINGS_DIR / "generated_dispatch.h").write_text(dispatch_header)
+    dispatch_header_path = _BINDINGS_DIR / "generated_dispatch.h"
+    _write_text_if_changed(dispatch_header_path, dispatch_header)
+    expected_binding_files.add(dispatch_header_path)
 
     functional_header = _generate_functional_header(functional_declarations)
     (_PUBLIC_INCLUDE_DIR / "functional_ops.h").write_text(functional_header)
@@ -1376,9 +1416,11 @@ if __name__ == "__main__":
             for definition in artifact["dispatch_definitions"]
         ]
         dispatch_source = _generate_generated_dispatch_source(impl_paths, definitions)
-        (_BINDINGS_DIR / f"generated_dispatch_{dispatch_batch_index}.cc").write_text(
-            dispatch_source
+        dispatch_source_path = (
+            _BINDINGS_DIR / f"generated_dispatch_{dispatch_batch_index}.cc"
         )
+        _write_text_if_changed(dispatch_source_path, dispatch_source)
+        expected_binding_files.add(dispatch_source_path)
 
         functional_definitions = [
             definition
@@ -1432,4 +1474,10 @@ PYBIND11_MODULE(ops, m) {{
 }}  // namespace infini::ops
 """
 
-    (_BINDINGS_DIR / "ops.cc").write_text(ops_source)
+    ops_source_path = _BINDINGS_DIR / "ops.cc"
+    _write_text_if_changed(ops_source_path, ops_source)
+    expected_binding_files.add(ops_source_path)
+
+    _remove_stale_files(_BINDINGS_DIR, expected_binding_files)
+    _remove_stale_files(_GENERATED_SRC_DIR, expected_generated_src_files)
+    _remove_stale_files(_INCLUDE_DIR, expected_include_files)
