@@ -37,6 +37,8 @@ _PUBLIC_INCLUDE_DIR = _INCLUDE_DIR / "infini"
 
 _INDENTATION = "  "
 
+_C_API_OPERATOR_NAMES = frozenset({"add"})
+
 
 @functools.lru_cache(maxsize=1)
 def _get_system_include_flags():
@@ -852,6 +854,112 @@ def _generate_functional_entries(operator):
     return declarations, definitions
 
 
+def _generate_c_api_entries(operator):
+    pascal_case_op_name = _snake_to_pascal(operator.name)
+    declarations = []
+    definitions = []
+
+    if operator.name not in _C_API_OPERATOR_NAMES:
+        return declarations, definitions
+
+    for call in operator.calls:
+        params = _generate_c_api_params(call)
+        validations = _generate_c_api_validations(call)
+        args = _generate_c_api_arguments(call)
+        signature = _format_c_api_signature(f"infiniOps{pascal_case_op_name}", params)
+        declarations.append(f"INFINI_OPS_API {signature};")
+        definitions.append(
+            f"""INFINI_OPS_API {signature} {{
+  try {{
+{validations}
+    const infini::ops::Handle default_handle;
+    const infini::ops::Config default_config;
+    infini::ops::functional::{pascal_case_op_name}(
+        handle == nullptr ? default_handle : handle->handle,
+        config == nullptr ? default_config : config->config{args});
+    SetLastError("");
+    return INFINI_OPS_STATUS_SUCCESS;
+  }} catch (const std::bad_alloc&) {{
+    SetLastError("out of memory while running `infiniOps{pascal_case_op_name}`");
+    return INFINI_OPS_STATUS_OUT_OF_MEMORY;
+  }} catch (const std::exception& error) {{
+    SetLastError(error.what());
+    return INFINI_OPS_STATUS_INTERNAL_ERROR;
+  }} catch (...) {{
+    SetLastError("unknown error while running `infiniOps{pascal_case_op_name}`");
+    return INFINI_OPS_STATUS_INTERNAL_ERROR;
+  }}
+}}"""
+        )
+
+    return declarations, definitions
+
+
+def _generate_c_api_params(node):
+    params = ["InfiniOpsHandle handle", "InfiniOpsConfig config"]
+
+    for arg in node.get_arguments():
+        if arg.spelling == "stream":
+            continue
+
+        params.append(_c_api_param(arg))
+
+    return params
+
+
+def _format_c_api_signature(name, params):
+    return (
+        f"InfiniOpsStatus {name}(\n    {', '.join(params[:2])},\n    "
+        + ",\n    ".join(params[2:])
+        + ")"
+    )
+
+
+def _c_api_param(arg):
+    if arg.type.spelling in {"const Tensor", "Tensor"}:
+        return f"InfiniOpsTensor {arg.spelling}"
+
+    raise ValueError(
+        f"unsupported C API parameter {arg.spelling!r}: {arg.type.spelling!r}"
+    )
+
+
+def _generate_c_api_validations(node):
+    lines = []
+
+    for arg in node.get_arguments():
+        if arg.spelling == "stream":
+            continue
+
+        if arg.type.spelling not in {"const Tensor", "Tensor"}:
+            continue
+
+        lines.extend(
+            (
+                f"    InfiniOpsStatus {arg.spelling}_status = "
+                f'ValidateTensor("{arg.spelling}", {arg.spelling});',
+                f"    if ({arg.spelling}_status != INFINI_OPS_STATUS_SUCCESS) {{",
+                f"      return {arg.spelling}_status;",
+                "    }",
+            )
+        )
+
+    return "\n".join(lines)
+
+
+def _generate_c_api_arguments(node):
+    args = [
+        f"ToInternalTensor(*{arg.spelling})"
+        for arg in node.get_arguments()
+        if arg.spelling != "stream"
+    ]
+
+    if not args:
+        return ""
+
+    return ",\n        " + ",\n        ".join(args)
+
+
 def _generate_generated_dispatch_header(op_names, devices, declarations):
     header_base_includes = "\n".join(
         f'#include "base/{op_name}.h"' for op_name in op_names
@@ -951,6 +1059,23 @@ namespace infini::ops::functional {{
 {chr(10).join(definitions)}
 
 }}  // namespace infini::ops::functional
+"""
+
+
+def _generate_c_api_header(declarations):
+    return f"""#ifndef INFINI_OPS_C_OPS_H_
+#define INFINI_OPS_C_OPS_H_
+
+{chr(10).join(declarations)}
+
+#endif
+"""
+
+
+def _generate_c_api_source(definitions):
+    return f"""// Generated C ABI operator wrappers.
+
+{chr(10).join(definitions)}
 """
 
 
@@ -1076,6 +1201,7 @@ def _generate_op_artifacts(item):
     functional_declarations, functional_definitions = _generate_functional_entries(
         operator
     )
+    c_api_declarations, c_api_definitions = _generate_c_api_entries(operator)
 
     return {
         "op_name": op_name,
@@ -1089,6 +1215,8 @@ def _generate_op_artifacts(item):
         "dispatch_definitions": dispatch_definitions,
         "functional_declarations": functional_declarations,
         "functional_definitions": functional_definitions,
+        "c_api_declarations": c_api_declarations,
+        "c_api_definitions": c_api_definitions,
         "impl_paths": impl_paths,
     }
 
@@ -1193,6 +1321,16 @@ if __name__ == "__main__":
         for artifact in artifacts
         for declaration in artifact["functional_declarations"]
     ]
+    c_api_declarations = [
+        declaration
+        for artifact in artifacts
+        for declaration in artifact["c_api_declarations"]
+    ]
+    c_api_definitions = [
+        definition
+        for artifact in artifacts
+        for definition in artifact["c_api_definitions"]
+    ]
     use_monolithic_bindings = _use_monolithic_bindings()
     op_includes = []
 
@@ -1224,6 +1362,10 @@ if __name__ == "__main__":
 
     functional_header = _generate_functional_header(functional_declarations)
     (_PUBLIC_INCLUDE_DIR / "functional_ops.h").write_text(functional_header)
+    c_api_header = _generate_c_api_header(c_api_declarations)
+    (_PUBLIC_INCLUDE_DIR / "c_ops.h").write_text(c_api_header)
+    c_api_source = _generate_c_api_source(c_api_definitions)
+    (_GENERATED_SRC_DIR / "c_ops.inc").write_text(c_api_source)
 
     dispatch_batch_size = _dispatch_gen_batch_size()
 
