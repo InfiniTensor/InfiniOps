@@ -88,6 +88,18 @@ Platform maintainers can add auto-detection in `CMakeLists.txt` under the `if(AU
 pytest
 ```
 
+## Convention Checks
+
+Project-specific conventions that are not covered by `clang-format` or `ruff`
+are checked by:
+
+```bash
+python3 scripts/check_conventions.py --base origin/master --head HEAD --check-git
+```
+
+Use `python3 scripts/check_conventions.py --list-checks` to see the full check
+catalog.
+
 ## Adding an Operator
 
 1. **Base class** in `src/base/`: the class must inherit from `Operator<Op>` (e.g. `class Gemm : public Operator<Gemm>`). See `src/base/gemm.h`.
@@ -104,7 +116,7 @@ pytest
 
 Since `DataType` is an enum used to represent data types generically, we often need to map between `DataType` and native C++ types (e.g. `float`, `int32_t`).
 
-- **`TypeMap`**: maps `DataType` to native types. Use the alias `TypeMapType` to get the type directly, e.g. `TypeMapType<dev, DataType::kFloat32>` is `float`. Note, the first template argument is a `Device::Type` since data types like float16 and bfloat16 are not the same across the platforms. Thus, a `Device::Type` is required to specify which native type a `DataType` maps to. 
+- **`TypeMap`**: maps `DataType` to native types. Use the alias `TypeMapType` to get the type directly, e.g. `TypeMapType<dev, DataType::kFloat32>` is `float`. Note, the first template argument is a `Device::Type` since data types like float16 and bfloat16 are not the same across the platforms. Thus, a `Device::Type` is required to specify which native type a `DataType` maps to.
 - **`DataTypeMap`**: maps native types back to `DataType`. Use the alias `DataTypeMapValue`, e.g. `DataTypeMapValue<float>` is `DataType::kFloat32`.
 
 ### `DispatchFunc`
@@ -146,7 +158,7 @@ DispatchFunc<Device::Type::Cpu, FloatTypes>(
     "DataType Dispatch");
 ```
 
-Dispatching `DataType` is a little bit special. 
+Dispatching `DataType` is a little bit special.
 
 1. Due to the previously mentioned `TypeMap` reason, a `Device::Type` is needed as the first template argument;
 
@@ -195,7 +207,7 @@ DispatchFunc<List<Device::Type::kCpu, Device::Type::kNvidia>,
       "MultiDeviceTest");
 ```
 
-Similarly, `DataType` requires a `Device::Type` at the front: 
+Similarly, `DataType` requires a `Device::Type` at the front:
 
 ```cpp
 DispatchFunc<Device::Type::kCpu, FloatTypes, List<DataType::kInt32, DataType::kInt64>>(
@@ -223,9 +235,9 @@ DispatchFunc<FloatTypes, List<Device::Type::kCpu, Device::Type::kNvidia>>(
     "MixedDispatch");
 ```
 
-Note that in mixed multi-type dispatch, `DataType` is not treated specially. Therefore, we neither should nor can place `Device::Type` at the front of the `DataType` list. Inside the lambda, we obtain it as a `DataType` and then convert it to the native type if needed. 
+Note that in mixed multi-type dispatch, `DataType` is not treated specially. Therefore, we neither should nor can place `Device::Type` at the front of the `DataType` list. Inside the lambda, we obtain it as a `DataType` and then convert it to the native type if needed.
 
-If `DT` is not used within the lambda, you can inline its definition directly into the `using T = ...` statement, like this: 
+If `DT` is not used within the lambda, you can inline its definition directly into the `using T = ...` statement, like this:
 
 ```cpp
 using T = TypeMapType<Device::Type::kCpu, ListGet<0>(list_tag)>;
