@@ -24,7 +24,7 @@ platforms:
           memory: 32GB
           shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
           timeout: 3600
-          queue_timeout: 600
+          queue_timeout: 3600
           junit_path: test-results.xml
         # env:                             # Uncomment to inject extra env vars into the container.
         #   MY_VAR: value
@@ -55,12 +55,13 @@ platforms:
       gpu:
         type: unittest
         resources:
+          gpu_ids: "0"
           ngpus: 1
           gpu_style: none
           memory: 32GB
           shm_size: 16g
           timeout: 7200
-          queue_timeout: 600
+          queue_timeout: 7200
           junit_path: test-results.xml
         stages:
           - name: test
@@ -89,7 +90,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 600
+          queue_timeout: 3600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -116,7 +117,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 600
+          queue_timeout: 3600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -142,7 +143,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 600
+          queue_timeout: 3600
           junit_path: test-results.xml
         stages:
           - name: test
@@ -214,7 +215,7 @@ platforms:
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 600
+          queue_timeout: 3600
           junit_path: test-results.xml
         stages:
           - name: test
