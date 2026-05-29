@@ -162,6 +162,40 @@ _PREFER_FUNCTIONAL_COPY_OPS = frozenset(
 )
 
 
+def _write_text_if_changed(path: pathlib.Path, content: str) -> bool:
+    """Write `content` only when the file's bytes would change."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists() and path.read_text() == content:
+        return False
+
+    path.write_text(content)
+    return True
+
+
+def _prune_empty_dirs(root: pathlib.Path) -> None:
+    if not root.exists():
+        return
+
+    for child in sorted(root.iterdir(), reverse=True):
+        if child.is_dir():
+            _prune_empty_dirs(child)
+
+    if root.is_dir() and not any(root.iterdir()):
+        root.rmdir()
+
+
+def _remove_stale_files(root: pathlib.Path, expected_files: set[pathlib.Path]) -> None:
+    if not root.exists():
+        return
+
+    for path in sorted(root.rglob("*"), reverse=True):
+        if path.is_file() and path not in expected_files:
+            path.unlink()
+
+    _prune_empty_dirs(root)
+
+
 @dataclasses.dataclass
 class Param:
     name: str
@@ -1310,24 +1344,31 @@ def _clang_format(text: str, path: pathlib.Path) -> str:
     ).stdout
 
 
-def _emit(name: str, ops: list[Op], *, emit_base: bool) -> None:
+def _emit(name: str, ops: list[Op], *, emit_base: bool) -> set[pathlib.Path]:
     base_path = _GENERATED_BASE_DIR / f"{name}.h"
     torch_dir = _GENERATED_TORCH_DIR / name
     torch_header_path = torch_dir / f"{name}.h"
     torch_source_path = torch_dir / f"{name}.cc"
+    emitted_paths = set()
 
     if emit_base:
-        _GENERATED_BASE_DIR.mkdir(parents=True, exist_ok=True)
-        base_path.write_text(_clang_format(_generate_base_header(name, ops), base_path))
+        _write_text_if_changed(
+            base_path, _clang_format(_generate_base_header(name, ops), base_path)
+        )
+        emitted_paths.add(base_path)
 
-    torch_dir.mkdir(parents=True, exist_ok=True)
+    _write_text_if_changed(
+        torch_header_path,
+        _clang_format(_generate_torch_header(name, ops), torch_header_path),
+    )
+    _write_text_if_changed(
+        torch_source_path,
+        _clang_format(_generate_torch_source(name, ops), torch_source_path),
+    )
+    emitted_paths.add(torch_header_path)
+    emitted_paths.add(torch_source_path)
 
-    torch_header_path.write_text(
-        _clang_format(_generate_torch_header(name, ops), torch_header_path)
-    )
-    torch_source_path.write_text(
-        _clang_format(_generate_torch_source(name, ops), torch_source_path)
-    )
+    return emitted_paths
 
 
 def main() -> int:
@@ -1355,18 +1396,10 @@ def main() -> int:
     op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
     aten_entries = yaml.safe_load(_load_aten_yaml(args.pytorch_version))
 
-    # Wipe previous outputs so files for ops that have since been removed,
-    # renamed, or rejected by `cpp_type` don't linger and get picked up by
-    # the CMake glob.  Both `generated/base/` and `generated/torch/` are
-    # written exclusively by this script.
-    if _GENERATED_BASE_DIR.exists():
-        shutil.rmtree(_GENERATED_BASE_DIR)
-
-    if _GENERATED_TORCH_DIR.exists():
-        shutil.rmtree(_GENERATED_TORCH_DIR)
-
     skipped: list[tuple[str, str]] = []
     metadata: list[dict] = []
+    expected_base_files: set[pathlib.Path] = set()
+    expected_torch_files: set[pathlib.Path] = set()
 
     for name in op_names:
         candidates = _find_out_entries(aten_entries, name)
@@ -1420,7 +1453,15 @@ def main() -> int:
         # compile errors with a clear message — drop the op from the YAML
         # to suppress.
         public_name = usable[0].infini_name
-        _emit(public_name, usable, emit_base=not _base_path(public_name).exists())
+        emitted_paths = _emit(
+            public_name, usable, emit_base=not _base_path(public_name).exists()
+        )
+        expected_base_files.update(
+            path for path in emitted_paths if path.is_relative_to(_GENERATED_BASE_DIR)
+        )
+        expected_torch_files.update(
+            path for path in emitted_paths if path.is_relative_to(_GENERATED_TORCH_DIR)
+        )
 
         for op in usable:
             metadata.append(
@@ -1433,7 +1474,9 @@ def main() -> int:
             )
 
     _GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    _METADATA_PATH.write_text(json.dumps({"ops": metadata}, indent=2) + "\n")
+    _write_text_if_changed(_METADATA_PATH, json.dumps({"ops": metadata}, indent=2) + "\n")
+    _remove_stale_files(_GENERATED_BASE_DIR, expected_base_files)
+    _remove_stale_files(_GENERATED_TORCH_DIR, expected_torch_files)
 
     generated_names = sorted({m["name"] for m in metadata})
     print(
