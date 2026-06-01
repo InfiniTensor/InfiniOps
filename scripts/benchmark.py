@@ -208,38 +208,54 @@ def measure(infiniops_fn, ref_fn, args, kwargs, ref_args, ref_kwargs,
     else:
         # GPU/MLU/NPU: per-iteration sync to measure actual execution time.
         # Each iteration: sync → start timer → execute → sync → stop timer.
-        n_iters = 100
+        n_iters = 200
+        actual_warmup = max(warmup, 10)
 
         # Warmup for InfiniOps
-        for _ in range(warmup):
+        for _ in range(actual_warmup):
             infiniops_fn(*args, **kwargs)
         _synchronize(device)
 
-        total = 0.0
+        infiniops_times = []
         for _ in range(n_iters):
             _synchronize(device)
             t0 = time.perf_counter()
             infiniops_fn(*args, **kwargs)
             _synchronize(device)
-            total += time.perf_counter() - t0
-        infiniops_us = total / n_iters * 1e6
+            infiniops_times.append(time.perf_counter() - t0)
 
         # Warmup for reference
-        for _ in range(warmup):
+        for _ in range(actual_warmup):
             ref_fn(*ref_args, **ref_kwargs)
         _synchronize(device)
 
-        total = 0.0
+        ref_times = []
         for _ in range(n_iters):
             _synchronize(device)
             t0 = time.perf_counter()
             ref_fn(*ref_args, **ref_kwargs)
             _synchronize(device)
-            total += time.perf_counter() - t0
-        ref_us = total / n_iters * 1e6
+            ref_times.append(time.perf_counter() - t0)
 
-        func_stats = (infiniops_us, infiniops_us, 0.0, n_iters)
-        ref_stats = (ref_us, ref_us, 0.0, n_iters)
+        # Trim top/bottom 10% to remove outliers, then take median
+        def _trimmed_median(times):
+            times_sorted = sorted(times)
+            trim = max(1, len(times_sorted) // 10)
+            trimmed = times_sorted[trim:-trim]
+            if not trimmed:
+                trimmed = times_sorted
+            mid = len(trimmed) // 2
+            if len(trimmed) % 2 == 0:
+                return (trimmed[mid - 1] + trimmed[mid]) / 2 * 1e6
+            return trimmed[mid] * 1e6
+
+        infiniops_median_us = _trimmed_median(infiniops_times)
+        ref_median_us = _trimmed_median(ref_times)
+        infiniops_mean_us = sum(infiniops_times) / len(infiniops_times) * 1e6
+        ref_mean_us = sum(ref_times) / len(ref_times) * 1e6
+
+        func_stats = (infiniops_median_us, infiniops_mean_us, 0.0, n_iters)
+        ref_stats = (ref_median_us, ref_mean_us, 0.0, n_iters)
 
     return func_stats, ref_stats
 
@@ -1330,7 +1346,7 @@ def _ntops_op_type(op_name):
               "sqrt", "reciprocal", "log_softmax", "rms_norm",
               "ceil", "floor", "log", "sign", "round",
               "hardtanh", "amin", "sort", "argmax"}
-    _binary = {"add", "sub", "div", "pow", "eq", "ne", "lt", "le",
+    _binary = {"add", "sub", "mul", "div", "pow", "eq", "ne", "lt", "le",
                "gt", "ge", "bitwise_and", "bitwise_or", "maximum", "minimum", "where",
                "atan2", "logaddexp", "logaddexp2", "xlogy", "bitwise_xor", "lerp"}
     _reduction = {"sum", "mean", "amax", "cumsum"}
@@ -1417,6 +1433,8 @@ def _ntops_resolve_ref(op_name):
         "hardtanh": lambda x: torch.nn.functional.hardtanh(x, min_val=-1.0, max_val=1.0),
         "avg_pool2d": lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=3, stride=1, padding=1),
         "rms_norm": None,  # special
+        # core ops fallback
+        "mul": lambda x, y: torch.mul(x, y),
         # new: complex activations (no out= support)
         "hardswish": lambda x: torch.nn.functional.hardswish(x),
         "hardsigmoid": lambda x: torch.nn.functional.hardsigmoid(x),
@@ -1517,6 +1535,7 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
         "minimum": lambda a, b, o: torch.minimum(a, b, out=o),
         # new: binary transcendental
         "atan2": lambda a, b, o: torch.atan2(a, b, out=o),
+        "mul": lambda a, b, o: torch.mul(a, b, out=o),
         # new batch: binary
         "bitwise_xor": lambda a, b, o: torch.bitwise_xor(a, b, out=o),
     }
@@ -2183,6 +2202,25 @@ def _format_table(results, device, mode, display_name=None):
             dtype_short = r.dtype.replace("torch.", "")
             print(f"  [{r.status.upper()}] {r.category}/{r.operator} "
                   f"({r.device}, {dtype_short}, {r.shape_description}): {r.message}")
+
+    # Print ops with speedup < 0.85 (grouped by operator)
+    slow_results = [r for r in ok_results if r.speedup < 0.85]
+    if slow_results:
+        # Group by operator, show worst speedup
+        from collections import defaultdict
+        op_min = defaultdict(lambda: {"min_sp": 99.0, "device": "", "results": []})
+        for r in slow_results:
+            entry = op_min[r.operator]
+            if r.speedup < entry["min_sp"]:
+                entry["min_sp"] = r.speedup
+                entry["device"] = r.device
+            entry["results"].append(r)
+        print(f"\nSlow ops (speedup < 0.85x, {len(slow_results)} benchmarks, {len(op_min)} operators):")
+        print(f"  {'Operator':<20} {'Min Speedup':>12} {'Count':>6}")
+        print(f"  {'-'*20} {'-'*12} {'-'*6}")
+        for op_name in sorted(op_min.keys(), key=lambda x: op_min[x]["min_sp"]):
+            entry = op_min[op_name]
+            print(f"  {op_name:<20} {entry['min_sp']:>11.2f}x {len(entry['results']):>6}")
 
     # Summary
     if ok_results:
