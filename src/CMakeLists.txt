@@ -1,5 +1,7 @@
 add_library(infiniops SHARED)
 
+include(GNUInstallDirs)
+
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
@@ -175,11 +177,7 @@ if(WITH_MOORE)
     target_sources(infiniops PRIVATE ${MOORE_SOURCES})
 
     target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
-    target_link_libraries(infiniops PUBLIC
-        ${MUSA_LIB}
-        ${MUSART_LIB}
-        ${MUBLAS_LIB}
-        ${MUSA_OPENMP_LIB})
+    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
 
     list(APPEND DEVICE_LIST "moore")
 endif()
@@ -211,15 +209,10 @@ if(WITH_CAMBRICON)
         endforeach()
         get_directory_property(CAMBRICON_OBJECT_FILES CAMBRICON_OBJECTS)
         if(CAMBRICON_OBJECT_FILES)
-            set_source_files_properties(${CAMBRICON_OBJECT_FILES}
-                PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
             target_sources(infiniops PRIVATE ${CAMBRICON_OBJECT_FILES})
         endif()
     else()
-        if(CAMBRICON_MLU_SOURCES)
-            message(FATAL_ERROR
-                "cncc compiler not found. Cambricon .mlu kernels cannot be compiled.")
-        endif()
+        message(WARNING "cncc compiler not found. MLU kernels will not be compiled.")
     endif()
     target_compile_definitions(infiniops PRIVATE WITH_CAMBRICON=1)
 
@@ -269,7 +262,6 @@ if(WITH_ASCEND)
     else()
         message(FATAL_ERROR "libascend_hal.so not found (tried ${ASCEND_HAL_REAL}, ${ASCEND_HAL_STUB}, and ${ASCEND_HAL_DEVLIB})")
     endif()
-    get_filename_component(ASCEND_HAL_DIR "${ASCEND_HAL_LIB}" DIRECTORY)
 
     target_include_directories(infiniops PUBLIC
         "${ASCEND_HOME}/include"
@@ -360,7 +352,7 @@ if(WITH_TORCH)
     endif()
     message(STATUS "Generating torch op wrappers - done")
 
-    file(GLOB_RECURSE TORCH_SOURCES
+    file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS
         "torch/*.cc" "torch/*.cpp"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
@@ -406,7 +398,7 @@ if(WITH_TORCH)
     target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
     target_include_directories(infiniops PUBLIC
         ${TORCH_INCLUDE_DIRS}
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated>
+        ${PROJECT_SOURCE_DIR}/generated
     )
 
     # Each generated `<op>.cc` instantiates `at::<op>_out(...)`, which
@@ -518,12 +510,12 @@ target_include_directories(infiniops
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
-    # Always regenerate wrappers so the generated functional API and pybind11
-    # dispatch code match the active device list. Stale generated files (e.g.,
-    # committed for one platform) would omit specializations for other enabled
-    # backends, causing link-time or runtime failures.
+    # Always regenerate wrappers so emitted call instantiations and bindings
+    # match the active device list.  Stale generated files would omit
+    # specializations for enabled backends, causing link-time or runtime
+    # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
     if(WITH_TORCH)
@@ -544,42 +536,44 @@ if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
     else()
         message(STATUS "Generating wrappers - done")
     endif()
+endif()
 
-    file(GLOB_RECURSE FUNCTIONAL_API_SOURCES
-        "${PROJECT_SOURCE_DIR}/generated/src/functional_ops_*.cc")
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
 
-    if(WITH_NVIDIA)
-        set_source_files_properties(${FUNCTIONAL_API_SOURCES}
+    if(WITH_NVIDIA OR WITH_HYGON)
+        set_source_files_properties(${OPERATOR_CALL_INSTANTIATION_SOURCES}
             PROPERTIES LANGUAGE CUDA)
-        target_sources(infiniops PRIVATE ${FUNCTIONAL_API_SOURCES})
+        target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
     elseif(WITH_ILUVATAR)
-        set(_iluvatar_functional_include_flags
+        set(_iluvatar_call_instantiation_include_flags
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}/generated"
             "-I${PROJECT_SOURCE_DIR}/generated/include")
         foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
-            list(APPEND _iluvatar_functional_include_flags "-I${_dir}")
+            list(APPEND _iluvatar_call_instantiation_include_flags "-I${_dir}")
         endforeach()
 
-        set(_iluvatar_functional_defs -DWITH_ILUVATAR=1)
+        set(_iluvatar_call_instantiation_defs -DWITH_ILUVATAR=1)
         if(WITH_CPU)
-            list(APPEND _iluvatar_functional_defs -DWITH_CPU=1)
+            list(APPEND _iluvatar_call_instantiation_defs -DWITH_CPU=1)
         endif()
         if(WITH_TORCH)
-            list(APPEND _iluvatar_functional_defs -DWITH_TORCH=1)
+            list(APPEND _iluvatar_call_instantiation_defs -DWITH_TORCH=1)
         endif()
         if(DEFINED TORCH_CXX11_ABI)
-            list(APPEND _iluvatar_functional_defs
+            list(APPEND _iluvatar_call_instantiation_defs
                 "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
         endif()
 
-        set(ILUVATAR_FUNCTIONAL_OBJECTS)
-        set(_iluvatar_functional_object_dir
-            "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_functional_objs")
-        foreach(_src IN LISTS FUNCTIONAL_API_SOURCES)
+        set(ILUVATAR_CALL_INSTANTIATION_OBJECTS)
+        set(_iluvatar_call_instantiation_object_dir
+            "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_call_instantiation_objs")
+        foreach(_src IN LISTS OPERATOR_CALL_INSTANTIATION_SOURCES)
             get_filename_component(_name "${_src}" NAME_WE)
-            set(_obj "${_iluvatar_functional_object_dir}/${_name}.o")
+            set(_obj "${_iluvatar_call_instantiation_object_dir}/${_name}.o")
             set(_dep "${_obj}.d")
             set(_depfile_arg)
             if(CMAKE_GENERATOR MATCHES "Ninja")
@@ -588,10 +582,10 @@ if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
             add_custom_command(
                 OUTPUT "${_obj}"
                 COMMAND ${CMAKE_COMMAND} -E make_directory
-                    "${_iluvatar_functional_object_dir}"
+                    "${_iluvatar_call_instantiation_object_dir}"
                 COMMAND ${ILUVATAR_CUDA_COMPILER}
-                    ${_iluvatar_functional_defs}
-                    ${_iluvatar_functional_include_flags}
+                    ${_iluvatar_call_instantiation_defs}
+                    ${_iluvatar_call_instantiation_include_flags}
                     ${ILUVATAR_CUDA_FLAGS}
                     -MMD -MF "${_dep}"
                     -c "${_src}" -o "${_obj}"
@@ -600,19 +594,19 @@ if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
                 COMMENT "Compiling ${_name}.cc with CoreX clang++"
                 VERBATIM
             )
-            list(APPEND ILUVATAR_FUNCTIONAL_OBJECTS "${_obj}")
+            list(APPEND ILUVATAR_CALL_INSTANTIATION_OBJECTS "${_obj}")
         endforeach()
 
-        set_source_files_properties(${ILUVATAR_FUNCTIONAL_OBJECTS}
+        set_source_files_properties(${ILUVATAR_CALL_INSTANTIATION_OBJECTS}
             PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
-        target_sources(infiniops PRIVATE ${ILUVATAR_FUNCTIONAL_OBJECTS})
+        target_sources(infiniops PRIVATE ${ILUVATAR_CALL_INSTANTIATION_OBJECTS})
     else()
-        target_sources(infiniops PRIVATE ${FUNCTIONAL_API_SOURCES})
+        target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
     endif()
 endif()
 
 if(GENERATE_PYTHON_BINDINGS)
-    file(GLOB_RECURSE PYBIND11_SOURCES
+    file(GLOB_RECURSE PYBIND11_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/bindings/*.cc")
 
     set(PYBIND11_DISPATCH_SOURCES)
@@ -794,12 +788,6 @@ if(GENERATE_PYTHON_BINDINGS)
     if(WITH_TORCH)
         list(APPEND _INFINIOPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
     endif()
-    if(WITH_MOORE)
-        list(APPEND _INFINIOPS_INSTALL_RPATH "${MUSA_ROOT}/lib")
-    endif()
-    if(WITH_ASCEND)
-        list(APPEND _INFINIOPS_INSTALL_RPATH "${ASCEND_HOME}/lib64" "${ASCEND_HAL_DIR}")
-    endif()
 
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
     set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
@@ -817,70 +805,43 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
 endif()
 
-include(CMakePackageConfigHelpers)
-
-configure_file(
-    ${PROJECT_SOURCE_DIR}/cmake/infiniops.pc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/infiniops.pc
-    @ONLY
-)
-
-configure_package_config_file(
-    ${PROJECT_SOURCE_DIR}/cmake/InfiniOpsConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps
-)
-
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
 install(TARGETS infiniops
-    EXPORT InfiniOpsTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(FILES ${PROJECT_SOURCE_DIR}/include/infini/ops.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-if(GENERATE_CPP_OPERATOR_API OR GENERATE_PYTHON_BINDINGS)
-    install(FILES ${PROJECT_SOURCE_DIR}/generated/include/infini/functional_ops.h
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    install(FILES
+        ${PROJECT_SOURCE_DIR}/generated/include/infini/operator_call_instantiations.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/infini
     )
 endif()
 
-install(FILES
-    ${PROJECT_SOURCE_DIR}/src/config.h
-    ${PROJECT_SOURCE_DIR}/src/data_type.h
-    ${PROJECT_SOURCE_DIR}/src/device.h
-    ${PROJECT_SOURCE_DIR}/src/handle.h
-    ${PROJECT_SOURCE_DIR}/src/hash.h
-    ${PROJECT_SOURCE_DIR}/src/tensor.h
+file(GLOB INFINIOPS_PUBLIC_CORE_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
+
+install(FILES ${INFINIOPS_PUBLIC_CORE_HEADERS}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(FILES
-    ${PROJECT_SOURCE_DIR}/src/common/constexpr_map.h
-    ${PROJECT_SOURCE_DIR}/src/common/traits.h
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/base/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/base
+    FILES_MATCHING PATTERN "*.h"
+)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/common/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/common
+    FILES_MATCHING PATTERN "*.h"
 )
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/infiniops.pc
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-)
-
-install(EXPORT InfiniOpsTargets
-    NAMESPACE InfiniOps::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps
-)
-
-install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps
-)
+if(EXISTS ${PROJECT_SOURCE_DIR}/generated/base)
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/generated/base/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/base
+        FILES_MATCHING PATTERN "*.h"
+    )
+endif()

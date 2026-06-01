@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-def test_cpp_functional_add_smoke(tmp_path):
+def test_cpp_operator_call_instantiation_smoke(tmp_path):
     install_prefix = _install_prefix()
     include_dir = install_prefix / "include"
     library_dir = _library_dir(install_prefix)
@@ -72,7 +72,7 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
     r"""
     #include <infini/ops.h>
 
-    #include <cstddef>
+    #include <cmath>
 
     int main() {
       float input_data[3] = {1.0f, 2.0f, 3.0f};
@@ -89,12 +89,26 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
       infini::ops::Handle handle;
       infini::ops::Config config;
 
-      infini::ops::functional::Add(handle, config, input, other, output);
+      infini::ops::Add::Call(handle, config, input, other, output);
 
-      if (output_data[0] != 5.0f || output_data[1] != 7.0f ||
-          output_data[2] != 9.0f) {
+      if (std::fabs(output_data[0] - 5.0f) > 1e-6f ||
+          std::fabs(output_data[1] - 7.0f) > 1e-6f ||
+          std::fabs(output_data[2] - 9.0f) > 1e-6f) {
         return 1;
       }
+
+      output_data[0] = 0.0f;
+      output_data[1] = 0.0f;
+      output_data[2] = 0.0f;
+
+      infini::ops::Add::Call(input, other, output);
+
+      if (std::fabs(output_data[0] - 5.0f) > 1e-6f ||
+          std::fabs(output_data[1] - 7.0f) > 1e-6f ||
+          std::fabs(output_data[2] - 9.0f) > 1e-6f) {
+        return 1;
+      }
+
       return 0;
     }
     """

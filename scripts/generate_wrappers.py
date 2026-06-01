@@ -9,12 +9,8 @@ import shutil
 import subprocess
 import textwrap
 
-try:
-    import clang.cindex
-    from clang.cindex import CursorKind
-except ImportError:
-    clang = None
-    CursorKind = None
+import clang.cindex
+from clang.cindex import CursorKind
 
 _SRC_DIR = pathlib.Path("src")
 
@@ -32,8 +28,6 @@ _BINDINGS_DIR = _GENERATION_DIR / "bindings"
 _GENERATED_SRC_DIR = _GENERATION_DIR / "src"
 
 _INCLUDE_DIR = _GENERATION_DIR / "include"
-
-_PUBLIC_INCLUDE_DIR = _INCLUDE_DIR / "infini"
 
 _INDENTATION = "  "
 
@@ -80,30 +74,8 @@ def _find_base_header(op_name):
     raise FileNotFoundError(f"no base header for op {op_name!r}")
 
 
-class _ParsedType:
-    def __init__(self, spelling):
-        self.spelling = spelling
-
-
-class _ParsedArgument:
-    def __init__(self, type_spelling, spelling):
-        self.type = _ParsedType(type_spelling)
-        self.spelling = spelling
-
-
-class _ParsedFunction:
-    def __init__(self, arguments):
-        self._arguments = arguments
-
-    def get_arguments(self):
-        return self._arguments
-
-
 class _OperatorExtractor:
     def __call__(self, op_name):
-        if clang is None:
-            return _parse_operator_header(op_name)
-
         index = clang.cindex.Index.create()
         args = (
             "-std=c++17",
@@ -141,131 +113,6 @@ class _OperatorExtractor:
 
         for child in node.get_children():
             yield from _OperatorExtractor._find(child, op_name)
-
-
-def _parse_operator_header(op_name):
-    pascal_case_op_name = _snake_to_pascal(op_name)
-    source = _strip_cpp_comments(_find_base_header(op_name).read_text())
-    class_body = _extract_class_body(source, pascal_case_op_name)
-    constructors = [
-        _ParsedFunction(_parse_parameter_list(params))
-        for params in _find_signature_parameters(
-            class_body, rf"(?:explicit\s+)?{pascal_case_op_name}\s*\("
-        )
-    ]
-    calls = [
-        _ParsedFunction(_parse_parameter_list(params))
-        for params in _find_signature_parameters(
-            class_body, r"(?:virtual\s+)?void\s+operator\s*\(\s*\)\s*\("
-        )
-    ]
-
-    return _Operator(op_name, constructors, calls)
-
-
-def _strip_cpp_comments(source):
-    source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
-    return re.sub(r"//.*", "", source)
-
-
-def _extract_class_body(source, class_name):
-    match = re.search(rf"\bclass\s+{class_name}\b[^{{]*{{", source)
-
-    if match is None:
-        raise ValueError(f"no class definition for {class_name!r}")
-
-    start = match.end()
-    depth = 1
-    index = start
-
-    while index < len(source):
-        char = source[index]
-
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return source[start:index]
-
-        index += 1
-
-    raise ValueError(f"unterminated class definition for {class_name!r}")
-
-
-def _find_signature_parameters(source, pattern):
-    params = []
-
-    for match in re.finditer(pattern, source):
-        opening_paren = match.end() - 1
-
-        if opening_paren < 0 or source[opening_paren] != "(":
-            continue
-
-        closing_paren = _find_matching_delimiter(source, opening_paren, "(", ")")
-        params.append(source[opening_paren + 1 : closing_paren])
-
-    return params
-
-
-def _find_matching_delimiter(source, start, opening, closing):
-    depth = 0
-
-    for index in range(start, len(source)):
-        char = source[index]
-
-        if char == opening:
-            depth += 1
-        elif char == closing:
-            depth -= 1
-            if depth == 0:
-                return index
-
-    raise ValueError(f"unmatched delimiter {opening!r}")
-
-
-def _parse_parameter_list(params):
-    arguments = []
-
-    for param in _split_top_level(params, ","):
-        param = _strip_default_argument(param.strip())
-
-        if not param or param == "void":
-            continue
-
-        match = re.match(r"(.+?[\s*&]+)([A-Za-z_][A-Za-z0-9_]*)$", param)
-
-        if match is None:
-            raise ValueError(f"could not parse parameter {param!r}")
-
-        arguments.append(_ParsedArgument(match.group(1).strip(), match.group(2)))
-
-    return arguments
-
-
-def _split_top_level(text, delimiter):
-    parts = []
-    start = 0
-    depth = 0
-    pairs = {"<": ">", "(": ")", "[": "]", "{": "}"}
-    closing = {value: key for key, value in pairs.items()}
-
-    for index, char in enumerate(text):
-        if char in pairs:
-            depth += 1
-        elif char in closing:
-            depth -= 1
-        elif char == delimiter and depth == 0:
-            parts.append(text[start:index])
-            start = index + 1
-
-    parts.append(text[start:])
-    return parts
-
-
-def _strip_default_argument(param):
-    parts = _split_top_level(param, "=")
-    return parts[0].strip()
 
 
 class _Operator:
@@ -421,7 +268,7 @@ def _generate_pybind11(operator):
                 f"    }}\n"
                 f"    Config config;\n"
                 f"    config.set_implementation_index(implementation_index);\n"
-                f"    return functional::{pascal_case_op_name}(handle, config, {call_args});\n"
+                f"    return generated_dispatch::Call{pascal_case_op_name}(handle, config, {call_args});\n"
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = 0);'
             )
 
@@ -481,7 +328,6 @@ def _generate_pybind11(operator):
 
 #include "base/{op_name}.h"
 #include "config.h"
-#include "infini/ops.h"
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
 #include "pybind11_utils.h"
@@ -804,54 +650,6 @@ def _generate_generated_dispatch_entries(operator):
     return declarations, definitions
 
 
-def _generate_functional_entries(operator):
-    def _generate_params(node):
-        return ", ".join(
-            f"{arg.type.spelling} {arg.spelling}"
-            for arg in node.get_arguments()
-            if arg.spelling != "stream"
-        )
-
-    def _generate_arguments(node):
-        return ", ".join(
-            arg.spelling for arg in node.get_arguments() if arg.spelling != "stream"
-        )
-
-    def _append_optional_args(prefix, args):
-        if args:
-            return f"{prefix}, {args}"
-
-        return prefix
-
-    def _append_optional_params(prefix, params):
-        if params:
-            return f"{prefix}, {params}"
-
-        return prefix
-
-    pascal_case_op_name = _snake_to_pascal(operator.name)
-    op_type = f"::infini::ops::{pascal_case_op_name}"
-    operator_type = f"::infini::ops::Operator<{op_type}>"
-    declarations = []
-    definitions = []
-
-    for call in operator.calls:
-        params = _generate_params(call)
-        args = _generate_arguments(call)
-        function_params = _append_optional_params(
-            "const Handle& handle, const Config& config", params
-        )
-
-        declarations.append(f"void {pascal_case_op_name}({function_params});")
-        definitions.append(
-            f"""void {pascal_case_op_name}({function_params}) {{
-  return {operator_type}::Call({_append_optional_args("handle, config", args)});
-}}"""
-        )
-
-    return declarations, definitions
-
-
 def _generate_generated_dispatch_header(op_names, devices, declarations):
     header_base_includes = "\n".join(
         f'#include "base/{op_name}.h"' for op_name in op_names
@@ -904,33 +702,86 @@ namespace infini::ops::generated_dispatch {{
 """
 
 
-def _generate_functional_header(declarations):
-    return f"""#ifndef INFINI_OPS_FUNCTIONAL_OPS_H_
-#define INFINI_OPS_FUNCTIONAL_OPS_H_
+def _strip_top_level_const(type_spelling):
+    type_spelling = " ".join(type_spelling.split())
 
-#include <cstddef>
+    while type_spelling.startswith("const "):
+        type_spelling = type_spelling[len("const ") :]
+
+    return type_spelling
+
+
+def _generate_operator_call_instantiation_entries(operator):
+    def _generate_template_arguments(node):
+        return ", ".join(
+            _strip_top_level_const(arg.type.spelling)
+            for arg in node.get_arguments()
+            if arg.spelling != "stream"
+        )
+
+    def _generate_parameters(node):
+        return ", ".join(
+            f"const {_strip_top_level_const(arg.type.spelling)}& {arg.spelling}"
+            for arg in node.get_arguments()
+            if arg.spelling != "stream"
+        )
+
+    def _append_optional_params(prefix, params):
+        if params:
+            return f"{prefix}, {params}"
+
+        return prefix
+
+    pascal_case_op_name = _snake_to_pascal(operator.name)
+    declarations = []
+    definitions = []
+
+    for call in operator.calls:
+        template_arguments = _generate_template_arguments(call)
+        params = _generate_parameters(call)
+        function_params = _append_optional_params(
+            "const Handle& handle, const Config& config", params
+        )
+        instantiation = (
+            f"Operator<{pascal_case_op_name}>::Call<{template_arguments}>"
+            f"({function_params})"
+        )
+
+        declarations.append(f"extern template auto {instantiation};")
+        definitions.append(f"template auto {instantiation};")
+
+    return declarations, definitions
+
+
+def _generate_operator_call_instantiation_header(op_names, declarations):
+    header_base_includes = "\n".join(
+        f'#include "base/{op_name}.h"' for op_name in op_names
+    )
+
+    return f"""#ifndef INFINI_OPS_OPERATOR_CALL_INSTANTIATIONS_H_
+#define INFINI_OPS_OPERATOR_CALL_INSTANTIATIONS_H_
+
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 #include "config.h"
-#include "data_type.h"
-#include "device.h"
 #include "handle.h"
-#include "tensor.h"
+#include "operator.h"
 
-namespace infini::ops::functional {{
+{header_base_includes}
+
+namespace infini::ops {{
 
 {chr(10).join(declarations)}
 
-}}  // namespace infini::ops::functional
+}}  // namespace infini::ops
 
 #endif
 """
 
 
-def _generate_functional_source(op_names, devices, impl_paths, definitions):
-    base_includes = "\n".join(f'#include "base/{op_name}.h"' for op_name in op_names)
+def _generate_operator_call_instantiation_source(devices, impl_paths, definitions):
     device_includes = "\n".join(
         f'#include "{path}"' for path in _device_marker_headers(devices)
     )
@@ -938,19 +789,18 @@ def _generate_functional_source(op_names, devices, impl_paths, definitions):
         f'#include "{_to_include_path(impl_path)}"' for impl_path in impl_paths
     )
 
-    return f"""#include "infini/functional_ops.h"
+    return f"""#include "infini/operator_call_instantiations.h"
 
 // clang-format off
 {device_includes}
-{base_includes}
 {impl_includes}
 // clang-format on
 
-namespace infini::ops::functional {{
+namespace infini::ops {{
 
 {chr(10).join(definitions)}
 
-}}  // namespace infini::ops::functional
+}}  // namespace infini::ops
 """
 
 
@@ -958,6 +808,7 @@ def _device_marker_headers(devices):
     paths = {
         "cpu": "native/cpu/device_.h",
         "nvidia": "native/cuda/nvidia/device_.h",
+        "hygon": "native/cuda/hygon/device_.h",
         "cambricon": "native/cambricon/device_.h",
         "ascend": "native/ascend/device_.h",
         "metax": "native/cuda/metax/device_.h",
@@ -1073,9 +924,10 @@ def _generate_op_artifacts(item):
     dispatch_declarations, dispatch_definitions = _generate_generated_dispatch_entries(
         operator
     )
-    functional_declarations, functional_definitions = _generate_functional_entries(
-        operator
-    )
+    (
+        call_instantiation_declarations,
+        call_instantiation_definitions,
+    ) = _generate_operator_call_instantiation_entries(operator)
 
     return {
         "op_name": op_name,
@@ -1087,8 +939,8 @@ def _generate_op_artifacts(item):
         "legacy_c_header": legacy_c_header,
         "dispatch_declarations": dispatch_declarations,
         "dispatch_definitions": dispatch_definitions,
-        "functional_declarations": functional_declarations,
-        "functional_definitions": functional_definitions,
+        "call_instantiation_declarations": call_instantiation_declarations,
+        "call_instantiation_definitions": call_instantiation_definitions,
         "impl_paths": impl_paths,
     }
 
@@ -1159,8 +1011,6 @@ if __name__ == "__main__":
 
         directory.mkdir(parents=True)
 
-    _PUBLIC_INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
-
     ops_json = pathlib.Path("ops.json")
 
     if ops_json.exists():
@@ -1188,10 +1038,10 @@ if __name__ == "__main__":
         for artifact in artifacts
         for declaration in artifact["dispatch_declarations"]
     ]
-    functional_declarations = [
+    call_instantiation_declarations = [
         declaration
         for artifact in artifacts
-        for declaration in artifact["functional_declarations"]
+        for declaration in artifact["call_instantiation_declarations"]
     ]
     use_monolithic_bindings = _use_monolithic_bindings()
     op_includes = []
@@ -1222,8 +1072,13 @@ if __name__ == "__main__":
     )
     (_BINDINGS_DIR / "generated_dispatch.h").write_text(dispatch_header)
 
-    functional_header = _generate_functional_header(functional_declarations)
-    (_PUBLIC_INCLUDE_DIR / "functional_ops.h").write_text(functional_header)
+    call_instantiation_header = _generate_operator_call_instantiation_header(
+        op_names, call_instantiation_declarations
+    )
+    (_INCLUDE_DIR / "infini").mkdir(exist_ok=True)
+    (_INCLUDE_DIR / "infini" / "operator_call_instantiations.h").write_text(
+        call_instantiation_header
+    )
 
     dispatch_batch_size = _dispatch_gen_batch_size()
 
@@ -1246,20 +1101,27 @@ if __name__ == "__main__":
             dispatch_source
         )
 
-        functional_definitions = [
+    for call_instantiation_batch_index, start in enumerate(
+        range(0, len(artifacts), dispatch_batch_size)
+    ):
+        batch = artifacts[start : start + dispatch_batch_size]
+        impl_paths = list(
+            dict.fromkeys(
+                impl_path for artifact in batch for impl_path in artifact["impl_paths"]
+            )
+        )
+        definitions = [
             definition
             for artifact in batch
-            for definition in artifact["functional_definitions"]
+            for definition in artifact["call_instantiation_definitions"]
         ]
-        functional_source = _generate_functional_source(
-            [artifact["op_name"] for artifact in batch],
-            args.devices,
-            impl_paths,
-            functional_definitions,
+        call_instantiation_source = _generate_operator_call_instantiation_source(
+            args.devices, impl_paths, definitions
         )
-        (_GENERATED_SRC_DIR / f"functional_ops_{dispatch_batch_index}.cc").write_text(
-            functional_source
-        )
+        (
+            _GENERATED_SRC_DIR
+            / f"operator_call_instantiations_{call_instantiation_batch_index}.cc"
+        ).write_text(call_instantiation_source)
 
     bind_func_calls = "\n".join(
         f"{bind_func_name}(m);" for bind_func_name in bind_func_names

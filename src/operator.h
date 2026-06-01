@@ -191,7 +191,8 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto Call(const Handle& handle, const Config& config, Args&&... args) {
+  static auto Call(const Handle& handle, const Config& config,
+                   const Args&... args) {
     static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
         cache;
     static std::size_t generation{0};
@@ -206,20 +207,17 @@ class Operator : public OperatorBase {
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      // Pass args as lvalue refs so they remain valid for the `operator()` call
-      // below. Forwarding rvalue temporaries into `Make()` would leave the args
-      // in a moved-from (empty) state before `operator()` can use them.
       it = cache.emplace(std::move(key), Make(config, args...)).first;
     }
 
     auto& op{it->second};
 
-    return (*op)(handle, std::forward<Args>(args)...);
+    return (*op)(handle, args...);
   }
 
   template <typename... Args>
-  static auto Call(const Tensor tensor, Args&&... args) {
-    return Call({}, {}, tensor, std::forward<Args>(args)...);
+  static auto Call(const Tensor tensor, const Args&... args) {
+    return Call({}, {}, tensor, args...);
   }
 
   static std::vector<std::size_t> active_implementation_indices(
@@ -241,18 +239,18 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  auto operator()(const Handle& handle, Args&&... args) {
+  auto operator()(const Handle& handle, const Args&... args) {
     set_handle(handle);
     set_stream(handle.stream());
     set_workspace(handle.workspace());
     set_workspace_size_in_bytes(handle.workspace_size_in_bytes());
 
-    return operator()(std::forward<Args>(args)...);
+    return operator()(args...);
   }
 
   template <typename... Args>
-  auto operator()(Args&&... args) const {
-    return (*static_cast<const Key*>(this))(std::forward<Args>(args)...);
+  auto operator()(const Args&... args) const {
+    return (*static_cast<const Key*>(this))(args...);
   }
 
  protected:
