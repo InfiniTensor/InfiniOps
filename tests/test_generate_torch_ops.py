@@ -260,6 +260,15 @@ def test_generate_torch_method_source_uses_semantic_bridges_for_selected_ops():
     assert "auto result = at::matmul(" in scaled_mm_source
     assert "result.abs().amax()" in scaled_mm_source
 
+    scaled_mm_single_out_op = module._parse_func(
+        "_scaled_mm.out(Tensor self, Tensor mat2, Tensor scale_a, Tensor scale_b, Tensor? bias=None, Tensor? scale_result=None, ScalarType? out_dtype=None, bool use_fast_accum=False, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    scaled_mm_single_out_source = module._generate_torch_method_source(
+        "aten_scaled_mm", scaled_mm_single_out_op
+    )
+    assert "auto result = at::matmul(" in scaled_mm_single_out_source
+    assert "result.abs().amax()" not in scaled_mm_single_out_source
+
 
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_generator_module()

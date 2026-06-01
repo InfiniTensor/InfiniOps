@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${repo_root}/scripts/dev_platforms.sh"
+
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/dev_test.sh [cambricon|metax|cpu|auto] [--report PATH] [--no-build] [-- pytest-args...]
+  scripts/dev_test.sh [cpu|nvidia|iluvatar|hygon|metax|moore|cambricon|ascend|auto] [--report PATH] [--no-build] [-- pytest-args...]
 
 Examples:
   scripts/dev_test.sh cambricon
   scripts/dev_test.sh metax
+  scripts/dev_test.sh nvidia
   scripts/dev_test.sh cambricon -- tests/test_torch_ops.py -k index
 
 Default behavior:
@@ -22,20 +26,6 @@ Notes:
 EOF
 }
 
-detect_platform() {
-    if [[ -n "${NEUWARE_HOME:-}" ]]; then
-        echo "cambricon"
-        return 0
-    fi
-
-    if [[ -n "${MACA_PATH:-}" ]]; then
-        echo "metax"
-        return 0
-    fi
-
-    return 1
-}
-
 platform="auto"
 report_path=""
 do_build=1
@@ -43,8 +33,14 @@ pytest_args=()
 pytest_targets=()
 
 while (($#)); do
+    if infiniops_is_supported_platform "$1"; then
+        platform="$1"
+        shift
+        continue
+    fi
+
     case "$1" in
-        cambricon|metax|cpu|auto)
+        auto)
             platform="$1"
             shift
             ;;
@@ -73,13 +69,24 @@ while (($#)); do
     esac
 done
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-
 if [[ "$platform" == "auto" ]]; then
-    if ! platform="$(detect_platform)"; then
-        echo "Could not auto-detect platform. Pass one of: cambricon, metax, cpu." >&2
-        exit 1
-    fi
+    mapfile -t detected_platforms < <(infiniops_detect_platforms)
+
+    case "${#detected_platforms[@]}" in
+        0)
+            platform="cpu"
+            echo "[dev_test] auto-detect: no accelerator platform found, using cpu"
+            ;;
+        1)
+            platform="${detected_platforms[0]}"
+            echo "[dev_test] auto-detect: using ${platform}"
+            ;;
+        *)
+            echo "Auto-detected multiple accelerator platforms: ${detected_platforms[*]}." >&2
+            echo "Pass one explicitly: $(infiniops_supported_platforms_csv)." >&2
+            exit 1
+            ;;
+    esac
 fi
 
 if [[ -z "$report_path" ]]; then

@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${repo_root}/scripts/dev_platforms.sh"
+
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/skip_stats.sh [cambricon|metax|cpu|PATH-TO-REPORT] [--show-skip-only]
+  scripts/skip_stats.sh [cpu|nvidia|iluvatar|hygon|metax|moore|cambricon|ascend|PATH-TO-REPORT] [--show-skip-only]
 
 Examples:
   scripts/skip_stats.sh cambricon
   scripts/skip_stats.sh metax
+  scripts/skip_stats.sh nvidia
   scripts/skip_stats.sh reports/cambricon.json --show-skip-only
 EOF
 }
@@ -18,19 +22,15 @@ if (($# == 0)); then
     exit 1
 fi
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 summary_script="${repo_root}/scripts/summarize_op_report.py"
 first_arg="$1"
 shift
 
-case "$first_arg" in
-    cambricon|metax|cpu)
+if infiniops_is_supported_platform "$first_arg"; then
         report_path="${repo_root}/reports/${first_arg}.json"
-        ;;
-    *)
-        report_path="$first_arg"
-        ;;
-esac
+else
+    report_path="$first_arg"
+fi
 
 if [[ "$report_path" != /* ]]; then
     report_path="${repo_root}/${report_path}"

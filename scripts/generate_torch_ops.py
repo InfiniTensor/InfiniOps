@@ -1059,10 +1059,23 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
             )
 
         if op.aten_name == "_scaled_mm":
-            assert len(op.out_params) == 2, "_scaled_mm should have two out tensors"
-            out, out_amax = op.out_params
             input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
             mat2_arg = _render_arg(next(p for p in op.params if p.name == "mat2"))
+
+            if len(op.out_params) == 1:
+                out = op.out_params[0]
+                return (
+                    f"([&] {{\n"
+                    f"    auto result = at::matmul("
+                    f"{input_arg}.cpu().to(at::kFloat), "
+                    f"{mat2_arg}.cpu().to(at::kFloat));\n"
+                    f"    {tensor_prefix}{out.name}.copy_("
+                    f"result.to({input_arg}.device()).to({tensor_prefix}{out.name}.scalar_type()));\n"
+                    f"  }}())"
+                )
+
+            assert len(op.out_params) == 2, "_scaled_mm should have one or two out tensors"
+            out, out_amax = op.out_params
             return (
                 f"([&] {{\n"
                 f"    auto result = at::matmul("

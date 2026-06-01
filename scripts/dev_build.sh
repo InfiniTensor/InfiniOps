@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${repo_root}/scripts/dev_platforms.sh"
+
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/dev_build.sh [cambricon|metax|cpu|auto] [--jobs N]
+  scripts/dev_build.sh [cpu|nvidia|iluvatar|hygon|metax|moore|cambricon|ascend|auto] [--jobs N]
 
 Examples:
   scripts/dev_build.sh
   scripts/dev_build.sh cambricon
   scripts/dev_build.sh metax --jobs 8
+  scripts/dev_build.sh nvidia
+  scripts/dev_build.sh auto
 
 What it does:
   1. Re-runs CMake configure in a persistent build directory.
@@ -29,28 +34,20 @@ Important:
 EOF
 }
 
-detect_platform() {
-    if [[ -n "${NEUWARE_HOME:-}" ]]; then
-        echo "cambricon"
-        return 0
-    fi
-
-    if [[ -n "${MACA_PATH:-}" ]]; then
-        echo "metax"
-        return 0
-    fi
-
-    return 1
-}
-
 platform="auto"
 jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 torch_jobs="${INFINIOPS_TORCH_COMPILE_JOBS:-2}"
 binding_jobs="${INFINIOPS_BINDING_COMPILE_JOBS:-2}"
 
 while (($#)); do
+    if infiniops_is_supported_platform "$1"; then
+        platform="$1"
+        shift
+        continue
+    fi
+
     case "$1" in
-        cambricon|metax|cpu|auto)
+        auto)
             platform="$1"
             shift
             ;;
@@ -78,27 +75,59 @@ while (($#)); do
     esac
 done
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 python_bin="${PYTHON_BIN:-$(command -v python3)}"
 
 if [[ "$platform" == "auto" ]]; then
-    if ! platform="$(detect_platform)"; then
-        echo "Could not auto-detect platform. Pass one of: cambricon, metax, cpu." >&2
-        exit 1
-    fi
+    mapfile -t detected_platforms < <(infiniops_detect_platforms)
+
+    case "${#detected_platforms[@]}" in
+        0)
+            platform="cpu"
+            echo "[dev_build] auto-detect: no accelerator platform found, using cpu"
+            ;;
+        1)
+            platform="${detected_platforms[0]}"
+            echo "[dev_build] auto-detect: using ${platform}"
+            ;;
+        *)
+            echo "Auto-detected multiple accelerator platforms: ${detected_platforms[*]}." >&2
+            echo "Pass one explicitly: $(infiniops_supported_platforms_csv)." >&2
+            exit 1
+            ;;
+    esac
 fi
 
 with_cpu="ON"
 with_torch="ON"
+with_nvidia="OFF"
+with_iluvatar="OFF"
+with_hygon="OFF"
 with_cambricon="OFF"
 with_metax="OFF"
+with_moore="OFF"
+with_ascend="OFF"
 
 case "$platform" in
+    nvidia)
+        with_nvidia="ON"
+        ;;
+    iluvatar)
+        with_iluvatar="ON"
+        ;;
+    hygon)
+        with_hygon="ON"
+        ;;
     cambricon)
         with_cambricon="ON"
         ;;
     metax)
         with_metax="ON"
+        ;;
+    moore)
+        with_moore="ON"
+        ;;
+    ascend)
+        with_ascend="ON"
         ;;
     cpu)
         ;;
@@ -112,13 +141,29 @@ build_dir="${repo_root}/build-${platform}"
 install_root="${build_dir}/install"
 install_dir="${install_root}/infini"
 generator="${CMAKE_GENERATOR:-}"
+cached_generator=""
 
 if [[ -z "${generator}" && -f "${build_dir}/CMakeCache.txt" ]]; then
-    generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "${build_dir}/CMakeCache.txt" | head -n 1)"
+    cached_generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "${build_dir}/CMakeCache.txt" | head -n 1)"
+    generator="${cached_generator}"
+fi
+
+if [[ "${generator}" == "Ninja" ]] && ! command -v ninja > /dev/null 2>&1; then
+    generator=""
 fi
 
 if [[ -z "${generator}" ]]; then
-    generator="Ninja"
+    if command -v ninja > /dev/null 2>&1; then
+        generator="Ninja"
+    else
+        generator="Unix Makefiles"
+    fi
+fi
+
+if [[ -n "${cached_generator}" && "${cached_generator}" != "${generator}" ]]; then
+    echo "[dev_build] generator changed: ${cached_generator} -> ${generator}"
+    rm -f "${build_dir}/CMakeCache.txt"
+    rm -rf "${build_dir}/CMakeFiles"
 fi
 
 echo "[dev_build] repo      : ${repo_root}"
@@ -134,8 +179,13 @@ cmake -S "${repo_root}" -B "${build_dir}" -G "${generator}" \
     -DPython_EXECUTABLE="${python_bin}" \
     -DWITH_CPU="${with_cpu}" \
     -DWITH_TORCH="${with_torch}" \
+    -DWITH_NVIDIA="${with_nvidia}" \
+    -DWITH_ILUVATAR="${with_iluvatar}" \
+    -DWITH_HYGON="${with_hygon}" \
     -DWITH_CAMBRICON="${with_cambricon}" \
     -DWITH_METAX="${with_metax}" \
+    -DWITH_MOORE="${with_moore}" \
+    -DWITH_ASCEND="${with_ascend}" \
     -DAUTO_DETECT_DEVICES=OFF \
     -DAUTO_DETECT_BACKENDS=OFF \
     -DGENERATE_PYTHON_BINDINGS=ON \

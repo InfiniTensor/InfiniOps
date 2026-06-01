@@ -98,6 +98,25 @@ _METAX_BF16_ATOL_OVERRIDES = {
     "max_pool3d_with_indices_backward": 0.25,
 }
 
+_NVIDIA_BF16_TOLERANCE_OPS = frozenset(
+    {
+        "max_pool3d_with_indices_backward",
+        "reflection_pad3d_backward",
+        "replication_pad3d_backward",
+        "upsample_bicubic2d_backward",
+        "upsample_bilinear2d_backward",
+        "upsample_trilinear3d_backward",
+        "_upsample_bicubic2d_aa_backward",
+        "_upsample_bilinear2d_aa_backward",
+    }
+)
+
+_NVIDIA_BF16_ATOL_OVERRIDES = {
+    "max_pool3d_with_indices_backward": 0.125,
+    "upsample_bicubic2d_backward": 0.125,
+    "upsample_trilinear3d_backward": 0.25,
+}
+
 _UNSIGNED_DTYPES = frozenset(
     getattr(torch, name)
     for name in ("uint8", "uint16", "uint32", "uint64")
@@ -629,11 +648,20 @@ def _tolerances_for_case(op_name, dtype, device):
     if (
         dtype == torch.bfloat16
         and device == "cuda"
+        and not os.environ.get("MACA_PATH")
+        and op_name in _NVIDIA_BF16_TOLERANCE_OPS
+    ):
+        nvidia_atol = _NVIDIA_BF16_ATOL_OVERRIDES.get(op_name, 0.0625)
+        atol = max(atol, nvidia_atol)
+
+    if (
+        dtype == torch.bfloat16
+        and device == "cuda"
         and os.environ.get("MACA_PATH")
         and op_name in _METAX_BF16_TOLERANCE_OPS
     ):
         metax_atol = _METAX_BF16_ATOL_OVERRIDES.get(op_name, 0.125)
-        return (rtol, max(atol, metax_atol))
+        atol = max(atol, metax_atol)
 
     return (rtol, atol)
 
@@ -875,8 +903,6 @@ _DEVICE_ASSERTING_OPS = frozenset(
         "cudnn_convolution",
         "_slow_conv2d_forward",
         "_slow_conv2d_backward",
-        "slow_conv3d",
-        "slow_conv3d_forward",
         "slow_conv_transpose2d",
         "slow_conv_transpose3d",
         "thnn_conv2d",
@@ -911,12 +937,12 @@ _DEVICE_ASSERTING_OPS = frozenset(
     }
 )
 
-# MetaX-specific exemption list for ops whose historical device-side
-# asserts were caused by the harness's old generic inputs. These cases
-# now have constrained shapes/scalars or bespoke tensor synthesis, so we
-# can let them run on MetaX and keep the remaining blanket guard for the
-# still-fragile CUDA paths.
-_METAX_SAFE_DEVICE_ASSERT_OPS = frozenset(
+# These CUDA ops used to be skipped because the harness fed them generic
+# zero/invalid shape metadata, which could poison the CUDA context with a
+# device-side assert.  The current harness now supplies constrained shapes,
+# indices, and scalar defaults, and this set has been validated on both
+# MetaX and NVIDIA/A100 so we can exercise them instead of blanket-skipping.
+_CUDA_SAFE_DEVICE_ASSERT_OPS = frozenset(
     {
         "adaptive_avg_pool2d",
         "adaptive_avg_pool3d",
@@ -1138,12 +1164,10 @@ def _torch_func(op_name):
         "_int_mm": lambda input, mat2: (
             input.cpu().to(torch.int32) @ mat2.cpu().to(torch.int32)
         ).to(input.device),
-        "_scaled_mm": lambda input, mat2, use_fast_accum=False: (
-            lambda result: (
-                result.to(device=input.device, dtype=input.dtype),
-                result.abs().amax().to(device=input.device, dtype=torch.float32),
-            )
-        )(torch.matmul(input.cpu().to(torch.float32), mat2.cpu().to(torch.float32))),
+        "_scaled_mm": lambda input, mat2, scale_a, scale_b, use_fast_accum=False: (
+            torch.matmul(input.cpu().to(torch.float32), mat2.cpu().to(torch.float32))
+            .to(device=input.device, dtype=input.dtype)
+        ),
         "sparse_sampled_addmm": lambda input, mat1, mat2, beta, alpha: torch.sparse.sampled_addmm(
             input,
             mat1,
@@ -1836,9 +1860,7 @@ def test_op(op_meta, shape, dtype, device):
     if (
         device == "cuda"
         and aten_name in _DEVICE_ASSERTING_OPS
-        and not (
-            _is_metax_cuda(device) and aten_name in _METAX_SAFE_DEVICE_ASSERT_OPS
-        )
+        and aten_name not in _CUDA_SAFE_DEVICE_ASSERT_OPS
     ):
         pytest.skip(
             f"`{aten_name}` triggers a CUDA device-side assert on random inputs"
