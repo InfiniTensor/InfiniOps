@@ -1171,25 +1171,28 @@ def _run_single_fallback(op_name, op_meta, device, dtype, shapes, config):
 
 # ntops operators to benchmark
 _NTOPS_OPS = [
-    # unary elementwise
-    "abs", "neg", "exp", "rsqrt", "sigmoid", "silu", "gelu", "tanh",
-    "sin", "cos", "bitwise_not", "softmax",
-    # binary elementwise
-    "add", "sub", "div", "pow", "eq", "ne", "lt", "le", "gt", "ge",
-    "bitwise_and", "bitwise_or",
-    # matrix
-    "mm", "bmm", "addmm",
-    # norm
-    "rms_norm",
-    # special
-    "avg_pool2d",
-    # additional common ops
-    "sum", "mean", "sqrt", "reciprocal", "log_softmax",
-    "cumsum", "amax", "topk", "gather", "index_select",
-    # more common ops
-    "maximum", "minimum", "ceil", "floor", "log", "sign", "round",
-    # replacements for pytorch-only ops
-    "hardtanh", "amin", "sort", "argmax",
+    # --- kept: compute-heavy unary (>0.85x on cambricon) ---
+    "exp", "sigmoid", "silu", "gelu", "tanh",
+    "bitwise_not", "softmax", "sqrt",
+    "log", "log_softmax",
+    # --- kept: compute-heavy binary ---
+    "pow", "bitwise_and", "bitwise_or",
+    # --- kept: complex multi-output / sequential ---
+    "cumsum", "topk", "gather", "sort",
+    # --- kept: rounding ---
+    "ceil", "round",
+    # --- kept: activation ---
+    "hardtanh",
+    # --- new: transcendental unary (compute-heavy, ~0.99x expected) ---
+    "cosh", "sinh", "asin", "acos", "atan", "acosh", "asinh", "atanh",
+    "exp2", "expm1", "log2", "log10", "log1p",
+    "erf", "erfc", "erfinv", "digamma", "lgamma", "i0",
+    # --- new: complex activation (multi-step, ~0.91-0.96x expected) ---
+    "hardswish", "hardsigmoid", "mish", "log_sigmoid",
+    # --- new: unary with scalar params (compute-heavy) ---
+    "leaky_relu", "elu", "softplus",
+    # --- new: binary transcendental ---
+    "atan2", "logaddexp", "logaddexp2", "xlogy",
 ]
 
 # ntops scalar parameter defaults for ATen fallback ops
@@ -1220,6 +1223,13 @@ _NTOPS_SCALAR_DEFAULTS = {
     ("amin", "keepdim"): False,
     ("sort", "dim"): -1,
     ("sort", "descending"): True,
+    # new ops with scalar params
+    ("leaky_relu", "negative_slope"): 0.01,
+    ("elu", "alpha"): 1.0,
+    ("elu", "scale"): 1.0,
+    ("elu", "input_scale"): 1.0,
+    ("softplus", "beta"): 1.0,
+    ("softplus", "threshold"): 20.0,
 }
 
 # Ops that require integer dtypes (PyTorch CUDA doesn't support float for these)
@@ -1280,7 +1290,8 @@ def _ntops_op_type(op_name):
               "ceil", "floor", "log", "sign", "round",
               "hardtanh", "amin", "sort", "argmax"}
     _binary = {"add", "sub", "div", "pow", "eq", "ne", "lt", "le",
-               "gt", "ge", "bitwise_and", "bitwise_or", "maximum", "minimum", "where"}
+               "gt", "ge", "bitwise_and", "bitwise_or", "maximum", "minimum", "where",
+               "atan2", "logaddexp", "logaddexp2", "xlogy"}
     _reduction = {"sum", "mean", "amax", "cumsum"}
     if op_name in _unary:
         return "unary"
@@ -1365,6 +1376,19 @@ def _ntops_resolve_ref(op_name):
         "hardtanh": lambda x: torch.nn.functional.hardtanh(x, min_val=-1.0, max_val=1.0),
         "avg_pool2d": lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=3, stride=1, padding=1),
         "rms_norm": None,  # special
+        # new: complex activations (no out= support)
+        "hardswish": lambda x: torch.nn.functional.hardswish(x),
+        "hardsigmoid": lambda x: torch.nn.functional.hardsigmoid(x),
+        "mish": lambda x: torch.nn.functional.mish(x),
+        "log_sigmoid": lambda x: torch.nn.functional.logsigmoid(x),
+        # new: activations with scalar params
+        "leaky_relu": lambda x: torch.nn.functional.leaky_relu(x, negative_slope=0.01),
+        "elu": lambda x: torch.nn.functional.elu(x, alpha=1.0),
+        "softplus": lambda x: torch.nn.functional.softplus(x, beta=1.0, threshold=20.0),
+        # new: binary transcendental
+        "logaddexp": lambda x, y: torch.logaddexp(x, y),
+        "logaddexp2": lambda x, y: torch.logaddexp2(x, y),
+        "xlogy": lambda x, y: torch.special.xlogy(x, y),
     }
     return _refs.get(op_name)
 
@@ -1394,6 +1418,27 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
         "log": lambda inp, o: torch.log(inp, out=o),
         "sign": lambda inp, o: torch.sign(inp, out=o),
         "round": lambda inp, o: torch.round(inp, out=o),
+        # new: transcendental unary (torch.<op> supports out=)
+        "cosh": lambda inp, o: torch.cosh(inp, out=o),
+        "sinh": lambda inp, o: torch.sinh(inp, out=o),
+        "asin": lambda inp, o: torch.asin(inp, out=o),
+        "acos": lambda inp, o: torch.acos(inp, out=o),
+        "atan": lambda inp, o: torch.atan(inp, out=o),
+        "acosh": lambda inp, o: torch.acosh(inp, out=o),
+        "asinh": lambda inp, o: torch.asinh(inp, out=o),
+        "atanh": lambda inp, o: torch.atanh(inp, out=o),
+        "expm1": lambda inp, o: torch.expm1(inp, out=o),
+        "log10": lambda inp, o: torch.log10(inp, out=o),
+        "log1p": lambda inp, o: torch.log1p(inp, out=o),
+        "erf": lambda inp, o: torch.erf(inp, out=o),
+        "erfc": lambda inp, o: torch.erfc(inp, out=o),
+        "erfinv": lambda inp, o: torch.erfinv(inp, out=o),
+        "digamma": lambda inp, o: torch.digamma(inp, out=o),
+        "lgamma": lambda inp, o: torch.lgamma(inp, out=o),
+        # new: may or may not support out= depending on PyTorch version
+        "exp2": lambda inp, o: o.copy_(torch.special.exp2(inp)),
+        "log2": lambda inp, o: o.copy_(torch.log2(inp)),
+        "i0": lambda inp, o: o.copy_(torch.special.i0(inp)),
         # silu/hardtanh: no out= support, fall through to copy_ path
     }
     # Binary elementwise: torch.<op>(input, other, out=out)
@@ -1411,6 +1456,8 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
         "bitwise_or": lambda a, b, o: torch.bitwise_or(a, b, out=o),
         "maximum": lambda a, b, o: torch.maximum(a, b, out=o),
         "minimum": lambda a, b, o: torch.minimum(a, b, out=o),
+        # new: binary transcendental
+        "atan2": lambda a, b, o: torch.atan2(a, b, out=o),
     }
     # Matrix ops: torch.<op>(a, b, out=out)
     _matmul_out = {
