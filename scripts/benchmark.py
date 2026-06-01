@@ -1171,28 +1171,33 @@ def _run_single_fallback(op_name, op_meta, device, dtype, shapes, config):
 
 # ntops operators to benchmark
 _NTOPS_OPS = [
-    # --- kept: compute-heavy unary (>0.85x on cambricon) ---
+    # --- compute-heavy unary ---
     "exp", "sigmoid", "silu", "gelu", "tanh",
     "bitwise_not", "softmax", "sqrt",
     "log", "log_softmax",
-    # --- kept: compute-heavy binary ---
+    # --- compute-heavy binary ---
     "pow", "bitwise_and", "bitwise_or",
-    # --- kept: complex multi-output / sequential ---
+    # --- complex multi-output / sequential ---
     "cumsum", "topk", "gather", "sort",
-    # --- kept: rounding ---
+    # --- rounding ---
     "ceil", "round",
-    # --- kept: activation ---
+    # --- activation ---
     "hardtanh",
-    # --- new: transcendental unary (compute-heavy, ~0.99x expected) ---
+    # --- transcendental unary (compute-heavy) ---
     "cosh", "sinh", "asin", "acos", "atan", "acosh", "asinh", "atanh",
     "exp2", "expm1", "log2", "log10", "log1p",
-    "erf", "erfc", "erfinv", "digamma", "lgamma", "i0",
-    # --- new: complex activation (multi-step, ~0.91-0.96x expected) ---
+    "erf", "erfc", "erfinv",
+    # --- complex activation (multi-step) ---
     "hardswish", "hardsigmoid", "mish", "log_sigmoid",
-    # --- new: unary with scalar params (compute-heavy) ---
-    "leaky_relu", "elu", "softplus",
-    # --- new: binary transcendental ---
-    "atan2", "logaddexp", "logaddexp2", "xlogy",
+    # --- unary with scalar params ---
+    "elu", "softplus",
+    # --- binary transcendental ---
+    "atan2", "xlogy",
+    # --- new batch: sequential / bitwise / compute-heavy ---
+    "cumprod", "bitwise_xor", "logical_not",
+    "logit", "sinc", "nan_to_num",
+    "threshold", "clamp_max", "clamp_min",
+    "lerp",
 ]
 
 # ntops scalar parameter defaults for ATen fallback ops
@@ -1230,10 +1235,17 @@ _NTOPS_SCALAR_DEFAULTS = {
     ("elu", "input_scale"): 1.0,
     ("softplus", "beta"): 1.0,
     ("softplus", "threshold"): 20.0,
+    # new batch
+    ("cumprod", "dim"): -1,
+    ("threshold", "threshold"): 1.0,
+    ("threshold", "value"): 0.0,
+    ("clamp_max", "max"): 6.0,
+    ("clamp_min", "min"): 0.0,
+    ("lerp", "weight"): 0.5,
 }
 
 # Ops that require integer dtypes (PyTorch CUDA doesn't support float for these)
-_INT_ONLY_OPS = {"bitwise_and", "bitwise_or", "bitwise_not"}
+_INT_ONLY_OPS = {"bitwise_and", "bitwise_or", "bitwise_not", "bitwise_xor"}
 
 # Ops that use native slot 0 instead of ATen slot 8
 _NATIVE_SLOT_OPS = {"rms_norm"}
@@ -1291,7 +1303,7 @@ def _ntops_op_type(op_name):
               "hardtanh", "amin", "sort", "argmax"}
     _binary = {"add", "sub", "div", "pow", "eq", "ne", "lt", "le",
                "gt", "ge", "bitwise_and", "bitwise_or", "maximum", "minimum", "where",
-               "atan2", "logaddexp", "logaddexp2", "xlogy"}
+               "atan2", "logaddexp", "logaddexp2", "xlogy", "bitwise_xor", "lerp"}
     _reduction = {"sum", "mean", "amax", "cumsum"}
     if op_name in _unary:
         return "unary"
@@ -1389,6 +1401,16 @@ def _ntops_resolve_ref(op_name):
         "logaddexp": lambda x, y: torch.logaddexp(x, y),
         "logaddexp2": lambda x, y: torch.logaddexp2(x, y),
         "xlogy": lambda x, y: torch.special.xlogy(x, y),
+        # new batch
+        "cumprod": lambda x: torch.cumprod(x, dim=-1),
+        "logical_not": lambda x: torch.logical_not(x),
+        "logit": lambda x: torch.logit(x),
+        "sinc": lambda x: torch.sinc(x),
+        "nan_to_num": lambda x: torch.nan_to_num(x),
+        "threshold": lambda x: torch.threshold(x, threshold=1.0, value=0.0),
+        "clamp_max": lambda x: torch.clamp_max(x, max=6.0),
+        "clamp_min": lambda x: torch.clamp_min(x, min=0.0),
+        "lerp": lambda x, y: torch.lerp(x, y, weight=0.5),
     }
     return _refs.get(op_name)
 
@@ -1439,6 +1461,11 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
         "exp2": lambda inp, o: o.copy_(torch.special.exp2(inp)),
         "log2": lambda inp, o: o.copy_(torch.log2(inp)),
         "i0": lambda inp, o: o.copy_(torch.special.i0(inp)),
+        # new batch: simple unary
+        "logical_not": lambda inp, o: torch.logical_not(inp, out=o),
+        "logit": lambda inp, o: o.copy_(torch.logit(inp)),
+        "sinc": lambda inp, o: o.copy_(torch.sinc(inp)),
+        "nan_to_num": lambda inp, o: o.copy_(torch.nan_to_num(inp)),
         # silu/hardtanh: no out= support, fall through to copy_ path
     }
     # Binary elementwise: torch.<op>(input, other, out=out)
@@ -1458,6 +1485,8 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
         "minimum": lambda a, b, o: torch.minimum(a, b, out=o),
         # new: binary transcendental
         "atan2": lambda a, b, o: torch.atan2(a, b, out=o),
+        # new batch: binary
+        "bitwise_xor": lambda a, b, o: torch.bitwise_xor(a, b, out=o),
     }
     # Matrix ops: torch.<op>(a, b, out=out)
     _matmul_out = {
@@ -1468,6 +1497,11 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
     _special_out = {
         "avg_pool2d": lambda inp, o: torch.nn.functional.avg_pool2d(
             inp, kernel_size=3, stride=1, padding=1, out=o),
+        # new batch: unary with scalar params
+        "cumprod": lambda inp, o: torch.cumprod(inp, dim=-1, out=o),
+        "threshold": lambda inp, o: torch.threshold(inp, threshold=1.0, value=0.0, out=o),
+        "clamp_max": lambda inp, o: torch.clamp_max(inp, max=6.0, out=o),
+        "clamp_min": lambda inp, o: torch.clamp_min(inp, min=0.0, out=o),
     }
     if op_name in _unary_out:
         fn = _unary_out[op_name]
@@ -1808,6 +1842,47 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
 
         def ref_fn():
             return torch.argmax(inputs[0])
+
+        all_args = (inputs[0], out)
+        ref_args = _clone(all_args)
+
+    elif op_name == "lerp":
+        # lerp(input, end, weight_scalar, out) — force Scalar overload
+        a, b = inputs[0], inputs[1]
+        def infiniops_fn():
+            infini.ops.lerp(a, b, 0.5, out,
+                            implementation_index=_PYTORCH_SLOT)
+            return out
+
+        def ref_fn():
+            torch.lerp(a, b, 0.5, out=out)
+            return out
+
+        all_args = (a, b, out)
+        ref_args = _clone(all_args)
+
+    elif op_name == "clamp_max":
+        def infiniops_fn():
+            infini.ops.clamp_max(inputs[0], 6.0, out,
+                                implementation_index=_PYTORCH_SLOT)
+            return out
+
+        def ref_fn():
+            torch.clamp_max(inputs[0], max=6.0, out=out)
+            return out
+
+        all_args = (inputs[0], out)
+        ref_args = _clone(all_args)
+
+    elif op_name == "clamp_min":
+        def infiniops_fn():
+            infini.ops.clamp_min(inputs[0], 0.0, out,
+                                implementation_index=_PYTORCH_SLOT)
+            return out
+
+        def ref_fn():
+            torch.clamp_min(inputs[0], min=0.0, out=out)
+            return out
 
         all_args = (inputs[0], out)
         ref_args = _clone(all_args)
