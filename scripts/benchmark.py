@@ -1194,10 +1194,11 @@ _NTOPS_OPS = [
     # --- binary transcendental ---
     "atan2", "xlogy",
     # --- new batch: sequential / bitwise / compute-heavy ---
-    "cumprod", "bitwise_xor", "logical_not",
-    "logit", "sinc", "nan_to_num",
-    "threshold", "clamp_max", "clamp_min",
-    "lerp",
+    "cumprod", "bitwise_xor",
+    "nan_to_num",
+    "threshold", "lerp",
+    # --- new: more transcendental / simple compute ---
+    "tan", "square", "cummax", "cummin",
 ]
 
 # ntops scalar parameter defaults for ATen fallback ops
@@ -1242,6 +1243,8 @@ _NTOPS_SCALAR_DEFAULTS = {
     ("clamp_max", "max"): 6.0,
     ("clamp_min", "min"): 0.0,
     ("lerp", "weight"): 0.5,
+    ("cummax", "dim"): -1,
+    ("cummin", "dim"): -1,
 }
 
 # Ops that require integer dtypes (PyTorch CUDA doesn't support float for these)
@@ -1466,6 +1469,9 @@ def _ntops_ref_out_fn(op_name, inputs, scalar_args, out, indices_out=None):
         "logit": lambda inp, o: o.copy_(torch.logit(inp)),
         "sinc": lambda inp, o: o.copy_(torch.sinc(inp)),
         "nan_to_num": lambda inp, o: o.copy_(torch.nan_to_num(inp)),
+        # new batch 2
+        "tan": lambda inp, o: torch.tan(inp, out=o),
+        "square": lambda inp, o: torch.square(inp, out=o),
         # silu/hardtanh: no out= support, fall through to copy_ path
     }
     # Binary elementwise: torch.<op>(input, other, out=out)
@@ -1883,6 +1889,30 @@ def _run_single_ntops(op_name, op_type, op_meta, device, dtype, shape, config):
         def ref_fn():
             torch.clamp_min(inputs[0], min=0.0, out=out)
             return out
+
+        all_args = (inputs[0], out)
+        ref_args = _clone(all_args)
+
+    elif op_name in ("cummax", "cummin"):
+        indices_out = empty_strided(shape, None, dtype=torch.long, device=device)
+        if op_name == "cummax":
+            def infiniops_fn():
+                infini.ops.cummax(inputs[0], -1, out, indices_out,
+                                  implementation_index=_PYTORCH_SLOT)
+                return out
+            def ref_fn():
+                result = torch.cummax(inputs[0], dim=-1)
+                out.copy_(result.values)
+                return out
+        else:
+            def infiniops_fn():
+                infini.ops.cummin(inputs[0], -1, out, indices_out,
+                                  implementation_index=_PYTORCH_SLOT)
+                return out
+            def ref_fn():
+                result = torch.cummin(inputs[0], dim=-1)
+                out.copy_(result.values)
+                return out
 
         all_args = (inputs[0], out)
         ref_args = _clone(all_args)
