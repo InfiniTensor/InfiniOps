@@ -860,21 +860,37 @@ __C __export {_generate_destroy_func_decl(operator)};
 def _generate_generated_dispatch_entries(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
+    vector_optional_tensor_params = _find_vector_optional_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
-        if arg.spelling in optional_tensor_params:
-            return True
+        if _is_vector_optional_tensor(arg):
+            return False
 
-        return "std::optional" in arg.type.spelling and "Tensor" in arg.type.spelling
+        if "std::optional" in arg.type.spelling:
+            return _spelling_is_optional_tensor(arg.type.spelling)
+
+        return arg.spelling in optional_tensor_params
 
     def _is_vector_tensor(arg):
-        if arg.spelling in vector_tensor_params:
-            return True
+        if _is_vector_optional_tensor(arg):
+            return False
 
-        return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
+        if "std::vector" in arg.type.spelling:
+            return _spelling_is_vector_tensor(arg.type.spelling)
+
+        return arg.spelling in vector_tensor_params
+
+    def _is_vector_optional_tensor(arg):
+        if "std::vector" in arg.type.spelling:
+            return _spelling_is_vector_optional_tensor(arg.type.spelling)
+
+        return arg.spelling in vector_optional_tensor_params
 
     def _is_vector_int64(arg):
+        if "std::vector" in arg.type.spelling:
+            return _spelling_is_vector_int64(arg.type.spelling)
+
         return arg.spelling in vector_int64_params
 
     def _generate_params(node):
@@ -884,7 +900,9 @@ def _generate_generated_dispatch_entries(operator):
             if arg.spelling == "stream":
                 continue
 
-            if _is_optional_tensor(arg):
+            if _is_vector_optional_tensor(arg):
+                parts.append(f"std::vector<std::optional<Tensor>> {arg.spelling}")
+            elif _is_optional_tensor(arg):
                 parts.append(f"std::optional<Tensor> {arg.spelling}")
             elif _is_vector_tensor(arg):
                 parts.append(f"std::vector<Tensor> {arg.spelling}")
@@ -1397,7 +1415,9 @@ if __name__ == "__main__":
     expected_binding_files.add(dispatch_header_path)
 
     functional_header = _generate_functional_header(functional_declarations)
-    (_PUBLIC_INCLUDE_DIR / "functional_ops.h").write_text(functional_header)
+    functional_header_path = _PUBLIC_INCLUDE_DIR / "functional_ops.h"
+    _write_text_if_changed(functional_header_path, functional_header)
+    expected_include_files.add(functional_header_path)
 
     dispatch_batch_size = _dispatch_gen_batch_size()
 
@@ -1433,9 +1453,11 @@ if __name__ == "__main__":
             impl_paths,
             functional_definitions,
         )
-        (_GENERATED_SRC_DIR / f"functional_ops_{dispatch_batch_index}.cc").write_text(
-            functional_source
+        functional_source_path = (
+            _GENERATED_SRC_DIR / f"functional_ops_{dispatch_batch_index}.cc"
         )
+        _write_text_if_changed(functional_source_path, functional_source)
+        expected_generated_src_files.add(functional_source_path)
 
     bind_func_calls = "\n".join(
         f"{bind_func_name}(m);" for bind_func_name in bind_func_names

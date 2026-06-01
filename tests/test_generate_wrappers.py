@@ -91,6 +91,117 @@ def test_generate_pybind11_uses_vector_optional_tensor_binding(tmp_path, monkeyp
     assert 'py::arg("indices") = py::none()' not in source
 
 
+def test_generate_dispatch_preserves_optional_scalar_and_tensor_overloads(
+    tmp_path, monkeypatch
+):
+    module = _load_wrappers_module()
+
+    header = tmp_path / "clamp.h"
+    header.write_text(
+        """class Clamp {
+ public:
+  Clamp(const Tensor input, const std::optional<double> min, const std::optional<double> max, Tensor out);
+  Clamp(const Tensor input, const std::optional<Tensor> min, const std::optional<Tensor> max, Tensor out);
+  void operator()(const Tensor input, const std::optional<double> min, const std::optional<double> max, Tensor out) const;
+  void operator()(const Tensor input, const std::optional<Tensor> min, const std::optional<Tensor> max, Tensor out) const;
+};
+"""
+    )
+
+    monkeypatch.setattr(module, "_find_base_header", lambda _op_name: header)
+
+    class _FakeType:
+        def __init__(self, spelling):
+            self.spelling = spelling
+
+    class _FakeArg:
+        def __init__(self, spelling, type_spelling):
+            self.spelling = spelling
+            self.type = _FakeType(type_spelling)
+
+    class _FakeNode:
+        def __init__(self, *args):
+            self._args = args
+
+        def get_arguments(self):
+            return self._args
+
+    scalar_args = (
+        _FakeArg("input", "const Tensor"),
+        _FakeArg("min", "const std::optional<double>"),
+        _FakeArg("max", "const std::optional<double>"),
+        _FakeArg("out", "Tensor"),
+    )
+    tensor_args = (
+        _FakeArg("input", "const Tensor"),
+        _FakeArg("min", "const std::optional<Tensor>"),
+        _FakeArg("max", "const std::optional<Tensor>"),
+        _FakeArg("out", "Tensor"),
+    )
+
+    class _FakeOperator:
+        name = "clamp"
+        constructors = (_FakeNode(*scalar_args), _FakeNode(*tensor_args))
+        calls = (_FakeNode(*scalar_args), _FakeNode(*tensor_args))
+
+    declarations, _ = module._generate_generated_dispatch_entries(_FakeOperator())
+    source = "\n".join(declarations)
+
+    assert "const std::optional<double> min" in source
+    assert "const std::optional<double> max" in source
+    assert "std::optional<Tensor> min" in source
+    assert "std::optional<Tensor> max" in source
+
+
+def test_generate_dispatch_preserves_vector_optional_tensor(tmp_path, monkeypatch):
+    module = _load_wrappers_module()
+
+    header = tmp_path / "index.h"
+    header.write_text(
+        """class Index {
+ public:
+  Index(const Tensor input, const std::vector<std::optional<Tensor>> indices, Tensor out);
+  void operator()(const Tensor input, const std::vector<std::optional<Tensor>> indices, Tensor out) const;
+};
+"""
+    )
+
+    monkeypatch.setattr(module, "_find_base_header", lambda _op_name: header)
+
+    class _FakeType:
+        def __init__(self, spelling):
+            self.spelling = spelling
+
+    class _FakeArg:
+        def __init__(self, spelling, type_spelling):
+            self.spelling = spelling
+            self.type = _FakeType(type_spelling)
+
+    class _FakeNode:
+        def __init__(self, *args):
+            self._args = args
+
+        def get_arguments(self):
+            return self._args
+
+    args = (
+        _FakeArg("input", "const Tensor"),
+        _FakeArg("indices", "const std::vector<std::optional<Tensor>>"),
+        _FakeArg("out", "Tensor"),
+    )
+
+    class _FakeOperator:
+        name = "index"
+        constructors = (_FakeNode(*args),)
+        calls = (_FakeNode(*args),)
+
+    declarations, _ = module._generate_generated_dispatch_entries(_FakeOperator())
+    source = "\n".join(declarations)
+
+    assert "std::vector<std::optional<Tensor>> indices" in source
+    assert "std::optional<Tensor> indices" not in source
+
+
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_wrappers_module()
     path = tmp_path / "bindings.cc"
