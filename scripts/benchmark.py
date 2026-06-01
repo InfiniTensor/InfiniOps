@@ -1170,36 +1170,62 @@ def _run_single_fallback(op_name, op_meta, device, dtype, shapes, config):
 # ---------------------------------------------------------------------------
 
 # ntops operators to benchmark
-_NTOPS_OPS = [
-    # --- compute-heavy unary ---
+# --- Core ntops ops: fundamental DL operators (may have lower speedup) ---
+_NTOPS_CORE_OPS = [
+    # matrix multiplication
+    "mm", "bmm", "addmm",
+    # basic elementwise
+    "add", "sub", "mul", "div", "abs", "neg",
+    # comparison
+    "eq", "ne", "lt", "gt", "le", "ge",
+    # reduction
+    "sum", "mean", "amax", "amin", "argmax",
+    # normalization
+    "rms_norm",
+    # pooling
+    "avg_pool2d",
+    # simple unary
+    "sin", "cos", "sign", "reciprocal", "rsqrt",
+    # binary
+    "maximum", "minimum",
+    # index
+    "index_select",
+]
+
+# --- Extended ntops ops: compute-heavy, higher speedup ---
+_NTOPS_EXT_OPS = [
+    # compute-heavy unary
     "exp", "sigmoid", "silu", "gelu", "tanh",
     "bitwise_not", "softmax", "sqrt",
     "log", "log_softmax",
-    # --- compute-heavy binary ---
+    # compute-heavy binary
     "pow", "bitwise_and", "bitwise_or",
-    # --- complex multi-output / sequential ---
+    # complex multi-output / sequential
     "cumsum", "topk", "gather", "sort",
-    # --- rounding ---
+    # rounding
     "ceil", "round",
-    # --- activation ---
+    # activation
     "hardtanh",
-    # --- transcendental unary (compute-heavy) ---
+    # transcendental unary (compute-heavy)
     "cosh", "sinh", "asin", "acos", "atan", "acosh", "asinh", "atanh",
     "exp2", "expm1", "log2", "log10", "log1p",
     "erf", "erfc", "erfinv",
-    # --- complex activation (multi-step) ---
+    # complex activation (multi-step)
     "hardswish", "hardsigmoid", "mish", "log_sigmoid",
-    # --- unary with scalar params ---
+    # unary with scalar params
     "elu", "softplus",
-    # --- binary transcendental ---
+    # binary transcendental
     "atan2", "xlogy",
-    # --- new batch: sequential / bitwise / compute-heavy ---
+    # sequential / bitwise / compute-heavy
     "cumprod", "bitwise_xor",
     "nan_to_num",
     "threshold", "lerp",
-    # --- new: more transcendental / simple compute ---
+    # more transcendental / simple compute
     "tan", "square", "cummax", "cummin",
 ]
+
+# Combined list for backward compatibility
+_NTOPS_OPS = _NTOPS_CORE_OPS + _NTOPS_EXT_OPS
 
 # ntops scalar parameter defaults for ATen fallback ops
 _NTOPS_SCALAR_DEFAULTS = {
@@ -1533,9 +1559,21 @@ def run_ntops_benchmarks(config):
     results = []
 
     # Determine which ops to benchmark
-    ops_to_run = _NTOPS_OPS[:]
+    # Support --ops core / --ops ext as group shortcuts
+    _GROUP_MAP = {
+        "core": _NTOPS_CORE_OPS,
+        "ext": _NTOPS_EXT_OPS,
+    }
     if config.ops:
-        ops_to_run = [op for op in ops_to_run if op in config.ops]
+        expanded = []
+        for op in config.ops:
+            if op in _GROUP_MAP:
+                expanded.extend(_GROUP_MAP[op])
+            else:
+                expanded.append(op)
+        ops_to_run = [op for op in _NTOPS_OPS if op in expanded]
+    else:
+        ops_to_run = _NTOPS_OPS[:]
 
     total = len(ops_to_run)
     for idx, op_name in enumerate(ops_to_run, 1):
