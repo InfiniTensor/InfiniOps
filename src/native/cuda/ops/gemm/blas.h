@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_CUDA_GEMM_BLAS_H_
 #define INFINI_OPS_CUDA_GEMM_BLAS_H_
 
+#include <unordered_map>
 #include <utility>
 
 #include "base/gemm.h"
@@ -32,7 +33,8 @@ class BlasGemm : public Gemm {
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
-    Backend::BlasSetStream(GetHandle(),
+    auto& handle{GetHandle(c.device())};
+    Backend::BlasSetStream(handle,
                            static_cast<typename Backend::Stream>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
@@ -46,7 +48,7 @@ class BlasGemm : public Gemm {
     const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
 
     Backend::BlasGemmStridedBatchedEx(
-        GetHandle(), op_a, op_b, swap_a_and_b_ ? n_ : m_,
+        handle, op_a, op_b, swap_a_and_b_ ? n_ : m_,
         swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
         swap_a_and_b_ ? b.data() : a.data(),
         BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? b.dtype()
@@ -92,15 +94,17 @@ class BlasGemm : public Gemm {
                                         : Backend::BLAS_OP_N;
   }
 
-  // TODO: This static singleton is not thread-safe under concurrent access
-  // from multiple host threads. Add proper synchronization in the future.
-  static typename Backend::BlasHandle& GetHandle() {
-    static typename Backend::BlasHandle handle = []() {
-      typename Backend::BlasHandle h;
-      Backend::BlasCreate(&h);
-      return h;
-    }();
-    return handle;
+  static typename Backend::BlasHandle& GetHandle(const Device& device) {
+    static thread_local std::unordered_map<int, typename Backend::BlasHandle>
+        handles;
+
+    auto it{handles.find(device.index())};
+    if (it == handles.end()) {
+      typename Backend::BlasHandle handle;
+      Backend::BlasCreate(&handle);
+      it = handles.emplace(device.index(), handle).first;
+    }
+    return it->second;
   }
 
   bool a_is_col_major_{false};

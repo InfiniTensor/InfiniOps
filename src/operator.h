@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_OPERATOR_H_
 #define INFINI_OPS_OPERATOR_H_
 
+#include <atomic>
 #include <cassert>
 #include <memory>
 #include <optional>
@@ -138,13 +139,15 @@ class Operator : public OperatorBase {
   // Generation counter for lazy cache invalidation.  Bumped by
   // `clear_cache()`; the next `call()` detects the mismatch and
   // destroys all cached operator instances.
-  static inline std::size_t cache_generation_{0};
+  static inline std::atomic_size_t cache_generation_{0};
 
  public:
   // Invalidate the operator cache.  Cached operators are destroyed on the
   // next `call()` invocation.  Intended for test isolation — production
   // code should never call this.
-  static void clear_cache() { ++cache_generation_; }
+  static void clear_cache() {
+    cache_generation_.fetch_add(1, std::memory_order_acq_rel);
+  }
   template <typename... Args>
   static auto Make(const Config& config, const Tensor tensor, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
@@ -193,13 +196,16 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static auto Call(const Handle& handle, const Config& config,
                    const Args&... args) {
-    static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
+    static thread_local std::unordered_map<detail::CacheKey,
+                                           std::unique_ptr<Operator>>
         cache;
-    static std::size_t generation{0};
+    static thread_local std::size_t generation{0};
 
-    if (generation != cache_generation_) {
+    const auto current_generation{
+        cache_generation_.load(std::memory_order_acquire)};
+    if (generation != current_generation) {
       cache.clear();
-      generation = cache_generation_;
+      generation = current_generation;
     }
 
     auto key = detail::CacheKey::Build(config.implementation_index(), args...);
