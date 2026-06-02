@@ -18,11 +18,7 @@ struct BlasUtils<Device::Type::kNvidia> {
     return CUDA_R_32F;
   }
 
-  static auto GetComputeType(DataType dtype) {
-    if (dtype == DataType::kFloat16 || dtype == DataType::kBFloat16)
-      return CUBLAS_COMPUTE_32F;
-    return CUBLAS_COMPUTE_32F_FAST_TF32;
-  }
+  static auto GetComputeType(DataType) { return CUBLAS_COMPUTE_32F; }
 };
 
 }  // namespace infini::ops

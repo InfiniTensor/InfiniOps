@@ -5,6 +5,19 @@ import torch
 from tests.utils import Payload, get_stream, randn_strided
 
 
+@pytest.fixture(autouse=True)
+def _strict_cuda_fp32_reference():
+    old_matmul_allow_tf32 = torch.backends.cuda.matmul.allow_tf32
+    old_cudnn_allow_tf32 = torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = old_matmul_allow_tf32
+        torch.backends.cudnn.allow_tf32 = old_cudnn_allow_tf32
+
+
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
     "a_shape, b_shape, c_shape, a_strides, b_strides, c_strides",

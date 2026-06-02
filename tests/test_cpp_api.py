@@ -19,6 +19,7 @@ def test_cpp_operator_call_instantiation_smoke(tmp_path):
             _compiler("CXX", "c++"),
             "-std=c++17",
             "-Werror",
+            "-pthread",
             f"-I{include_dir}",
             str(source),
             f"-L{library_dir}",
@@ -72,7 +73,9 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
     r"""
     #include <infini/ops.h>
 
+    #include <atomic>
     #include <cmath>
+    #include <thread>
 
     int main() {
       float input_data[3] = {1.0f, 2.0f, 3.0f};
@@ -109,7 +112,34 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
         return 1;
       }
 
-      return 0;
+      std::atomic<int> failures{0};
+      auto threaded_call = [&]() {
+        float threaded_output[3] = {0.0f, 0.0f, 0.0f};
+        infini::ops::Tensor threaded_out(threaded_output, shape, data_type,
+                                         device);
+        for (int i = 0; i < 100; ++i) {
+          infini::ops::Add::Call(handle, config, input, other, threaded_out);
+          if (std::fabs(threaded_output[0] - 5.0f) > 1e-6f ||
+              std::fabs(threaded_output[1] - 7.0f) > 1e-6f ||
+              std::fabs(threaded_output[2] - 9.0f) > 1e-6f) {
+            failures.fetch_add(1, std::memory_order_relaxed);
+          }
+          threaded_output[0] = 0.0f;
+          threaded_output[1] = 0.0f;
+          threaded_output[2] = 0.0f;
+        }
+      };
+
+      std::thread t0(threaded_call);
+      std::thread t1(threaded_call);
+      std::thread t2(threaded_call);
+      std::thread t3(threaded_call);
+      t0.join();
+      t1.join();
+      t2.join();
+      t3.join();
+
+      return failures.load(std::memory_order_relaxed) == 0 ? 0 : 1;
     }
     """
 ).lstrip()
