@@ -15,7 +15,7 @@ platforms:
         BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
         SKIP_APT: "1"
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_NVIDIA=ON
     jobs:
       gpu:
         type: unittest
@@ -50,12 +50,11 @@ platforms:
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
-    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps
+    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_ILUVATAR=ON
     jobs:
       gpu:
         type: unittest
         resources:
-          gpu_ids: "0"
           ngpus: 1
           gpu_style: none
           memory: 32GB
@@ -65,7 +64,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ --devices iluvatar -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ --devices iluvatar -n 2 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
     runner_label: Metax
@@ -80,7 +79,7 @@ platforms:
       - "--privileged"
       - "--ulimit=memlock=-1"
       - "--ulimit=stack=67108864"
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_METAX=ON
     jobs:
       gpu:
         type: unittest
@@ -107,7 +106,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_MOORE=ON
     jobs:
       gpu:
         type: unittest
@@ -133,7 +132,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_CAMBRICON=ON
     jobs:
       gpu:
         type: unittest
@@ -168,7 +167,7 @@ platforms:
       - "--group-add=video"
     volumes:
       - /opt/hyhal:/opt/hyhal:ro
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_HYGON=ON
     jobs:
       gpu:
         type: unittest
@@ -205,7 +204,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.AUTO_DETECT_DEVICES=OFF --config-settings=cmake.define.WITH_CPU=ON --config-settings=cmake.define.WITH_ASCEND=ON
     jobs:
       npu:
         type: unittest
