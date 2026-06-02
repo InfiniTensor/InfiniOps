@@ -22,6 +22,7 @@ time when `WITH_TORCH=ON`.
 """
 
 import argparse
+import collections
 import dataclasses
 import importlib.util
 import json
@@ -43,12 +44,12 @@ _GENERATED_BASE_DIR = _GENERATED_DIR / "base"
 _GENERATED_TORCH_DIR = _GENERATED_DIR / "torch"
 _METADATA_PATH = _GENERATED_DIR / "torch_ops_metadata.json"
 
-# Reserved slot for PyTorch backends.  Native and vendor implementations
+# Reserved slot for PyTorch backends. Native and vendor implementations
 # claim slots 0-7; PyTorch wrappers always live at 8.
 _PYTORCH_SLOT = 8
 
 # ATen uses symbolic names for some `int`/`float` defaults (e.g.
-# `reduction=Mean`).  Map them to C++ identifiers usable in a call.
+# `reduction=Mean`). Map them to C++ identifiers usable in a call.
 _ENUM_DEFAULTS = {
     "Mean": "at::Reduction::Mean",
     "Sum": "at::Reduction::Sum",
@@ -56,7 +57,7 @@ _ENUM_DEFAULTS = {
 }
 
 # Default PyTorch schema label used only in diagnostics when CMake does not
-# provide the locally installed torch version.  Codegen reads the actual schema
+# provide the locally installed torch version. Codegen reads the actual schema
 # from installed `torchgen/packaged/ATen/native/native_functions.yaml`.
 _DEFAULT_PYTORCH_VERSION = "v2.4.0"
 
@@ -75,7 +76,7 @@ _DEVICE_TYPES = (
     "kQy",
 )
 
-# YAML scalar-type tokens → C++ types.  Reference types (e.g. `const Scalar&`)
+# YAML scalar-type tokens → C++ types. Reference types (e.g. `const Scalar&`)
 # are not used so the generated signatures match the existing hand-written
 # ones, which pass by value to keep pybind11 binding generation simple.
 _SCALAR_TYPE_MAP = {
@@ -101,12 +102,11 @@ _SCALAR_TYPE_MAP = {
 # The int-dim overload is always emitted alongside, so we lose nothing
 # user-visible.
 
-# Optional ATen types we hide from the user-facing API and pass as a
-# typed empty optional at the call site.  Covers the common "full
-# default" case for most reductions and activations.  We use a typed
-# `c10::optional<T>{}` rather than bare `at::nullopt` so the compiler
-# can disambiguate ops with multiple `_out` overloads (e.g. `clamp_out`
-# accepts both `optional<Scalar>` and `optional<Tensor>` for `min`/`max`).
+# Optional ATen types and their typed empty optional values at the call site.
+# We use typed `c10::optional<T>{}` values rather than bare `at::nullopt` so
+# the compiler can disambiguate ops with multiple `_out` overloads (e.g.
+# `clamp_out` accepts both `optional<Scalar>` and `optional<Tensor>` for
+# `min`/`max`).
 _NULLOPT_BY_TYPE = {
     "Scalar?": "c10::optional<at::Scalar>{}",
     "int?": "c10::optional<int64_t>{}",
@@ -131,7 +131,42 @@ _NULLOPT_BY_TYPE = {
     "SymInt[3]?": "c10::optional<at::IntArrayRef>{}",
     "float[]?": "c10::optional<at::ArrayRef<double>>{}",
 }
-_HARDCODE_NULLOPT_TYPES = frozenset(_NULLOPT_BY_TYPE)
+
+# Optional ATen types that have a stable InfiniOps representation. These are
+# exposed in generated base signatures and converted back to ATen optionals in
+# the PyTorch backend. PyTorch-internal concepts without a public InfiniOps
+# analogue stay hidden and are still passed as typed empty optionals.
+_EXPOSED_OPTIONAL_CPP_TYPES = {
+    "Scalar?": "std::optional<double>",
+    "int?": "std::optional<int64_t>",
+    "bool?": "std::optional<bool>",
+    "float?": "std::optional<double>",
+    "str?": "std::optional<std::string>",
+    "ScalarType?": "std::optional<DataType>",
+    "Tensor?": "std::optional<Tensor>",
+    "int[]?": "std::optional<std::vector<int64_t>>",
+    "int[1]?": "std::optional<std::vector<int64_t>>",
+    "int[2]?": "std::optional<std::vector<int64_t>>",
+    "int[3]?": "std::optional<std::vector<int64_t>>",
+    "SymInt?": "std::optional<int64_t>",
+    "SymInt[]?": "std::optional<std::vector<int64_t>>",
+    "SymInt[1]?": "std::optional<std::vector<int64_t>>",
+    "SymInt[2]?": "std::optional<std::vector<int64_t>>",
+    "SymInt[3]?": "std::optional<std::vector<int64_t>>",
+    "float[]?": "std::optional<std::vector<double>>",
+}
+_HARDCODE_NULLOPT_TYPES = frozenset(
+    set(_NULLOPT_BY_TYPE) - set(_EXPOSED_OPTIONAL_CPP_TYPES)
+)
+
+
+def _normalize_cpp_type(cpp_type: str) -> str:
+    text = cpp_type.strip()
+
+    if text.startswith("const "):
+        text = text[len("const ") :]
+
+    return text.rstrip("&").strip()
 
 
 @dataclasses.dataclass
@@ -140,13 +175,32 @@ class Param:
     aten_type: str
     default: str | None
     keyword_only: bool
+    cpp_type_override: str | None = None
+
+    @property
+    def api_name(self) -> str:
+        if self.name == "self":
+            return "input"
+
+        return self.name
 
     @property
     def is_tensor(self) -> bool:
-        # Real tensors only.  `Tensor?` is optional and falls through to
-        # the hidden-param path (substituted with `at::nullopt`).
+        if self.cpp_type_override is not None:
+            return _normalize_cpp_type(self.cpp_type_override) == "Tensor"
+
+        # Real tensors only. `Tensor?` is optional and has separate handling.
 
         return self.aten_type == "Tensor" or self.aten_type.startswith("Tensor(")
+
+    @property
+    def is_optional_tensor(self) -> bool:
+        if self.cpp_type_override is not None:
+            return (
+                _normalize_cpp_type(self.cpp_type_override) == "std::optional<Tensor>"
+            )
+
+        return self.aten_type == "Tensor?"
 
     @property
     def is_mutable_tensor(self) -> bool:
@@ -158,7 +212,7 @@ class Param:
     @property
     def is_out(self) -> bool:
         # In ATen `_out` schemas, output tensors are keyword-only mutable tensor
-        # params.  Some mutable tensors are real inputs (`running_mean` /
+        # params. Some mutable tensors are real inputs (`running_mean` /
         # `running_var` in `_batch_norm_with_update`) and must stay in schema
         # order, so mutability alone is not enough.
 
@@ -183,11 +237,11 @@ class Param:
         \\`int n\\` on the special chebyshev family, etc. — as missing
         semantic controls.  They are now exposed and forwarded to ATen.
 
-        Optional ATen types (\\`Tensor?\\`, \\`Scalar?\\`, \\`int?\\`, …) remain
-        hidden for now — exposing them would require teaching the torch
-        source to thread \\`std::optional\\` through to ATen, which is a
-        separate refactor.  The same goes for ATen-internal types like
-        \\`Generator?\\`/\\`Layout?\\` that have no InfiniOps analogue.
+        Optional ATen types with a stable InfiniOps representation
+        (\\`Tensor?\\`, \\`Scalar?\\`, \\`int?\\`, …) are exposed as
+        \\`std::optional\\`. ATen-internal types like
+        \\`Generator?\\`/\\`Layout?\\` still have no InfiniOps analogue, so
+        they remain hidden.
         """
 
         return self.is_hardcoded_nullopt
@@ -233,6 +287,9 @@ class Param:
 
     @property
     def cpp_type(self) -> str:
+        if self.cpp_type_override is not None:
+            return self.cpp_type_override
+
         if self.is_tensor:
             # `Tensor[]` / `Tensor(a!)[]` would need `std::vector<Tensor>` and a
             # different ATen call shape — not yet supported, so reject so the
@@ -245,6 +302,9 @@ class Param:
                 )
 
             return "Tensor"
+
+        if self.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+            return _EXPOSED_OPTIONAL_CPP_TYPES[self.aten_type]
 
         if self.is_hidden:
             # Not exposed — the ATen call substitutes a hardcoded value
@@ -272,6 +332,8 @@ class Op:
     aten_name: str
     overload: str
     params: list[Param]
+    signature_params: list[Param] | None = None
+    param_bindings: list[Param | None] | None = None
 
     @property
     def pascal_name(self) -> str:
@@ -330,7 +392,23 @@ class Op:
         """Params the wrapper exposes to the user; hidden ones (hardcoded
         optional nullopt, default-`False`/`True` bools) are filtered."""
 
+        if self.signature_params is not None:
+            return self.signature_params
+
         return [p for p in self.params if not p.is_hidden]
+
+    def api_param_for(self, schema_index: int) -> Param | None:
+        """Return the public signature param bound to a schema param."""
+
+        if self.param_bindings is not None:
+            return self.param_bindings[schema_index]
+
+        param = self.params[schema_index]
+
+        if param.is_hidden:
+            return None
+
+        return param
 
     @property
     def is_testable(self) -> bool:
@@ -349,7 +427,7 @@ class Op:
             return self.params[0].is_mutable_tensor
 
         # `params` includes out tensors at the end; check the first
-        # non-out param.  If there are no non-out params (`empty.out`,
+        # non-out param. If there are no non-out params (`empty.out`,
         # `arange.out`), this op also fails the dispatch precondition.
         non_out = [p for p in self.params if not p.is_out]
 
@@ -437,14 +515,6 @@ def _parse_one_arg(token: str, keyword_only: bool) -> Param:
         raise ValueError(f"could not parse arg: {token!r}")
 
     name = m.group("name")
-    # ATen names the first tensor parameter `self` (matching the
-    # method-style \`tensor.abs()\` convention).  InfiniOps uses
-    # \`input\` for the primary tensor input across all hand-written
-    # bases (\`Add\`, \`Gemm\`, …) per \`CONTRIBUTING.md\` §C++.
-    # Rename at parse time so the generated headers match.
-    if name == "self":
-        name = "input"
-
     return Param(
         name=name,
         aten_type=m.group("type"),
@@ -453,8 +523,175 @@ def _parse_one_arg(token: str, keyword_only: bool) -> Param:
     )
 
 
+_BASE_OPERATOR_RE = re.compile(
+    r"\bvirtual\s+void\s+operator\(\)\s*\((?P<args>.*?)\)\s*const"
+    r"(?:\s*=\s*0|\s*\{)",
+    re.S,
+)
+
+
+def _split_cpp_params(args_str: str) -> list[str]:
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+
+    for ch in args_str:
+        if ch in "([<":
+            depth += 1
+            current.append(ch)
+        elif ch in ")]>":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            piece = "".join(current).strip()
+
+            if piece:
+                parts.append(piece)
+
+            current = []
+        else:
+            current.append(ch)
+
+    tail = "".join(current).strip()
+
+    if tail:
+        parts.append(tail)
+
+    return parts
+
+
+def _parse_base_signature_param(token: str) -> tuple[str, str]:
+    token = token.split("=", 1)[0].strip()
+    token = re.sub(r"\s+", " ", token)
+    match = re.match(r"(?P<type>.+?)\s+(?P<name>\w+)$", token)
+
+    if not match:
+        raise ValueError(f"could not parse base operator param: {token!r}")
+
+    return _normalize_cpp_type(match.group("type")), match.group("name")
+
+
+def _parse_base_operator_signatures(
+    base_path: pathlib.Path,
+) -> list[list[tuple[str, str]]]:
+    source = base_path.read_text()
+    signatures = []
+
+    for match in _BASE_OPERATOR_RE.finditer(source):
+        args = match.group("args").strip()
+
+        if not args:
+            signatures.append([])
+            continue
+
+        signatures.append(
+            [_parse_base_signature_param(token) for token in _split_cpp_params(args)]
+        )
+
+    return signatures
+
+
+def _cpp_types_compatible(schema_cpp_type: str, base_cpp_type: str) -> bool:
+    schema = _normalize_cpp_type(schema_cpp_type)
+    base = _normalize_cpp_type(base_cpp_type)
+
+    if schema == base:
+        return True
+
+    compatible_pairs = {
+        ("double", "float"),
+        ("int64_t", "int"),
+        ("std::optional<double>", "std::optional<float>"),
+        ("std::optional<int64_t>", "std::optional<int>"),
+    }
+
+    return (schema, base) in compatible_pairs
+
+
+def _cpp_param_compatible(
+    schema_param: Param, base_cpp_type: str, base_name: str
+) -> bool:
+    if schema_param.api_name != base_name:
+        return False
+
+    return _cpp_types_compatible(schema_param.cpp_type, base_cpp_type)
+
+
+def _bind_base_signature(op: Op, signature: list[tuple[str, str]]) -> Op | None:
+    bindings: list[Param | None] = [None] * len(op.params)
+    signature_params = []
+    schema_index = 0
+
+    for base_cpp_type, base_name in signature:
+        matched_index = None
+
+        for index in range(schema_index, len(op.params)):
+            schema_param = op.params[index]
+
+            if _cpp_param_compatible(schema_param, base_cpp_type, base_name):
+                matched_index = index
+                break
+
+            if not _is_omittable_param(schema_param):
+                return None
+
+        if matched_index is None:
+            return None
+
+        schema_param = op.params[matched_index]
+        api_param = dataclasses.replace(
+            schema_param, name=base_name, cpp_type_override=base_cpp_type
+        )
+        bindings[matched_index] = api_param
+        signature_params.append(api_param)
+        schema_index = matched_index + 1
+
+    if any(not _is_omittable_param(param) for param in op.params[schema_index:]):
+        return None
+
+    return dataclasses.replace(
+        op, signature_params=signature_params, param_bindings=bindings
+    )
+
+
+def _bind_existing_base_overloads(
+    name: str, ops: list[Op]
+) -> tuple[list[Op], list[str]]:
+    base_path = _base_path(name)
+    signatures = _parse_base_operator_signatures(base_path)
+    bound_ops = []
+    warnings = []
+
+    for signature in signatures:
+        matches = [
+            bound
+            for op in ops
+            if (bound := _bind_base_signature(op, signature)) is not None
+        ]
+
+        if not matches:
+            rendered = ", ".join(f"{cpp_type} {param}" for cpp_type, param in signature)
+            warnings.append(
+                f"base overload `operator()({rendered})` does not match any "
+                "usable ATen schema"
+            )
+            continue
+
+        matches.sort(
+            key=lambda match: sum(
+                binding is None for binding in match.param_bindings or ()
+            )
+        )
+        bound_ops.append(matches[0])
+
+    return bound_ops, warnings
+
+
 def _snake_to_pascal(s: str) -> str:
     return "".join(p.capitalize() for p in s.split("_"))
+
+
+_OP_NAMESPACE_PREFIXES = ("special", "linalg", "fft")
 
 
 def _is_inplace_aten_name(name: str) -> bool:
@@ -467,20 +704,87 @@ def _public_op_name(aten_name: str) -> str:
     """Map ATen-only spelling to stable InfiniOps public names."""
 
     public_name = aten_name
-    prefix = ""
+    file_prefixes = []
 
     if public_name.startswith("_"):
-        prefix = "aten_"
+        file_prefixes.append("internal")
         public_name = public_name.lstrip("_")
 
     if _is_inplace_aten_name(public_name):
-        public_name = public_name[:-1] + "_inplace"
+        public_name = public_name[:-1]
 
-    return prefix + public_name
+    return "_".join(file_prefixes + [public_name])
+
+
+def _op_namespace_parts(name: str) -> tuple[str, ...]:
+    parts = name.split("_")
+    namespaces = []
+
+    if parts and parts[0] == "internal":
+        namespaces.append(parts.pop(0))
+
+    if parts and parts[0] in _OP_NAMESPACE_PREFIXES:
+        namespaces.append(parts.pop(0))
+
+    return tuple(namespaces)
+
+
+def _op_class_stem(name: str) -> str:
+    parts = name.split("_")
+
+    if parts and parts[0] == "internal":
+        parts.pop(0)
+
+    if parts and parts[0] in _OP_NAMESPACE_PREFIXES:
+        parts.pop(0)
+
+    return "_".join(parts)
+
+
+def _op_class_name(name: str) -> str:
+    return _snake_to_pascal(_op_class_stem(name))
+
+
+def _op_cpp_type(name: str) -> str:
+    parts = (*_op_namespace_parts(name), _op_class_name(name))
+
+    return "::".join(parts)
+
+
+def _op_namespace_open(name: str) -> str:
+    parts = _op_namespace_parts(name)
+
+    if not parts:
+        return "namespace infini::ops {"
+
+    return f"namespace infini::ops::{'::'.join(parts)} {{"
+
+
+def _op_namespace_close(name: str) -> str:
+    parts = _op_namespace_parts(name)
+
+    if not parts:
+        return "}  // namespace infini::ops"
+
+    return f"}}  // namespace infini::ops::{'::'.join(parts)}"
 
 
 def _base_path(op_name: str) -> pathlib.Path:
     return _BASE_DIR / f"{op_name}.h"
+
+
+def _is_omittable_param(param: Param) -> bool:
+    return param.aten_type in _NULLOPT_BY_TYPE or param.default is not None
+
+
+def _default_call_value(param: Param) -> str:
+    if param.aten_type in _NULLOPT_BY_TYPE:
+        return _NULLOPT_BY_TYPE[param.aten_type]
+
+    if param.default is not None:
+        return _translate_default(param)
+
+    return param.hidden_value()
 
 
 def _load_aten_yaml(version: str) -> str:
@@ -570,7 +874,7 @@ def _format_signature(op: Op, *, include_defaults: bool = False) -> str:
 
     for param in op.visible_params:
         prefix = "" if param.is_mutable_tensor else "const "
-        text = f"{prefix}{param.cpp_type} {param.name}"
+        text = f"{prefix}{param.cpp_type} {param.api_name}"
 
         if include_defaults and param.default is not None:
             text += f" = {_translate_default(param)}"
@@ -660,41 +964,82 @@ def _translate_default(param: Param) -> str:
     return raw  # numeric literals (`0`, `1`, `1.0`) pass through
 
 
+def _generate_base_includes(ops: list[Op]) -> str:
+    cpp_types = [param.cpp_type for op in ops for param in op.visible_params]
+    includes = []
+
+    if any("std::optional" in cpp_type for cpp_type in cpp_types):
+        includes.append("#include <optional>")
+
+    if any("std::string" in cpp_type for cpp_type in cpp_types):
+        includes.append("#include <string>")
+
+    if any("std::vector" in cpp_type for cpp_type in cpp_types):
+        includes.append("#include <vector>")
+
+    includes.append('#include "operator.h"')
+
+    return "\n".join(includes)
+
+
 def _generate_base_header(name: str, ops: list[Op]) -> str:
-    pascal = _snake_to_pascal(name)
+    pascal = _op_class_name(name)
 
     member_decls = []
     tensor_member_order = []
     seen_tensor_members = set()
+    optional_tensor_member_order = []
+    seen_optional_tensor_members = set()
     scalar_member_order = []
     scalar_member_types = {}
 
     for op in ops:
         for param in op.tensor_params:
-            if param.name in seen_tensor_members:
+            api_name = param.api_name
+
+            if api_name in seen_tensor_members:
                 continue
 
-            seen_tensor_members.add(param.name)
-            tensor_member_order.append(param.name)
-            member_decls.append(f"  Tensor::Shape {param.name}_shape_;")
-            member_decls.append(f"  Tensor::Strides {param.name}_strides_;")
-            member_decls.append(f"  DataType {param.name}_type_;")
+            seen_tensor_members.add(api_name)
+            tensor_member_order.append(api_name)
+            member_decls.append(f"  Tensor::Shape {api_name}_shape_;")
+            member_decls.append(f"  Tensor::Strides {api_name}_strides_;")
+            member_decls.append(f"  DataType {api_name}_type_;")
+
+        for param in op.visible_params:
+            api_name = param.api_name
+
+            if not param.is_optional_tensor or api_name in seen_optional_tensor_members:
+                continue
+
+            seen_optional_tensor_members.add(api_name)
+            optional_tensor_member_order.append(api_name)
+            member_decls.append(f"  bool has_{api_name}_{{false}};")
+            member_decls.append(f"  Tensor::Shape {api_name}_shape_;")
+            member_decls.append(f"  Tensor::Strides {api_name}_strides_;")
+            member_decls.append(f"  DataType {api_name}_type_{{DataType::kFloat32}};")
 
         # Visible non-tensor params (scalars, strings, vectors) are also
         # stored on the base so backends can dispatch on them later — not
-        # only at the moment `operator()` is invoked.  Reviewers flagged
+        # only at the moment `operator()` is invoked. Reviewers flagged
         # this on multiple PRs (e.g. `n` on
-        # `special_chebyshev_polynomial_v_n_scalar`).  Same-named params
+        # `special_chebyshev_polynomial_v_n_scalar`). Same-named params
         # across overloads must share a type; if they conflict, the second
         # overload's member is dropped (later constructors leave it
         # default-initialised).
         for param in op.visible_params:
-            if param.is_tensor or param.name in scalar_member_types:
+            api_name = param.api_name
+
+            if (
+                param.is_tensor
+                or param.is_optional_tensor
+                or api_name in scalar_member_types
+            ):
                 continue
 
-            scalar_member_order.append(param.name)
-            scalar_member_types[param.name] = param.cpp_type
-            member_decls.append(f"  {param.cpp_type} {param.name}_{{}};")
+            scalar_member_order.append(api_name)
+            scalar_member_types[api_name] = param.cpp_type
+            member_decls.append(f"  {param.cpp_type} {api_name}_{{}};")
 
     member_decls.append("  int device_index_{0};")
 
@@ -703,12 +1048,18 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
 
     for op in ops:
         init_pieces = []
-        tensor_params = {param.name: param for param in op.tensor_params}
+        tensor_params = {param.api_name: param for param in op.tensor_params}
+        optional_tensor_params = {
+            param.api_name: param
+            for param in op.visible_params
+            if param.is_optional_tensor
+        }
         scalar_params = {
-            param.name: param
+            param.api_name: param
             for param in op.visible_params
             if not param.is_tensor
-            and scalar_member_types.get(param.name) == param.cpp_type
+            and not param.is_optional_tensor
+            and scalar_member_types.get(param.api_name) == param.cpp_type
         }
 
         for param_name in tensor_member_order:
@@ -717,11 +1068,31 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
             if param is None:
                 continue
 
-            init_pieces.append(f"        {param.name}_shape_{{{param.name}.shape()}}")
+            api_name = param.api_name
+            init_pieces.append(f"        {api_name}_shape_{{{api_name}.shape()}}")
+            init_pieces.append(f"        {api_name}_strides_{{{api_name}.strides()}}")
+            init_pieces.append(f"        {api_name}_type_{{{api_name}.dtype()}}")
+
+        for param_name in optional_tensor_member_order:
+            param = optional_tensor_params.get(param_name)
+
+            if param is None:
+                continue
+
+            api_name = param.api_name
+            init_pieces.append(f"        has_{api_name}_{{{api_name}.has_value()}}")
             init_pieces.append(
-                f"        {param.name}_strides_{{{param.name}.strides()}}"
+                f"        {api_name}_shape_{{{api_name} ? "
+                f"{api_name}->shape() : Tensor::Shape{{}}}}"
             )
-            init_pieces.append(f"        {param.name}_type_{{{param.name}.dtype()}}")
+            init_pieces.append(
+                f"        {api_name}_strides_{{{api_name} ? "
+                f"{api_name}->strides() : Tensor::Strides{{}}}}"
+            )
+            init_pieces.append(
+                f"        {api_name}_type_{{{api_name} ? "
+                f"{api_name}->dtype() : DataType::kFloat32}}"
+            )
 
         for param_name in scalar_member_order:
             param = scalar_params.get(param_name)
@@ -729,12 +1100,13 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
             if param is None:
                 continue
 
-            init_pieces.append(f"        {param.name}_{{{param.name}}}")
+            api_name = param.api_name
+            init_pieces.append(f"        {api_name}_{{{api_name}}}")
 
-        # All out tensors share a device; use the first one.  Keep this last
+        # All out tensors share a device; use the first one. Keep this last
         # so initializer order follows the member declaration order.
         init_pieces.append(
-            f"        device_index_{{{op.out_params[0].name}.device().index()}}"
+            f"        device_index_{{{op.out_params[0].api_name}.device().index()}}"
         )
 
         init_list = ",\n".join(init_pieces).lstrip()
@@ -746,6 +1118,9 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
     return _BASE_TEMPLATE.format(
         name_uc=name.upper(),
         pascal=pascal,
+        namespace_open=_op_namespace_open(name),
+        namespace_close=_op_namespace_close(name),
+        includes=_generate_base_includes(ops),
         constructors="\n\n".join(constructors),
         op_calls="\n\n".join(calls),
         member_decls="\n\n".join(member_decls),
@@ -753,7 +1128,8 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
 
 
 def _generate_torch_header(name: str, ops: list[Op]) -> str:
-    pascal = _snake_to_pascal(name)
+    pascal = _op_class_name(name)
+    op_type = _op_cpp_type(name)
     op_calls = "\n\n".join(
         f"  void operator()({_format_signature(op)}) const override;" for op in ops
     )
@@ -762,55 +1138,130 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
         name_uc=name.upper(),
         name=name,
         pascal=pascal,
+        op_type=op_type,
         op_calls=op_calls,
         slot=_PYTORCH_SLOT,
     )
 
 
 def _generate_torch_method_source(name: str, op: Op) -> str:
-    pascal = _snake_to_pascal(name)
+    op_type = _op_cpp_type(name)
     conversion_lines = []
+    out_device_index = f"{op.out_params[0].api_name}.device().index()"
+    conversion_lines.append(f"  const auto device_index = {out_device_index};")
 
-    for param in op.tensor_params:
+    def _optional_aten_type(param: Param) -> str:
+        return _NULLOPT_BY_TYPE[param.aten_type].removesuffix("{}")
+
+    def _optional_aten_value(schema_param: Param, api_param: Param) -> str:
+        api_name = api_param.api_name
+
+        if schema_param.aten_type == "Tensor?":
+            data_expr = f"const_cast<void*>({api_name}->data())"
+
+            return (
+                f"ToAtenTensor<kDev>({data_expr}, {api_name}->shape(), "
+                f"{api_name}->strides(), {api_name}->dtype(), "
+                f"device_index)"
+            )
+
+        if schema_param.aten_type == "Scalar?":
+            return f"at::Scalar(*{api_name})"
+
+        if schema_param.aten_type == "ScalarType?":
+            return f"ToAtenDataType(*{api_name})"
+
+        if schema_param.aten_type == "str?":
+            return f"c10::string_view(*{api_name})"
+
+        if schema_param.aten_type.startswith(
+            ("int[", "SymInt[")
+        ) or schema_param.aten_type in {
+            "int[]?",
+            "SymInt[]?",
+        }:
+            return f"at::IntArrayRef(*{api_name})"
+
+        if schema_param.aten_type == "float[]?":
+            return f"at::ArrayRef<double>(*{api_name})"
+
+        return f"*{api_name}"
+
+    def _append_optional_conversion(schema_param: Param, api_param: Param) -> None:
+        api_name = api_param.api_name
+        optional_type = _optional_aten_type(schema_param)
+        conversion_lines.append(f"  {optional_type} at_{schema_param.name};")
+        conversion_lines.append(f"  if ({api_name}.has_value()) {{")
+        conversion_lines.append(
+            f"    at_{schema_param.name} = "
+            f"{optional_type}{{{_optional_aten_value(schema_param, api_param)}}};"
+        )
+        conversion_lines.append("  }")
+
+    for schema_index, param in enumerate(op.params):
+        if not param.is_tensor:
+            continue
+
+        api_param = op.api_param_for(schema_index)
+
+        if api_param is None:
+            continue
+
+        api_name = api_param.api_name
         data_expr = (
-            f"{param.name}.data()"
+            f"{api_name}.data()"
             if param.is_mutable_tensor
-            else f"const_cast<void*>({param.name}.data())"
+            else f"const_cast<void*>({api_name}.data())"
         )
         conversion_lines.append(
             f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
-            f"      {data_expr}, {param.name}_shape_, {param.name}_strides_,\n"
-            f"      {param.name}_type_, device_index_);"
+            f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
+            f"      {api_name}_type_, device_index);"
         )
 
-    def _render_arg(p):
+    for schema_index, param in enumerate(op.params):
+        api_param = op.api_param_for(schema_index)
+
+        if api_param is not None and param.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+            _append_optional_conversion(param, api_param)
+
+    def _render_arg(schema_index, p):
+        api_param = op.api_param_for(schema_index)
+
+        if api_param is None:
+            return _default_call_value(p)
+
         if p.is_hidden:
-            return p.hidden_value()
+            return _default_call_value(p)
+
+        if p.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+            return f"at_{p.name}"
 
         if p.is_tensor:
             return f"at_{p.name}"
 
-        return p.name
+        return api_param.api_name
 
     if op.is_inplace:
         # In-place ATen calls keep the mutable input in positional order,
         # unlike `_out` calls which place output tensors first.
         input_param = op.params[0]
         arg_order = op.params[1:]
-        aten_call = (
-            f"at_{input_param.name}.{op.aten_name}"
-            f"({', '.join(_render_arg(p) for p in arg_order)})"
+        rendered_args = ", ".join(
+            _render_arg(index + 1, p) for index, p in enumerate(arg_order)
         )
+        aten_call = f"at_{input_param.name}.{op.aten_name}({rendered_args})"
     else:
         # ATen `_out` form puts all out tensors first, then non-out params
-        # in YAML order.  Hardcoded-nullopt params become `at::nullopt`.
-        arg_order = op.out_params + [p for p in op.params if not p.is_out]
-        aten_call = (
-            f"at::{op.aten_name}_out({', '.join(_render_arg(p) for p in arg_order)})"
-        )
+        # in YAML order. Hardcoded-nullopt params become `at::nullopt`.
+        arg_order = [(index, p) for index, p in enumerate(op.params) if p.is_out] + [
+            (index, p) for index, p in enumerate(op.params) if not p.is_out
+        ]
+        rendered_args = ", ".join(_render_arg(index, p) for index, p in arg_order)
+        aten_call = f"at::{op.aten_name}_out({rendered_args})"
 
     return _TORCH_METHOD_TEMPLATE.format(
-        pascal=pascal,
+        op_type=op_type,
         op_call_signature=_format_signature(op),
         tensor_conversions="\n".join(conversion_lines),
         # The generated call expression resolves the right kernel via C++
@@ -821,16 +1272,16 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 
 
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
-    pascal = _snake_to_pascal(name)
+    op_type = _op_cpp_type(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
     # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
     # so a build that only enables a subset of devices does not pay the
     # ATen template-instantiation cost (and memory pressure) for the
-    # devices it does not link against.  Each macro is set by
+    # devices it does not link against. Each macro is set by
     # `target_compile_definitions` in `src/CMakeLists.txt`.
     instantiations = "\n".join(
         f"#ifdef WITH_{dev.removeprefix('k').upper()}\n"
-        f"template class Operator<{pascal}, Device::Type::{dev}, {_PYTORCH_SLOT}>;\n"
+        f"template class Operator<{op_type}, Device::Type::{dev}, {_PYTORCH_SLOT}>;\n"
         f"#endif"
         for dev in _DEVICE_TYPES
     )
@@ -846,9 +1297,9 @@ _BASE_TEMPLATE = """\
 #ifndef INFINI_OPS_BASE_{name_uc}_H_
 #define INFINI_OPS_BASE_{name_uc}_H_
 
-#include "operator.h"
+{includes}
 
-namespace infini::ops {{
+{namespace_open}
 
 class {pascal} : public Operator<{pascal}> {{
  public:
@@ -860,7 +1311,7 @@ class {pascal} : public Operator<{pascal}> {{
 {member_decls}
 }};
 
-}}  // namespace infini::ops
+{namespace_close}
 
 #endif
 """
@@ -875,9 +1326,9 @@ _TORCH_HEADER_TEMPLATE = """\
 namespace infini::ops {{
 
 template <Device::Type kDev>
-class Operator<{pascal}, kDev, {slot}> : public {pascal} {{
+class Operator<{op_type}, kDev, {slot}> : public {op_type} {{
  public:
-  using {pascal}::{pascal};
+  using {op_type}::{pascal};
 
 {op_calls}
 }};
@@ -890,7 +1341,7 @@ class Operator<{pascal}, kDev, {slot}> : public {pascal} {{
 
 _TORCH_METHOD_TEMPLATE = """\
 template <Device::Type kDev>
-void Operator<{pascal}, kDev, {slot}>::operator()({op_call_signature}) const {{
+void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
 {tensor_conversions}
 
   {aten_call};
@@ -1000,7 +1451,7 @@ def main() -> int:
 
     # Wipe previous outputs so files for ops that have since been removed,
     # renamed, or rejected by `cpp_type` don't linger and get picked up by
-    # the CMake glob.  Both `generated/base/` and `generated/torch/` are
+    # the CMake glob. Both `generated/base/` and `generated/torch/` are
     # written exclusively by this script.
     if _GENERATED_BASE_DIR.exists():
         shutil.rmtree(_GENERATED_BASE_DIR)
@@ -1010,6 +1461,7 @@ def main() -> int:
 
     skipped: list[tuple[str, str]] = []
     metadata: list[dict] = []
+    ops_by_public_name: dict[str, list[Op]] = collections.defaultdict(list)
 
     for name in op_names:
         candidates = _find_out_entries(aten_entries, name)
@@ -1052,18 +1504,48 @@ def main() -> int:
                 )
             )
 
-        # Emit one InfiniOps wrapper per ATen op.  Distinct visible overloads
+        ops_by_public_name[usable[0].infini_name].extend(usable)
+
+    for public_name, usable in ops_by_public_name.items():
+        usable, duplicate_overloads = _dedupe_visible_overloads(usable)
+
+        for skipped_op, kept_op in duplicate_overloads:
+            skipped.append(
+                (
+                    skipped_op.infini_name,
+                    "duplicate visible C++ signature for "
+                    f"`{public_name}`; using `{kept_op.infini_name}`",
+                )
+            )
+
+        base_exists = _base_path(public_name).exists()
+
+        if base_exists:
+            usable, base_warnings = _bind_existing_base_overloads(public_name, usable)
+
+            for warning in base_warnings:
+                skipped.append((public_name, warning))
+
+            if not usable:
+                skipped.append(
+                    (
+                        public_name,
+                        "existing base has no overload compatible with ATen schema",
+                    )
+                )
+                continue
+
+        # Emit one InfiniOps wrapper per ATen op. Distinct visible overloads
         # become overloaded constructors / `operator()` methods on the same
-        # class (`Pow` exposes both tensor and scalar exponents).  Overloads
+        # class (`Pow` exposes both tensor and scalar exponents). Overloads
         # that collapse to the same C++ signature after hidden defaults are
-        # skipped above.  When a hand-written `src/base/<name>.h` exists,
+        # skipped above. When a hand-written `src/base/<name>.h` exists,
         # skip emitting `generated/base/<name>.h` so the hand-written one
         # wins (the generated torch source's `#include "base/<name>.h"`
-        # resolves through `src/` first).  Signature mismatches surface as
+        # resolves through `src/` first). Signature mismatches surface as
         # compile errors with a clear message — drop the op from the YAML
         # to suppress.
-        public_name = usable[0].infini_name
-        _emit(public_name, usable, emit_base=not _base_path(public_name).exists())
+        _emit(public_name, usable, emit_base=not base_exists)
 
         for op in usable:
             metadata.append(
@@ -1073,7 +1555,7 @@ def main() -> int:
                     "overload_name": op.infini_name,
                     "params": [
                         {
-                            "name": p.name,
+                            "name": p.api_name,
                             "type": p.aten_type,
                             "is_tensor": p.is_tensor,
                             "is_out": p.is_out,

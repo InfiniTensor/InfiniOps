@@ -119,7 +119,13 @@ def skip_op_without_platform_impl(request):
 
     op_cls = _op_class_from_module(request.node.module)
 
-    if op_cls is None or not hasattr(op_cls, "active_implementation_indices"):
+    if op_cls is None:
+        if "op_meta" in params:
+            return
+
+        pytest.skip("operator wrapper is not available in this build")
+
+    if not hasattr(op_cls, "active_implementation_indices"):
         return
 
     if not any(op_cls.active_implementation_indices(d) for d in device_selectors):
@@ -308,7 +314,7 @@ def pytest_pyfunc_call(pyfuncitem):
         atol = payload.atol
 
         # `torch.allclose` rejects `bool` dtypes — use `torch.equal` for
-        # non-floating outputs (bool, int) so comparison ops work.  Pass
+        # non-floating outputs (bool, int) so comparison ops work. Pass
         # `equal_nan=True` so NaN-in-both-positions (common for special
         # functions fed out-of-domain inputs) does not fail the test.
         if output.dtype.is_floating_point:
