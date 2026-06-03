@@ -5,6 +5,7 @@ import pytest
 import torch
 import torch.utils.benchmark as benchmark
 
+from tests.op_report import register_operator_reporter
 from tests.utils import clone_strided, get_available_devices
 
 
@@ -18,6 +19,15 @@ def pytest_addoption(parser):
         default=None,
         help="Device(s) to test on (e.g., `--devices ascend cpu`). Accepts platform names (`nvidia`, `metax`, `iluvatar`, `hygon`, `moore`, `cambricon`, `ascend`) or PyTorch device types (`cuda`, `mlu`, `musa`, `npu`). Defaults to all available devices.",
     )
+    parser.addoption(
+        "--op-report",
+        action="store",
+        default=None,
+        help=(
+            "Write a structured operator coverage report to the given JSON path. "
+            "Also emits sibling `.details.jsonl` and `.summary.txt` files."
+        ),
+    )
 
 
 def pytest_configure(config):
@@ -27,6 +37,7 @@ def pytest_configure(config):
         "markers",
         "auto_act_and_assert: automatically perform Act and Assert phases using the return values",
     )
+    register_operator_reporter(config)
 
 
 def pytest_collectstart(collector):
