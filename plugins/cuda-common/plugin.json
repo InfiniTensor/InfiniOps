@@ -1,0 +1,16 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [],
+  "device_headers": {},
+  "devices": [],
+  "kind": "shared",
+  "name": "cuda-common",
+  "operator_roots": [
+    "src/native/cuda/ops"
+  ],
+  "source_roots": [
+    "src/native/cuda"
+  ],
+  "test_devices": {}
+}

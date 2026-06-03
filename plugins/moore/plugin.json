@@ -1,0 +1,24 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [
+    "cuda-common"
+  ],
+  "device_headers": {
+    "moore": "native/cuda/moore/device_.h"
+  },
+  "devices": [
+    "moore"
+  ],
+  "kind": "device",
+  "name": "moore",
+  "operator_roots": [
+    "src/native/cuda/moore/ops"
+  ],
+  "source_roots": [
+    "src/native/cuda/moore"
+  ],
+  "test_devices": {
+    "moore": "musa"
+  }
+}

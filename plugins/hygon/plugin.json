@@ -1,0 +1,24 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [
+    "cuda-common"
+  ],
+  "device_headers": {
+    "hygon": "native/cuda/hygon/device_.h"
+  },
+  "devices": [
+    "hygon"
+  ],
+  "kind": "device",
+  "name": "hygon",
+  "operator_roots": [
+    "src/native/cuda/hygon/ops"
+  ],
+  "source_roots": [
+    "src/native/cuda/hygon"
+  ],
+  "test_devices": {
+    "hygon": "cuda"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [
+    "cuda-common"
+  ],
+  "device_headers": {
+    "iluvatar": "native/cuda/iluvatar/device_.h"
+  },
+  "devices": [
+    "iluvatar"
+  ],
+  "kind": "device",
+  "name": "iluvatar",
+  "operator_roots": [
+    "src/native/cuda/iluvatar/ops"
+  ],
+  "source_roots": [
+    "src/native/cuda/iluvatar"
+  ],
+  "test_devices": {
+    "iluvatar": "cuda"
+  }
+}

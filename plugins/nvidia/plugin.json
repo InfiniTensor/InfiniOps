@@ -1,0 +1,24 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [
+    "cuda-common"
+  ],
+  "device_headers": {
+    "nvidia": "native/cuda/nvidia/device_.h"
+  },
+  "devices": [
+    "nvidia"
+  ],
+  "kind": "device",
+  "name": "nvidia",
+  "operator_roots": [
+    "src/native/cuda/nvidia/ops"
+  ],
+  "source_roots": [
+    "src/native/cuda/nvidia"
+  ],
+  "test_devices": {
+    "nvidia": "cuda"
+  }
+}

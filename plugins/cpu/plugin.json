@@ -1,0 +1,22 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [],
+  "device_headers": {
+    "cpu": "native/cpu/device_.h"
+  },
+  "devices": [
+    "cpu"
+  ],
+  "kind": "device",
+  "name": "cpu",
+  "operator_roots": [
+    "src/native/cpu/ops"
+  ],
+  "source_roots": [
+    "src/native/cpu"
+  ],
+  "test_devices": {
+    "cpu": "cpu"
+  }
+}

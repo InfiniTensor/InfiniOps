@@ -1,0 +1,22 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [],
+  "device_headers": {
+    "ascend": "native/ascend/device_.h"
+  },
+  "devices": [
+    "ascend"
+  ],
+  "kind": "device",
+  "name": "ascend",
+  "operator_roots": [
+    "src/native/ascend/ops"
+  ],
+  "source_roots": [
+    "src/native/ascend"
+  ],
+  "test_devices": {
+    "ascend": "npu"
+  }
+}
