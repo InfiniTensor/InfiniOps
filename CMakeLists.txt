@@ -38,6 +38,49 @@ option(GENERATE_OPERATOR_CALL_INSTANTIATIONS
     "Generate explicit operator call instantiations" ON)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
+set(INFINI_OPS_PLUGINS "" CACHE STRING
+    "Comma- or semicolon-separated infini_ops build-time plugins to enable")
+
+function(_infini_ops_enable_legacy_options_from_plugins)
+    if(NOT INFINI_OPS_PLUGINS)
+        return()
+    endif()
+
+    set(_requested_plugins "${INFINI_OPS_PLUGINS}")
+    string(REPLACE "," ";" _requested_plugins "${_requested_plugins}")
+    foreach(_plugin IN LISTS _requested_plugins)
+        string(STRIP "${_plugin}" _plugin)
+        if(_plugin STREQUAL "")
+            continue()
+        elseif(_plugin STREQUAL "cpu")
+            set(WITH_CPU ON CACHE BOOL "Enable CPU backend" FORCE)
+        elseif(_plugin STREQUAL "nvidia")
+            set(WITH_NVIDIA ON CACHE BOOL "Enable CUDA backend" FORCE)
+        elseif(_plugin STREQUAL "iluvatar")
+            set(WITH_ILUVATAR ON CACHE BOOL "Enable Iluvatar GPU backend" FORCE)
+        elseif(_plugin STREQUAL "hygon")
+            set(WITH_HYGON ON CACHE BOOL "Enable Hygon GPU backend" FORCE)
+        elseif(_plugin STREQUAL "metax")
+            set(WITH_METAX ON CACHE BOOL "Enable MetaX backend" FORCE)
+        elseif(_plugin STREQUAL "cambricon")
+            set(WITH_CAMBRICON ON CACHE BOOL "Enable Cambricon backend" FORCE)
+        elseif(_plugin STREQUAL "moore")
+            set(WITH_MOORE ON CACHE BOOL "Enable Moore backend" FORCE)
+        elseif(_plugin STREQUAL "ascend")
+            set(WITH_ASCEND ON CACHE BOOL "Enable Ascend backend" FORCE)
+        elseif(_plugin STREQUAL "cuda-common")
+            # Shared dependency plugin; no legacy device option to set.
+        else()
+            message(FATAL_ERROR
+                "Unknown infini_ops plugin `${_plugin}`. v1 supports built-in plugins: "
+                "`cpu`, `nvidia`, `iluvatar`, `hygon`, `metax`, `moore`, `cambricon`, `ascend`, `cuda-common`")
+        endif()
+    endforeach()
+endfunction()
+
+_infini_ops_enable_legacy_options_from_plugins()
+
+
 set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")
 
 function(_infiniops_find_hygon_cuda_root out_var dtk_root)

@@ -1,0 +1,22 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [],
+  "device_headers": {
+    "cambricon": "native/cambricon/device_.h"
+  },
+  "devices": [
+    "cambricon"
+  ],
+  "kind": "device",
+  "name": "cambricon",
+  "operator_roots": [
+    "src/native/cambricon/ops"
+  ],
+  "source_roots": [
+    "src/native/cambricon"
+  ],
+  "test_devices": {
+    "cambricon": "mlu"
+  }
+}

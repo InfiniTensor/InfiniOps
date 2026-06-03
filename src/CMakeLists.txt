@@ -5,51 +5,15 @@ include(GNUInstallDirs)
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
-set(DEVICE_LIST "")
+include("${PROJECT_SOURCE_DIR}/cmake/infini_ops_plugins.cmake")
 
-if(WITH_CPU)
-    set(CPU_PATTERNS
-        "native/cpu/*.cc"
-        "native/cpu/*.cpp"
-    )
+set(INFINI_OPS_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+infini_ops_enable_requested_plugins()
+infini_ops_get_enabled_devices(DEVICE_LIST)
 
-    file(GLOB_RECURSE CPU_SOURCES CONFIGURE_DEPENDS ${CPU_PATTERNS})
-    list(APPEND CORE_SOURCES ${CPU_SOURCES})
-
-    target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
-
-    find_package(OpenMP REQUIRED COMPONENTS CXX)
-    target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
-
-    list(APPEND DEVICE_LIST "cpu")
-endif()
-
-if(WITH_NVIDIA)
-    set(NVIDIA_PATTERNS
-        "native/cuda/*.cc"
-        "native/cuda/*.cpp"
-        "native/cuda/*.cu"
-        "native/cuda/nvidia/*.cc"
-        "native/cuda/nvidia/*.cpp"
-        "native/cuda/nvidia/*.cu"
-    )
-
-    file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
-
-    enable_language(CUDA)
-
-    target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
-    target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
-
-    find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
-
-    list(APPEND DEVICE_LIST "nvidia")
-    set_target_properties(infiniops PROPERTIES
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED ON
-    )
-endif()
+set(INFINI_OPS_PLUGIN_REGISTRY_PATH
+    "${CMAKE_CURRENT_BINARY_DIR}/infini_ops_plugin_registry.json")
+infini_ops_write_plugin_registry("${INFINI_OPS_PLUGIN_REGISTRY_PATH}")
 
 if(WITH_NINETOOTHED)
     find_package(Python COMPONENTS Interpreter REQUIRED)
@@ -82,229 +46,6 @@ if(WITH_NINETOOTHED)
     target_include_directories(infiniops PRIVATE
         ${INFINIOPS_NINETOOTHED_INCLUDE_DIRS})
     target_sources(infiniops PRIVATE ${INFINIOPS_NINETOOTHED_SOURCES})
-endif()
-
-if(WITH_ILUVATAR)
-    set(ILUVATAR_PATTERNS
-        "native/cuda/*.cc"
-        "native/cuda/*.cpp"
-        "native/cuda/*.cu"
-        "native/cuda/iluvatar/*.cc"
-        "native/cuda/iluvatar/*.cpp"
-        "native/cuda/iluvatar/*.cu"
-    )
-
-    file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
-
-    target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
-    target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
-
-    find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
-
-    list(APPEND DEVICE_LIST "iluvatar")
-endif()
-
-if(WITH_HYGON)
-    set(HYGON_PATTERNS
-        "native/cuda/*.cc"
-        "native/cuda/*.cpp"
-        "native/cuda/*.cu"
-        "native/cuda/hygon/*.cc"
-        "native/cuda/hygon/*.cpp"
-        "native/cuda/hygon/*.cu"
-    )
-
-    file(GLOB_RECURSE HYGON_SOURCES CONFIGURE_DEPENDS ${HYGON_PATTERNS})
-
-    enable_language(CUDA)
-
-    target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
-    target_sources(infiniops PRIVATE ${HYGON_SOURCES})
-
-    find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
-
-    set_target_properties(infiniops PROPERTIES
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED ON
-    )
-
-    list(APPEND DEVICE_LIST "hygon")
-endif()
-
-if(WITH_METAX)
-    set(METAX_PATTERNS
-        "native/cuda/*.cc"
-        "native/cuda/*.cpp"
-        "native/cuda/metax/*.cc"
-        "native/cuda/metax/*.maca"
-    )
-
-    file(GLOB_RECURSE METAX_SOURCES CONFIGURE_DEPENDS ${METAX_PATTERNS})
-
-    set_source_files_properties(${METAX_SOURCES} PROPERTIES LANGUAGE CXX)
-
-    target_compile_definitions(infiniops PRIVATE WITH_METAX=1)
-    target_compile_options(infiniops PRIVATE "-x" "maca")
-    target_sources(infiniops PRIVATE ${METAX_SOURCES})
-
-    target_include_directories(infiniops PUBLIC "${MACA_PATH}/include")
-    target_link_libraries(infiniops PUBLIC 
-        ${MACA_RUNTIME_LIB} 
-        ${MACA_DNN_LIB} 
-        ${MACA_BLAS_LIB}
-    )
-
-    list(APPEND DEVICE_LIST "metax")
-endif()
-
-if(WITH_MOORE)
-    set(MOORE_PATTERNS
-        "native/cuda/*.cc"
-        "native/cuda/*.cpp"
-        "native/cuda/moore/*.cc"
-        "native/cuda/moore/*.cpp"
-        "native/cuda/moore/*.mu"
-    )
-
-    file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
-
-    set_source_files_properties(${MOORE_SOURCES} PROPERTIES LANGUAGE CXX)
-
-    target_compile_definitions(infiniops PRIVATE WITH_MOORE=1)
-    target_compile_options(infiniops PRIVATE "-x" "musa")
-    target_sources(infiniops PRIVATE ${MOORE_SOURCES})
-
-    target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
-    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
-
-    list(APPEND DEVICE_LIST "moore")
-endif()
-
-if(WITH_CAMBRICON)
-    file(GLOB_RECURSE CAMBRICON_MLU_SOURCES CONFIGURE_DEPENDS "native/cambricon/ops/*/*.mlu")
-    find_program(CNCC_COMPILER cncc HINTS "${NEUWARE_HOME}/bin" "$ENV{NEUWARE_HOME}/bin" /usr/local/neuware/bin)
-    if(CNCC_COMPILER)
-        message(STATUS "Found cncc: ${CNCC_COMPILER}")
-        set(MLU_COMPILE_OPTS
-            -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
-            -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
-            -idirafter /usr/local/neuware/lib/clang/11.1.0/include
-        )
-        function(compile_mlu_file src_file)
-            get_filename_component(name ${src_file} NAME_WE)
-            get_filename_component(path ${src_file} DIRECTORY)
-            set(out_file "${CMAKE_CURRENT_BINARY_DIR}/${path}/${name}.o")
-            file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${path}")
-            add_custom_command(OUTPUT ${out_file}
-                COMMAND ${CNCC_COMPILER} ${MLU_COMPILE_OPTS} -c ${src_file} -o ${out_file}
-                DEPENDS ${src_file}
-                COMMENT "Building MLU kernel: ${src_file}"
-            )
-            set_property(DIRECTORY APPEND PROPERTY CAMBRICON_OBJECTS ${out_file})
-        endfunction()
-        foreach(src ${CAMBRICON_MLU_SOURCES})
-            compile_mlu_file(${src})
-        endforeach()
-        get_directory_property(CAMBRICON_OBJECT_FILES CAMBRICON_OBJECTS)
-        if(CAMBRICON_OBJECT_FILES)
-            target_sources(infiniops PRIVATE ${CAMBRICON_OBJECT_FILES})
-        endif()
-    else()
-        message(WARNING "cncc compiler not found. MLU kernels will not be compiled.")
-    endif()
-    target_compile_definitions(infiniops PRIVATE WITH_CAMBRICON=1)
-
-    target_include_directories(infiniops PUBLIC "${NEUWARE_HOME}/include")
-    target_link_libraries(infiniops PUBLIC ${CAMBRICON_RUNTIME_LIB} ${CAMBRICON_CNNL_LIB} ${CAMBRICON_CNNL_EXTRA_LIB} ${CAMBRICON_PAPI_LIB})
-
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(infiniops PUBLIC 
-            "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-idirafter /usr/local/neuware/lib/clang/11.1.0/include>"
-        )
-    endif()
-
-    list(APPEND DEVICE_LIST "cambricon")
-endif()
-
-if(WITH_ASCEND)
-    # ASCEND_HOME is set by the top-level CMakeLists.txt.
-    file(GLOB_RECURSE ASCEND_SOURCES CONFIGURE_DEPENDS
-        "native/ascend/*.cc"
-        "native/ascend/*.cpp"
-    )
-    # Exclude `kernel_impl.cpp` — `AscendC` device code, not compiled by the host C++ compiler.
-    list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*kernel_impl\\.cpp$")
-    # Exclude custom/ — standalone PyTorch extension, built separately.
-    list(FILTER ASCEND_SOURCES EXCLUDE REGEX ".*/custom/.*")
-
-    target_compile_definitions(infiniops PUBLIC WITH_ASCEND=1)
-    target_sources(infiniops PRIVATE ${ASCEND_SOURCES})
-
-    # Resolve the driver lib dir two levels above the toolkit root.
-    get_filename_component(ASCEND_ROOT "${ASCEND_HOME}/../.." ABSOLUTE)
-
-    # Prefer the real driver HAL; fall back to the toolkit stub for build-only
-    # environments (e.g., Docker CI images without hardware drivers installed).
-    # CANN <= 8.0: stub at runtime/lib64/stub/; CANN >= 8.5: devlib/<arch>-linux/devlib/.
-    set(ASCEND_HAL_REAL   "${ASCEND_ROOT}/driver/lib64/driver/libascend_hal.so")
-    set(ASCEND_HAL_STUB   "${ASCEND_HOME}/runtime/lib64/stub/libascend_hal.so")
-    set(ASCEND_HAL_DEVLIB "${ASCEND_HOME}/${CMAKE_SYSTEM_PROCESSOR}-linux/devlib/libascend_hal.so")
-    if(EXISTS "${ASCEND_HAL_REAL}")
-        set(ASCEND_HAL_LIB "${ASCEND_HAL_REAL}")
-    elseif(EXISTS "${ASCEND_HAL_STUB}")
-        set(ASCEND_HAL_LIB "${ASCEND_HAL_STUB}")
-        message(STATUS "ascend_hal: driver not found, using stub for linking")
-    elseif(EXISTS "${ASCEND_HAL_DEVLIB}")
-        set(ASCEND_HAL_LIB "${ASCEND_HAL_DEVLIB}")
-        message(STATUS "ascend_hal: driver not found, using devlib for linking")
-    else()
-        message(FATAL_ERROR "libascend_hal.so not found (tried ${ASCEND_HAL_REAL}, ${ASCEND_HAL_STUB}, and ${ASCEND_HAL_DEVLIB})")
-    endif()
-
-    target_include_directories(infiniops PUBLIC
-        "${ASCEND_HOME}/include"
-        "${ASCEND_HOME}/include/aclnn"
-        "${ASCEND_HOME}/include/aclnnop")
-    target_link_libraries(infiniops PUBLIC
-        "${ASCEND_HOME}/lib64/libascendcl.so"
-        "${ASCEND_HOME}/lib64/libnnopbase.so"
-        "${ASCEND_HOME}/lib64/libopapi.so"
-        "${ASCEND_HAL_LIB}")
-
-    # ATB (Ascend Transformer Boost) — provides fused operators like
-    # `PagedAttention` and `ReshapeAndCache` that are graph-capture safe.
-    set(ATB_HOME_DIR "$ENV{ATB_HOME_PATH}")
-    if(NOT ATB_HOME_DIR)
-        # Default search path under CANN nnal directory.
-        file(GLOB ATB_SEARCH_DIRS "/usr/local/Ascend/nnal/atb/*/atb/cxx_abi_1")
-        if(ATB_SEARCH_DIRS)
-            list(SORT ATB_SEARCH_DIRS ORDER DESCENDING)
-            list(GET ATB_SEARCH_DIRS 0 ATB_HOME_DIR)
-        endif()
-    endif()
-
-    if(ATB_HOME_DIR AND EXISTS "${ATB_HOME_DIR}/include/atb/operation.h")
-        message(STATUS "ATB found: ${ATB_HOME_DIR}")
-        target_compile_definitions(infiniops PUBLIC INFINI_HAS_ATB=1)
-        target_include_directories(infiniops PUBLIC "${ATB_HOME_DIR}/include")
-        target_link_libraries(infiniops PUBLIC "${ATB_HOME_DIR}/lib/libatb.so")
-    else()
-        message(STATUS "ATB not found — ATB-based operators disabled")
-    endif()
-
-    list(APPEND DEVICE_LIST "ascend")
-
-    # Custom `AscendC` kernels (PyTorch extension, requires `torch_npu`).
-    if(BUILD_CUSTOM_KERNEL)
-        add_subdirectory(native/ascend/custom)
-
-        # Link the compiled `AscendC` kernel objects into `infiniops` so that
-        # custom kernel implementations (e.g. `RmsNorm` index 1) can call
-        # them via the generated launch functions.
-        target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
-    endif()
 endif()
 
 if(WITH_TORCH)
@@ -517,7 +258,10 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     # specializations for enabled backends, causing link-time or runtime
     # failures.
 
-    set(GENERATOR_ARGS --devices ${DEVICE_LIST})
+    set(GENERATOR_ARGS --plugin-registry ${INFINI_OPS_PLUGIN_REGISTRY_PATH})
+    if(DEVICE_LIST)
+        list(APPEND GENERATOR_ARGS --devices ${DEVICE_LIST})
+    endif()
     if(WITH_TORCH)
         list(APPEND GENERATOR_ARGS --with-torch)
     endif()

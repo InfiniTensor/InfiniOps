@@ -1,0 +1,24 @@
+{
+  "cmake_entry": "plugin.cmake",
+  "contract_version": 1,
+  "depends": [
+    "cuda-common"
+  ],
+  "device_headers": {
+    "metax": "native/cuda/metax/device_.h"
+  },
+  "devices": [
+    "metax"
+  ],
+  "kind": "device",
+  "name": "metax",
+  "operator_roots": [
+    "src/native/cuda/metax/ops"
+  ],
+  "source_roots": [
+    "src/native/cuda/metax"
+  ],
+  "test_devices": {
+    "metax": "cuda"
+  }
+}

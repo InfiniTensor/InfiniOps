@@ -923,12 +923,15 @@ def _generate_generated_dispatch_entries(operator):
     return declarations, definitions
 
 
-def _generate_generated_dispatch_header(op_names, devices, declarations):
+def _generate_generated_dispatch_header(
+    op_names, devices, declarations, plugin_registry=None
+):
     header_base_includes = "\n".join(
         f'#include "base/{op_name}.h"' for op_name in op_names
     )
     header_device_includes = "\n".join(
-        f'#include "{path}"' for path in _device_marker_headers(devices)
+        f'#include "{path}"'
+        for path in _device_marker_headers(devices, plugin_registry)
     )
 
     return f"""#ifndef INFINI_OPS_GENERATED_BINDINGS_GENERATED_DISPATCH_H_
@@ -1053,9 +1056,12 @@ namespace infini::ops {{
 """
 
 
-def _generate_operator_call_instantiation_source(devices, impl_paths, definitions):
+def _generate_operator_call_instantiation_source(
+    devices, impl_paths, definitions, plugin_registry=None
+):
     device_includes = "\n".join(
-        f'#include "{path}"' for path in _device_marker_headers(devices)
+        f'#include "{path}"'
+        for path in _device_marker_headers(devices, plugin_registry)
     )
     impl_includes = "\n".join(
         f'#include "{_to_include_path(impl_path)}"' for impl_path in impl_paths
@@ -1076,7 +1082,12 @@ namespace infini::ops {{
 """
 
 
-def _device_marker_headers(devices):
+def _device_marker_headers(devices, plugin_registry=None):
+    if plugin_registry is not None:
+        paths = plugin_registry.get("device_headers", {})
+
+        return [paths[device] for device in devices if device in paths]
+
     paths = {
         "cpu": "native/cpu/device_.h",
         "nvidia": "native/cuda/nvidia/device_.h",
@@ -1085,6 +1096,7 @@ def _device_marker_headers(devices):
         "metax": "native/cuda/metax/device_.h",
         "moore": "native/cuda/moore/device_.h",
         "iluvatar": "native/cuda/iluvatar/device_.h",
+        "hygon": "native/cuda/hygon/device_.h",
     }
 
     return [paths[device] for device in devices if device in paths]
@@ -1118,7 +1130,7 @@ _OPERATOR_DECL_RE = re.compile(
 )
 
 
-def _index_impl_headers(impl_roots, scan_dirs):
+def _index_impl_headers(impl_roots, scan_dirs=None):
     """Index implementation headers by base operator class name.
 
     The previous implementation scanned every implementation header once per
@@ -1130,7 +1142,7 @@ def _index_impl_headers(impl_roots, scan_dirs):
 
     for impl_root in impl_roots:
         for impl_path in impl_root.rglob("*.h"):
-            if not _matches_scan_dir(impl_path, scan_dirs):
+            if scan_dirs is not None and not _matches_scan_dir(impl_path, scan_dirs):
                 continue
 
             text = impl_path.read_text()
@@ -1141,7 +1153,9 @@ def _index_impl_headers(impl_roots, scan_dirs):
     return by_operator
 
 
-def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
+def _get_all_ops(
+    devices, with_torch=False, with_ninetoothed=False, plugin_registry=None
+):
     scan_dirs = set(devices)
 
     if with_torch:
@@ -1161,12 +1175,24 @@ def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
     if with_torch and _GENERATED_BASE_DIR.exists():
         base_dirs.append(_GENERATED_BASE_DIR)
 
-    impl_roots = [_SRC_DIR]
+    if plugin_registry is not None and plugin_registry.get("operator_roots"):
+        impl_roots = [pathlib.Path(root) for root in plugin_registry["operator_roots"]]
+        impl_scan_dirs = None
+    else:
+        impl_roots = [_SRC_DIR]
+        impl_scan_dirs = scan_dirs
 
     if with_torch and (_GENERATION_DIR / "torch").exists():
         impl_roots.append(_GENERATION_DIR)
+        if impl_scan_dirs is not None:
+            impl_scan_dirs.add("torch")
 
-    impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
+    if with_ninetoothed:
+        impl_roots.append(_SRC_DIR / "ninetoothed")
+        if impl_scan_dirs is not None:
+            impl_scan_dirs.add("ninetoothed")
+
+    impl_headers_by_operator = _index_impl_headers(impl_roots, impl_scan_dirs)
 
     for base_dir in base_dirs:
         for file_path in base_dir.iterdir():
@@ -1258,7 +1284,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--devices",
         nargs="+",
-        default="cpu",
+        default=["cpu"],
         type=str,
         help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `moore`, `iluvatar`, `kunlun`, `hygon`, and `qy`. (default: `cpu`)",
     )
@@ -1274,7 +1300,19 @@ if __name__ == "__main__":
         help="Include NineToothed backend implementations.",
     )
 
+    parser.add_argument(
+        "--plugin-registry",
+        type=pathlib.Path,
+        default=None,
+        help="Path to a build-time plugin registry JSON file.",
+    )
+
     args = parser.parse_args()
+    plugin_registry = None
+    if args.plugin_registry is not None:
+        plugin_registry = json.loads(args.plugin_registry.read_text())
+        if "devices" in plugin_registry:
+            args.devices = plugin_registry["devices"]
 
     # Wipe previous outputs so files for ops that have since been removed
     # from the active set (e.g. when toggling `--with-torch`) do not linger
@@ -1294,6 +1332,7 @@ if __name__ == "__main__":
             args.devices,
             with_torch=args.with_torch,
             with_ninetoothed=args.with_ninetoothed,
+            plugin_registry=plugin_registry,
         )
 
     bind_func_names = []
@@ -1342,7 +1381,7 @@ if __name__ == "__main__":
         bind_func_names.append(bind_func_name)
 
     dispatch_header = _generate_generated_dispatch_header(
-        op_names, args.devices, dispatch_declarations
+        op_names, args.devices, dispatch_declarations, plugin_registry
     )
     (_BINDINGS_DIR / "generated_dispatch.h").write_text(dispatch_header)
 
@@ -1384,6 +1423,7 @@ if __name__ == "__main__":
             args.devices,
             impl_paths,
             call_instantiation_definitions,
+            plugin_registry,
         )
         (
             _GENERATED_SRC_DIR
