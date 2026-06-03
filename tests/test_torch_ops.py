@@ -69,6 +69,7 @@ _TENSOR_SHAPES = {
     "outer": ((8,), (12,)),
     "ger": ((8,), (12,)),
     "kron": ((3, 4), (2, 3)),
+    "internal_compute_linear_combination": ((3, 2, 2), (5, 3)),
 }
 
 # Per-(op, param-name) values for non-tensor inputs.  Lookup falls back
@@ -249,6 +250,10 @@ _REFERENCE_SIGNATURE_MISMATCH_OPS = frozenset(
         "binary_cross_entropy_backward",
     }
 )
+
+# ATen `_compute_linear_combination.out` accumulates into `out`, so matching
+# the functional reference requires a zero-initialized destination.
+_ZERO_INITIALIZED_OUT_OPS = frozenset({"_compute_linear_combination"})
 
 # Full reductions with low-precision inputs diverge between the functional
 # (`torch.<op>(x)`) and `_out` paths because of intermediate-precision
@@ -581,6 +586,11 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
         return
 
     outs = [torch.empty_like(t) for t in ref_outs]
+
+    if aten_name in _ZERO_INITIALIZED_OUT_OPS:
+        for out in outs:
+            out.zero_()
+
     _call_infini(op_name, *inputs, *outs)
 
     for actual, expected in zip(outs, ref_outs):

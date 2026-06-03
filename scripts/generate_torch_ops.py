@@ -93,6 +93,7 @@ _SCALAR_TYPE_MAP = {
     # `std::string` marshals through pybind11 cleanly and converts
     # implicitly to ATen's `c10::string_view`.
     "str": "std::string",
+    "ScalarType": "DataType",
 }
 
 # `Dimname` overloads (named-tensor dim) are skipped — passing them
@@ -189,7 +190,9 @@ class Param:
         if self.cpp_type_override is not None:
             return _normalize_cpp_type(self.cpp_type_override) == "Tensor"
 
-        # Real tensors only. `Tensor?` is optional and has separate handling.
+        # Real tensors only. `Tensor?` and `Tensor[]` have separate handling.
+        if self.aten_type.endswith("[]"):
+            return False
 
         return self.aten_type == "Tensor" or self.aten_type.startswith("Tensor(")
 
@@ -201,6 +204,13 @@ class Param:
             )
 
         return self.aten_type == "Tensor?"
+
+    @property
+    def is_tensor_list(self) -> bool:
+        if self.cpp_type_override is not None:
+            return _normalize_cpp_type(self.cpp_type_override) == "std::vector<Tensor>"
+
+        return self.aten_type == "Tensor[]"
 
     @property
     def is_mutable_tensor(self) -> bool:
@@ -291,17 +301,10 @@ class Param:
             return self.cpp_type_override
 
         if self.is_tensor:
-            # `Tensor[]` / `Tensor(a!)[]` would need `std::vector<Tensor>` and a
-            # different ATen call shape — not yet supported, so reject so the
-            # whole overload gets skipped instead of emitting code that calls
-            # `at::<op>_out(at::Tensor, ...)` against an `at::TensorList`
-            # signature.
-            if self.aten_type.endswith("[]"):
-                raise NotImplementedError(
-                    f"`Tensor[]` param {self.name!r} not supported yet"
-                )
-
             return "Tensor"
+
+        if self.is_tensor_list:
+            return "std::vector<Tensor>"
 
         if self.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
             return _EXPOSED_OPTIONAL_CPP_TYPES[self.aten_type]
@@ -434,7 +437,7 @@ class Op:
         if not non_out:
             return False
 
-        return non_out[0].is_tensor
+        return non_out[0].is_tensor or non_out[0].is_tensor_list
 
 
 _FUNC_RE = re.compile(
@@ -1199,7 +1202,7 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         conversion_lines.append("  }")
 
     for schema_index, param in enumerate(op.params):
-        if not param.is_tensor:
+        if not param.is_tensor and not param.is_tensor_list:
             continue
 
         api_param = op.api_param_for(schema_index)
@@ -1208,6 +1211,20 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             continue
 
         api_name = api_param.api_name
+
+        if param.is_tensor_list:
+            conversion_lines.append(f"  std::vector<at::Tensor> at_{param.name};")
+            conversion_lines.append(f"  at_{param.name}.reserve({api_name}.size());")
+            conversion_lines.append(f"  for (const auto& tensor : {api_name}) {{")
+            conversion_lines.append(
+                "    at_"
+                f"{param.name}.push_back(ToAtenTensor<kDev>("
+                "const_cast<void*>(tensor.data()), tensor.shape(), tensor.strides(), "
+                "tensor.dtype(), device_index));"
+            )
+            conversion_lines.append("  }")
+            continue
+
         data_expr = (
             f"{api_name}.data()"
             if param.is_mutable_tensor
@@ -1237,8 +1254,11 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         if p.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
             return f"at_{p.name}"
 
-        if p.is_tensor:
+        if p.is_tensor or p.is_tensor_list:
             return f"at_{p.name}"
+
+        if p.aten_type == "ScalarType":
+            return f"ToAtenDataType({api_param.api_name})"
 
         return api_param.api_name
 

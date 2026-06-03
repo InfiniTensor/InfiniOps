@@ -449,8 +449,10 @@ def _generate_pybind11(operator):
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
-            if _is_optional_tensor(arg) or _is_vector_tensor(arg):
+            if _is_optional_tensor(arg):
                 continue
+            if _is_vector_tensor(arg):
+                return f"{arg.spelling}.at(0)"
             if "Tensor" in arg.type.spelling:
                 return arg.spelling
         return None
@@ -881,25 +883,36 @@ def _generate_generated_dispatch_entries(operator):
 }}"""
     )
 
+    emitted_make_params = set()
+
     for constructor in operator.constructors:
         params = _generate_params(constructor)
         args = _generate_arguments(constructor)
+        make_params = _append_optional_params("const Config& config", params)
 
+        if make_params in emitted_make_params:
+            continue
+
+        emitted_make_params.add(make_params)
         declarations.append(
-            f"std::unique_ptr<Operator<{op_type}>> "
-            f"Make{symbol_name}("
-            f"{_append_optional_params('const Config& config', params)});"
+            f"std::unique_ptr<Operator<{op_type}>> Make{symbol_name}({make_params});"
         )
         definitions.append(
-            f"""std::unique_ptr<Operator<{op_type}>> Make{symbol_name}({_append_optional_params("const Config& config", params)}) {{
+            f"""std::unique_ptr<Operator<{op_type}>> Make{symbol_name}({make_params}) {{
   return Operator<{op_type}>::Make({_append_optional_args("config", args)});
 }}"""
         )
+
+    emitted_call_params = set()
 
     for call in operator.calls:
         params = _generate_params(call)
         args = _generate_arguments(call)
 
+        if params in emitted_call_params:
+            continue
+
+        emitted_call_params.add(params)
         declarations.append(
             f"void Invoke{symbol_name}(const "
             f"{_append_optional_params(f'{op_type}& op', params)});"
