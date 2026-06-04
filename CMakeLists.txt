@@ -442,6 +442,7 @@ if(WITH_MOORE)
     find_library(MUSA_LIB   NAMES musa   HINTS "${MUSA_ROOT}/lib" REQUIRED)
     find_library(MUSART_LIB NAMES musart HINTS "${MUSA_ROOT}/lib" REQUIRED)
     find_library(MUBLAS_LIB NAMES mublas HINTS "${MUSA_ROOT}/lib" REQUIRED)
+    find_library(MUSA_OPENMP_LIB NAMES iomp5 omp HINTS "${MUSA_ROOT}/lib" REQUIRED)
 endif()
 
 if(WITH_CAMBRICON)

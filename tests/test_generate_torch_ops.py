@@ -89,6 +89,30 @@ def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     assert "at_bias" in source
 
 
+def test_tensor_list_params_are_exposed_and_forwarded_to_aten():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "stack(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+
+    assert [param.cpp_type for param in op.visible_params] == [
+        "std::vector<Tensor>",
+        "int64_t",
+        "Tensor",
+    ]
+    assert op.is_testable
+
+    base = module._generate_base_header("stack", [op])
+    source = module._generate_torch_method_source("stack", op)
+
+    assert "#include <vector>" in base
+    assert "std::vector<Tensor> tensors" in base
+    assert "std::vector<at::Tensor> at_tensors" in source
+    assert "at_tensors.reserve(tensors.size())" in source
+    assert "for (const auto& tensor : tensors)" in source
+    assert "at::stack_out(at_out, at_tensors, dim)" in source
+
+
 def test_optional_scalar_and_array_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     quantile = module._parse_func(
@@ -128,6 +152,27 @@ def test_optional_scalar_and_array_params_are_exposed_and_forwarded_to_aten():
     assert "c10::optional<at::ArrayRef<double>> at_scale_factors" in upsample_source
     assert "at::upsample_bicubic2d_out" in upsample_source
     assert "at_scale_factors" in upsample_source
+
+
+def test_required_scalar_type_params_use_public_data_type():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "_softmax_backward_data(Tensor grad_output, Tensor output, int dim, "
+        "ScalarType input_dtype, *, Tensor(a!) grad_input) -> Tensor(a!)"
+    )
+
+    assert [param.cpp_type for param in op.visible_params] == [
+        "Tensor",
+        "Tensor",
+        "int64_t",
+        "DataType",
+        "Tensor",
+    ]
+
+    source = module._generate_torch_method_source("internal_softmax_backward_data", op)
+
+    assert "at::_softmax_backward_data_out" in source
+    assert "ToAtenDataType(input_dtype)" in source
 
 
 def test_existing_base_overload_can_omit_optional_schema_params():

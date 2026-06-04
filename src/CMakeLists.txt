@@ -177,7 +177,7 @@ if(WITH_MOORE)
     target_sources(infiniops PRIVATE ${MOORE_SOURCES})
 
     target_include_directories(infiniops PUBLIC "${MUSA_ROOT}/include")
-    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB})
+    target_link_libraries(infiniops PUBLIC ${MUSA_LIB} ${MUSART_LIB} ${MUBLAS_LIB} ${MUSA_OPENMP_LIB})
 
     list(APPEND DEVICE_LIST "moore")
 endif()

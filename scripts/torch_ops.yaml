@@ -69,6 +69,7 @@
 - bmm
 - bucketize
 - ceil
+- chain_matmul
 - cholesky
 - cholesky_inverse
 - cholesky_solve
@@ -79,6 +80,8 @@
 - col2im
 - complex
 - conj_physical
+- column_stack
+- concatenate
 - copysign
 - cos
 - cosh
@@ -95,6 +98,7 @@
 - div
 - divide
 - dot
+- dstack
 - elu
 - elu_backward
 - empty
@@ -163,6 +167,7 @@
 - heaviside
 - histc
 - histogram
+- hstack
 - hspmm
 - huber_loss
 - huber_loss_backward
@@ -192,6 +197,7 @@
 - less
 - less_equal
 - lgamma
+- linalg_multi_dot
 - linalg_cholesky
 - linalg_cholesky_ex
 - linalg_cond
@@ -337,6 +343,7 @@
 - replication_pad3d
 - replication_pad3d_backward
 - round
+- row_stack
 - rrelu_with_noise
 - rsqrt
 - scatter
@@ -428,6 +435,7 @@
 - sqrt
 - square
 - sspaddmm
+- stack
 - std
 - sub
 - subtract
@@ -465,12 +473,15 @@
 - upsample_trilinear3d_backward
 - var
 - vdot
+- vstack
 - where
 - xlogy
 - zeros
 - _add_relu
 - _addmm_activation
 - _batch_norm_with_update
+- _chunk_cat
+- _compute_linear_combination
 - _conv_depthwise2d
 - _convert_indices_from_coo_to_csr
 - _convert_indices_from_csr_to_coo
@@ -484,11 +495,15 @@
 - _linalg_solve_ex
 - _linalg_svd
 - _log_softmax
+- _log_softmax_backward_data
 - _logcumsumexp
+- _native_batch_norm_legit
 - _scaled_mm
 - _slow_conv2d_backward
 - _slow_conv2d_forward
 - _softmax
+- _softmax_backward_data
+- _stack
 - _upsample_bicubic2d_aa
 - _upsample_bicubic2d_aa_backward
 - _upsample_bilinear2d_aa
@@ -522,6 +537,7 @@
 - greater_equal_
 - gt_
 - le_
+- index_fill_
 - lerp_
 - less_
 - less_equal_
@@ -532,6 +548,7 @@
 - ne_
 - not_equal_
 - pow_
+- random_
 - remainder_
 - set_
 - sub_

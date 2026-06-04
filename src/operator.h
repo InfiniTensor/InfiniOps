@@ -135,59 +135,35 @@ class OperatorBase {
 template <typename Key, Device::Type device_type = Device::Type::kCount,
           std::size_t implementation_index = 0>
 class Operator : public OperatorBase {
-  // Generation counter for lazy cache invalidation.  Bumped by
-  // `clear_cache()`; the next `call()` detects the mismatch and
-  // destroys all cached operator instances.
-  static inline std::size_t cache_generation_{0};
-
  public:
   // Invalidate the operator cache.  Cached operators are destroyed on the
   // next `call()` invocation.  Intended for test isolation — production
   // code should never call this.
   static void clear_cache() { ++cache_generation_; }
+
   template <typename... Args>
   static auto Make(const Config& config, const Tensor tensor, Args&&... args) {
-    std::unique_ptr<Operator> op_ptr;
-    auto cache_args = std::forward_as_tuple(args...);
-
-    DispatchFunc<ActiveDevices<Key>>(
-        tensor.device().type(),
-        [&](auto device_tag) {
-          constexpr Device::Type kDev = decltype(device_tag)::value;
-          detail::DispatchImplementation(
-              config.implementation_index(),
-              [&](auto implementation_tag) {
-                constexpr std::size_t kImplementationIndex =
-                    decltype(implementation_tag)::value;
-                if constexpr (std::is_constructible_v<
-                                  Operator<Key, kDev, kImplementationIndex>,
-                                  const Tensor&, Args...>) {
-                  std::apply(
-                      [&](auto&... cached_args) {
-                        op_ptr = std::make_unique<
-                            Operator<Key, kDev, kImplementationIndex>>(
-                            tensor, cached_args...);
-                      },
-                      cache_args);
-                } else {
-                  assert(false &&
-                         "operator is not implemented for this device and "
-                         "implementation index");
-                }
-              },
-              "Operator::Make(implementation_index)",
-              typename ActiveImplementations<Key, kDev>::type{});
-        },
-        "Operator::Make");
-
-    op_ptr->set_config(config);
-
-    return op_ptr;
+    return MakeWithDevice(config, tensor.device().type(), tensor,
+                          std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   static auto Make(const Tensor tensor, Args&&... args) {
     return Make({}, tensor, std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static auto Make(const Config& config, const std::vector<Tensor> tensors,
+                   Args&&... args) {
+    assert(!tensors.empty() && "operator tensor list input cannot be empty");
+
+    return MakeWithDevice(config, tensors.front().device().type(), tensors,
+                          std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static auto Make(const std::vector<Tensor> tensors, Args&&... args) {
+    return Make({}, tensors, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
@@ -257,6 +233,54 @@ class Operator : public OperatorBase {
   static constexpr Device::Type device_type_{device_type};
 
   static constexpr std::size_t implementation_index_{implementation_index};
+
+ private:
+  template <typename... Args>
+  static auto MakeWithDevice(const Config& config,
+                             Device::Type dispatch_device_type,
+                             Args&&... args) {
+    std::unique_ptr<Operator> op_ptr;
+    auto cache_args = std::forward_as_tuple(args...);
+
+    DispatchFunc<ActiveDevices<Key>>(
+        dispatch_device_type,
+        [&](auto device_tag) {
+          constexpr Device::Type kDev = decltype(device_tag)::value;
+          detail::DispatchImplementation(
+              config.implementation_index(),
+              [&](auto implementation_tag) {
+                constexpr std::size_t kImplementationIndex =
+                    decltype(implementation_tag)::value;
+                if constexpr (std::is_constructible_v<
+                                  Operator<Key, kDev, kImplementationIndex>,
+                                  Args...>) {
+                  std::apply(
+                      [&](auto&... cached_args) {
+                        op_ptr = std::make_unique<
+                            Operator<Key, kDev, kImplementationIndex>>(
+                            cached_args...);
+                      },
+                      cache_args);
+                } else {
+                  assert(false &&
+                         "operator is not implemented for this device and "
+                         "implementation index");
+                }
+              },
+              "Operator::Make(implementation_index)",
+              typename ActiveImplementations<Key, kDev>::type{});
+        },
+        "Operator::Make");
+
+    op_ptr->set_config(config);
+
+    return op_ptr;
+  }
+
+  // Generation counter for lazy cache invalidation.  Bumped by
+  // `clear_cache()`; the next `call()` detects the mismatch and
+  // destroys all cached operator instances.
+  static inline std::size_t cache_generation_{0};
 };
 
 // Maximum number of implementation slots per (operator, device) pair.
