@@ -99,6 +99,39 @@ def test_plugin_manifest_change_maps_to_that_plugin():
     assert matrix["ci_platforms"] == ["cambricon"]
 
 
+def test_matrix_accepts_multiple_plugin_roots(tmp_path):
+    module = _load_matrix_module()
+    external_root = tmp_path / "external"
+    plugin_dir = external_root / "external-cpu"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.cmake").write_text("# external plugin\n", encoding="utf-8")
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "external-cpu",
+                "kind": "device",
+                "contract_version": 1,
+                "devices": ["cpu"],
+                "depends": [],
+                "cmake_entry": "plugin.cmake",
+                "source_roots": ["external/native/cpu"],
+                "operator_roots": ["external/native/cpu/ops"],
+                "device_headers": {"cpu": "external/native/cpu/device_.h"},
+                "test_devices": {"cpu": "cpu"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    matrix = module.build_test_matrix(
+        [_plugin_root(), external_root], ["external/native/cpu/ops/add.cc"]
+    )
+
+    assert matrix["plugins"] == ["external-cpu"]
+    assert matrix["devices"] == ["cpu"]
+    assert matrix["ci_platforms"] == []
+
+
 def test_cli_outputs_json_matrix(tmp_path):
     repo = pathlib.Path(__file__).resolve().parents[1]
     script = repo / "scripts" / "infini_ops_plugin_test_matrix.py"

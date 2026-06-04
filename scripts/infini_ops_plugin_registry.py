@@ -205,17 +205,41 @@ def _append_unique(values, new_values):
             values.append(value)
 
 
-def load_plugin_manifests(plugin_root):
-    plugin_root = pathlib.Path(plugin_root)
+def _iter_plugin_roots(plugin_roots):
+    if isinstance(plugin_roots, str | pathlib.PurePath):
+        raw_roots = [plugin_roots]
+    else:
+        raw_roots = plugin_roots
 
-    return {
-        path.parent.name: _load_manifest(path)
-        for path in sorted(plugin_root.glob("*/plugin.json"))
-    }
+    for root in raw_roots:
+        if isinstance(root, str):
+            parts = root.replace(",", ";").split(";")
+        else:
+            parts = [root]
+
+        for part in parts:
+            if isinstance(part, str):
+                part = part.strip()
+            if part:
+                yield pathlib.Path(part)
 
 
-def load_plugin_registry(plugin_root, requested_plugins):
-    manifests = load_plugin_manifests(plugin_root)
+def load_plugin_manifests(plugin_roots):
+    manifests = {}
+
+    for plugin_root in _iter_plugin_roots(plugin_roots):
+        for path in sorted(plugin_root.glob("*/plugin.json")):
+            manifest = _load_manifest(path)
+            name = manifest["name"]
+            if name in manifests:
+                raise ValueError(f"Duplicate plugin `{name}` across plugin roots.")
+            manifests[name] = manifest
+
+    return manifests
+
+
+def load_plugin_registry(plugin_roots, requested_plugins):
+    manifests = load_plugin_manifests(plugin_roots)
 
     ordered = []
     visiting = []

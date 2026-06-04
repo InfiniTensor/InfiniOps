@@ -144,13 +144,17 @@ def main(argv=None):
     )
     parser.add_argument(
         "--plugin-root",
-        default="plugins",
-        help="Directory containing built-in `plugin.json` manifests.",
+        action="append",
+        default=None,
+        help=(
+            "Directory containing `plugin.json` manifests. Pass multiple times "
+            "to include external plugin roots."
+        ),
     )
     parser.add_argument("paths", nargs="*", help="Changed paths to classify.")
     args = parser.parse_args(argv)
 
-    matrix = build_test_matrix(args.plugin_root, _read_paths(args))
+    matrix = build_test_matrix(args.plugin_root or ["plugins"], _read_paths(args))
     print(json.dumps(matrix, indent=2, sort_keys=True))
 
 

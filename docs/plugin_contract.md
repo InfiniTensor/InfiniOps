@@ -61,7 +61,7 @@ Platform entries should keep platform-specific compile definitions, source lists
 
 ## Selection
 
-`INFINI_OPS_PLUGINS` is the canonical configure option for selecting plugins. Legacy options such as `WITH_NVIDIA`, `WITH_ASCEND`, and `WITH_CAMBRICON` remain compatibility shims and map onto the same plugin enable path.
+`INFINI_OPS_PLUGINS` is the canonical configure option for selecting plugins. `INFINI_OPS_PLUGIN_ROOT` points at the built-in plugin root by default, and `INFINI_OPS_PLUGIN_ROOTS` can add comma- or semicolon-separated external plugin roots. Legacy options such as `WITH_NVIDIA`, `WITH_ASCEND`, and `WITH_CAMBRICON` remain compatibility shims and map onto the same plugin enable path.
 
 `cuda-common` is a `shared` plugin. It is enabled through dependencies from CUDA-like device plugins such as `nvidia`, `iluvatar`, `metax`, `moore`, and `hygon`; it does not expose a standalone user device.
 
