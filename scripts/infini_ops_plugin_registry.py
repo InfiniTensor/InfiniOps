@@ -1,5 +1,6 @@
 import json
 import pathlib
+import posixpath
 
 KNOWN_DEVICES = {
     "cpu",
@@ -40,6 +41,75 @@ def _as_dict(value, field, plugin_name):
     return value
 
 
+def _validate_relative_path(value, field, plugin_name):
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            f"plugin `{plugin_name}` field `{field}` must contain non-empty strings"
+        )
+
+    normalized = posixpath.normpath(value)
+    if normalized == "." or posixpath.isabs(value) or ".." in normalized.split("/"):
+        raise ValueError(
+            f"plugin `{plugin_name}` field `{field}` must use relative paths "
+            "without `..` components"
+        )
+
+    return value
+
+
+def _validate_relative_path_list(values, field, plugin_name):
+    values = _as_list(values, field, plugin_name)
+    for value in values:
+        _validate_relative_path(value, field, plugin_name)
+
+    return values
+
+
+def _validate_relative_path_map(values, field, plugin_name):
+    values = _as_dict(values, field, plugin_name)
+    for key, value in values.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError(
+                f"plugin `{plugin_name}` field `{field}` must use non-empty "
+                "`string` keys"
+            )
+        _validate_relative_path(value, field, plugin_name)
+
+    return values
+
+
+def _is_relative_to(path, root):
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+
+    return True
+
+
+def _validate_cmake_entry(path, name, cmake_entry):
+    normalized = posixpath.normpath(cmake_entry)
+    if (
+        normalized == "."
+        or posixpath.isabs(cmake_entry)
+        or ".." in normalized.split("/")
+    ):
+        raise ValueError(
+            f"plugin `{name}` field `cmake_entry` must be a relative path inside "
+            "plugin directory"
+        )
+
+    plugin_dir = path.parent.resolve()
+    cmake_entry_path = (path.parent / cmake_entry).resolve()
+    if not _is_relative_to(cmake_entry_path, plugin_dir):
+        raise ValueError(
+            f"plugin `{name}` field `cmake_entry` must be a relative path inside "
+            "plugin directory"
+        )
+
+    return cmake_entry_path
+
+
 def _load_manifest(path):
     data = json.loads(path.read_text(encoding="utf-8"))
     missing = REQUIRED_FIELDS.difference(data)
@@ -71,16 +141,19 @@ def _load_manifest(path):
     if not isinstance(cmake_entry, str) or not cmake_entry:
         raise ValueError(f"plugin `{name}` field `cmake_entry` must be a `string`")
 
-    if not (path.parent / cmake_entry).is_file():
+    cmake_entry_path = _validate_cmake_entry(path, name, cmake_entry)
+    if not cmake_entry_path.is_file():
         raise ValueError(
             f"plugin `{name}` `CMake` entry `{cmake_entry}` was not found"
         )
 
     devices = _as_list(data["devices"], "devices", name)
     depends = _as_list(data["depends"], "depends", name)
-    _as_list(data["source_roots"], "source_roots", name)
-    _as_list(data["operator_roots"], "operator_roots", name)
-    device_headers = _as_dict(data["device_headers"], "device_headers", name)
+    _validate_relative_path_list(data["source_roots"], "source_roots", name)
+    _validate_relative_path_list(data["operator_roots"], "operator_roots", name)
+    device_headers = _validate_relative_path_map(
+        data["device_headers"], "device_headers", name
+    )
     test_devices = _as_dict(data["test_devices"], "test_devices", name)
 
     for device in devices:
@@ -101,6 +174,20 @@ def _load_manifest(path):
 
     if data["kind"] == "device" and not devices:
         raise ValueError(f"device plugin `{name}` must declare at least one device")
+
+    missing_headers = sorted(set(devices).difference(device_headers))
+    if missing_headers:
+        raise ValueError(
+            f"plugin `{name}` field `device_headers` must include device "
+            f"`{missing_headers[0]}`"
+        )
+
+    missing_tests = sorted(set(devices).difference(test_devices))
+    if missing_tests:
+        raise ValueError(
+            f"plugin `{name}` field `test_devices` must include device "
+            f"`{missing_tests[0]}`"
+        )
 
     if data["kind"] == "shared" and devices:
         raise ValueError(f"shared plugin `{name}` must not declare devices")
