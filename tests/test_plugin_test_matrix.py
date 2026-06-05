@@ -132,6 +132,41 @@ def test_matrix_accepts_multiple_plugin_roots(tmp_path):
     assert matrix["ci_platforms"] == []
 
 
+def test_cli_outputs_github_output_format():
+    repo = pathlib.Path(__file__).resolve().parents[1]
+    script = repo / "scripts" / "infini_ops_plugin_test_matrix.py"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--plugin-root",
+            str(_plugin_root()),
+            "--github-output",
+            "src/native/cuda/nvidia/ops/add/add.cu",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+    assert "platform=nvidia" in result.stdout.splitlines()
+    assert "requires_full_matrix=false" in result.stdout.splitlines()
+
+
+def test_shadow_ci_uses_path_aware_platform_output():
+    workflow = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "ci_v2_shadow.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "plugin-matrix:" in workflow
+    assert "scripts/infini_ops_plugin_test_matrix.py --github-output" in workflow
+    assert "needs.plugin-matrix.outputs.platform" in workflow
+
+
 def test_cli_outputs_json_matrix(tmp_path):
     repo = pathlib.Path(__file__).resolve().parents[1]
     script = repo / "scripts" / "infini_ops_plugin_test_matrix.py"

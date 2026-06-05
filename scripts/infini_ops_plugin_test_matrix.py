@@ -138,6 +138,16 @@ def _read_paths(args):
     return [line.strip() for line in sys.stdin if line.strip()]
 
 
+def _print_github_output(matrix):
+    platform = ",".join(matrix["ci_platforms"])
+    requires_full_matrix = str(matrix["requires_full_matrix"]).lower()
+    compact_json = json.dumps(matrix, sort_keys=True, separators=(",", ":"))
+
+    print(f"platform={platform}")
+    print(f"requires_full_matrix={requires_full_matrix}")
+    print(f"matrix_json={compact_json}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Map changed paths to `infini::ops` plugin test devices."
@@ -151,11 +161,19 @@ def main(argv=None):
             "to include external plugin roots."
         ),
     )
+    parser.add_argument(
+        "--github-output",
+        action="store_true",
+        help="Print `$GITHUB_OUTPUT` compatible key/value lines.",
+    )
     parser.add_argument("paths", nargs="*", help="Changed paths to classify.")
     args = parser.parse_args(argv)
 
     matrix = build_test_matrix(args.plugin_root or ["plugins"], _read_paths(args))
-    print(json.dumps(matrix, indent=2, sort_keys=True))
+    if args.github_output:
+        _print_github_output(matrix)
+    else:
+        print(json.dumps(matrix, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

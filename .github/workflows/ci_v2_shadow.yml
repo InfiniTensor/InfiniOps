@@ -27,11 +27,50 @@ on:
     branches: ["master", "ci/ci-online"]
 
 jobs:
+  plugin-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.select.outputs.platform }}
+      requires_full_matrix: ${{ steps.select.outputs.requires_full_matrix }}
+      matrix_json: ${{ steps.select.outputs.matrix_json }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect changed paths
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.sha }}" > changed_paths.txt
+
+      - name: Select active platforms
+        id: select
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.platform }}" != "active" ]]; then
+            if [[ "${{ inputs.platform }}" == "all" ]]; then
+              echo "platform=nvidia,iluvatar,metax,moore,cambricon,ascend" >> "$GITHUB_OUTPUT"
+            else
+              echo "platform=${{ inputs.platform }}" >> "$GITHUB_OUTPUT"
+            fi
+            echo "requires_full_matrix=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix_json={}' >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python scripts/infini_ops_plugin_test_matrix.py --github-output < changed_paths.txt >> "$GITHUB_OUTPUT"
+          else
+            echo "platform=nvidia,iluvatar,metax,moore,cambricon,ascend" >> "$GITHUB_OUTPUT"
+            echo "requires_full_matrix=true" >> "$GITHUB_OUTPUT"
+            echo 'matrix_json={}' >> "$GITHUB_OUTPUT"
+          fi
+
   ci-v2-shadow:
+    needs: plugin-matrix
+    if: needs.plugin-matrix.outputs.platform != ''
     uses: InfiniTensor/ci/.github/workflows/infiniops-ci-v2-shadow.yml@b45d360c8cc529747ee31c5451d7eac96ac9f309
     with:
       config_path: .github/ci_config.yml
       ci_ref: b45d360c8cc529747ee31c5451d7eac96ac9f309
       max_parallel: 10
-      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform == 'active' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon,ascend' }}
+      platform: ${{ needs.plugin-matrix.outputs.platform }}
     secrets: inherit
