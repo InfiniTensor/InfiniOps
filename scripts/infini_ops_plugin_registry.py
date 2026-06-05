@@ -29,14 +29,14 @@ REQUIRED_FIELDS = {
 
 def _as_list(value, field, plugin_name):
     if not isinstance(value, list):
-        raise ValueError(f"plugin `{plugin_name}` field `{field}` must be a `list`")
+        raise ValueError(f"Plugin `{plugin_name}` field `{field}` must be a `list`.")
 
     return value
 
 
 def _as_dict(value, field, plugin_name):
     if not isinstance(value, dict):
-        raise ValueError(f"plugin `{plugin_name}` field `{field}` must be a `dict`")
+        raise ValueError(f"Plugin `{plugin_name}` field `{field}` must be a `dict`.")
 
     return value
 
@@ -44,14 +44,14 @@ def _as_dict(value, field, plugin_name):
 def _validate_relative_path(value, field, plugin_name):
     if not isinstance(value, str) or not value:
         raise ValueError(
-            f"plugin `{plugin_name}` field `{field}` must contain non-empty strings"
+            f"Plugin `{plugin_name}` field `{field}` must contain non-empty strings."
         )
 
     normalized = posixpath.normpath(value)
     if normalized == "." or posixpath.isabs(value) or ".." in normalized.split("/"):
         raise ValueError(
-            f"plugin `{plugin_name}` field `{field}` must use relative paths "
-            "without `..` components"
+            f"Plugin `{plugin_name}` field `{field}` must use relative paths "
+            "without `..` components."
         )
 
     return value
@@ -70,8 +70,8 @@ def _validate_relative_path_map(values, field, plugin_name):
     for key, value in values.items():
         if not isinstance(key, str) or not key:
             raise ValueError(
-                f"plugin `{plugin_name}` field `{field}` must use non-empty "
-                "`string` keys"
+                f"Plugin `{plugin_name}` field `{field}` must use non-empty "
+                "`string` keys."
             )
         _validate_relative_path(value, field, plugin_name)
 
@@ -95,16 +95,16 @@ def _validate_cmake_entry(path, name, cmake_entry):
         or ".." in normalized.split("/")
     ):
         raise ValueError(
-            f"plugin `{name}` field `cmake_entry` must be a relative path inside "
-            "plugin directory"
+            f"Plugin `{name}` field `cmake_entry` must be a relative path inside "
+            "plugin directory."
         )
 
     plugin_dir = path.parent.resolve()
     cmake_entry_path = (path.parent / cmake_entry).resolve()
     if not _is_relative_to(cmake_entry_path, plugin_dir):
         raise ValueError(
-            f"plugin `{name}` field `cmake_entry` must be a relative path inside "
-            "plugin directory"
+            f"Plugin `{name}` field `cmake_entry` must be a relative path inside "
+            "plugin directory."
         )
 
     return cmake_entry_path
@@ -116,35 +116,35 @@ def _load_manifest(path):
 
     if missing:
         raise ValueError(
-            f"plugin manifest `{path}` is missing required fields: "
-            f"{', '.join(sorted(missing))}"
+            f"Plugin manifest `{path}` is missing required fields: `"
+            f"{', '.join(sorted(missing))}`."
         )
 
     name = data["name"]
 
     if name != path.parent.name:
         raise ValueError(
-            f"plugin manifest `{path}` declares name `{name}`, "
-            f"expected `{path.parent.name}`"
+            f"Plugin manifest `{path}` declares name `{name}`, "
+            f"expected `{path.parent.name}`."
         )
 
     if data["kind"] not in {"shared", "device"}:
-        raise ValueError(f"plugin `{name}` has invalid kind `{data['kind']}`")
+        raise ValueError(f"Plugin `{name}` has invalid kind `{data['kind']}`.")
 
     if data["contract_version"] != 1:
         raise ValueError(
-            f"plugin `{name}` uses unsupported contract version "
-            f"`{data['contract_version']}`"
+            f"Plugin `{name}` uses unsupported contract version "
+            f"`{data['contract_version']}`."
         )
 
     cmake_entry = data["cmake_entry"]
     if not isinstance(cmake_entry, str) or not cmake_entry:
-        raise ValueError(f"plugin `{name}` field `cmake_entry` must be a `string`")
+        raise ValueError(f"Plugin `{name}` field `cmake_entry` must be a `string`.")
 
     cmake_entry_path = _validate_cmake_entry(path, name, cmake_entry)
     if not cmake_entry_path.is_file():
         raise ValueError(
-            f"plugin `{name}` `CMake` entry `{cmake_entry}` was not found"
+            f"Plugin `{name}` `CMake` entry `{cmake_entry}` was not found."
         )
 
     devices = _as_list(data["devices"], "devices", name)
@@ -158,43 +158,43 @@ def _load_manifest(path):
 
     for device in devices:
         if device not in KNOWN_DEVICES:
-            raise ValueError(f"plugin `{name}` declares unknown device `{device}`")
+            raise ValueError(f"Plugin `{name}` declares unknown device `{device}`.")
 
     for device in device_headers:
         if device not in devices:
             raise ValueError(
-                f"plugin `{name}` has device header for non-owned device `{device}`"
+                f"Plugin `{name}` has device header for non-owned device `{device}`."
             )
 
     for device in test_devices:
         if device not in devices:
             raise ValueError(
-                f"plugin `{name}` has test device for non-owned device `{device}`"
+                f"Plugin `{name}` has test device for non-owned device `{device}`."
             )
 
     if data["kind"] == "device" and not devices:
-        raise ValueError(f"device plugin `{name}` must declare at least one device")
+        raise ValueError(f"Device plugin `{name}` must declare at least one device.")
 
     missing_headers = sorted(set(devices).difference(device_headers))
     if missing_headers:
         raise ValueError(
-            f"plugin `{name}` field `device_headers` must include device "
-            f"`{missing_headers[0]}`"
+            f"Plugin `{name}` field `device_headers` must include device "
+            f"`{missing_headers[0]}`."
         )
 
     missing_tests = sorted(set(devices).difference(test_devices))
     if missing_tests:
         raise ValueError(
-            f"plugin `{name}` field `test_devices` must include device "
-            f"`{missing_tests[0]}`"
+            f"Plugin `{name}` field `test_devices` must include device "
+            f"`{missing_tests[0]}`."
         )
 
     if data["kind"] == "shared" and devices:
-        raise ValueError(f"shared plugin `{name}` must not declare devices")
+        raise ValueError(f"Shared plugin `{name}` must not declare devices.")
 
     for dependency in depends:
         if not isinstance(dependency, str):
-            raise ValueError(f"plugin `{name}` dependency names must be `string`s")
+            raise ValueError(f"Plugin `{name}` dependency names must be `string`s.")
 
     return data
 
@@ -222,10 +222,10 @@ def load_plugin_registry(plugin_root, requested_plugins):
 
         if name in visiting:
             cycle = " -> ".join([*visiting, name])
-            raise ValueError(f"plugin dependency cycle detected: {cycle}")
+            raise ValueError(f"Plugin dependency cycle detected: `{cycle}`.")
 
         if name not in manifests:
-            raise ValueError(f"requested plugin `{name}` was not found")
+            raise ValueError(f"Requested plugin `{name}` was not found.")
 
         visiting.append(name)
         for dependency in manifests[name]["depends"]:

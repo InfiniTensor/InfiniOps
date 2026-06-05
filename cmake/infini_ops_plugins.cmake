@@ -1,9 +1,9 @@
 include_guard(GLOBAL)
 
 set(INFINI_OPS_PLUGINS "" CACHE STRING
-    "Comma- or semicolon-separated infini_ops build-time plugins to enable")
+    "Comma- or semicolon-separated `infini_ops` build-time plugins to enable.")
 set(INFINI_OPS_PLUGIN_ROOT "${PROJECT_SOURCE_DIR}/plugins" CACHE PATH
-    "Directory containing infini_ops build-time plugins")
+    "Directory containing `infini_ops` build-time plugins.")
 set(INFINI_OPS_PLUGIN_CONTRACT_VERSION 1)
 
 set(_INFINI_OPS_KNOWN_DEVICE_PLUGINS
@@ -36,34 +36,34 @@ function(infini_ops_register_plugin)
 
     foreach(_required NAME KIND CONTRACT_VERSION CMAKE_ENTRY)
         if(NOT ARG_${_required})
-            message(FATAL_ERROR "`infini_ops_register_plugin` missing `${_required}`")
+            message(FATAL_ERROR "`infini_ops_register_plugin` is missing `${_required}`.")
         endif()
     endforeach()
 
     if(NOT ARG_KIND STREQUAL "shared" AND NOT ARG_KIND STREQUAL "device")
-        message(FATAL_ERROR "infini_ops plugin `${ARG_NAME}` has invalid `kind`: `${ARG_KIND}`")
+        message(FATAL_ERROR "`infini_ops` plugin `${ARG_NAME}` has invalid `kind`: `${ARG_KIND}`.")
     endif()
 
     if(NOT "${ARG_CONTRACT_VERSION}" STREQUAL "${INFINI_OPS_PLUGIN_CONTRACT_VERSION}")
         message(FATAL_ERROR
-            "infini_ops plugin `${ARG_NAME}` uses contract `${ARG_CONTRACT_VERSION}`; "
-            "expected `${INFINI_OPS_PLUGIN_CONTRACT_VERSION}`")
+            "`infini_ops` plugin `${ARG_NAME}` uses contract `${ARG_CONTRACT_VERSION}`; "
+            "expected `${INFINI_OPS_PLUGIN_CONTRACT_VERSION}`.")
     endif()
 
     foreach(_device IN LISTS ARG_DEVICES)
         list(FIND _INFINI_OPS_KNOWN_DEVICE_PLUGINS "${_device}" _known_index)
         if(_known_index EQUAL -1)
             message(FATAL_ERROR
-                "infini_ops plugin `${ARG_NAME}` declares unknown device `${_device}`")
+                "`infini_ops` plugin `${ARG_NAME}` declares unknown device `${_device}`.")
         endif()
     endforeach()
 
     if(ARG_KIND STREQUAL "device" AND NOT ARG_DEVICES)
-        message(FATAL_ERROR "infini_ops device plugin `${ARG_NAME}` must declare `DEVICES`")
+        message(FATAL_ERROR "`infini_ops` device plugin `${ARG_NAME}` must declare `DEVICES`.")
     endif()
 
     if(ARG_KIND STREQUAL "shared" AND ARG_DEVICES)
-        message(FATAL_ERROR "infini_ops shared plugin `${ARG_NAME}` must not declare `DEVICES`")
+        message(FATAL_ERROR "`infini_ops` shared plugin `${ARG_NAME}` must not declare `DEVICES`.")
     endif()
 
     _infini_ops_append_unique_global(INFINI_OPS_PLUGIN_NAMES "${ARG_NAME}")
@@ -93,12 +93,12 @@ function(infini_ops_enable_plugin name)
     if(NOT _loading_index EQUAL -1)
         list(APPEND _loading "${name}")
         string(REPLACE ";" " -> " _cycle "${_loading}")
-        message(FATAL_ERROR "infini_ops plugin dependency cycle detected: `${_cycle}`")
+        message(FATAL_ERROR "`infini_ops` plugin dependency cycle detected: `${_cycle}`.")
     endif()
 
     set(_entry_path "${INFINI_OPS_PLUGIN_ROOT}/${name}/plugin.cmake")
     if(NOT EXISTS "${_entry_path}")
-        message(FATAL_ERROR "infini_ops plugin `${name}` `CMake` entry not found: `${_entry_path}`")
+        message(FATAL_ERROR "`infini_ops` plugin `${name}` `CMake` entry was not found: `${_entry_path}`.")
     endif()
 
     set_property(GLOBAL APPEND PROPERTY INFINI_OPS_PLUGIN_LOADING_STACK "${name}")
@@ -110,7 +110,7 @@ function(infini_ops_enable_plugin name)
     get_property(_registered GLOBAL PROPERTY INFINI_OPS_PLUGIN_NAMES)
     list(FIND _registered "${name}" _registered_index)
     if(_registered_index EQUAL -1)
-        message(FATAL_ERROR "infini_ops plugin `${name}` did not call `infini_ops_register_plugin`")
+        message(FATAL_ERROR "`infini_ops` plugin `${name}` did not call `infini_ops_register_plugin`.")
     endif()
 
     set_property(GLOBAL APPEND PROPERTY INFINI_OPS_PLUGIN_LOADED "${name}")
@@ -206,7 +206,7 @@ function(_infini_ops_append_json_map path field trailing_comma)
     foreach(_entry ${ARGN})
         string(FIND "${_entry}" "=" _equals)
         if(_equals EQUAL -1)
-            message(FATAL_ERROR "Invalid infini_ops plugin map entry `${_entry}`")
+            message(FATAL_ERROR "Invalid `infini_ops` plugin map entry `${_entry}`.")
         endif()
         string(SUBSTRING "${_entry}" 0 ${_equals} _key)
         math(EXPR _value_start "${_equals} + 1")
@@ -248,6 +248,6 @@ function(infini_ops_write_plugin_registry path)
     _infini_ops_append_json_map("${path}" "test_devices" FALSE ${_test_devices})
     file(APPEND "${path}" "}\n")
 
-    message(STATUS "infini_ops plugins: `${_plugins}`")
-    message(STATUS "infini_ops plugin devices: `${_devices}`")
+    message(STATUS "`infini_ops` plugins: `${_plugins}`.")
+    message(STATUS "`infini_ops` plugin devices: `${_devices}`.")
 endfunction()
