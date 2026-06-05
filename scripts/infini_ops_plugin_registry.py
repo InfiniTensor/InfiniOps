@@ -205,12 +205,17 @@ def _append_unique(values, new_values):
             values.append(value)
 
 
-def load_plugin_registry(plugin_root, requested_plugins):
+def load_plugin_manifests(plugin_root):
     plugin_root = pathlib.Path(plugin_root)
-    manifests = {
+
+    return {
         path.parent.name: _load_manifest(path)
         for path in sorted(plugin_root.glob("*/plugin.json"))
     }
+
+
+def load_plugin_registry(plugin_root, requested_plugins):
+    manifests = load_plugin_manifests(plugin_root)
 
     ordered = []
     visiting = []
