@@ -32,12 +32,12 @@ function(_infini_ops_get_plugin_roots out_var)
     set(${out_var} ${_roots} PARENT_SCOPE)
 endfunction()
 
-function(_infini_ops_find_plugin_entry name out_var)
+function(_infini_ops_find_plugin_manifest name out_var)
     _infini_ops_get_plugin_roots(_plugin_roots)
     set(_matches)
 
     foreach(_root IN LISTS _plugin_roots)
-        set(_candidate "${_root}/${name}/plugin.cmake")
+        set(_candidate "${_root}/${name}/plugin.json")
         if(EXISTS "${_candidate}")
             list(APPEND _matches "${_candidate}")
         endif()
@@ -47,16 +47,51 @@ function(_infini_ops_find_plugin_entry name out_var)
     if(_match_count EQUAL 0)
         string(REPLACE ";" "`, `" _roots_message "${_plugin_roots}")
         message(FATAL_ERROR
-            "`infini_ops` plugin `${name}` `CMake` entry was not found in roots: "
+            "`infini_ops` plugin `${name}` manifest `plugin.json` was not found in roots: "
             "`${_roots_message}`.")
     elseif(_match_count GREATER 1)
         string(REPLACE ";" "`, `" _matches_message "${_matches}")
         message(FATAL_ERROR
-            "`infini_ops` plugin `${name}` has duplicate `CMake` entries: "
+            "`infini_ops` plugin `${name}` has duplicate manifests: "
             "`${_matches_message}`.")
     endif()
 
-    list(GET _matches 0 _entry_path)
+    list(GET _matches 0 _manifest_path)
+    set(${out_var} "${_manifest_path}" PARENT_SCOPE)
+endfunction()
+
+function(_infini_ops_read_manifest_cmake_entry manifest_path out_var)
+    file(READ "${manifest_path}" _manifest_json)
+    string(REGEX MATCH
+        "\"cmake_entry\"[ \t\r\n]*:[ \t\r\n]*\"([^\"]+)\""
+        _cmake_entry_match
+        "${_manifest_json}")
+
+    if(NOT _cmake_entry_match)
+        message(FATAL_ERROR
+            "`infini_ops` plugin manifest `${manifest_path}` is missing `cmake_entry`.")
+    endif()
+
+    set(${out_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+
+function(_infini_ops_find_plugin_entry name out_var)
+    _infini_ops_find_plugin_manifest("${name}" _manifest_path)
+    _infini_ops_read_manifest_cmake_entry("${_manifest_path}" _cmake_entry)
+
+    if(IS_ABSOLUTE "${_cmake_entry}" OR _cmake_entry MATCHES "(^|/)\\.\\.(/|$)")
+        message(FATAL_ERROR
+            "`infini_ops` plugin `${name}` field `cmake_entry` must be a relative "
+            "path inside the plugin directory.")
+    endif()
+
+    get_filename_component(_plugin_dir "${_manifest_path}" DIRECTORY)
+    set(_entry_path "${_plugin_dir}/${_cmake_entry}")
+    if(NOT EXISTS "${_entry_path}")
+        message(FATAL_ERROR
+            "`infini_ops` plugin `${name}` `CMake` entry was not found: `${_entry_path}`.")
+    endif()
+
     set(${out_var} "${_entry_path}" PARENT_SCOPE)
 endfunction()
 
