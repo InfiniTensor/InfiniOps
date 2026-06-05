@@ -3,11 +3,62 @@ include_guard(GLOBAL)
 set(INFINI_OPS_PLUGINS "" CACHE STRING
     "Comma- or semicolon-separated `infini_ops` build-time plugins to enable.")
 set(INFINI_OPS_PLUGIN_ROOT "${PROJECT_SOURCE_DIR}/plugins" CACHE PATH
-    "Directory containing `infini_ops` build-time plugins.")
+    "Directory containing built-in `infini_ops` build-time plugins.")
+set(INFINI_OPS_PLUGIN_ROOTS "" CACHE STRING
+    "Additional comma- or semicolon-separated `infini_ops` build-time plugin roots.")
 set(INFINI_OPS_PLUGIN_CONTRACT_VERSION 1)
 
 set(_INFINI_OPS_KNOWN_DEVICE_PLUGINS
     cpu nvidia iluvatar hygon metax moore cambricon ascend)
+
+function(_infini_ops_get_plugin_roots out_var)
+    set(_roots "${INFINI_OPS_PLUGIN_ROOT}")
+
+    if(INFINI_OPS_PLUGIN_ROOTS)
+        set(_extra_roots "${INFINI_OPS_PLUGIN_ROOTS}")
+        string(REPLACE "," ";" _extra_roots "${_extra_roots}")
+        foreach(_root IN LISTS _extra_roots)
+            string(STRIP "${_root}" _root)
+            if(NOT _root STREQUAL "")
+                list(APPEND _roots "${_root}")
+            endif()
+        endforeach()
+    endif()
+
+    if(_roots)
+        list(REMOVE_DUPLICATES _roots)
+    endif()
+
+    set(${out_var} ${_roots} PARENT_SCOPE)
+endfunction()
+
+function(_infini_ops_find_plugin_entry name out_var)
+    _infini_ops_get_plugin_roots(_plugin_roots)
+    set(_matches)
+
+    foreach(_root IN LISTS _plugin_roots)
+        set(_candidate "${_root}/${name}/plugin.cmake")
+        if(EXISTS "${_candidate}")
+            list(APPEND _matches "${_candidate}")
+        endif()
+    endforeach()
+
+    list(LENGTH _matches _match_count)
+    if(_match_count EQUAL 0)
+        string(REPLACE ";" "`, `" _roots_message "${_plugin_roots}")
+        message(FATAL_ERROR
+            "`infini_ops` plugin `${name}` `CMake` entry was not found in roots: "
+            "`${_roots_message}`.")
+    elseif(_match_count GREATER 1)
+        string(REPLACE ";" "`, `" _matches_message "${_matches}")
+        message(FATAL_ERROR
+            "`infini_ops` plugin `${name}` has duplicate `CMake` entries: "
+            "`${_matches_message}`.")
+    endif()
+
+    list(GET _matches 0 _entry_path)
+    set(${out_var} "${_entry_path}" PARENT_SCOPE)
+endfunction()
 
 function(_infini_ops_append_unique_global property_name)
     get_property(_values GLOBAL PROPERTY "${property_name}")
@@ -96,10 +147,7 @@ function(infini_ops_enable_plugin name)
         message(FATAL_ERROR "`infini_ops` plugin dependency cycle detected: `${_cycle}`.")
     endif()
 
-    set(_entry_path "${INFINI_OPS_PLUGIN_ROOT}/${name}/plugin.cmake")
-    if(NOT EXISTS "${_entry_path}")
-        message(FATAL_ERROR "`infini_ops` plugin `${name}` `CMake` entry was not found: `${_entry_path}`.")
-    endif()
+    _infini_ops_find_plugin_entry("${name}" _entry_path)
 
     set_property(GLOBAL APPEND PROPERTY INFINI_OPS_PLUGIN_LOADING_STACK "${name}")
     include("${_entry_path}")

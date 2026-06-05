@@ -71,9 +71,8 @@ function(_infini_ops_enable_legacy_options_from_plugins)
         elseif(_plugin STREQUAL "cuda-common")
             # Shared dependency plugin; no legacy device option to set.
         else()
-            message(FATAL_ERROR
-                "Unknown infini_ops plugin `${_plugin}`. v1 supports built-in plugins: "
-                "`cpu`, `nvidia`, `iluvatar`, `hygon`, `metax`, `moore`, `cambricon`, `ascend`, `cuda-common`")
+            # External plugins are validated when `infini_ops_enable_plugin`
+            # resolves their `plugin.cmake` entry.
         endif()
     endforeach()
 endfunction()

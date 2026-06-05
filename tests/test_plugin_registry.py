@@ -260,6 +260,42 @@ def test_load_plugins_rejects_dependency_cycles(tmp_path):
         raise AssertionError("cyclic plugin dependencies should be rejected")
 
 
+def test_load_plugin_manifests_accepts_multiple_roots(tmp_path):
+    module = _load_registry_module()
+    builtin_root = tmp_path / "builtin"
+    external_root = tmp_path / "external"
+    builtin_root.mkdir()
+    external_root.mkdir()
+    _write_manifest(builtin_root, "cpu", _cpu_manifest())
+    _write_manifest(
+        external_root,
+        "external-cpu",
+        _cpu_manifest(name="external-cpu"),
+    )
+
+    manifests = module.load_plugin_manifests([builtin_root, external_root])
+
+    assert list(manifests) == ["cpu", "external-cpu"]
+
+
+def test_load_plugin_manifests_rejects_duplicate_plugin_names(tmp_path):
+    module = _load_registry_module()
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    _write_manifest(first_root, "cpu", _cpu_manifest())
+    _write_manifest(second_root, "cpu", _cpu_manifest())
+
+    try:
+        module.load_plugin_manifests([first_root, second_root])
+    except ValueError as exc:
+        assert "duplicate plugin" in str(exc).lower()
+        assert "`cpu`" in str(exc)
+    else:
+        raise AssertionError("duplicate plugin names across roots should be rejected")
+
+
 def test_builtin_plugin_manifests_load_individually():
     module = _load_registry_module()
     plugin_root = pathlib.Path(__file__).resolve().parents[1] / "plugins"
