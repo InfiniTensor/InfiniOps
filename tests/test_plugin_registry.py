@@ -32,6 +32,24 @@ def _write_manifest(root, name, data, create_cmake_entry=True):
     return path
 
 
+def _cpu_manifest(**overrides):
+    data = {
+        "name": "cpu",
+        "kind": "device",
+        "contract_version": 1,
+        "devices": ["cpu"],
+        "depends": [],
+        "cmake_entry": "plugin.cmake",
+        "source_roots": ["src/native/cpu"],
+        "operator_roots": ["src/native/cpu/ops"],
+        "device_headers": {"cpu": "native/cpu/device_.h"},
+        "test_devices": {"cpu": "cpu"},
+    }
+    data.update(overrides)
+
+    return data
+
+
 def test_load_plugins_orders_dependencies_and_merges_device_metadata(tmp_path):
     module = _load_registry_module()
     plugin_root = tmp_path / "plugins"
@@ -90,18 +108,7 @@ def test_load_plugins_rejects_missing_cmake_entry(tmp_path):
     _write_manifest(
         plugin_root,
         "cpu",
-        {
-            "name": "cpu",
-            "kind": "device",
-            "contract_version": 1,
-            "devices": ["cpu"],
-            "depends": [],
-            "cmake_entry": "plugin.cmake",
-            "source_roots": ["src/native/cpu"],
-            "operator_roots": ["src/native/cpu/ops"],
-            "device_headers": {"cpu": "native/cpu/device_.h"},
-            "test_devices": {"cpu": "cpu"},
-        },
+        _cpu_manifest(),
         create_cmake_entry=False,
     )
 
@@ -111,6 +118,72 @@ def test_load_plugins_rejects_missing_cmake_entry(tmp_path):
         assert "`CMake` entry" in str(exc)
     else:
         raise AssertionError("manifest with missing `CMake` entry should be rejected")
+
+
+def test_load_plugins_rejects_cmake_entry_outside_plugin_dir(tmp_path):
+    module = _load_registry_module()
+    plugin_root = tmp_path / "plugins"
+    plugin_root.mkdir()
+    (plugin_root / "outside.cmake").write_text("# outside\n", encoding="utf-8")
+    _write_manifest(
+        plugin_root,
+        "cpu",
+        _cpu_manifest(cmake_entry="../outside.cmake"),
+        create_cmake_entry=False,
+    )
+
+    try:
+        module.load_plugin_registry(plugin_root, ["cpu"])
+    except ValueError as exc:
+        assert "`cmake_entry`" in str(exc)
+        assert "relative path inside plugin" in str(exc)
+    else:
+        raise AssertionError("manifest with escaping `cmake_entry` should be rejected")
+
+
+def test_load_plugins_rejects_absolute_contract_paths(tmp_path):
+    module = _load_registry_module()
+    plugin_root = tmp_path / "plugins"
+    plugin_root.mkdir()
+    _write_manifest(
+        plugin_root,
+        "cpu",
+        _cpu_manifest(source_roots=["/tmp/native/cpu"]),
+    )
+
+    try:
+        module.load_plugin_registry(plugin_root, ["cpu"])
+    except ValueError as exc:
+        assert "`source_roots`" in str(exc)
+        assert "relative paths" in str(exc)
+    else:
+        raise AssertionError("manifest with absolute source root should be rejected")
+
+
+def test_load_plugins_requires_device_header_and_test_mapping(tmp_path):
+    module = _load_registry_module()
+
+    for missing_field, overrides in (
+        ("device_headers", {"device_headers": {}}),
+        ("test_devices", {"test_devices": {}}),
+    ):
+        plugin_root = tmp_path / missing_field / "plugins"
+        plugin_root.mkdir(parents=True)
+        _write_manifest(
+            plugin_root,
+            "cpu",
+            _cpu_manifest(**overrides),
+        )
+
+        try:
+            module.load_plugin_registry(plugin_root, ["cpu"])
+        except ValueError as exc:
+            assert f"`{missing_field}`" in str(exc)
+            assert "`cpu`" in str(exc)
+        else:
+            raise AssertionError(
+                f"device plugin without `{missing_field}` should be rejected"
+            )
 
 
 def test_load_plugins_rejects_unknown_devices(tmp_path):
@@ -223,3 +296,17 @@ def test_builtin_plugin_manifests_cover_cpu_and_cuda_common_dependencies():
     assert nvidia_registry["devices"] == ["nvidia"]
     assert "src/native/cuda/ops" in nvidia_registry["operator_roots"]
     assert "src/native/cuda/nvidia/ops" in nvidia_registry["operator_roots"]
+
+
+def test_plugin_contract_documentation_exists_and_names_public_entrypoints():
+    contract_doc = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "docs"
+        / "plugin_contract.md"
+    )
+    text = contract_doc.read_text(encoding="utf-8")
+
+    assert "`INFINI_OPS_PLUGINS`" in text
+    assert "`infini_ops_register_plugin`" in text
+    assert "`plugin.json`" in text
+    assert "`cmake_entry`" in text
