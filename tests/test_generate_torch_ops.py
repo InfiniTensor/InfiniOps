@@ -197,7 +197,9 @@ def test_generate_torch_method_source_uses_svd_for_svdvals_and_nuclear_norm():
     nuclear_norm_op = module._parse_func(
         "nuclear_norm.out(Tensor self, bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)"
     )
-    nuclear_norm_source = module._generate_torch_method_source("nuclear_norm", nuclear_norm_op)
+    nuclear_norm_source = module._generate_torch_method_source(
+        "nuclear_norm", nuclear_norm_op
+    )
     assert "std::get<1>(at::linalg_svd(" in nuclear_norm_source
     assert "singular_values.sum()" in nuclear_norm_source
 
@@ -241,14 +243,19 @@ def test_generate_torch_method_source_uses_semantic_bridges_for_selected_ops():
         "sspaddmm.out(Tensor self, Tensor mat1, Tensor mat2, *, Scalar beta=1, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)"
     )
     sspaddmm_source = module._generate_torch_method_source("sspaddmm", sspaddmm_op)
-    assert "at::sspaddmm(at_input.cpu(), at_mat1.cpu(), at_mat2.cpu()," in sspaddmm_source
+    assert (
+        "at::sspaddmm(at_input.cpu(), at_mat1.cpu(), at_mat2.cpu()," in sspaddmm_source
+    )
     assert ".to(at_input.device())" in sspaddmm_source
 
     int_mm_op = module._parse_func(
         "_int_mm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)"
     )
     int_mm_source = module._generate_torch_method_source("aten_int_mm", int_mm_op)
-    assert "at::matmul(at_input.cpu().to(at::kInt), at_mat2.cpu().to(at::kInt))" in int_mm_source
+    assert (
+        "at::matmul(at_input.cpu().to(at::kInt), at_mat2.cpu().to(at::kInt))"
+        in int_mm_source
+    )
     assert ".to(at_input.device())" in int_mm_source
 
     scaled_mm_op = module._parse_func(

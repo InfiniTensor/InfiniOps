@@ -1,5 +1,4 @@
 #include "native/cuda/metax/ops/linear/kernel.h"
-
 #include "native/cuda/metax/ops/torch_fallback.h"
 
 namespace infini::ops {

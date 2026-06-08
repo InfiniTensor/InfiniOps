@@ -148,8 +148,7 @@ def _platform_label(summary):
 def _render_markdown(platforms, inventory):
     lines = []
     platform_views = [
-        _build_platform_view(platform, inventory)
-        for platform in platforms
+        _build_platform_view(platform, inventory) for platform in platforms
     ]
 
     lines.append("# Pytest Operator Coverage")
@@ -274,7 +273,9 @@ def _render_category_summary(platform_views):
     lines.append(
         "| Platform | Native Total | Native Tested | Native Pass>0 | Native Skip-only | Native No Record | Generated Total | Generated Tested | Generated Pass>0 | Generated Skip-only | Generated No Record |"
     )
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines.append(
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    )
 
     for view in platform_views:
         native_rows = [row for row in view["rows"] if row["category"] == "native"]
@@ -311,27 +312,13 @@ def _render_cross_platform_matrix(platform_views):
 
     lines.append("## Cross-Platform Matrix")
     lines.append("")
-    lines.append(
-        "| Operator | Category | "
-        + " | ".join(labels)
-        + " |"
-    )
-    lines.append(
-        "| --- | --- | "
-        + " | ".join("---" for _ in labels)
-        + " |"
-    )
+    lines.append("| Operator | Category | " + " | ".join(labels) + " |")
+    lines.append("| --- | --- | " + " | ".join("---" for _ in labels) + " |")
 
     for operator in operators:
-        cells = [
-            _matrix_cell(row_maps[label][operator])
-            for label in labels
-        ]
+        cells = [_matrix_cell(row_maps[label][operator]) for label in labels]
         lines.append(
-            "| "
-            f"{operator} | {categories[operator]} | "
-            + " | ".join(cells)
-            + " |"
+            f"| {operator} | {categories[operator]} | " + " | ".join(cells) + " |"
         )
 
     return lines
@@ -341,14 +328,13 @@ def _matrix_cell(row):
     if row["status"] == "NO_PYTEST_RECORD":
         return "NO_PYTEST_RECORD"
 
-    return (
-        f"{row['status']} "
-        f"(P={row['passed']}, S={row['skipped']}, F={row['failed']})"
-    )
+    return f"{row['status']} (P={row['passed']}, S={row['skipped']}, F={row['failed']})"
 
 
 def _render_platform_missing(view):
-    missing = [row["operator"] for row in view["rows"] if row["status"] == "NO_PYTEST_RECORD"]
+    missing = [
+        row["operator"] for row in view["rows"] if row["status"] == "NO_PYTEST_RECORD"
+    ]
 
     lines = []
     lines.append(f"## {view['label']} Missing From Pytest")
@@ -367,7 +353,9 @@ def _render_platform_detail(view):
     lines.append(
         "| Operator | Category | Status | Cases | Passed | Skipped | Failed | Test Module | Device | Impl | Top Skip Reason |"
     )
-    lines.append("| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |")
+    lines.append(
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |"
+    )
 
     sorted_rows = sorted(
         view["rows"],

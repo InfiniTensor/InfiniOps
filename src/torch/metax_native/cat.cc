@@ -1,7 +1,6 @@
-#include "native/cuda/metax/ops/cat/kernel.h"
-
 #include <vector>
 
+#include "native/cuda/metax/ops/cat/kernel.h"
 #include "native/cuda/metax/ops/torch_fallback.h"
 
 namespace infini::ops {

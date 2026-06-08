@@ -6,6 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: chartboost/ruff-action@v1
+        with:
+          version: 0.15.16
       - uses: chartboost/ruff-action@v1
         with:
+          version: 0.15.16
           args: format --check

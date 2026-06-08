@@ -28,9 +28,7 @@ _INSTALLED_METADATA_PATH = (
     pathlib.Path(infini.ops.__file__).resolve().with_name("torch_ops_metadata.json")
 )
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-_SOURCE_METADATA_PATH = (
-    _REPO_ROOT / "generated" / "torch_ops_metadata.json"
-)
+_SOURCE_METADATA_PATH = _REPO_ROOT / "generated" / "torch_ops_metadata.json"
 
 _OPS_MODULE_PATH = pathlib.Path(infini.ops.__file__).resolve()
 _PREFER_SOURCE_METADATA = _REPO_ROOT in _OPS_MODULE_PATH.parents
@@ -41,11 +39,7 @@ _METADATA_CANDIDATES = (
 )
 
 _METADATA_PATH = next(
-    (
-        path
-        for path in _METADATA_CANDIDATES
-        if path.exists()
-    ),
+    (path for path in _METADATA_CANDIDATES if path.exists()),
     _SOURCE_METADATA_PATH,
 )
 _METADATA = (
@@ -65,9 +59,7 @@ _DEFAULT_DTYPES = (
 )
 
 _INTEGER_TEST_DTYPES = tuple(
-    getattr(torch, name)
-    for name in ("int32", "int64", "uint8")
-    if hasattr(torch, name)
+    getattr(torch, name) for name in ("int32", "int64", "uint8") if hasattr(torch, name)
 )
 
 _INT8_DTYPE = getattr(torch, "int8", None)
@@ -266,7 +258,6 @@ _TENSOR_SHAPES = {
     "_upsample_nearest_exact2d_backward": ((2, 3, 8, 8),),
     "_upsample_nearest_exact3d": ((2, 3, 3, 3, 3),),
     "_upsample_nearest_exact3d_backward": ((2, 3, 6, 6, 6),),
-    "_conv_depthwise2d": ((2, 4, 8, 8), (4, 1, 3, 3)),
     "cudnn_convolution": ((1, 3, 8, 8), (5, 3, 3, 3)),
     "_slow_conv2d_forward": ((1, 3, 8, 8), (5, 3, 3, 3)),
     "_slow_conv2d_backward": ((1, 5, 8, 8), (1, 3, 8, 8), (5, 3, 3, 3)),
@@ -562,7 +553,9 @@ _OP_DTYPES = {
     "_linalg_svd": (torch.float32,),
     "cholesky": (torch.float32,),
     "complex": tuple(
-        dtype for dtype in (torch.float16, torch.float32, torch.float64) if dtype is not None
+        dtype
+        for dtype in (torch.float16, torch.float32, torch.float64)
+        if dtype is not None
     ),
     "bitwise_and": _INTEGER_TEST_DTYPES,
     "bitwise_and_": _INTEGER_TEST_DTYPES,
@@ -600,7 +593,9 @@ _OP_DTYPES = {
     "linalg_matrix_norm": (torch.float32, torch.float64),
     "nuclear_norm": (torch.float32,),
     "polar": tuple(
-        dtype for dtype in (torch.float16, torch.float32, torch.float64) if dtype is not None
+        dtype
+        for dtype in (torch.float16, torch.float32, torch.float64)
+        if dtype is not None
     ),
     "sparse_sampled_addmm": (torch.float32,),
     "slow_conv3d": (torch.float32, torch.bfloat16),
@@ -838,9 +833,7 @@ _VENDOR_CRASH_OPS = frozenset(
 # reduction)` reads our `reduction:int` as `weight:Tensor` and crashes
 # inside `weight.size()`.  The InfiniOps wrapper itself is fine; only
 # the harness's reference call is wrong.
-_REFERENCE_SIGNATURE_MISMATCH_OPS = frozenset(
-    {}
-)
+_REFERENCE_SIGNATURE_MISMATCH_OPS = frozenset({})
 
 # Some ATen `_out` tensors are auxiliary workspaces rather than stable
 # user-visible values.  Their shape/dtype still matter, but the exact
@@ -1055,30 +1048,44 @@ def _torch_func(op_name):
         "log_sigmoid": (torch.nn.functional, "logsigmoid"),
     }
     direct_funcs = {
-        "binary_cross_entropy": lambda input, target, reduction: torch.ops.aten.binary_cross_entropy(
-            input, target, None, reduction
+        "binary_cross_entropy": lambda input, target, reduction: (
+            torch.ops.aten.binary_cross_entropy(input, target, None, reduction)
         ),
-        "binary_cross_entropy_backward": lambda grad_output, input, target, reduction: torch.ops.aten.binary_cross_entropy_backward(
-            grad_output, input, target, None, reduction
+        "binary_cross_entropy_backward": lambda grad_output, input, target, reduction: (
+            torch.ops.aten.binary_cross_entropy_backward(
+                grad_output, input, target, None, reduction
+            )
         ),
         "batch_norm_elemt": lambda input, mean, invstd, eps: torch.batch_norm_elemt(
             input, None, None, mean, invstd, eps
         ),
         "index": lambda input, indices: torch.ops.aten.index.Tensor(input, indices),
-        "_conv_depthwise2d": lambda input, weight, kernel_size, stride, padding, dilation: torch.nn.functional.conv2d(
-            input,
-            weight,
-            None,
-            stride=stride,
-            padding=padding,
-            dilation=dilation,
-            groups=input.shape[1],
+        "_conv_depthwise2d": lambda input, weight, kernel_size, stride, padding, dilation: (
+            torch.nn.functional.conv2d(
+                input,
+                weight,
+                None,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                groups=input.shape[1],
+            )
         ),
-        "_slow_conv2d_forward": lambda input, weight, kernel_size, stride, padding: torch.ops.aten._slow_conv2d_forward.default(
-            input, weight, kernel_size, None, stride, padding
+        "_slow_conv2d_forward": lambda input, weight, kernel_size, stride, padding: (
+            torch.ops.aten._slow_conv2d_forward.default(
+                input, weight, kernel_size, None, stride, padding
+            )
         ),
-        "_slow_conv2d_backward": lambda grad_output, input, weight, kernel_size, stride, padding: torch.ops.aten._slow_conv2d_backward.output_mask(
-            grad_output, input, weight, kernel_size, stride, padding, [True, True, True]
+        "_slow_conv2d_backward": lambda grad_output, input, weight, kernel_size, stride, padding: (
+            torch.ops.aten._slow_conv2d_backward.output_mask(
+                grad_output,
+                input,
+                weight,
+                kernel_size,
+                stride,
+                padding,
+                [True, True, True],
+            )
         ),
         "mean": lambda input, keepdim: torch.mean(input, dim=None, keepdim=keepdim),
         "sum": lambda input, keepdim: torch.sum(input, dim=None, keepdim=keepdim),
@@ -1091,57 +1098,71 @@ def _torch_func(op_name):
         "elu": lambda input, alpha, scale, input_scale: torch.ops.aten.elu(
             input, alpha, scale, input_scale
         ),
-        "elu_backward": lambda grad_output, alpha, scale, input_scale, is_result, self_or_result: torch.ops.aten.elu_backward(
-            grad_output, alpha, scale, input_scale, is_result, self_or_result
+        "elu_backward": lambda grad_output, alpha, scale, input_scale, is_result, self_or_result: (
+            torch.ops.aten.elu_backward(
+                grad_output, alpha, scale, input_scale, is_result, self_or_result
+            )
         ),
         "huber_loss": lambda input, target, reduction, delta: torch.ops.aten.huber_loss(
             input, target, reduction, delta
         ),
-        "multi_margin_loss": lambda input, target, p, margin, reduction: torch.ops.aten.multi_margin_loss(
-            input, target, p, margin, None, reduction
+        "multi_margin_loss": lambda input, target, p, margin, reduction: (
+            torch.ops.aten.multi_margin_loss(input, target, p, margin, None, reduction)
         ),
-        "adaptive_max_pool2d_backward": lambda grad_output, input, indices: torch.ops.aten.adaptive_max_pool2d_backward(
-            grad_output, input, indices
+        "adaptive_max_pool2d_backward": lambda grad_output, input, indices: (
+            torch.ops.aten.adaptive_max_pool2d_backward(grad_output, input, indices)
         ),
-        "adaptive_max_pool3d_backward": lambda grad_output, input, indices: torch.ops.aten.adaptive_max_pool3d_backward(
-            grad_output, input, indices
+        "adaptive_max_pool3d_backward": lambda grad_output, input, indices: (
+            torch.ops.aten.adaptive_max_pool3d_backward(grad_output, input, indices)
         ),
-        "adaptive_avg_pool3d_backward": lambda grad_output, input: torch.ops.aten.adaptive_avg_pool3d_backward.grad_input(
-            grad_output,
-            input,
-            grad_input=torch.empty(input.shape, dtype=input.dtype, device=input.device),
+        "adaptive_avg_pool3d_backward": lambda grad_output, input: (
+            torch.ops.aten.adaptive_avg_pool3d_backward.grad_input(
+                grad_output,
+                input,
+                grad_input=torch.empty(
+                    input.shape, dtype=input.dtype, device=input.device
+                ),
+            )
         ),
-        "avg_pool2d_backward": lambda grad_output, input, kernel_size, stride, padding, ceil_mode, count_include_pad: torch.ops.aten.avg_pool2d_backward(
-            grad_output,
-            input,
-            kernel_size,
-            stride,
-            padding,
-            ceil_mode,
-            count_include_pad,
-            None,
+        "avg_pool2d_backward": lambda grad_output, input, kernel_size, stride, padding, ceil_mode, count_include_pad: (
+            torch.ops.aten.avg_pool2d_backward(
+                grad_output,
+                input,
+                kernel_size,
+                stride,
+                padding,
+                ceil_mode,
+                count_include_pad,
+                None,
+            )
         ),
-        "avg_pool3d_backward": lambda grad_output, input, kernel_size, stride, padding, ceil_mode, count_include_pad: torch.ops.aten.avg_pool3d_backward(
-            grad_output,
-            input,
-            kernel_size,
-            stride,
-            padding,
-            ceil_mode,
-            count_include_pad,
-            None,
+        "avg_pool3d_backward": lambda grad_output, input, kernel_size, stride, padding, ceil_mode, count_include_pad: (
+            torch.ops.aten.avg_pool3d_backward(
+                grad_output,
+                input,
+                kernel_size,
+                stride,
+                padding,
+                ceil_mode,
+                count_include_pad,
+                None,
+            )
         ),
-        "fractional_max_pool2d_backward": lambda grad_output, input, kernel_size, output_size, indices: torch.ops.aten.fractional_max_pool2d_backward(
-            grad_output, input, kernel_size, output_size, indices
+        "fractional_max_pool2d_backward": lambda grad_output, input, kernel_size, output_size, indices: (
+            torch.ops.aten.fractional_max_pool2d_backward(
+                grad_output, input, kernel_size, output_size, indices
+            )
         ),
-        "fractional_max_pool3d_backward": lambda grad_output, input, kernel_size, output_size, indices: torch.ops.aten.fractional_max_pool3d_backward(
-            grad_output, input, kernel_size, output_size, indices
+        "fractional_max_pool3d_backward": lambda grad_output, input, kernel_size, output_size, indices: (
+            torch.ops.aten.fractional_max_pool3d_backward(
+                grad_output, input, kernel_size, output_size, indices
+            )
         ),
         "max_unpool2d": lambda input, indices, output_size: torch.ops.aten.max_unpool2d(
             input, indices, output_size
         ),
-        "max_unpool3d": lambda input, indices, output_size, stride, padding: torch.ops.aten.max_unpool3d(
-            input, indices, output_size, stride, padding
+        "max_unpool3d": lambda input, indices, output_size, stride, padding: (
+            torch.ops.aten.max_unpool3d(input, indices, output_size, stride, padding)
         ),
         "log_sigmoid_forward": lambda input: torch.ops.aten.log_sigmoid_forward.output(
             input,
@@ -1151,9 +1172,7 @@ def _torch_func(op_name):
         "mse_loss": lambda input, target, reduction: torch.ops.aten.mse_loss(
             input, target, reduction
         ),
-        "hspmm": lambda mat1, mat2: torch.hspmm(mat1.cpu(), mat2.cpu()).to(
-            mat1.device
-        ),
+        "hspmm": lambda mat1, mat2: torch.hspmm(mat1.cpu(), mat2.cpu()).to(mat1.device),
         "sspaddmm": lambda input, mat1, mat2, beta, alpha: torch.sspaddmm(
             input.cpu(),
             mat1.cpu(),
@@ -1165,29 +1184,29 @@ def _torch_func(op_name):
             input.cpu().to(torch.int32) @ mat2.cpu().to(torch.int32)
         ).to(input.device),
         "_scaled_mm": lambda input, mat2, scale_a, scale_b, use_fast_accum=False: (
-            torch.matmul(input.cpu().to(torch.float32), mat2.cpu().to(torch.float32))
-            .to(device=input.device, dtype=input.dtype)
+            torch.matmul(
+                input.cpu().to(torch.float32), mat2.cpu().to(torch.float32)
+            ).to(device=input.device, dtype=input.dtype)
         ),
-        "sparse_sampled_addmm": lambda input, mat1, mat2, beta, alpha: torch.sparse.sampled_addmm(
-            input,
-            mat1,
-            mat2,
-            beta=beta,
-            alpha=alpha,
-        ),
-        "linalg_svdvals": lambda input: torch.linalg.svd(
-            input, full_matrices=False
-        )[1],
-        "svd": lambda input, some, compute_uv: tuple(
-            output.to(input.device) for output in torch.svd(
-                input.cpu(), some=some, compute_uv=compute_uv
+        "sparse_sampled_addmm": lambda input, mat1, mat2, beta, alpha: (
+            torch.sparse.sampled_addmm(
+                input,
+                mat1,
+                mat2,
+                beta=beta,
+                alpha=alpha,
             )
+        ),
+        "linalg_svdvals": lambda input: torch.linalg.svd(input, full_matrices=False)[1],
+        "svd": lambda input, some, compute_uv: tuple(
+            output.to(input.device)
+            for output in torch.svd(input.cpu(), some=some, compute_uv=compute_uv)
         ),
         "linalg_cond": lambda input: (
             lambda singular_values: singular_values.amax() / singular_values.amin()
         )(torch.linalg.svd(input, full_matrices=False)[1]),
-        "mkldnn_adaptive_avg_pool2d": lambda input, output_size: torch.nn.functional.adaptive_avg_pool2d(
-            input, output_size
+        "mkldnn_adaptive_avg_pool2d": lambda input, output_size: (
+            torch.nn.functional.adaptive_avg_pool2d(input, output_size)
         ),
         "nuclear_norm": lambda input, keepdim: (
             (lambda singular_values: singular_values.sum().reshape(1, 1))(
@@ -1196,20 +1215,30 @@ def _torch_func(op_name):
             if keepdim
             else torch.linalg.svd(input, full_matrices=False)[1].sum()
         ),
-        "multilabel_margin_loss_forward": lambda input, target, reduction: torch.ops.aten.multilabel_margin_loss_forward.default(
-            input, target, reduction
+        "multilabel_margin_loss_forward": lambda input, target, reduction: (
+            torch.ops.aten.multilabel_margin_loss_forward.default(
+                input, target, reduction
+            )
         ),
-        "multilabel_margin_loss_backward": lambda grad_output, input, target, reduction, is_target: torch.ops.aten.multilabel_margin_loss_backward.default(
-            grad_output, input, target, reduction, is_target
+        "multilabel_margin_loss_backward": lambda grad_output, input, target, reduction, is_target: (
+            torch.ops.aten.multilabel_margin_loss_backward.default(
+                grad_output, input, target, reduction, is_target
+            )
         ),
-        "multi_margin_loss_backward": lambda grad_output, input, target, p, margin, reduction: torch.ops.aten.multi_margin_loss_backward.default(
-            grad_output, input, target, p, margin, None, reduction
+        "multi_margin_loss_backward": lambda grad_output, input, target, p, margin, reduction: (
+            torch.ops.aten.multi_margin_loss_backward.default(
+                grad_output, input, target, p, margin, None, reduction
+            )
         ),
-        "native_batch_norm": lambda input, training, momentum, eps: torch.native_batch_norm(
-            input, None, None, None, None, training, momentum, eps
+        "native_batch_norm": lambda input, training, momentum, eps: (
+            torch.native_batch_norm(
+                input, None, None, None, None, training, momentum, eps
+            )
         ),
-        "_batch_norm_with_update": lambda input, running_mean, running_var, momentum, eps: torch.ops.aten._batch_norm_with_update.default(
-            input, None, None, running_mean, running_var, momentum, eps
+        "_batch_norm_with_update": lambda input, running_mean, running_var, momentum, eps: (
+            torch.ops.aten._batch_norm_with_update.default(
+                input, None, None, running_mean, running_var, momentum, eps
+            )
         ),
         "linspace": lambda start, end, steps: torch.linspace(
             start.item(),
@@ -1226,50 +1255,84 @@ def _torch_func(op_name):
             device=start.device,
             dtype=start.dtype,
         ),
-        "nll_loss": lambda input, target, reduction, ignore_index: torch.ops.aten.nll_loss(
-            input, target, None, reduction, ignore_index
+        "nll_loss": lambda input, target, reduction, ignore_index: (
+            torch.ops.aten.nll_loss(input, target, None, reduction, ignore_index)
         ),
-        "nll_loss2d": lambda input, target, reduction, ignore_index: torch.ops.aten.nll_loss2d(
-            input, target, None, reduction, ignore_index
+        "nll_loss2d": lambda input, target, reduction, ignore_index: (
+            torch.ops.aten.nll_loss2d(input, target, None, reduction, ignore_index)
         ),
-        "nll_loss_forward": lambda input, target, reduction, ignore_index: torch.ops.aten.nll_loss_forward.default(
-            input, target, None, reduction, ignore_index
+        "nll_loss_forward": lambda input, target, reduction, ignore_index: (
+            torch.ops.aten.nll_loss_forward.default(
+                input, target, None, reduction, ignore_index
+            )
         ),
-        "nll_loss_backward": lambda grad_output, input, target, reduction, ignore_index, total_weight: torch.ops.aten.nll_loss_backward.default(
-            grad_output, input, target, None, reduction, ignore_index, total_weight
+        "nll_loss_backward": lambda grad_output, input, target, reduction, ignore_index, total_weight: (
+            torch.ops.aten.nll_loss_backward.default(
+                grad_output, input, target, None, reduction, ignore_index, total_weight
+            )
         ),
-        "nll_loss2d_forward": lambda input, target, reduction, ignore_index: torch.ops.aten.nll_loss2d_forward.default(
-            input, target, None, reduction, ignore_index
+        "nll_loss2d_forward": lambda input, target, reduction, ignore_index: (
+            torch.ops.aten.nll_loss2d_forward.default(
+                input, target, None, reduction, ignore_index
+            )
         ),
-        "nll_loss2d_backward": lambda grad_output, input, target, reduction, ignore_index, total_weight: torch.ops.aten.nll_loss2d_backward.default(
-            grad_output, input, target, None, reduction, ignore_index, total_weight
+        "nll_loss2d_backward": lambda grad_output, input, target, reduction, ignore_index, total_weight: (
+            torch.ops.aten.nll_loss2d_backward.default(
+                grad_output, input, target, None, reduction, ignore_index, total_weight
+            )
         ),
-        "slow_conv3d": lambda input, weight, kernel_size, stride, padding: torch.ops.aten.slow_conv3d.default(
-            input, weight, kernel_size, None, stride, padding
+        "slow_conv3d": lambda input, weight, kernel_size, stride, padding: (
+            torch.ops.aten.slow_conv3d.default(
+                input, weight, kernel_size, None, stride, padding
+            )
         ),
-        "slow_conv3d_forward": lambda input, weight, kernel_size, stride, padding: torch.ops.aten.slow_conv3d_forward.default(
-            input, weight, kernel_size, None, stride, padding
+        "slow_conv3d_forward": lambda input, weight, kernel_size, stride, padding: (
+            torch.ops.aten.slow_conv3d_forward.default(
+                input, weight, kernel_size, None, stride, padding
+            )
         ),
-        "slow_conv_transpose2d": lambda input, weight, kernel_size, stride, padding, output_padding, dilation: torch.ops.aten.slow_conv_transpose2d.default(
-            input, weight, kernel_size, None, stride, padding, output_padding, dilation
+        "slow_conv_transpose2d": lambda input, weight, kernel_size, stride, padding, output_padding, dilation: (
+            torch.ops.aten.slow_conv_transpose2d.default(
+                input,
+                weight,
+                kernel_size,
+                None,
+                stride,
+                padding,
+                output_padding,
+                dilation,
+            )
         ),
-        "slow_conv_transpose3d": lambda input, weight, kernel_size, stride, padding, output_padding, dilation: torch.ops.aten.slow_conv_transpose3d.default(
-            input, weight, kernel_size, None, stride, padding, output_padding, dilation
+        "slow_conv_transpose3d": lambda input, weight, kernel_size, stride, padding, output_padding, dilation: (
+            torch.ops.aten.slow_conv_transpose3d.default(
+                input,
+                weight,
+                kernel_size,
+                None,
+                stride,
+                padding,
+                output_padding,
+                dilation,
+            )
         ),
-        "rrelu_with_noise": lambda input, noise, lower, upper, training: torch.ops.aten.rrelu_with_noise.default(
-            input, noise, lower, upper, training
+        "rrelu_with_noise": lambda input, noise, lower, upper, training: (
+            torch.ops.aten.rrelu_with_noise.default(
+                input, noise, lower, upper, training
+            )
         ),
-        "smooth_l1_loss": lambda input, target, reduction, beta: torch.ops.aten.smooth_l1_loss(
-            input, target, reduction, beta
+        "smooth_l1_loss": lambda input, target, reduction, beta: (
+            torch.ops.aten.smooth_l1_loss(input, target, reduction, beta)
         ),
-        "soft_margin_loss": lambda input, target, reduction: torch.ops.aten.soft_margin_loss(
-            input, target, reduction
+        "soft_margin_loss": lambda input, target, reduction: (
+            torch.ops.aten.soft_margin_loss(input, target, reduction)
         ),
         "tensordot": lambda input, other, dims_self, dims_other: torch.tensordot(
             input, other, dims=(dims_self, dims_other)
         ),
-        "thnn_conv2d": lambda input, weight, kernel_size, stride, padding: torch.ops.aten.thnn_conv2d.default(
-            input, weight, kernel_size, None, stride, padding
+        "thnn_conv2d": lambda input, weight, kernel_size, stride, padding: (
+            torch.ops.aten.thnn_conv2d.default(
+                input, weight, kernel_size, None, stride, padding
+            )
         ),
     }
 
@@ -1366,7 +1429,8 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
         input_shape = per_op[0] if per_op is not None else shape
         semantic_input_shape = (
             per_op[1]
-            if op_name in {
+            if op_name
+            in {
                 "multi_margin_loss_backward",
                 "multilabel_margin_loss_backward",
                 "nll_loss_backward",
@@ -1381,14 +1445,19 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
         if name == "random_samples":
             return rand_strided(tshape, None, dtype=dtype, device=device)
 
-        if op_name in {"binary_cross_entropy", "binary_cross_entropy_backward"} and name in {
+        if op_name in {
+            "binary_cross_entropy",
+            "binary_cross_entropy_backward",
+        } and name in {
             "input",
             "target",
         }:
             if name == "target":
                 return torch.rand(tshape, dtype=dtype, device=device)
 
-            return torch.rand(tshape, dtype=dtype, device=device).clamp_(1e-4, 1.0 - 1e-4)
+            return torch.rand(tshape, dtype=dtype, device=device).clamp_(
+                1e-4, 1.0 - 1e-4
+            )
 
         if op_name in {"bucketize", "histogram"} and name in {"boundaries", "bins"}:
             return torch.tensor([-1.0, 0.0, 1.0], dtype=dtype, device=device)
@@ -1513,7 +1582,9 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
                 return torch.tensor([0, 2, 5, 6], dtype=torch.int64, device=device)
 
             if name == "col_indices":
-                return torch.tensor([0, 1, 0, 1, 2, 0], dtype=torch.int64, device=device)
+                return torch.tensor(
+                    [0, 1, 0, 1, 2, 0], dtype=torch.int64, device=device
+                )
 
         if name == "index":
             if op_name in {"index_add", "index_reduce", "index_copy", "index_select"}:
@@ -1562,7 +1633,9 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
             "fractional_max_pool2d_backward",
         }:
             spatial = input_shape[-2] * input_shape[-1]
-            base = torch.arange(tshape[-2] * tshape[-1], dtype=torch.int64, device=device)
+            base = torch.arange(
+                tshape[-2] * tshape[-1], dtype=torch.int64, device=device
+            )
             base = base.reshape(1, 1, tshape[-2], tshape[-1])
             return base.remainder(spatial).expand(tshape).clone()
 
@@ -1645,7 +1718,9 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
 
         if name == "target" and op_name == "soft_margin_loss":
             target = rand_strided(tshape, None, dtype=dtype, device=device)
-            return torch.where(target > 0.5, torch.ones_like(target), -torch.ones_like(target))
+            return torch.where(
+                target > 0.5, torch.ones_like(target), -torch.ones_like(target)
+            )
 
         if name == "is_target" and op_name == "multilabel_margin_loss_backward":
             return torch.zeros(tshape, dtype=dtype, device=device)
@@ -1872,9 +1947,7 @@ def test_op(op_meta, shape, dtype, device):
         else [p for p in op_meta["params"] if not p["is_out"]]
     )
     out_params = (
-        [in_params[0]]
-        if is_inplace
-        else [p for p in op_meta["params"] if p["is_out"]]
+        [in_params[0]] if is_inplace else [p for p in op_meta["params"] if p["is_out"]]
     )
 
     # Build inputs in YAML order.
@@ -1946,19 +2019,23 @@ def test_op(op_meta, shape, dtype, device):
     # the InfiniOps zero-copy wrapper cannot safely materialize those
     # outputs across all vendor backends.
     if _is_metax_cuda(device) and aten_name in _METAX_SPARSE_LAYOUT_UNSUPPORTED_OPS:
-        pytest.skip(f"`{aten_name}` needs sparse-tensor storage that MetaX zero-copy cannot expose")
+        pytest.skip(
+            f"`{aten_name}` needs sparse-tensor storage that MetaX zero-copy cannot expose"
+        )
 
-    if _is_metax_cuda(device) and aten_name == "linalg_lstsq" and any(
-        t.numel() == 0 for t in ref_outs
+    if (
+        _is_metax_cuda(device)
+        and aten_name == "linalg_lstsq"
+        and any(t.numel() == 0 for t in ref_outs)
     ):
-        pytest.skip("`linalg_lstsq` returns 0-element auxiliary outputs that MetaX zero-copy cannot materialize")
+        pytest.skip(
+            "`linalg_lstsq` returns 0-element auxiliary outputs that MetaX zero-copy cannot materialize"
+        )
 
     if aten_name not in _ALLOW_ZERO_SIZED_OUTPUT_OPS and any(
         t.numel() == 0 for t in ref_outs
     ):
-        pytest.skip(
-            f"`{op_name}` produced 0-element output"
-        )
+        pytest.skip(f"`{op_name}` produced 0-element output")
 
     if is_inplace:
         if rng_seed is not None:
@@ -1970,7 +2047,11 @@ def test_op(op_meta, shape, dtype, device):
         return
 
     outs = [_empty_output_like(t) for t in ref_outs]
-    if _is_metax_cuda(device) and aten_name == "_batch_norm_with_update" and outs[-1].numel() == 0:
+    if (
+        _is_metax_cuda(device)
+        and aten_name == "_batch_norm_with_update"
+        and outs[-1].numel() == 0
+    ):
         outs[-1] = torch.empty((1,), device=device, dtype=torch.uint8)
 
     if rng_seed is not None:

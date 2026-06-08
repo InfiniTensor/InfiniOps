@@ -493,7 +493,9 @@ def _generate_pybind11(operator):
                 continue
 
             if _is_vector_optional_tensor(arg):
-                args.append(f"VectorOptionalAtenTensorFromPybind11Handle({arg.spelling})")
+                args.append(
+                    f"VectorOptionalAtenTensorFromPybind11Handle({arg.spelling})"
+                )
             elif _is_optional_tensor(arg):
                 args.append(f"OptionalAtenTensorFromPybind11Handle({arg.spelling})")
             elif _is_vector_tensor(arg):
@@ -619,11 +621,10 @@ def _generate_pybind11(operator):
 
     if has_torch_fast_path:
         torch_fast_path_include = (
-            f'#if defined(WITH_TORCH) && !defined(WITH_METAX)\n'
+            f"#if defined(WITH_TORCH) && !defined(WITH_METAX)\n"
             f'#include "torch/{op_name}/{op_name}.h"\n'
-            f'#endif\n'
+            f"#endif\n"
         )
-
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -694,9 +695,7 @@ def _generate_legacy_c(operator, paths):
             ]
         )
         dtype_map_block = (
-            "          {{{{{{\n"
-            f"{dtype_map_entries}\n"
-            "          }}}}}}};"
+            f"          {{{{{{{{{{{{\n{dtype_map_entries}\n          }}}}}}}}}}}}}};"
         )
 
         return f"""#include "../../handle.h"

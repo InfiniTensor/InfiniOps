@@ -5,11 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+from collections import Counter, defaultdict
+
+from operator_categories import (
+    CATEGORIES,
+    inventory_operator_name,
+    load_operator_inventory,
+)
 
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-_BASE_DIR = _REPO_ROOT / "src" / "base"
-_TORCH_OPS_YAML = _REPO_ROOT / "scripts" / "torch_ops.yaml"
 
 _DISPLAY_NAMES = {
     "ascend": "Ascend",
@@ -30,7 +35,9 @@ def main():
             "including both case-level skips and operator-level skip-only counts."
         )
     )
-    parser.add_argument("inputs", nargs="+", type=pathlib.Path, help="Report JSON path(s)")
+    parser.add_argument(
+        "inputs", nargs="+", type=pathlib.Path, help="Report JSON path(s)"
+    )
     parser.add_argument(
         "--show-skip-only",
         action="store_true",
@@ -52,42 +59,20 @@ def main():
 
 
 def _load_inventory():
-    inventory = {}
-
-    for path in sorted(_BASE_DIR.glob("*.h")):
-        inventory[path.stem] = {"operator": path.stem, "category": "native"}
-
-    for line in _TORCH_OPS_YAML.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("- "):
-            continue
-
-        operator = _public_op_name(stripped[2:])
-        inventory.setdefault(
-            operator,
-            {"operator": operator, "category": "torch-generated"},
-        )
-
-    return [inventory[name] for name in sorted(inventory)]
-
-
-def _public_op_name(aten_name):
-    public_name = aten_name
-
-    if public_name.startswith("_"):
-        public_name = f"aten{public_name}"
-
-    if public_name.endswith("_") and not public_name.endswith("__"):
-        public_name = public_name[:-1] + "_inplace"
-
-    return public_name
+    return load_operator_inventory()
 
 
 def _extract_summaries(path, payload):
     if {"left", "right", "operator_diff", "case_diff"} <= set(payload):
         return [
-            (_summary_label(payload["left"]["summary"], suffix="left"), payload["left"]["summary"]),
-            (_summary_label(payload["right"]["summary"], suffix="right"), payload["right"]["summary"]),
+            (
+                _summary_label(payload["left"]["summary"], suffix="left"),
+                payload["left"]["summary"],
+            ),
+            (
+                _summary_label(payload["right"]["summary"], suffix="right"),
+                payload["right"]["summary"],
+            ),
         ]
 
     return [(_summary_label(payload, fallback=path.stem), payload)]
@@ -108,6 +93,7 @@ def _print_summary(label, summary, inventory, show_skip_only):
     env = summary.get("environment", {})
     totals = summary.get("totals", {})
     rows = _build_rows(summary, inventory)
+    selected_categories = _selected_categories(summary)
 
     tested = sum(1 for row in rows if row["status"] != "NO_PYTEST_RECORD")
     pass_gt0 = sum(1 for row in rows if row["passed"] > 0)
@@ -118,6 +104,8 @@ def _print_summary(label, summary, inventory, show_skip_only):
 
     print(f"{label}")
     print(f"  torch={env.get('torch_version')}")
+    if selected_categories:
+        print("  operator category filter: " + ", ".join(selected_categories))
     print(
         "  case totals: "
         f"collected={totals.get('collected')} "
@@ -135,6 +123,7 @@ def _print_summary(label, summary, inventory, show_skip_only):
         f"failed={failed} "
         f"no-record={no_record}"
     )
+    _print_category_summary(rows)
 
     if show_skip_only and skip_only:
         print("  skip-only operators:")
@@ -147,7 +136,13 @@ def _print_summary(label, summary, inventory, show_skip_only):
 
 
 def _build_rows(summary, inventory):
-    summary_rows = {row["operator"]: row for row in summary.get("operators", [])}
+    selected_categories = set(_selected_categories(summary))
+    if selected_categories:
+        inventory = [
+            item for item in inventory if item.get("category") in selected_categories
+        ]
+
+    summary_rows = _aggregate_summary_rows(summary.get("operators", []))
     rows = []
 
     for item in inventory:
@@ -157,6 +152,7 @@ def _build_rows(summary, inventory):
             rows.append(
                 {
                     "operator": item["operator"],
+                    "category": item["category"],
                     "status": "NO_PYTEST_RECORD",
                     "cases": 0,
                     "passed": 0,
@@ -186,6 +182,7 @@ def _build_rows(summary, inventory):
         rows.append(
             {
                 "operator": item["operator"],
+                "category": item["category"],
                 "status": status,
                 "cases": summary_row.get("cases", 0),
                 "passed": passed,
@@ -196,6 +193,98 @@ def _build_rows(summary, inventory):
         )
 
     return rows
+
+
+def _aggregate_summary_rows(operator_rows):
+    grouped = defaultdict(list)
+
+    for row in operator_rows:
+        operator = inventory_operator_name(row.get("operator"), row.get("aten_name"))
+
+        if operator is None:
+            continue
+
+        grouped[operator].append(row)
+
+    return {
+        operator: _aggregate_operator_group(operator, rows)
+        for operator, rows in grouped.items()
+    }
+
+
+def _aggregate_operator_group(operator, rows):
+    outcomes = Counter()
+    skip_reasons = Counter()
+    dtypes = set()
+    implementation_indices = set()
+    modules = set()
+    torch_devices = set()
+
+    for row in rows:
+        outcomes.update(row.get("outcomes", {}))
+        modules.add(row.get("module") or "-")
+        torch_devices.add(row.get("torch_device") or "-")
+        dtypes.update(dtype for dtype in row.get("dtypes", []) if dtype is not None)
+        implementation_indices.update(row.get("implementation_indices", []))
+
+        for entry in row.get("skip_reasons", []):
+            skip_reasons[entry.get("reason", "")] += entry.get("count", 0)
+
+    return {
+        "operator": operator,
+        "cases": sum(row.get("cases", 0) for row in rows),
+        "outcomes": {
+            "passed": outcomes.get("passed", 0),
+            "skipped": outcomes.get("skipped", 0),
+            "failed": outcomes.get("failed", 0),
+        },
+        "dtypes": sorted(dtypes),
+        "implementation_indices": sorted(implementation_indices),
+        "module": ",".join(sorted(modules)) or "-",
+        "torch_device": ",".join(sorted(torch_devices)) or "-",
+        "skip_reasons": [
+            {"reason": reason, "count": count}
+            for reason, count in sorted(
+                skip_reasons.items(), key=lambda item: (-item[1], item[0])
+            )
+        ],
+    }
+
+
+def _selected_categories(summary):
+    return tuple(summary.get("filters", {}).get("operator_categories") or ())
+
+
+def _print_category_summary(rows):
+    print("  category totals:")
+
+    for category in CATEGORIES:
+        category_rows = [row for row in rows if row["category"] == category]
+
+        if not category_rows:
+            continue
+
+        tested = sum(1 for row in category_rows if row["status"] != "NO_PYTEST_RECORD")
+        pass_gt0 = sum(1 for row in category_rows if row["passed"] > 0)
+        skip_only = sum(1 for row in category_rows if row["status"] == "SKIPPED_ONLY")
+        failed = sum(1 for row in category_rows if row["status"] == "FAILED")
+        no_record = sum(
+            1 for row in category_rows if row["status"] == "NO_PYTEST_RECORD"
+        )
+
+        print(
+            f"    {category}: "
+            f"cases={sum(row['cases'] for row in category_rows)} "
+            f"passed={sum(row['passed'] for row in category_rows)} "
+            f"skipped={sum(row['skipped'] for row in category_rows)} "
+            f"failed={sum(row['failed'] for row in category_rows)} "
+            f"operators={len(category_rows)} "
+            f"tested={tested} "
+            f"pass>0={pass_gt0} "
+            f"skip-only={skip_only} "
+            f"no-record={no_record} "
+            f"failed-ops={failed}"
+        )
 
 
 if __name__ == "__main__":

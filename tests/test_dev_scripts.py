@@ -44,6 +44,17 @@ def test_dev_test_accepts_ascend_platform():
     result = _run_bash("bash scripts/dev_test.sh ascend --help")
 
     assert "Usage:" in result.stdout
+    assert "--op-category" in result.stdout
+
+
+def test_dev_test_rejects_unknown_operator_category_before_build():
+    result = _run_bash(
+        "bash scripts/dev_test.sh cpu --op-category not-a-category --no-build",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "unknown operator category" in result.stderr
 
 
 def test_detect_platforms_reports_fake_nvidia_probe(tmp_path):

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-from collections import Counter
 
 
 def main():
@@ -82,12 +81,8 @@ def _build_diff_report(left_path, right_path):
 
 
 def _build_operator_summary_diff(left_summary, right_summary):
-    left_ops = {
-        _operator_key(row): row for row in left_summary.get("operators", [])
-    }
-    right_ops = {
-        _operator_key(row): row for row in right_summary.get("operators", [])
-    }
+    left_ops = {_operator_key(row): row for row in left_summary.get("operators", [])}
+    right_ops = {_operator_key(row): row for row in right_summary.get("operators", [])}
 
     left_only = sorted(set(left_ops) - set(right_ops))
     right_only = sorted(set(right_ops) - set(left_ops))
@@ -101,14 +96,8 @@ def _build_operator_summary_diff(left_summary, right_summary):
         "only_left_count": len(left_only),
         "only_right_count": len(right_only),
         "changed_count": len(changed),
-        "only_left": [
-            {"key": key, "row": left_ops[key]}
-            for key in left_only
-        ],
-        "only_right": [
-            {"key": key, "row": right_ops[key]}
-            for key in right_only
-        ],
+        "only_left": [{"key": key, "row": left_ops[key]} for key in left_only],
+        "only_right": [{"key": key, "row": right_ops[key]} for key in right_only],
         "changed": [
             {
                 "key": key,
@@ -129,8 +118,12 @@ def _build_operator_summary_diff(left_summary, right_summary):
 
 
 def _build_case_diff(left_details, right_details):
-    left_cases = {_case_key(record): record for record in left_details if record.get("operator")}
-    right_cases = {_case_key(record): record for record in right_details if record.get("operator")}
+    left_cases = {
+        _case_key(record): record for record in left_details if record.get("operator")
+    }
+    right_cases = {
+        _case_key(record): record for record in right_details if record.get("operator")
+    }
 
     left_only = sorted(set(left_cases) - set(right_cases))
     right_only = sorted(set(right_cases) - set(left_cases))
@@ -144,14 +137,8 @@ def _build_case_diff(left_details, right_details):
         "only_left_count": len(left_only),
         "only_right_count": len(right_only),
         "changed_count": len(changed),
-        "only_left": [
-            {"key": key, "record": left_cases[key]}
-            for key in left_only
-        ],
-        "only_right": [
-            {"key": key, "record": right_cases[key]}
-            for key in right_only
-        ],
+        "only_left": [{"key": key, "record": left_cases[key]} for key in left_only],
+        "only_right": [{"key": key, "record": right_cases[key]} for key in right_only],
         "changed": [
             {
                 "key": key,
@@ -182,13 +169,8 @@ def _render_report(diff_report, limit):
             missing.append(right["detail_path"])
 
         lines.append("Warning")
-        lines.append(
-            "  Missing detail file(s): "
-            + ", ".join(missing)
-        )
-        lines.append(
-            "  Case Diff needs both sibling `.details.jsonl` files."
-        )
+        lines.append("  Missing detail file(s): " + ", ".join(missing))
+        lines.append("  Case Diff needs both sibling `.details.jsonl` files.")
         lines.append("")
 
     lines.extend(_render_operator_summary_diff(diff_report["operator_diff"], limit))
@@ -233,12 +215,8 @@ def _render_operator_summary_diff(operator_diff, limit):
             )
 
             if entry["left_skip_reasons"] != entry["right_skip_reasons"]:
-                lines.append(
-                    f"      left_skip_reasons={entry['left_skip_reasons']}"
-                )
-                lines.append(
-                    f"      right_skip_reasons={entry['right_skip_reasons']}"
-                )
+                lines.append(f"      left_skip_reasons={entry['left_skip_reasons']}")
+                lines.append(f"      right_skip_reasons={entry['right_skip_reasons']}")
 
     return lines
 

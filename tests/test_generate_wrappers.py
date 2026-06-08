@@ -5,9 +5,7 @@ import sys
 
 def _load_wrappers_module():
     path = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "scripts"
-        / "generate_wrappers.py"
+        pathlib.Path(__file__).resolve().parents[1] / "scripts" / "generate_wrappers.py"
     )
     spec = importlib.util.spec_from_file_location("generate_wrappers_under_test", path)
     module = importlib.util.module_from_spec(spec)
@@ -35,9 +33,7 @@ def test_type_spelling_helpers_distinguish_optional_tensor_from_scalar():
     assert module._spelling_is_vector_optional_tensor(
         "const std::vector<std::optional<Tensor>>"
     )
-    assert not module._spelling_is_vector_optional_tensor(
-        "const std::vector<Tensor>"
-    )
+    assert not module._spelling_is_vector_optional_tensor("const std::vector<Tensor>")
     assert module._spelling_is_vector_int64("const std::vector<int64_t>")
     assert not module._spelling_is_vector_int64("const std::vector<Tensor>")
 

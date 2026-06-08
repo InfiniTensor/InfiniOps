@@ -5,6 +5,13 @@ import pytest
 import torch
 import torch.utils.benchmark as benchmark
 
+from scripts.operator_categories import (
+    category_for_operator,
+    category_help,
+    inventory_operator_name,
+    is_native_operator,
+    normalize_category_selectors,
+)
 from tests.op_report import register_operator_reporter
 from tests.utils import clone_strided, get_available_devices
 
@@ -28,16 +35,58 @@ def pytest_addoption(parser):
             "Also emits sibling `.details.jsonl` and `.summary.txt` files."
         ),
     )
+    parser.addoption(
+        "--op-category",
+        action="append",
+        default=[],
+        metavar="CATEGORY",
+        help=(
+            "Run only operators in the given semantic category. "
+            "May be repeated. Accepted slugs: "
+            f"{category_help()}."
+        ),
+    )
 
 
 def pytest_configure(config):
     torch.backends.fp32_precision = "tf32"
+
+    try:
+        selected_categories = normalize_category_selectors(
+            tuple(config.getoption("--op-category") or ())
+        )
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+
+    config._infini_operator_categories = selected_categories
 
     config.addinivalue_line(
         "markers",
         "auto_act_and_assert: automatically perform Act and Assert phases using the return values",
     )
     register_operator_reporter(config)
+
+
+def pytest_collection_modifyitems(config, items):
+    selected_categories = set(getattr(config, "_infini_operator_categories", ()))
+
+    if not selected_categories:
+        return
+
+    selected = []
+    deselected = []
+
+    for item in items:
+        category = _operator_category_from_item(item)
+
+        if category in selected_categories:
+            selected.append(item)
+        else:
+            deselected.append(item)
+
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
 
 
 def pytest_collectstart(collector):
@@ -271,6 +320,29 @@ def _op_class_from_module(module):
     import infini.ops as _ops
 
     return getattr(_ops, op_pascal, None)
+
+
+def _operator_category_from_item(item):
+    params = getattr(getattr(item, "callspec", None), "params", {})
+    op_meta = params.get("op_meta") if isinstance(params, dict) else None
+    module_name = item.module.__name__.rsplit(".", 1)[-1]
+    module_stem = (
+        module_name.removeprefix("test_")
+        if module_name.startswith("test_")
+        else module_name
+    )
+
+    if isinstance(op_meta, dict):
+        operator = inventory_operator_name(
+            op_meta.get("name"),
+            op_meta.get("aten_name", op_meta.get("name")),
+        )
+    elif module_name.startswith("test_") and is_native_operator(module_stem):
+        operator = module_stem
+    else:
+        operator = None
+
+    return category_for_operator(operator)
 
 
 @pytest.hookimpl(tryfirst=True)

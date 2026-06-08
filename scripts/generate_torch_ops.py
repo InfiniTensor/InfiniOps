@@ -977,9 +977,7 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
             assert len(op.out_params) == 1, "nuclear_norm should have one out tensor"
             out = op.out_params[0]
             input_arg = _render_arg(next(p for p in op.params if not p.is_out))
-            keepdim_arg = _render_arg(
-                next(p for p in op.params if p.name == "keepdim")
-            )
+            keepdim_arg = _render_arg(next(p for p in op.params if p.name == "keepdim"))
             return (
                 f"([&] {{\n"
                 f"    auto singular_values = std::get<1>(at::linalg_svd({input_arg}, false));\n"
@@ -993,9 +991,9 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
             )
 
         if op.aten_name == "mkldnn_adaptive_avg_pool2d":
-            assert (
-                len(op.out_params) == 1
-            ), "mkldnn_adaptive_avg_pool2d should have one out tensor"
+            assert len(op.out_params) == 1, (
+                "mkldnn_adaptive_avg_pool2d should have one out tensor"
+            )
             out = op.out_params[0]
             input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
             output_size_arg = _render_arg(
@@ -1007,7 +1005,9 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
             )
 
         if op.aten_name == "_conv_depthwise2d":
-            assert len(op.out_params) == 1, "_conv_depthwise2d should have one out tensor"
+            assert len(op.out_params) == 1, (
+                "_conv_depthwise2d should have one out tensor"
+            )
             out = op.out_params[0]
             input_arg = _render_arg(next(p for p in op.params if p.name == "input"))
             weight_arg = _render_arg(next(p for p in op.params if p.name == "weight"))
@@ -1074,7 +1074,9 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
                     f"  }}())"
                 )
 
-            assert len(op.out_params) == 2, "_scaled_mm should have one or two out tensors"
+            assert len(op.out_params) == 2, (
+                "_scaled_mm should have one or two out tensors"
+            )
             out, out_amax = op.out_params
             return (
                 f"([&] {{\n"
@@ -1091,9 +1093,7 @@ def _generate_aten_call(op: Op, tensor_prefix: str = "at_") -> str:
         # ATen `_out` form puts all out tensors first, then non-out params
         # in YAML order.  Hardcoded-nullopt params become `at::nullopt`.
         arg_order = op.out_params + [p for p in op.params if not p.is_out]
-        return (
-            f"at::{op.aten_name}_out({', '.join(_render_arg(p) for p in arg_order)})"
-        )
+        return f"at::{op.aten_name}_out({', '.join(_render_arg(p) for p in arg_order)})"
 
     return aten_call
 
@@ -1103,9 +1103,7 @@ def _format_direct_aten_signature(op: Op) -> str:
 
     for param in op.visible_params:
         if param.aten_type == "Tensor?[]":
-            parts.append(
-                f"const std::vector<std::optional<at::Tensor>>& {param.name}"
-            )
+            parts.append(f"const std::vector<std::optional<at::Tensor>>& {param.name}")
             continue
 
         if param.aten_type == "Tensor?":
@@ -1489,7 +1487,9 @@ def main() -> int:
             )
 
     _GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    _write_text_if_changed(_METADATA_PATH, json.dumps({"ops": metadata}, indent=2) + "\n")
+    _write_text_if_changed(
+        _METADATA_PATH, json.dumps({"ops": metadata}, indent=2) + "\n"
+    )
     _remove_stale_files(_GENERATED_BASE_DIR, expected_base_files)
     _remove_stale_files(_GENERATED_TORCH_DIR, expected_torch_files)
 

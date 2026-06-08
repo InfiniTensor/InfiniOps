@@ -7,9 +7,9 @@
 #include <algorithm>
 
 #if defined(WITH_TORCH) && !defined(WITH_METAX)
-#include <torch/torch.h>
 #include <torch/csrc/autograd/python_variable.h>
 #include <torch/csrc/utils/pybind.h>
+#include <torch/torch.h>
 #endif
 
 #include "tensor.h"
@@ -208,8 +208,8 @@ inline std::vector<Tensor> VectorTensorFromPybind11Handle(
   return result;
 }
 
-inline std::vector<std::optional<Tensor>> VectorOptionalTensorFromPybind11Handle(
-    const std::vector<py::object>& objs) {
+inline std::vector<std::optional<Tensor>>
+VectorOptionalTensorFromPybind11Handle(const std::vector<py::object>& objs) {
   std::vector<std::optional<Tensor>> result;
   result.reserve(objs.size());
   for (const auto& obj : objs) {

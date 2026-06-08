@@ -1,12 +1,12 @@
 #include "native/cuda/metax/ops/matmul/kernel.h"
-
 #include "native/cuda/metax/ops/torch_fallback.h"
 
 namespace infini::ops {
 
-void Operator<Matmul, Device::Type::kMetax>::operator()(
-    const Tensor a, const Tensor b, Tensor c, bool trans_a,
-    bool trans_b) const {
+void Operator<Matmul, Device::Type::kMetax>::operator()(const Tensor a,
+                                                        const Tensor b,
+                                                        Tensor c, bool trans_a,
+                                                        bool trans_b) const {
   auto at_a = metax_torch_fallback::ToAten(a);
   auto at_b = metax_torch_fallback::ToAten(b);
   auto at_c = metax_torch_fallback::ToAten(c);

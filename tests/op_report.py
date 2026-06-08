@@ -10,13 +10,17 @@ from collections import Counter, defaultdict
 import pytest
 import torch
 
+from scripts.operator_categories import (
+    category_for_operator,
+    inventory_operator_name,
+    is_native_operator,
+)
 from tests.utils import get_available_devices
 
 _REPORT_FORMAT_VERSION = 1
 _DETAIL_SUFFIX = ".details.jsonl"
 _TEXT_SUFFIX = ".summary.txt"
 _TORCH_OPS_SLOT = 8
-_NON_OPERATOR_MODULES = frozenset({"generate_torch_ops"})
 
 
 def register_operator_reporter(config):
@@ -37,7 +41,9 @@ class _OperatorReportPlugin:
         self._records_by_nodeid = {}
         self._tests_collected = 0
         self._worker_input = getattr(config, "workerinput", None)
-        self._worker_id = self._worker_input.get("workerid") if self._worker_input else None
+        self._worker_id = (
+            self._worker_input.get("workerid") if self._worker_input else None
+        )
         self._run_id = (
             self._worker_input.get("op_report_run_id")
             if self._worker_input
@@ -108,9 +114,7 @@ class _OperatorReportPlugin:
         return numprocesses > 0
 
     def _detail_path(self):
-        return self._output_path.with_name(
-            f"{self._output_path.stem}{_DETAIL_SUFFIX}"
-        )
+        return self._output_path.with_name(f"{self._output_path.stem}{_DETAIL_SUFFIX}")
 
     def _text_path(self):
         return self._output_path.with_name(f"{self._output_path.stem}{_TEXT_SUFFIX}")
@@ -121,9 +125,7 @@ class _OperatorReportPlugin:
         )
 
     def _load_worker_records(self):
-        pattern = (
-            f"{self._output_path.stem}.{self._run_id}.*{_DETAIL_SUFFIX}"
-        )
+        pattern = f"{self._output_path.stem}.{self._run_id}.*{_DETAIL_SUFFIX}"
         records = []
 
         for path in sorted(self._output_path.parent.glob(pattern)):
@@ -190,6 +192,11 @@ def _build_summary(config, output_path, run_id, tests_collected, exitstatus, rec
             "available_devices": list(get_available_devices()),
             "requested_devices": list(config.getoption("--devices") or []),
         },
+        "filters": {
+            "operator_categories": list(
+                getattr(config, "_infini_operator_categories", ())
+            ),
+        },
         "totals": {
             "collected": collected,
             "reported": len(records),
@@ -217,6 +224,8 @@ def _build_operator_rows(records):
             record.get("aten_name"),
             record.get("module"),
             record.get("torch_device"),
+            record.get("inventory_operator"),
+            record.get("category"),
         )
         grouped[key].append(record)
 
@@ -243,6 +252,8 @@ def _build_operator_rows(records):
                 "aten_name": key[1],
                 "module": key[2],
                 "torch_device": key[3],
+                "inventory_operator": key[4],
+                "category": key[5],
                 "cases": len(group),
                 "outcomes": {
                     "passed": outcome_counts.get("passed", 0),
@@ -315,7 +326,11 @@ def _item_context(item):
     params = getattr(getattr(item, "callspec", None), "params", {})
     op_meta = params.get("op_meta") if isinstance(params, dict) else None
     module_name = item.module.__name__.rsplit(".", 1)[-1]
-    module_stem = module_name.removeprefix("test_") if module_name.startswith("test_") else module_name
+    module_stem = (
+        module_name.removeprefix("test_")
+        if module_name.startswith("test_")
+        else module_name
+    )
 
     operator = None
     aten_name = None
@@ -325,10 +340,12 @@ def _item_context(item):
         operator = op_meta.get("name")
         aten_name = op_meta.get("aten_name", operator)
         overload_name = op_meta.get("overload_name")
-    elif module_name.startswith("test_") and module_stem not in _NON_OPERATOR_MODULES:
+    elif module_name.startswith("test_") and is_native_operator(module_stem):
         operator = module_stem
         aten_name = module_stem
 
+    inventory_operator = inventory_operator_name(operator, aten_name)
+    category = category_for_operator(inventory_operator)
     implementation_index = params.get("implementation_index")
 
     if implementation_index is None and module_name == "test_torch_ops":
@@ -347,6 +364,8 @@ def _item_context(item):
         "module": item.location[0],
         "test_name": item.originalname or item.name,
         "operator": operator,
+        "inventory_operator": inventory_operator,
+        "category": category,
         "aten_name": aten_name,
         "overload_name": overload_name,
         "torch_device": params.get("device"),

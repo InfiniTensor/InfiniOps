@@ -7,7 +7,7 @@ name = "InfiniOps"
 version = "0.1.0"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff", "torch", "pyyaml"]
+dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff==0.15.16", "torch", "pyyaml"]
 
 [tool.scikit-build.wheel]
 install-dir = "infini"
