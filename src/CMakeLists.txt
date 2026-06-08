@@ -126,6 +126,41 @@ if(WITH_NINETOOTHED)
     target_sources(infiniops PRIVATE ${INFINI_OPS_NINETOOTHED_SOURCES})
 endif()
 
+if(WITH_TRITON)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+
+    if(TRITON_PYTHON_EXECUTABLE)
+        set(_triton_python "${TRITON_PYTHON_EXECUTABLE}")
+    elseif(_TORCH_PYTHON)
+        set(_triton_python "${_TORCH_PYTHON}")
+    else()
+        set(_triton_python "${Python_EXECUTABLE}")
+    endif()
+    message(STATUS "Triton codegen Python: ${_triton_python}")
+
+    set(_triton_output_dir "${CMAKE_CURRENT_BINARY_DIR}/triton")
+    set(_triton_generator_args
+        "${PROJECT_SOURCE_DIR}/scripts/generate_triton_ops.py"
+        --output-dir "${_triton_output_dir}")
+
+    execute_process(
+        COMMAND "${_triton_python}" ${_triton_generator_args}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        RESULT_VARIABLE _triton_generation_result
+    )
+
+    if(NOT _triton_generation_result EQUAL 0)
+        message(FATAL_ERROR "Generating Triton AOT operator sources failed with `${_triton_python}`. Set `TRITON_PYTHON_EXECUTABLE` to a Python with `triton` and CUDA dependencies installed.")
+    endif()
+
+    enable_language(C)
+
+    include("${_triton_output_dir}/manifest.cmake")
+    target_compile_definitions(infiniops PUBLIC WITH_TRITON=1)
+    target_include_directories(infiniops PRIVATE ${INFINIOPS_TRITON_INCLUDE_DIRS})
+    target_sources(infiniops PRIVATE ${INFINIOPS_TRITON_SOURCES})
+endif()
+
 if(WITH_ILUVATAR)
     set(ILUVATAR_PATTERNS
         "native/cuda/*.cc"
@@ -682,6 +717,10 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)
     endif()
 
+    if(WITH_TRITON)
+        list(APPEND GENERATOR_ARGS --with-triton)
+    endif()
+
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
                 INFINI_RT_INCLUDE_DIRS=${INFINI_RT_INCLUDE_DIRS_ENV}
@@ -1006,6 +1045,12 @@ if(GENERATE_PYTHON_BINDINGS)
         target_include_directories(ops PRIVATE
             ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
+
+    if(WITH_TRITON)
+        target_include_directories(ops PRIVATE
+            ${INFINIOPS_TRITON_INCLUDE_DIRS})
+    endif()
+
     target_link_libraries(ops PRIVATE infiniops)
 
     # Cambricon generated dispatch is compiled into the Python extension and
