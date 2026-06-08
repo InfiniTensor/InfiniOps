@@ -25,6 +25,8 @@ option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
+option(WITH_TRITON "Enable Triton-generated kernels" OFF)
+
 # Default OFF until CANN's `extract_host_stub.py` path handling is fixed for
 # `scikit-build-core` temp-dir builds (triggers `KeyError` on the preprocessed
 # object path). Enable explicitly with `-DBUILD_CUSTOM_KERNEL=ON` when the
@@ -314,6 +316,14 @@ endif()
 
 if(WITH_NINETOOTHED)
     set(NINETOOTHED_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run NineToothed code generation")
+endif()
+
+if(WITH_TRITON AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "`WITH_TRITON` temporarily requires `WITH_NVIDIA=ON` because Triton AOT temporarily targets CUDA.")
+endif()
+
+if(WITH_TRITON)
+    set(TRITON_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run Triton AOT code generation")
 endif()
 
 if(WITH_NVIDIA)

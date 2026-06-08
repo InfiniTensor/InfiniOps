@@ -1245,13 +1245,15 @@ def _filter_ops(ops, op_allowlist, *, strict=False):
     return {op_name: ops[op_name] for op_name in op_allowlist if op_name in ops}
 
 
-def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
+def _get_all_ops(devices, with_torch=False, with_ninetoothed=False, with_triton=False):
     scan_dirs = set(devices)
 
     if with_torch:
         scan_dirs.add("torch")
     if with_ninetoothed:
         scan_dirs.add("ninetoothed")
+    if with_triton:
+        scan_dirs.add("triton")
 
     ops = {}
 
@@ -1390,6 +1392,12 @@ if __name__ == "__main__":
         help="Fail if `--ops` contains operators unavailable for the active devices.",
     )
 
+    parser.add_argument(
+        "--with-triton",
+        action="store_true",
+        help="Include Triton backend implementations.",
+    )
+
     args = parser.parse_args()
 
     for directory in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
@@ -1404,6 +1412,7 @@ if __name__ == "__main__":
             args.devices,
             with_torch=args.with_torch,
             with_ninetoothed=args.with_ninetoothed,
+            with_triton=args.with_triton,
         )
 
     ops = _filter_ops(
