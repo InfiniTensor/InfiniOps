@@ -542,10 +542,39 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
 
+    set(_operator_call_instantiation_job_pool_arg)
+    if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")
+        set(INFINIOPS_OPERATOR_CALL_INSTANTIATION_COMPILE_JOBS "2" CACHE STRING
+            "Maximum concurrent generated operator call instantiation compilations")
+        set_property(GLOBAL APPEND PROPERTY JOB_POOLS
+            operator_call_instantiation_compile=${INFINIOPS_OPERATOR_CALL_INSTANTIATION_COMPILE_JOBS})
+        set(_operator_call_instantiation_job_pool_arg
+            JOB_POOL operator_call_instantiation_compile)
+    endif()
+
     if(WITH_NVIDIA OR WITH_HYGON)
         set_source_files_properties(${OPERATOR_CALL_INSTANTIATION_SOURCES}
             PROPERTIES LANGUAGE CUDA)
-        target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
+        if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")
+            add_library(infiniops_operator_call_instantiation_objs OBJECT
+                ${OPERATOR_CALL_INSTANTIATION_SOURCES})
+            set_target_properties(infiniops_operator_call_instantiation_objs
+                PROPERTIES
+                    CUDA_STANDARD 17
+                    CUDA_STANDARD_REQUIRED ON
+                    JOB_POOL_COMPILE operator_call_instantiation_compile
+                    POSITION_INDEPENDENT_CODE ON)
+            target_include_directories(infiniops_operator_call_instantiation_objs PRIVATE
+                $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>)
+            target_compile_definitions(infiniops_operator_call_instantiation_objs PRIVATE
+                $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
+            target_compile_options(infiniops_operator_call_instantiation_objs PRIVATE
+                $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS>)
+            target_sources(infiniops PRIVATE
+                $<TARGET_OBJECTS:infiniops_operator_call_instantiation_objs>)
+        else()
+            target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
+        endif()
     elseif(WITH_ILUVATAR)
         set(_iluvatar_call_instantiation_include_flags
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
@@ -591,6 +620,7 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
                     -c "${_src}" -o "${_obj}"
                 DEPENDS "${_src}"
                 ${_depfile_arg}
+                ${_operator_call_instantiation_job_pool_arg}
                 COMMENT "Compiling ${_name}.cc with CoreX clang++"
                 VERBATIM
             )
