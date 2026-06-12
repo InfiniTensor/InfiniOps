@@ -14,8 +14,10 @@ def _run_bash(script, *, env=None, check=True):
     if env:
         base_env.update(env)
 
+    # Use a non-login shell so host startup files cannot reintroduce real
+    # accelerator env vars into the mocked detection environment.
     return subprocess.run(
-        ["bash", "-lc", script],
+        ["bash", "-c", script],
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,

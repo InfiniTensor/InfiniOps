@@ -3,6 +3,7 @@ build/
 build-*/
 generated/
 reports/
+ci-results/
 
 # Prerequisites
 *.d
