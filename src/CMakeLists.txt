@@ -307,6 +307,30 @@ if(WITH_ASCEND)
     endif()
 endif()
 
+set(INFINIOPS_OPS "" CACHE STRING
+    "Semicolon- or comma-separated operator allowlist for generated wrappers and bindings")
+set(INFINIOPS_SMOKE_BUILD OFF CACHE BOOL
+    "Build only the smoke-test operator subset")
+set(_infiniops_smoke_ops
+    add mul cast cat gemm matmul linear rms_norm swiglu causal_softmax abs clamp exp)
+set(_infiniops_smoke_torch_ops abs clamp exp)
+
+if(INFINIOPS_SMOKE_BUILD)
+    if(NOT INFINIOPS_OPS)
+        set(INFINIOPS_OPS "${_infiniops_smoke_ops}" CACHE STRING
+            "Semicolon- or comma-separated operator allowlist for generated wrappers and bindings" FORCE)
+    endif()
+    if(NOT INFINIOPS_TORCH_OPS)
+        set(INFINIOPS_TORCH_OPS "${_infiniops_smoke_torch_ops}" CACHE STRING
+            "Semicolon-separated PyTorch op allowlist for generated torch wrappers" FORCE)
+    endif()
+endif()
+
+if(INFINIOPS_OPS)
+    string(REPLACE "," ";" _infiniops_op_allowlist "${INFINIOPS_OPS}")
+    message(STATUS "Wrapper op allowlist: ${_infiniops_op_allowlist}")
+endif()
+
 if(WITH_TORCH)
     # Auto-generate ATen-backed operator wrappers from `scripts/torch_ops.yaml`.
     # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
@@ -518,6 +542,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
+    if(INFINIOPS_OPS)
+        list(APPEND GENERATOR_ARGS --ops ${_infiniops_op_allowlist})
+    endif()
     if(WITH_TORCH)
         list(APPEND GENERATOR_ARGS --with-torch)
     endif()

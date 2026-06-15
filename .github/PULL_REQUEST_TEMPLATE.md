@@ -60,27 +60,41 @@ in the PR title and the branch name (see `CONTRIBUTING.md` §Branches). -->
 - [ ] Build system / CMake / CI
 - [ ] Python bindings / user-facing API
 
+## Smoke Test Result
+
+<!--
+Paste the smoke test command and trimmed output for every affected platform.
+Default PR validation is an affected-platform smoke build plus smoke test, e.g.
+`python -m pip install .[dev] --no-build-isolation --no-deps --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON`
+and `python -m pytest tests -m smoke -q`.
+-->
+
+```text
+paste smoke test output here
+```
+
 ## Test Results on Supported Platforms
 
 <!--
-Per `CONTRIBUTING.md` §Pull Requests, you MUST build and test on every
-supported platform touched by this PR (or explain why a platform is not
-reachable). Paste `pytest` output summaries below (a trimmed tail is fine —
-include pass/fail counts, skipped tests, and any warnings).
+Per `CONTRIBUTING.md` §Pull Requests, build and run the smoke test set on every
+affected platform. Use `smoke passed`, `full passed`, or `N/A - not affected` in
+the result columns. Run the full suite for high-risk changes, release prep,
+maintainer spot checks, or changes affecting shared build, dispatch, wrapper
+generation, or cross-platform behavior.
 
-If a platform was **not** tested, state the reason (e.g. "no hardware
-available"). Reviewers may block the PR until coverage is provided or an
-explicit owner signs off on a partial run.
+If an affected platform was not tested, state the reason and tag a reviewer or
+owner with access. Reviewers may request full-suite or full-platform validation
+when the risk profile justifies it.
 -->
 
-| Platform   | Built | `pytest` Result | Notes / Hardware |
-| ---------- | :---: | --------------- | ---------------- |
-| NVIDIA     |       |                 |                  |
-| Iluvatar   |       |                 |                  |
-| MetaX      |       |                 |                  |
-| Cambricon  |       |                 |                  |
-| Moore      |       |                 |                  |
-| Ascend     |       |                 |                  |
+| Platform   | Affected | Build / Smoke Result | Full Result / Notes |
+| ---------- | :------: | ------------------- | ------------------- |
+| NVIDIA     |          |                     |                     |
+| Iluvatar   |          |                     |                     |
+| MetaX      |          |                     |                     |
+| Cambricon  |          |                     |                     |
+| Moore      |          |                     |                     |
+| Ascend     |          |                     |                     |
 
 <details>
 <summary>Full `pytest` output (optional)</summary>
@@ -171,8 +185,9 @@ follow-up work intentionally left out of scope, etc.
 
 ### Testing
 
-- [ ] `pytest` was run locally on **every supported platform** that this PR can affect, and the results are recorded in the "Test Results" table above (`CONTRIBUTING.md` §Pull Requests).
-- [ ] For any platform that could not be tested, an explicit reason is given in the table and a reviewer with access has been tagged.
+- [ ] Smoke tests were run on every affected platform, and the results are recorded in the "Smoke Test Result" and platform table above (`CONTRIBUTING.md` §Pull Requests).
+- [ ] Platforms that are not affected are marked `N/A - not affected`; any affected platform that could not be tested has an explicit reason and a reviewer or owner with access tagged.
+- [ ] Full-suite or full-platform testing was run, or explicitly deferred, for high-risk changes and shared build/dispatch/wrapper-generation changes.
 - [ ] New functionality has matching tests under `tests/` following `tests/test_add.py` / `tests/test_gemm.py` patterns (`CONTRIBUTING.md` §Adding an Operator).
 - [ ] Tests use `pytest.mark.parametrize` correctly: dependent parameters share one decorator (e.g. `@pytest.mark.parametrize("dtype, rtol, atol", …)`), independent parameters use separate decorators ordered by parameter declaration.
 - [ ] Where appropriate, `pytest.mark.auto_act_and_assert` is used and the test returns a `Payload` whose `func` and `ref` share the same calling convention.

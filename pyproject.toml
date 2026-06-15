@@ -24,3 +24,6 @@ CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "smoke: minimal representative tests for routine development and PR validation",
+]

@@ -121,3 +121,37 @@ class Mul {
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
     ) in text
     assert 'py::arg("implementation_index") = py::none()' in text
+
+
+def test_normalize_op_allowlist_accepts_spaces_and_commas():
+    module = _load_generator_module()
+
+    assert module._normalize_op_allowlist(["add,mul", " cast ", "", "gemm"]) == [
+        "add",
+        "mul",
+        "cast",
+        "gemm",
+    ]
+
+
+def test_filter_ops_preserves_allowlist_order_and_skips_unavailable_ops():
+    module = _load_generator_module()
+    ops = {"add": ["add_impl"], "mul": ["mul_impl"], "gemm": ["gemm_impl"]}
+
+    assert module._filter_ops(ops, ["gemm", "add"]) == {
+        "gemm": ["gemm_impl"],
+        "add": ["add_impl"],
+    }
+    assert module._filter_ops(ops, ["add", "missing"]) == {"add": ["add_impl"]}
+
+
+def test_filter_ops_strict_rejects_unavailable_ops():
+    module = _load_generator_module()
+    ops = {"add": ["add_impl"]}
+
+    try:
+        module._filter_ops(ops, ["add", "missing"], strict=True)
+    except ValueError as exc:
+        assert "missing" in str(exc)
+    else:
+        raise AssertionError("strict unknown ops should fail")
