@@ -151,6 +151,275 @@ _PLATFORM_TO_TORCH_DEVICE = {
 }
 
 
+_SMOKE_STATIC_TEST_MODULES = {
+    "tests/test_cpp_api.py",
+    "tests/test_generate_ninetoothed_ops.py",
+    "tests/test_generate_torch_ops.py",
+    "tests/test_generate_wrappers.py",
+}
+
+_SMOKE_TORCH_OPS = {"abs", "clamp", "exp"}
+
+
+def pytest_itemcollected(item):
+    if _is_smoke_item(item):
+        item.add_marker("smoke")
+
+
+def _is_smoke_item(item):
+    module_path = _module_path_from_item(item)
+
+    if module_path in _SMOKE_STATIC_TEST_MODULES:
+        return True
+
+    params = _callspec_params(item)
+
+    if not params:
+        return False
+
+    matchers = {
+        "tests/test_add.py": _is_smoke_add_case,
+        "tests/test_cast.py": _is_smoke_cast_case,
+        "tests/test_cat.py": _is_smoke_cat_case,
+        "tests/test_causal_softmax.py": _is_smoke_causal_softmax_case,
+        "tests/test_gemm.py": _is_smoke_gemm_case,
+        "tests/test_linear.py": _is_smoke_linear_case,
+        "tests/test_matmul.py": _is_smoke_matmul_case,
+        "tests/test_mul.py": _is_smoke_mul_case,
+        "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
+        "tests/test_swiglu.py": _is_smoke_swiglu_case,
+        "tests/test_torch_ops.py": _is_smoke_torch_op_case,
+    }
+    matcher = matchers.get(module_path)
+
+    return matcher(params) if matcher else False
+
+
+def _callspec_params(item):
+    callspec = getattr(item, "callspec", None)
+
+    return getattr(callspec, "params", {})
+
+
+def _module_path_from_item(item):
+    module = getattr(item, "module", None)
+
+    if module is None:
+        return ""
+
+    return f"{module.__name__.replace('.', '/')}.py"
+
+
+def _shape_case(params, *names):
+    return tuple(params.get(name) for name in names)
+
+
+def _is_float32(params, name="dtype"):
+    return params.get(name) == torch.float32
+
+
+def _is_smoke_add_case(params):
+    cases = {
+        ((13, 4), None, None, None),
+        ((13, 4), (10, 1), (10, 1), (10, 1)),
+        ((13, 4), (0, 1), None, None),
+    }
+
+    return (
+        _is_float32(params)
+        and _shape_case(
+            params,
+            "shape",
+            "input_strides",
+            "other_strides",
+            "out_strides",
+        )
+        in cases
+    )
+
+
+def _is_smoke_mul_case(params):
+    cases = {
+        ((13, 4), None, None, None),
+        ((13, 4), (10, 1), (10, 1), (10, 1)),
+    }
+
+    return (
+        _is_float32(params)
+        and _shape_case(
+            params,
+            "shape",
+            "input_strides",
+            "other_strides",
+            "out_strides",
+        )
+        in cases
+    )
+
+
+def _is_smoke_cast_case(params):
+    cases = {
+        ((13, 4), None, None, torch.float16, torch.float32),
+        ((13, 4), (10, 1), (10, 1), torch.float32, torch.float16),
+    }
+
+    return (
+        _shape_case(
+            params,
+            "shape",
+            "input_strides",
+            "out_strides",
+            "input_dtype",
+            "out_dtype",
+        )
+        in cases
+    )
+
+
+def _is_smoke_cat_case(params):
+    cases = {
+        (((4, 64), (4, 64)), 0, (8, 64)),
+        (((4, 32), (4, 64)), -1, (4, 96)),
+    }
+
+    return (
+        _is_float32(params)
+        and _shape_case(
+            params,
+            "shapes",
+            "dim",
+            "out_shape",
+        )
+        in cases
+    )
+
+
+def _is_smoke_gemm_case(params):
+    cases = {
+        ((1, 2048), (2048, 2048), (1, 2048), None, None, None, 1, 1),
+        ((4, 48, 64), (4, 64, 6), (4, 48, 6), None, None, None, 1, 0),
+    }
+
+    return (
+        _is_float32(params)
+        and params.get("trans_a") is False
+        and params.get("trans_b") is False
+        and _shape_case(
+            params,
+            "a_shape",
+            "b_shape",
+            "c_shape",
+            "a_strides",
+            "b_strides",
+            "c_strides",
+            "alpha",
+            "beta",
+        )
+        in cases
+    )
+
+
+def _is_smoke_matmul_case(params):
+    cases = {
+        ((4, 64), (64, 32), (4, 32)),
+        ((2, 4, 64), (2, 64, 32), (2, 4, 32)),
+    }
+
+    return (
+        _is_float32(params)
+        and params.get("trans_a") is False
+        and params.get("trans_b") is False
+        and _shape_case(params, "a_shape", "b_shape", "c_shape") in cases
+    )
+
+
+def _is_smoke_linear_case(params):
+    cases = {
+        (((4, 64), (64, 32), (4, 32)), False),
+        (((2, 4, 64), (2, 64, 32), (2, 4, 32)), True),
+    }
+
+    return (
+        _is_float32(params)
+        and params.get("trans_a") is False
+        and params.get("trans_b") is False
+        and (
+            _shape_case(params, "a_shape", "b_shape", "out_shape"),
+            params.get("has_bias"),
+        )
+        in cases
+    )
+
+
+def _is_smoke_rms_norm_case(params):
+    cases = {
+        ((1, 64), (64,), None, None, None),
+        ((2, 4, 2048), (2048,), None, None, None),
+    }
+
+    return (
+        _is_float32(params)
+        and params.get("eps") == 1e-6
+        and _shape_case(
+            params,
+            "input_shape",
+            "weight_shape",
+            "input_strides",
+            "weight_strides",
+            "out_strides",
+        )
+        in cases
+    )
+
+
+def _is_smoke_swiglu_case(params):
+    cases = {
+        ((13, 4), None, None, None),
+        ((16, 5632), None, None, None),
+    }
+
+    return (
+        _is_float32(params)
+        and _shape_case(
+            params,
+            "shape",
+            "input_strides",
+            "gate_strides",
+            "out_strides",
+        )
+        in cases
+    )
+
+
+def _is_smoke_causal_softmax_case(params):
+    cases = {
+        ((3, 3), None, None),
+        ((32, 512), None, None),
+    }
+
+    return (
+        _is_float32(params)
+        and _shape_case(
+            params,
+            "shape",
+            "input_strides",
+            "out_strides",
+        )
+        in cases
+    )
+
+
+def _is_smoke_torch_op_case(params):
+    op_meta = params.get("op_meta")
+
+    return (
+        isinstance(op_meta, dict)
+        and op_meta.get("name") in _SMOKE_TORCH_OPS
+        and params.get("shape") == (13, 4)
+        and _is_float32(params)
+    )
+
+
 def _active_device_selectors_for_torch_device(config, torch_device):
     """Return platform or torch device names selected for a torch device type."""
 

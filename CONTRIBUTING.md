@@ -54,7 +54,7 @@ Commit messages must follow [Conventional Commits](https://www.conventionalcommi
 
 1. Small PRs should be squashed. Large PRs may keep multiple commits, but each commit must be meaningful and well-formed.
 2. PR titles follow the same Conventional Commits format as commit messages.
-3. Before merging (or after each stage of changes), build and test on all supported platforms. Include the results in PRs.
+3. Pull requests should include smoke build and smoke test evidence for each affected platform. Full-suite or full-platform validation is still expected for high-risk changes, release preparation, maintainer spot checks, and changes that affect shared build, dispatch, wrapper generation, or cross-platform behavior.
 
 ## Branches
 
@@ -84,9 +84,23 @@ Platform maintainers can add auto-detection in `CMakeLists.txt` under the `if(AU
 
 ## Testing
 
+Run the full test suite when you need exhaustive validation:
+
 ```bash
-pytest
+python -m pytest
 ```
+
+For routine development and pull requests, start with a smoke build plus the smoke test set on every affected platform:
+
+```bash
+python -m pip install .[dev] --no-build-isolation --no-deps \
+  --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+python -m pytest tests -m smoke -q
+```
+
+The smoke set is a small representative subset that covers binding/codegen smoke tests, elementwise/layout operators, shape/list operators, matrix paths, and fused/model operators. It is intended to keep the default PR validation loop short while still exercising the main runtime surfaces. The default `python -m pytest` command remains the full suite.
+
+The v1 timing target is NVIDIA smoke build plus smoke tests in under three minutes. `INFINIOPS_SMOKE_BUILD=ON` narrows generated wrappers, bindings, and generated Torch ops to the smoke subset. Advanced users can override the subsets with `INFINIOPS_OPS` for generated wrappers/bindings and `INFINIOPS_TORCH_OPS` for generated Torch backend ops; both accept comma- or semicolon-separated operator names. Use full builds and full suites for high-risk changes, release prep, maintainer spot checks, or changes affecting shared build, dispatch, wrapper generation, or cross-platform behavior.
 
 ## Adding an Operator
 
