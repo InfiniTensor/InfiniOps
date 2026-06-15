@@ -1154,6 +1154,35 @@ def _index_impl_headers(impl_roots, scan_dirs):
     return by_operator
 
 
+def _normalize_op_allowlist(raw_ops):
+    if not raw_ops:
+        return []
+
+    op_names = []
+
+    for item in raw_ops:
+        op_names.extend(name.strip() for name in item.split(","))
+
+    return [name for name in op_names if name]
+
+
+def _filter_ops(ops, op_allowlist, *, strict=False):
+    if not op_allowlist:
+        return ops
+
+    missing = [op_name for op_name in op_allowlist if op_name not in ops]
+
+    if missing:
+        message = "operator(s) not available for active devices: " + ", ".join(missing)
+
+        if strict:
+            raise ValueError(message)
+
+        print(f"warning: {message}")
+
+    return {op_name: ops[op_name] for op_name in op_allowlist if op_name in ops}
+
+
 def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
     scan_dirs = set(devices)
 
@@ -1286,6 +1315,18 @@ if __name__ == "__main__":
         action="store_true",
         help="Include NineToothed backend implementations.",
     )
+    parser.add_argument(
+        "--ops",
+        nargs="+",
+        default=[],
+        type=str,
+        help="Operator allowlist to generate. Accepts names separated by spaces or commas.",
+    )
+    parser.add_argument(
+        "--strict-ops",
+        action="store_true",
+        help="Fail if `--ops` contains operators unavailable for the active devices.",
+    )
 
     args = parser.parse_args()
 
@@ -1308,6 +1349,12 @@ if __name__ == "__main__":
             with_torch=args.with_torch,
             with_ninetoothed=args.with_ninetoothed,
         )
+
+    ops = _filter_ops(
+        ops,
+        _normalize_op_allowlist(args.ops),
+        strict=args.strict_ops,
+    )
 
     bind_func_names = []
 
