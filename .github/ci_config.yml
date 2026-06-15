@@ -15,7 +15,7 @@ platforms:
         BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
         SKIP_APT: "1"
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -30,7 +30,7 @@ platforms:
         #   MY_VAR: value
         stages:
           - name: test
-            run: pytest tests/ --devices nvidia -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
     runner_label: iluvatar
     execution_mode: agent_local
@@ -50,7 +50,7 @@ platforms:
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
-    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps
+    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -65,7 +65,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ --devices iluvatar -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
     runner_label: Metax
@@ -80,7 +80,7 @@ platforms:
       - "--privileged"
       - "--ulimit=memlock=-1"
       - "--ulimit=stack=67108864"
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -94,7 +94,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ --devices metax -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
     runner_label: Moore
@@ -107,7 +107,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -121,7 +121,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ --devices moore -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
     runner_label: Cambricon
@@ -133,7 +133,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -147,7 +147,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ --devices cambricon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   hygon:
     runner_label: Hygon
@@ -168,7 +168,7 @@ platforms:
       - "--group-add=video"
     volumes:
       - /opt/hyhal:/opt/hyhal:ro
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -182,7 +182,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ --devices hygon -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
     runner_label: Ascend
@@ -205,7 +205,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install .[dev] --no-build-isolation
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
     jobs:
       npu:
         type: unittest
@@ -219,4 +219,4 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ -n 1 --devices ascend -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
