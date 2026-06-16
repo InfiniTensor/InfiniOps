@@ -40,7 +40,7 @@ option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 
 set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")
 
-function(_infiniops_find_hygon_cuda_root out_var dtk_root)
+function(_infini_ops_find_hygon_cuda_root out_var dtk_root)
     set(_candidates
         "${dtk_root}/cuda"
         "${dtk_root}/cuda/cuda"
@@ -84,12 +84,12 @@ if(AUTO_DETECT_DEVICES)
 
     set(_hygon_detected FALSE)
     if(DEFINED ENV{DTK_ROOT} AND NOT "$ENV{DTK_ROOT}" STREQUAL "")
-        _infiniops_find_hygon_cuda_root(_HYGON_CUDA_DETECT_ROOT "$ENV{DTK_ROOT}")
+        _infini_ops_find_hygon_cuda_root(_HYGON_CUDA_DETECT_ROOT "$ENV{DTK_ROOT}")
         if(_HYGON_CUDA_DETECT_ROOT)
             set(_hygon_detected TRUE)
         endif()
     else()
-        _infiniops_find_hygon_cuda_root(_HYGON_CUDA_DETECT_ROOT "${_DEFAULT_HYGON_DTK_ROOT}")
+        _infini_ops_find_hygon_cuda_root(_HYGON_CUDA_DETECT_ROOT "${_DEFAULT_HYGON_DTK_ROOT}")
         if(_HYGON_CUDA_DETECT_ROOT)
             set(_hygon_detected TRUE)
         endif()
@@ -372,7 +372,7 @@ if(WITH_HYGON)
     endif()
 
     set(HYGON_ARCH "${_HYGON_ARCH_DEFAULT}" CACHE STRING "Hygon GPU architecture")
-    _infiniops_find_hygon_cuda_root(HYGON_CUDA_ROOT "${DTK_ROOT}")
+    _infini_ops_find_hygon_cuda_root(HYGON_CUDA_ROOT "${DTK_ROOT}")
 
     if(NOT HYGON_CUDA_ROOT)
         message(FATAL_ERROR "`WITH_HYGON` is `ON` but no DTK `nvcc` was found under `${DTK_ROOT}`. Checked `${DTK_ROOT}/cuda/bin/nvcc`, `${DTK_ROOT}/cuda/cuda/bin/nvcc`, and `${DTK_ROOT}/cuda/cuda-*/bin/nvcc`.")
