@@ -811,13 +811,13 @@ if(GENERATE_PYTHON_BINDINGS)
         target_link_libraries(ops PRIVATE
             -Wl,--whole-archive no_workspace_kernel -Wl,--no-whole-archive)
     endif()
-    set(_INFINIOPS_INSTALL_RPATH "$ORIGIN")
+    set(_INFINI_OPS_INSTALL_RPATH "$ORIGIN")
     if(WITH_TORCH)
-        list(APPEND _INFINIOPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
+        list(APPEND _INFINI_OPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
     endif()
 
-    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
-    set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
+    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
+    set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
 
     install(TARGETS infiniops ops DESTINATION .)
 
