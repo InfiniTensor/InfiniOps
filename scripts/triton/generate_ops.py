@@ -4,8 +4,20 @@ import pathlib
 import shutil
 import sys
 
-_PROJECT_DIR = pathlib.Path(__file__).resolve().parents[1]
+import aot
+
+_PROJECT_DIR = pathlib.Path(__file__).resolve().parents[2]
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
+
+_KERNEL_NAME = "kernel"
 _OPS_DIR = _PROJECT_DIR / "src" / "triton" / "ops"
+
+
+def _prepend_sys_path(path):
+    path = str(path)
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 
 def _find_op_modules():
@@ -31,10 +43,12 @@ def _write_cmake_manifest(output_dir, sources):
     manifest_path.write_text("\n".join(lines) + "\n")
 
 
-def _load_op_module(op):
-    path = _find_op_modules()[op]
-    sys.path.insert(0, str(path.parent))
-    spec = importlib.util.spec_from_file_location(path.stem, path)
+def _load_op_module(path):
+    _prepend_sys_path(path.parent)
+    spec = importlib.util.spec_from_file_location(
+        f"infiniops_triton_{path.parent.name}_build",
+        path,
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -55,8 +69,29 @@ def generate(ops, *, output_dir):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for op in ops:
-        module = _load_op_module(op)
-        module.build(output_dir)
+        path = op_modules[op]
+        kernel_path = path.parent / f"{op}.py"
+        module = _load_op_module(path)
+        kernel_args = aot.kernel_args(kernel_path, _KERNEL_NAME)
+        headers = []
+        dispatch_configs = []
+        for configs in module.configs():
+            out_base = aot.build(
+                configs,
+                path=kernel_path,
+                kernel_name=_KERNEL_NAME,
+                out_dir=output_dir / op,
+                kernel_args=kernel_args,
+            )
+            headers.append(out_base.with_suffix(".h"))
+            dispatch_configs.append(configs[0])
+        aot.write_header(
+            headers,
+            output_dir / op / f"infini_ops_triton_{op}.h",
+            op_name=op,
+            configs=dispatch_configs,
+            kernel_args=kernel_args,
+        )
 
     sources = _build_manifest(output_dir)
     _write_cmake_manifest(output_dir, sources)

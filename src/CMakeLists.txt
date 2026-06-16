@@ -130,7 +130,7 @@ if(WITH_TRITON)
 
     set(_triton_output_dir "${CMAKE_CURRENT_BINARY_DIR}/triton")
     set(_triton_generator_args
-        "${PROJECT_SOURCE_DIR}/scripts/generate_triton_ops.py"
+        "${PROJECT_SOURCE_DIR}/scripts/triton/generate_ops.py"
         --output-dir "${_triton_output_dir}")
 
     execute_process(
