@@ -51,12 +51,9 @@ class Operator<Add, Device::Type::kNvidia, 8> : public Add {
     int32_t out_contig = static_cast<int32_t>(is_out_contiguous_);
 
     auto result = launch_infini_ops_triton_add(
-        out.dtype(), stream, x, y, o,
-        d_meta + 0 * stride_bytes,
-        d_meta + 1 * stride_bytes,
-        d_meta + 2 * stride_bytes,
-        d_meta + 3 * stride_bytes,
-        x_contig, y_contig, out_contig, ndim_val, n);
+        out.dtype(), stream, x, y, o, d_meta + 0 * stride_bytes,
+        d_meta + 1 * stride_bytes, d_meta + 2 * stride_bytes,
+        d_meta + 3 * stride_bytes, x_contig, y_contig, out_contig, ndim_val, n);
 
     cuMemFree(d_meta);
 
