@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import clone_strided, empty_strided, get_stream, randn_strided
+from tests.utils import clone_strided, get_stream, randn_strided
 
 
 @pytest.mark.parametrize(

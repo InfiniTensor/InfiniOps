@@ -1453,11 +1453,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--pytorch-version",
-        default=os.environ.get("INFINIOPS_PYTORCH_VERSION", _DEFAULT_PYTORCH_VERSION),
+        default=os.environ.get("INFINI_OPS_PYTORCH_VERSION", _DEFAULT_PYTORCH_VERSION),
         help=(
             "PyTorch version label used in diagnostics. Schemas are read from "
             "the locally installed `torchgen` package. Default: `%(default)s`. "
-            "Can also be set via the `INFINIOPS_PYTORCH_VERSION` environment "
+            "Can also be set via the `INFINI_OPS_PYTORCH_VERSION` environment "
             "variable."
         ),
     )

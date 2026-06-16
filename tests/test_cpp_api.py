@@ -32,12 +32,12 @@ def test_cpp_operator_call_instantiation_smoke(tmp_path):
 
 
 def _install_prefix():
-    prefix = os.environ.get("INFINIOPS_INSTALL_PREFIX")
+    prefix = os.environ.get("INFINI_OPS_INSTALL_PREFIX")
 
     if prefix:
         return Path(prefix)
 
-    pytest.skip("`INFINIOPS_INSTALL_PREFIX` is not set.")
+    pytest.skip("`INFINI_OPS_INSTALL_PREFIX` is not set.")
 
 
 def _library_dir(prefix):

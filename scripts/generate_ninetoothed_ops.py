@@ -26,11 +26,11 @@ def _build_manifest(output_dir):
 
 def _write_cmake_manifest(output_dir, sources):
     manifest_path = pathlib.Path(output_dir) / "manifest.cmake"
-    lines = ["set(INFINIOPS_NINETOOTHED_SOURCES"]
+    lines = ["set(INFINI_OPS_NINETOOTHED_SOURCES"]
     lines.extend(f'    "{source}"' for source in sources)
     lines.append(")")
     lines.append("")
-    lines.append(f'set(INFINIOPS_NINETOOTHED_INCLUDE_DIRS "{output_dir}")')
+    lines.append(f'set(INFINI_OPS_NINETOOTHED_INCLUDE_DIRS "{output_dir}")')
     lines.append("")
     manifest_path.write_text("\n".join(lines) + "\n")
 

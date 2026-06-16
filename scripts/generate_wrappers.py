@@ -1265,7 +1265,7 @@ def _generate_op_artifacts(item):
 
 
 def _wrapper_gen_jobs(with_torch):
-    raw = os.environ.get("INFINIOPS_WRAPPER_GEN_JOBS")
+    raw = os.environ.get("INFINI_OPS_WRAPPER_GEN_JOBS")
 
     if raw:
         try:
@@ -1277,13 +1277,13 @@ def _wrapper_gen_jobs(with_torch):
 
 
 def _use_monolithic_bindings():
-    value = os.environ.get("INFINIOPS_MONOLITHIC_BINDINGS", "")
+    value = os.environ.get("INFINI_OPS_MONOLITHIC_BINDINGS", "")
 
     return value.upper() in {"1", "ON", "TRUE"}
 
 
 def _dispatch_gen_batch_size():
-    raw = os.environ.get("INFINIOPS_DISPATCH_BATCH_SIZE")
+    raw = os.environ.get("INFINI_OPS_DISPATCH_BATCH_SIZE")
 
     if raw:
         try:
@@ -1458,7 +1458,7 @@ if __name__ == "__main__":
         op_includes = "\n".join(op_includes)
         ops_source = f"""#include <pybind11/pybind11.h>
 
-// Generated with `INFINIOPS_MONOLITHIC_BINDINGS=1`.
+// Generated with `INFINI_OPS_MONOLITHIC_BINDINGS=1`.
 {op_includes}
 
 namespace infini::ops {{
