@@ -65,7 +65,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke --devices iluvatar -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
     runner_label: Metax
@@ -219,4 +219,4 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: pytest tests/ -m smoke --devices ascend -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
