@@ -64,7 +64,7 @@ in the PR title and the branch name (see `CONTRIBUTING.md` §Branches). -->
 <!--
 Paste the smoke test command and trimmed output for every affected platform.
 Default PR validation is an affected-platform smoke build plus smoke test, e.g.
-`python -m pip install .[dev] --no-build-isolation --no-deps --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON`
+`python -m pip install .[dev] --no-build-isolation --no-deps --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON`
 and `python -m pytest tests -m smoke -q`.
 -->
 

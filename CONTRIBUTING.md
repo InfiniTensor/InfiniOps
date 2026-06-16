@@ -94,13 +94,13 @@ For routine development and pull requests, start with a smoke build plus the smo
 
 ```bash
 python -m pip install .[dev] --no-build-isolation --no-deps \
-  --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+  --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
 python -m pytest tests -m smoke -q
 ```
 
 The smoke set is a small representative subset that covers binding/codegen smoke tests, elementwise/layout operators, shape/list operators, matrix paths, and fused/model operators. It is intended to keep the default PR validation loop short while still exercising the main runtime surfaces. The default `python -m pytest` command remains the full suite.
 
-The v1 timing target is NVIDIA smoke build plus smoke tests in under three minutes. `INFINIOPS_SMOKE_BUILD=ON` narrows generated wrappers, bindings, and generated Torch ops to the smoke subset. Advanced users can override the subsets with `INFINIOPS_OPS` for generated wrappers/bindings and `INFINIOPS_TORCH_OPS` for generated Torch backend ops; both accept comma- or semicolon-separated operator names. Use full builds and full suites for high-risk changes, release prep, maintainer spot checks, or changes affecting shared build, dispatch, wrapper generation, or cross-platform behavior.
+The v1 timing target is NVIDIA smoke build plus smoke tests in under three minutes. `INFINI_OPS_SMOKE_BUILD=ON` narrows generated wrappers, bindings, and generated Torch ops to the smoke subset. Advanced users can override the subsets with `INFINI_OPS_OPS` for generated wrappers/bindings and `INFINI_OPS_TORCH_OPS` for generated Torch backend ops; both accept comma- or semicolon-separated operator names. Use full builds and full suites for high-risk changes, release prep, maintainer spot checks, or changes affecting shared build, dispatch, wrapper generation, or cross-platform behavior.
 
 ## Adding an Operator
 

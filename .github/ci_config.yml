@@ -15,7 +15,7 @@ platforms:
         BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
         SKIP_APT: "1"
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -50,7 +50,7 @@ platforms:
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
-    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -80,7 +80,7 @@ platforms:
       - "--privileged"
       - "--ulimit=memlock=-1"
       - "--ulimit=stack=67108864"
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -107,7 +107,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -133,7 +133,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -168,7 +168,7 @@ platforms:
       - "--group-add=video"
     volumes:
       - /opt/hyhal:/opt/hyhal:ro
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       gpu:
         type: unittest
@@ -205,7 +205,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINIOPS_SMOKE_BUILD=ON
+    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
     jobs:
       npu:
         type: unittest

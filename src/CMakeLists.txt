@@ -80,8 +80,8 @@ if(WITH_NINETOOTHED)
 
     include("${_ninetoothed_output_dir}/manifest.cmake")
     target_include_directories(infiniops PRIVATE
-        ${INFINIOPS_NINETOOTHED_INCLUDE_DIRS})
-    target_sources(infiniops PRIVATE ${INFINIOPS_NINETOOTHED_SOURCES})
+        ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
+    target_sources(infiniops PRIVATE ${INFINI_OPS_NINETOOTHED_SOURCES})
 endif()
 
 if(WITH_ILUVATAR)
@@ -307,27 +307,27 @@ if(WITH_ASCEND)
     endif()
 endif()
 
-set(INFINIOPS_OPS "" CACHE STRING
+set(INFINI_OPS_OPS "" CACHE STRING
     "Semicolon- or comma-separated operator allowlist for generated wrappers and bindings")
-set(INFINIOPS_SMOKE_BUILD OFF CACHE BOOL
+set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infiniops_smoke_ops
     add mul cast cat gemm matmul linear rms_norm swiglu causal_softmax abs clamp exp)
 set(_infiniops_smoke_torch_ops abs clamp exp)
 
-if(INFINIOPS_SMOKE_BUILD)
-    if(NOT INFINIOPS_OPS)
-        set(INFINIOPS_OPS "${_infiniops_smoke_ops}" CACHE STRING
+if(INFINI_OPS_SMOKE_BUILD)
+    if(NOT INFINI_OPS_OPS)
+        set(INFINI_OPS_OPS "${_infiniops_smoke_ops}" CACHE STRING
             "Semicolon- or comma-separated operator allowlist for generated wrappers and bindings" FORCE)
     endif()
-    if(NOT INFINIOPS_TORCH_OPS)
-        set(INFINIOPS_TORCH_OPS "${_infiniops_smoke_torch_ops}" CACHE STRING
+    if(NOT INFINI_OPS_TORCH_OPS)
+        set(INFINI_OPS_TORCH_OPS "${_infiniops_smoke_torch_ops}" CACHE STRING
             "Semicolon-separated PyTorch op allowlist for generated torch wrappers" FORCE)
     endif()
 endif()
 
-if(INFINIOPS_OPS)
-    string(REPLACE "," ";" _infiniops_op_allowlist "${INFINIOPS_OPS}")
+if(INFINI_OPS_OPS)
+    string(REPLACE "," ";" _infiniops_op_allowlist "${INFINI_OPS_OPS}")
     message(STATUS "Wrapper op allowlist: ${_infiniops_op_allowlist}")
 endif()
 
@@ -355,13 +355,13 @@ if(WITH_TORCH)
     endif()
     message(STATUS "Codegen schema: PyTorch ${_torch_version_tag}")
 
-    set(INFINIOPS_TORCH_OPS "" CACHE STRING
+    set(INFINI_OPS_TORCH_OPS "" CACHE STRING
         "Semicolon-separated PyTorch op allowlist for generated torch wrappers")
     set(_torch_codegen_args
         ${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py
         --pytorch-version ${_torch_version_tag})
-    if(INFINIOPS_TORCH_OPS)
-        string(REPLACE "," ";" _torch_op_allowlist "${INFINIOPS_TORCH_OPS}")
+    if(INFINI_OPS_TORCH_OPS)
+        string(REPLACE "," ";" _torch_op_allowlist "${INFINI_OPS_TORCH_OPS}")
         list(APPEND _torch_codegen_args --ops ${_torch_op_allowlist})
         message(STATUS "Codegen torch op allowlist: ${_torch_op_allowlist}")
     endif()
@@ -382,10 +382,10 @@ if(WITH_TORCH)
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
 
-    set(INFINIOPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
+    set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
     set(TORCH_COMPILE_SOURCES ${TORCH_SOURCES})
-    if(INFINIOPS_TORCH_UNITY_BATCH_SIZE GREATER 1)
+    if(INFINI_OPS_TORCH_UNITY_BATCH_SIZE GREATER 1)
         set(_torch_unity_dir "${CMAKE_CURRENT_BINARY_DIR}/torch_unity")
         file(REMOVE_RECURSE "${_torch_unity_dir}")
         file(MAKE_DIRECTORY "${_torch_unity_dir}")
@@ -405,7 +405,7 @@ if(WITH_TORCH)
             file(APPEND "${_torch_unity_src}" "#include \"${_src}\"\n")
 
             math(EXPR _torch_unity_count "${_torch_unity_count} + 1")
-            if(_torch_unity_count GREATER_EQUAL INFINIOPS_TORCH_UNITY_BATCH_SIZE)
+            if(_torch_unity_count GREATER_EQUAL INFINI_OPS_TORCH_UNITY_BATCH_SIZE)
                 math(EXPR _torch_unity_index "${_torch_unity_index} + 1")
                 set(_torch_unity_count 0)
             endif()
@@ -432,11 +432,11 @@ if(WITH_TORCH)
     # `cc1plus`.  Cap the heavyweight torch sources via a Ninja job pool;
     # the rest of the build keeps full parallelism.  CI can raise this when
     # the container has enough memory.
-    set(INFINIOPS_TORCH_COMPILE_JOBS "2" CACHE STRING
+    set(INFINI_OPS_TORCH_COMPILE_JOBS "2" CACHE STRING
         "Maximum concurrent generated torch source compilations")
     if(CMAKE_GENERATOR MATCHES "Ninja")
         set_property(GLOBAL APPEND PROPERTY JOB_POOLS
-            torch_compile=${INFINIOPS_TORCH_COMPILE_JOBS})
+            torch_compile=${INFINI_OPS_TORCH_COMPILE_JOBS})
     endif()
 
     if(WITH_METAX OR WITH_MOORE)
@@ -542,7 +542,7 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
-    if(INFINIOPS_OPS)
+    if(INFINI_OPS_OPS)
         list(APPEND GENERATOR_ARGS --ops ${_infiniops_op_allowlist})
     endif()
     if(WITH_TORCH)
@@ -648,9 +648,9 @@ if(GENERATE_PYTHON_BINDINGS)
 
     set(PYBIND11_COMPILE_SOURCES ${PYBIND11_UNITY_SOURCES})
     if(WITH_TORCH)
-        set(INFINIOPS_BINDING_UNITY_BATCH_SIZE "8" CACHE STRING
+        set(INFINI_OPS_BINDING_UNITY_BATCH_SIZE "8" CACHE STRING
             "Number of generated pybind11 sources to include in each unity translation unit; set to 1 to disable")
-        if(INFINIOPS_BINDING_UNITY_BATCH_SIZE GREATER 1)
+        if(INFINI_OPS_BINDING_UNITY_BATCH_SIZE GREATER 1)
             set(_binding_unity_dir "${CMAKE_CURRENT_BINARY_DIR}/binding_unity")
             file(REMOVE_RECURSE "${_binding_unity_dir}")
             file(MAKE_DIRECTORY "${_binding_unity_dir}")
@@ -670,7 +670,7 @@ if(GENERATE_PYTHON_BINDINGS)
                 file(APPEND "${_binding_unity_src}" "#include \"${_src}\"\n")
 
                 math(EXPR _binding_unity_count "${_binding_unity_count} + 1")
-                if(_binding_unity_count GREATER_EQUAL INFINIOPS_BINDING_UNITY_BATCH_SIZE)
+                if(_binding_unity_count GREATER_EQUAL INFINI_OPS_BINDING_UNITY_BATCH_SIZE)
                     math(EXPR _binding_unity_index "${_binding_unity_index} + 1")
                     set(_binding_unity_count 0)
                 endif()
@@ -761,10 +761,10 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
 
     if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")
-        set(INFINIOPS_BINDING_COMPILE_JOBS "2" CACHE STRING
+        set(INFINI_OPS_BINDING_COMPILE_JOBS "2" CACHE STRING
             "Maximum concurrent generated pybind11 binding compilations")
         set_property(GLOBAL APPEND PROPERTY JOB_POOLS
-            binding_compile=${INFINIOPS_BINDING_COMPILE_JOBS})
+            binding_compile=${INFINI_OPS_BINDING_COMPILE_JOBS})
         set_property(TARGET ops PROPERTY JOB_POOL_COMPILE binding_compile)
     endif()
 
@@ -789,7 +789,7 @@ if(GENERATE_PYTHON_BINDINGS)
     )
     if(WITH_NINETOOTHED)
         target_include_directories(ops PRIVATE
-            ${INFINIOPS_NINETOOTHED_INCLUDE_DIRS})
+            ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
     target_link_libraries(ops PRIVATE infiniops)
 
@@ -811,13 +811,13 @@ if(GENERATE_PYTHON_BINDINGS)
         target_link_libraries(ops PRIVATE
             -Wl,--whole-archive no_workspace_kernel -Wl,--no-whole-archive)
     endif()
-    set(_INFINIOPS_INSTALL_RPATH "$ORIGIN")
+    set(_INFINI_OPS_INSTALL_RPATH "$ORIGIN")
     if(WITH_TORCH)
-        list(APPEND _INFINIOPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
+        list(APPEND _INFINI_OPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
     endif()
 
-    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
-    set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINIOPS_INSTALL_RPATH}")
+    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
+    set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
 
     install(TARGETS infiniops ops DESTINATION .)
 
@@ -849,10 +849,10 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     )
 endif()
 
-file(GLOB INFINIOPS_PUBLIC_CORE_HEADERS CONFIGURE_DEPENDS
+file(GLOB INFINI_OPS_PUBLIC_CORE_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
 
-install(FILES ${INFINIOPS_PUBLIC_CORE_HEADERS}
+install(FILES ${INFINI_OPS_PUBLIC_CORE_HEADERS}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
