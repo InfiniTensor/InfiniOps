@@ -502,6 +502,16 @@ if(WITH_HYGON AND NOT EXISTS "${DTK_ROOT}/llvm/lib/LLVMgold.so")
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 
+set(INFINIRT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../InfiniRT" CACHE PATH "InfiniRT source directory")
+if(NOT EXISTS "${INFINIRT_SOURCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "InfiniRT not found at `${INFINIRT_SOURCE_DIR}`. "
+        "Set `INFINIRT_SOURCE_DIR` to the InfiniRT source directory.")
+endif()
+if(NOT TARGET infinirt)
+    add_subdirectory("${INFINIRT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/InfiniRT")
+endif()
+
 add_subdirectory(src)
 
 if(NOT GENERATE_PYTHON_BINDINGS)

@@ -1,13 +1,6 @@
 #ifndef INFINI_OPS_ILUVATAR_DEVICE__H_
 #define INFINI_OPS_ILUVATAR_DEVICE__H_
 
-#include "device.h"
-
-namespace infini::ops {
-
-template <>
-struct DeviceEnabled<Device::Type::kIluvatar> : std::true_type {};
-
-}  // namespace infini::ops
+#include "infini_rt/iluvatar/device_.h"
 
 #endif

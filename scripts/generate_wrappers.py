@@ -192,7 +192,7 @@ class _OperatorExtractor:
             "src",
             "-I",
             str(_GENERATION_DIR),
-        ) + _get_system_include_flags()
+        ) + _get_infinirt_include_flags() + _get_system_include_flags()
         translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
@@ -405,6 +405,19 @@ def _find_vector_int64_params(op_name):
     source = _find_base_header(op_name).read_text()
 
     return set(re.findall(r"std::vector<int64_t>\s+(\w+)", source))
+
+
+def _find_tensor_params(op_name):
+    source = _find_base_header(op_name).read_text()
+
+    params = set()
+    params.update(
+        re.findall(r"(?:^|[,(]\s*)(?:const\s+)?Tensor\s+(\w+)", source)
+    )
+    params.update(_find_optional_tensor_params(op_name))
+    params.update(_find_vector_tensor_params(op_name))
+
+    return params
 
 
 def _generate_pybind11(operator):
@@ -840,6 +853,7 @@ __C __export {_generate_destroy_func_decl(operator)};
 def _generate_generated_dispatch_entries(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
+    tensor_params = _find_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
 
@@ -863,6 +877,15 @@ def _generate_generated_dispatch_entries(operator):
     def _is_vector_int64(arg):
         return arg.spelling in vector_int64_params
 
+    def _is_tensor(arg):
+        if arg.spelling in optional_non_tensor_params:
+            return False
+
+        if arg.spelling in tensor_params:
+            return True
+
+        return "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling
+
     def _generate_params(node):
         parts = []
 
@@ -876,6 +899,8 @@ def _generate_generated_dispatch_entries(operator):
                 parts.append(f"std::vector<Tensor> {arg.spelling}")
             elif _is_vector_int64(arg):
                 parts.append(f"std::vector<int64_t> {arg.spelling}")
+            elif _is_tensor(arg):
+                parts.append(f"Tensor {arg.spelling}")
             else:
                 parts.append(f"{arg.type.spelling} {arg.spelling}")
 
@@ -1032,16 +1057,71 @@ def _strip_top_level_const(type_spelling):
 
 
 def _generate_operator_call_instantiation_entries(operator):
+    optional_tensor_params = _find_optional_tensor_params(operator.name)
+    optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
+    tensor_params = _find_tensor_params(operator.name)
+    vector_tensor_params = _find_vector_tensor_params(operator.name)
+    vector_int64_params = _find_vector_int64_params(operator.name)
+
+    def _is_optional_tensor(arg):
+        spelling = arg.type.spelling
+
+        if "std::optional" in spelling:
+            return "Tensor" in spelling or "TensorView" in spelling
+
+        if arg.spelling in optional_non_tensor_params:
+            return False
+
+        if arg.spelling in optional_tensor_params:
+            return True
+
+        return False
+
+    def _is_vector_tensor(arg):
+        if arg.spelling in vector_tensor_params:
+            return True
+
+        return "std::vector" in arg.type.spelling and (
+            "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling
+        )
+
+    def _is_vector_int64(arg):
+        return arg.spelling in vector_int64_params
+
+    def _is_tensor(arg):
+        if arg.spelling in optional_non_tensor_params:
+            return False
+
+        if arg.spelling in tensor_params:
+            return True
+
+        return "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling
+
+    def _normalized_type(arg):
+        if _is_optional_tensor(arg):
+            return "std::optional<Tensor>"
+
+        if _is_vector_tensor(arg):
+            return "std::vector<Tensor>"
+
+        if _is_vector_int64(arg):
+            return "std::vector<int64_t>"
+
+        if _is_tensor(arg):
+            return "Tensor"
+
+        return _strip_top_level_const(arg.type.spelling)
+
     def _generate_template_arguments(node):
         return ", ".join(
-            _strip_top_level_const(arg.type.spelling)
+            _normalized_type(arg)
             for arg in node.get_arguments()
             if arg.spelling != "stream"
         )
 
     def _generate_parameters(node):
         return ", ".join(
-            f"const {_strip_top_level_const(arg.type.spelling)}& {arg.spelling}"
+            f"const {_normalized_type(arg)}& {arg.spelling}"
             for arg in node.get_arguments()
             if arg.spelling != "stream"
         )
@@ -1153,7 +1233,7 @@ namespace infini::ops {{
 
 def _device_marker_headers(devices):
     paths = {
-        "cpu": "native/cpu/device_.h",
+        "cpu": "infini_rt/cpu/device_.h",
         "nvidia": "native/cuda/nvidia/device_.h",
         "cambricon": "native/cambricon/device_.h",
         "ascend": "native/ascend/device_.h",

@@ -1,4 +1,5 @@
-add_library(infiniops SHARED)
+add_library(infiniops SHARED operator.h)
+set_target_properties(infiniops PROPERTIES LINKER_LANGUAGE CXX)
 
 function(_infini_ops_write_if_different path content)
     set(_should_write TRUE)
@@ -35,7 +36,10 @@ endfunction()
 include(GNUInstallDirs)
 
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
+list(FILTER BASE_SRCS EXCLUDE REGEX ".*tensor\\.cc$")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
+
+target_link_libraries(infiniops PUBLIC infinirt)
 
 set(DEVICE_LIST "")
 
@@ -46,7 +50,7 @@ if(WITH_CPU)
     )
 
     file(GLOB_RECURSE CPU_SOURCES CONFIGURE_DEPENDS ${CPU_PATTERNS})
-    list(APPEND CORE_SOURCES ${CPU_SOURCES})
+    target_sources(infiniops PRIVATE ${CPU_SOURCES})
 
     target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
@@ -597,7 +601,11 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     endif()
 
     execute_process(
-        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py ${GENERATOR_ARGS}
+        COMMAND ${CMAKE_COMMAND} -E env
+                INFINIRT_SOURCE_DIR=${INFINIRT_SOURCE_DIR}
+                ${Python_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py
+                ${GENERATOR_ARGS}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )
@@ -937,7 +945,7 @@ if(GENERATE_PYTHON_BINDINGS)
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
     set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
 
-    install(TARGETS infiniops ops DESTINATION .)
+    install(TARGETS infinirt infiniops ops DESTINATION .)
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)
