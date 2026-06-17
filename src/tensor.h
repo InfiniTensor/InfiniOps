@@ -1,7 +1,7 @@
 #ifndef INFINI_OPS_TENSOR_H_
 #define INFINI_OPS_TENSOR_H_
 
-#include "infini_rt/tensor_view.h"
+#include <infini/rt.h>
 
 namespace infini::ops {
 

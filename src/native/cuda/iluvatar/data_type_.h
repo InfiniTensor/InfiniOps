@@ -1,7 +1,7 @@
 #ifndef INFINI_OPS_ILUVATAR_DATA_TYPE__H_
 #define INFINI_OPS_ILUVATAR_DATA_TYPE__H_
 
-#include "infini_rt/iluvatar/data_type_.h"
+#include <infini/rt/iluvatar/data_type_.h>
 
 namespace infini::ops {
 

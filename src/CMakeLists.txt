@@ -602,7 +602,7 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
-                INFINIRT_SOURCE_DIR=${INFINIRT_SOURCE_DIR}
+                INFINI_RT_SOURCE_DIR=${INFINI_RT_SOURCE_DIR}
                 ${Python_EXECUTABLE}
                 ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py
                 ${GENERATOR_ARGS}

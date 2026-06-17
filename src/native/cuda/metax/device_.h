@@ -1,6 +1,6 @@
 #ifndef INFINI_OPS_METAX_DEVICE__H_
 #define INFINI_OPS_METAX_DEVICE__H_
 
-#include "infini_rt/metax/device_.h"
+#include <infini/rt/metax/device_.h>
 
 #endif

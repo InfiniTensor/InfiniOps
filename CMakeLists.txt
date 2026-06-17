@@ -294,8 +294,6 @@ if(WITH_TORCH)
     message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
 endif()
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
-
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
 foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MOORE WITH_ASCEND)
@@ -502,14 +500,14 @@ if(WITH_HYGON AND NOT EXISTS "${DTK_ROOT}/llvm/lib/LLVMgold.so")
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 
-set(INFINIRT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../InfiniRT" CACHE PATH "InfiniRT source directory")
-if(NOT EXISTS "${INFINIRT_SOURCE_DIR}/CMakeLists.txt")
+set(INFINI_RT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../InfiniRT" CACHE PATH "InfiniRT source directory")
+if(NOT EXISTS "${INFINI_RT_SOURCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR
-        "InfiniRT not found at `${INFINIRT_SOURCE_DIR}`. "
-        "Set `INFINIRT_SOURCE_DIR` to the InfiniRT source directory.")
+        "InfiniRT not found at `${INFINI_RT_SOURCE_DIR}`. "
+        "Set `INFINI_RT_SOURCE_DIR` to the InfiniRT source directory.")
 endif()
 if(NOT TARGET infinirt)
-    add_subdirectory("${INFINIRT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/InfiniRT")
+    add_subdirectory("${INFINI_RT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/InfiniRT")
 endif()
 
 add_subdirectory(src)

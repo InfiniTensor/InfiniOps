@@ -3,7 +3,7 @@
 
 #include "common/traits.h"
 #include "device.h"
-#include "infini_rt/data_type.h"
+#include <infini/rt.h>
 
 namespace infini::ops {
 

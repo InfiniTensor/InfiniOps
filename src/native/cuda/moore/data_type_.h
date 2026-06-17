@@ -1,7 +1,7 @@
 #ifndef INFINI_OPS_MOORE_DATA_TYPE__H_
 #define INFINI_OPS_MOORE_DATA_TYPE__H_
 
-#include "infini_rt/moore/data_type_.h"
+#include <infini/rt/moore/data_type_.h>
 
 namespace infini::ops {
 

@@ -185,14 +185,17 @@ class _OperatorExtractor:
 
         index = clang.cindex.Index.create()
         args = (
-            "-std=c++17",
-            "-x",
-            "c++",
-            "-I",
-            "src",
-            "-I",
-            str(_GENERATION_DIR),
-        ) + _get_infinirt_include_flags() + _get_system_include_flags()
+            (
+                "-std=c++17",
+                "-x",
+                "c++",
+                "-I",
+                "src",
+                "-I",
+                str(_GENERATION_DIR),
+            )
+            + _get_system_include_flags()
+        )
         translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
 
         nodes = tuple(type(self)._find(translation_unit.cursor, op_name))
@@ -411,9 +414,7 @@ def _find_tensor_params(op_name):
     source = _find_base_header(op_name).read_text()
 
     params = set()
-    params.update(
-        re.findall(r"(?:^|[,(]\s*)(?:const\s+)?Tensor\s+(\w+)", source)
-    )
+    params.update(re.findall(r"(?:^|[,(]\s*)(?:const\s+)?Tensor\s+(\w+)", source))
     params.update(_find_optional_tensor_params(op_name))
     params.update(_find_vector_tensor_params(op_name))
 
@@ -1233,13 +1234,13 @@ namespace infini::ops {{
 
 def _device_marker_headers(devices):
     paths = {
-        "cpu": "infini_rt/cpu/device_.h",
-        "nvidia": "native/cuda/nvidia/device_.h",
-        "cambricon": "native/cambricon/device_.h",
-        "ascend": "native/ascend/device_.h",
-        "metax": "native/cuda/metax/device_.h",
-        "moore": "native/cuda/moore/device_.h",
-        "iluvatar": "native/cuda/iluvatar/device_.h",
+        "cpu": "infini/rt/cpu/device_.h",
+        "nvidia": "infini/rt/nvidia/device_.h",
+        "cambricon": "infini/rt/cambricon/device_.h",
+        "ascend": "infini/rt/ascend/device_.h",
+        "metax": "infini/rt/metax/device_.h",
+        "moore": "infini/rt/moore/device_.h",
+        "iluvatar": "infini/rt/iluvatar/device_.h",
     }
 
     return [paths[device] for device in devices if device in paths]

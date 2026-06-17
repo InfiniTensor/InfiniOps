@@ -2,7 +2,7 @@
 #define INFINI_OPS_DEVICE_H_
 
 #include "common/traits.h"
-#include "infini_rt/device.h"
+#include <infini/rt.h>
 
 namespace infini::ops {
 
