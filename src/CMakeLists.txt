@@ -531,6 +531,7 @@ target_include_directories(infiniops
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated/bindings>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
@@ -629,6 +630,56 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
         target_sources(infiniops PRIVATE ${ILUVATAR_CALL_INSTANTIATION_OBJECTS})
     else()
         target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
+    endif()
+endif()
+
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    file(GLOB_RECURSE OPERATOR_DISPATCH_SOURCES CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/generated/bindings/generated_dispatch_*.cc")
+
+    if(OPERATOR_DISPATCH_SOURCES)
+        target_include_directories(infiniops PRIVATE "${PROJECT_SOURCE_DIR}")
+        if(WITH_NVIDIA OR WITH_HYGON)
+            set_source_files_properties(${OPERATOR_DISPATCH_SOURCES}
+                PROPERTIES LANGUAGE CUDA)
+            target_sources(infiniops PRIVATE ${OPERATOR_DISPATCH_SOURCES})
+        elseif(WITH_ILUVATAR)
+            set(ILUVATAR_OPERATOR_DISPATCH_OBJECTS)
+            set(_iluvatar_operator_dispatch_object_dir
+                "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_operator_dispatch_objs")
+            set(_iluvatar_operator_dispatch_include_flags
+                ${_iluvatar_call_instantiation_include_flags}
+                "-I${PROJECT_SOURCE_DIR}/generated/bindings")
+            foreach(_src IN LISTS OPERATOR_DISPATCH_SOURCES)
+                get_filename_component(_name "${_src}" NAME_WE)
+                set(_obj "${_iluvatar_operator_dispatch_object_dir}/${_name}.o")
+                set(_dep "${_obj}.d")
+                set(_depfile_arg)
+                if(CMAKE_GENERATOR MATCHES "Ninja")
+                    set(_depfile_arg DEPFILE "${_dep}")
+                endif()
+                add_custom_command(
+                    OUTPUT "${_obj}"
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        "${_iluvatar_operator_dispatch_object_dir}"
+                    COMMAND ${ILUVATAR_CUDA_COMPILER}
+                        ${_iluvatar_call_instantiation_defs}
+                        ${_iluvatar_operator_dispatch_include_flags}
+                        ${ILUVATAR_CUDA_FLAGS}
+                        -MMD -MF "${_dep}"
+                        -c "${_src}" -o "${_obj}"
+                    DEPENDS "${_src}"
+                    ${_depfile_arg}
+                    COMMENT "Compiling ${_name}.cc with CoreX clang++"
+                    VERBATIM
+                )
+                list(APPEND ILUVATAR_OPERATOR_DISPATCH_OBJECTS "${_obj}")
+            endforeach()
+
+            set_source_files_properties(${ILUVATAR_OPERATOR_DISPATCH_OBJECTS}
+                PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+            target_sources(infiniops PRIVATE ${ILUVATAR_OPERATOR_DISPATCH_OBJECTS})
+        endif()
     endif()
 endif()
 
