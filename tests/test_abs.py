@@ -35,6 +35,9 @@ def test_abs(
     rtol,
     atol,
 ):
+    if device == "musa" and implementation_index == 8:
+        pytest.skip("torch.musa abs hangs during synchronization")
+
     input = randn_strided(shape, input_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
