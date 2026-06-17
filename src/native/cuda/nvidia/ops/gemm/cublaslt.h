@@ -10,7 +10,8 @@
 
 #include "base/gemm.h"
 #include "native/cuda/nvidia/blas_utils.h"
-#include "native/cuda/nvidia/runtime_.h"
+#include <infini/rt/nvidia/runtime_.h>
+#include "native/cuda/nvidia/runtime_utils.h"
 
 namespace infini::ops {
 

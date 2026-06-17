@@ -226,6 +226,8 @@ if(WITH_CAMBRICON)
         set(MLU_COMPILE_OPTS
             -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
             -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
+            -I${INFINI_RT_SOURCE_DIR}/include
+            -I${INFINI_RT_SOURCE_DIR}/generated/include
             -idirafter /usr/local/neuware/lib/clang/11.1.0/include
         )
         function(compile_mlu_file src_file)
@@ -643,7 +645,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}/generated"
-            "-I${PROJECT_SOURCE_DIR}/generated/include")
+            "-I${PROJECT_SOURCE_DIR}/generated/include"
+            "-I${INFINI_RT_SOURCE_DIR}/include"
+            "-I${INFINI_RT_SOURCE_DIR}/generated/include")
         foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
             list(APPEND _iluvatar_call_instantiation_include_flags "-I${_dir}")
         endforeach()
@@ -817,7 +821,9 @@ if(GENERATE_PYTHON_BINDINGS)
         set(_iluvatar_dispatch_include_flags
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
-            "-I${PROJECT_SOURCE_DIR}/generated")
+            "-I${PROJECT_SOURCE_DIR}/generated"
+            "-I${INFINI_RT_SOURCE_DIR}/include"
+            "-I${INFINI_RT_SOURCE_DIR}/generated/include")
         foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
             list(APPEND _iluvatar_dispatch_include_flags "-I${_dir}")
         endforeach()

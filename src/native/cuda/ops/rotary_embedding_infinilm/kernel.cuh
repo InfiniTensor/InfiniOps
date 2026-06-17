@@ -9,6 +9,9 @@
 
 namespace infini::ops {
 
+using infini::rt::cuda_bfloat16;
+using infini::rt::cuda_bfloat162;
+
 template <typename T>
 struct VecTypeHelper {};
 

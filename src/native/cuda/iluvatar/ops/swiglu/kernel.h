@@ -4,7 +4,8 @@
 #include <utility>
 
 #include "native/cuda/iluvatar/caster.cuh"
-#include "native/cuda/iluvatar/runtime_.h"
+#include <infini/rt/iluvatar/runtime_.h>
+#include "native/cuda/iluvatar/runtime_utils.h"
 #include "native/cuda/ops/swiglu/kernel.h"
 
 namespace infini::ops {

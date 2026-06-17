@@ -7,7 +7,7 @@
 
 #include "base/rms_norm.h"
 #include "native/cambricon/common.h"
-#include "native/cambricon/data_type_.h"
+#include <infini/rt/cambricon/data_type_.h>
 
 namespace infini::ops {
 

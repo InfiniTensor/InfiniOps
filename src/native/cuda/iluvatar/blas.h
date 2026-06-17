@@ -10,7 +10,8 @@
 #include "data_type.h"
 #include "native/cuda/blas.h"
 #include "native/cuda/iluvatar/blas_utils.h"
-#include "native/cuda/iluvatar/runtime_.h"
+#include <infini/rt/iluvatar/runtime_.h>
+#include "native/cuda/iluvatar/runtime_utils.h"
 
 namespace infini::ops {
 

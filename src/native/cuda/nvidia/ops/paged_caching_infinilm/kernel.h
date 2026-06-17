@@ -4,7 +4,8 @@
 #include <utility>
 
 #include "native/cuda/nvidia/caster.cuh"
-#include "native/cuda/nvidia/runtime_.h"
+#include <infini/rt/nvidia/runtime_.h>
+#include "native/cuda/nvidia/runtime_utils.h"
 #include "native/cuda/ops/paged_caching_infinilm/kernel.h"
 
 namespace infini::ops {
