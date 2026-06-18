@@ -46,20 +46,24 @@ class CudaAddRmsNorm : public AddRmsNorm {
     uint32_t num_blocks = static_cast<uint32_t>(batch_size_ * nhead_);
 
     assert(out.dtype() == input.dtype() && out.dtype() == residual.dtype() &&
-           out.dtype() == weight.dtype() &&
            out.dtype() == residual_out.dtype() &&
-           "`CudaAddRmsNorm` requires all tensors to have the same dtype");
+           "`CudaAddRmsNorm` requires input, residual, out and residual_out to "
+           "have the same dtype");
 
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
+                 ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  AllCudaBlockSizes>(
-        {static_cast<int64_t>(out.dtype()), block_size},
+        {static_cast<int64_t>(out.dtype()),
+         static_cast<int64_t>(weight.dtype()), block_size},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
-          constexpr int kBlockSize = ListGet<1>(list_tag);
+          using TWeight =
+              TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
+          constexpr int kBlockSize = ListGet<2>(list_tag);
 
-          AddRmsNormKernel<kBlockSize, Backend::kDeviceType, float, T, T>
+          AddRmsNormKernel<kBlockSize, Backend::kDeviceType, float, T, TWeight>
               <<<num_blocks, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()), stride_out_batch,
                   stride_out_nhead, reinterpret_cast<T*>(residual_out.data()),
@@ -68,7 +72,7 @@ class CudaAddRmsNorm : public AddRmsNorm {
                   stride_input_nhead,
                   reinterpret_cast<const T*>(residual.data()),
                   stride_residual_batch, stride_residual_nhead,
-                  reinterpret_cast<const T*>(weight.data()), nhead_, dim_,
+                  reinterpret_cast<const TWeight*>(weight.data()), nhead_, dim_,
                   kernel_eps);
         },
         "CudaAddRmsNorm::operator()");

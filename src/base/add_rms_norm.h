@@ -46,9 +46,6 @@ class AddRmsNorm : public Operator<AddRmsNorm> {
     assert(input.dtype() == residual_out.dtype() &&
            "`AddRmsNorm` requires `input` and `residual_out` to have the same "
            "dtype");
-    assert(input.dtype() == weight.dtype() &&
-           "`AddRmsNorm` requires `input` and `weight` to have the same "
-           "dtype");
     // The CUDA kernel indexes the normalized dimension with stride 1.
     assert(input.stride(-1) == 1 &&
            "`AddRmsNorm` requires the last dimension of `input` to be "
