@@ -155,3 +155,37 @@ def test_filter_ops_strict_rejects_unavailable_ops():
         assert "missing" in str(exc)
     else:
         raise AssertionError("strict unknown ops should fail")
+
+
+def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
+    module = _load_generator_module()
+    path = tmp_path / "bindings.cc"
+    path.write_text("same\n")
+    before = path.stat().st_mtime_ns
+
+    assert module._write_text_if_changed(path, "same\n") is False
+    assert path.stat().st_mtime_ns == before
+
+    assert module._write_text_if_changed(path, "different\n") is True
+    assert path.read_text() == "different\n"
+    assert path.stat().st_mtime_ns >= before
+
+
+def test_remove_stale_files_keeps_expected_outputs(tmp_path):
+    module = _load_generator_module()
+    root = tmp_path / "generated"
+    keep = root / "bindings" / "keep.cc"
+    stale = root / "bindings" / "stale.cc"
+    nested_stale = root / "src" / "foo" / "operator.cc"
+    keep.parent.mkdir(parents=True)
+    nested_stale.parent.mkdir(parents=True)
+    keep.write_text("keep\n")
+    stale.write_text("stale\n")
+    nested_stale.write_text("stale\n")
+
+    module._remove_stale_files(root, {keep})
+
+    assert keep.exists()
+    assert not stale.exists()
+    assert not nested_stale.exists()
+    assert not (root / "src" / "foo").exists()
