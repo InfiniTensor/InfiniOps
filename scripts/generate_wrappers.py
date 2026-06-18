@@ -1028,12 +1028,40 @@ def _generate_operator_call_instantiation_entries(operator):
         function_params = _append_optional_params(
             "const Handle& handle, const Config& config", params
         )
+        args = [arg for arg in call.get_arguments() if arg.spelling != "stream"]
+        first_arg = args[0]
+        rest_args = args[1:]
         instantiation = (
             f"Operator<{op_type}>::Call<{template_arguments}>({function_params})"
         )
 
-        declarations.append(f"extern template auto {instantiation};")
-        definitions.append(f"template auto {instantiation};")
+        make_template_arguments = ", ".join(
+            f"const {_strip_top_level_const(arg.type.spelling)}&" for arg in rest_args
+        )
+        make_params = ", ".join(
+            f"const {_strip_top_level_const(arg.type.spelling)}& {arg.spelling}"
+            for arg in rest_args
+        )
+        make_function_params = _append_optional_params(
+            f"const Config& config, const {_strip_top_level_const(first_arg.type.spelling)} {first_arg.spelling}",
+            make_params,
+        )
+        make_instantiation = f"Operator<{op_type}>::Make<{make_template_arguments}>({make_function_params})"
+
+        operator_instantiation = (
+            f"Operator<{op_type}>::operator()<{template_arguments}>({params}) const"
+        )
+
+        declarations.append(f"extern template void {instantiation};")
+        declarations.append(
+            f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};"
+        )
+        declarations.append(f"extern template void {operator_instantiation};")
+        definitions.append(f"template void {instantiation};")
+        definitions.append(
+            f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};"
+        )
+        definitions.append(f"template void {operator_instantiation};")
 
     return declarations, definitions
 
