@@ -69,13 +69,21 @@ Branch names use the format `<type>/xxx-yyyy-zzzz`, where `<type>` matches the P
 Using Nvidia as an example:
 
 ```bash
-pip install .[dev] -C cmake.define.WITH_CPU=ON -C cmake.define.WITH_NVIDIA=ON
+pip install .[dev] \
+  -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix \
+  -C cmake.define.WITH_CPU=ON \
+  -C cmake.define.WITH_NVIDIA=ON
 ```
 
-Auto-detection is supported for some platforms, so you can also simply run:
+`/path/to/infinirt-prefix` is the InfiniRT install prefix, typically the value
+used for InfiniRT's `CMAKE_INSTALL_PREFIX`. It should contain
+`include/infini/rt.h` and `lib/libinfinirt.so`.
+
+Auto-detection is supported for some platforms, so you can also let InfiniOps
+detect the device backends while still pointing it at the installed InfiniRT:
 
 ```bash
-pip install .[dev]
+pip install .[dev] -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix
 ```
 
 > `[dev]` installs optional development dependencies (e.g. `pytest`) that are not needed for production but required for development and testing. After the first install, subsequent installs only need `pip install .`.
@@ -94,6 +102,7 @@ For routine development and pull requests, start with a smoke build plus the smo
 
 ```bash
 python -m pip install .[dev] --no-build-isolation --no-deps \
+  --config-settings=cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix \
   --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
 python -m pytest tests -m smoke -q
 ```
@@ -251,5 +260,7 @@ using T = TypeMapType<Device::Type::kCpu, ListGet<0>(list_tag)>;
 2. **Segmentation fault during tests**: Run `pytest -n 1`.
 3. **`Unknown CMake command "pybind11_add_module"`**: Install pybind11 with `pip install pybind11[global]`. See the [pybind11 installation guide](https://pybind11.readthedocs.io/en/stable/installing.html).
 4. **Auto-detection (`AUTO_DETECT_DEVICES`) fails**: Some machines may not expose devices in expected paths (e.g. `/dev/nvidia*`). Use explicit CMake defines instead (e.g. `-C cmake.define.WITH_NVIDIA=ON`).
-5. **`bash: pytest: command not found`**: Use `python -m pytest`.
-6. **`CUBLAS_STATUS_INVALID_VALUE` in `cublasSgemmStridedBatched`**: PyTorch version issue. Downgrade to `torch<=2.9.1`.
+5. **InfiniRT headers or library are not found**: Set `INFINI_RT_ROOT` to the InfiniRT install prefix, or set `INFINI_RT_INCLUDE_DIRS` and `INFINI_RT_LIBRARY` explicitly.
+6. **`ImportError: libinfinirt.so: cannot open shared object file`**: Reinstall InfiniOps from a build that was configured with the InfiniRT install prefix so the Python wheel can bundle the runtime library.
+7. **`bash: pytest: command not found`**: Use `python -m pytest`.
+8. **`CUBLAS_STATUS_INVALID_VALUE` in `cublasSgemmStridedBatched`**: PyTorch version issue. Downgrade to `torch<=2.9.1`.

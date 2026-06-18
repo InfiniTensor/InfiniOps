@@ -8,20 +8,32 @@ InfiniOps is a high-performance, cross-platform operator library supporting mult
 - CMake 3.18+
 - Python 3.10+
 - Hardware-specific SDKs (e.g. CUDA Toolkit, MUSA Toolkit)
+- Installed InfiniRT headers and library
 
 ## Installation
 
-Install with pip (recommended):
+Install InfiniRT first, then build InfiniOps with the InfiniRT install prefix:
 
 ```bash
-pip install .
+pip install . -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix
 ```
 
-This auto-detects available platforms on supported backends. To specify platforms explicitly:
+`/path/to/infinirt-prefix` is the directory passed to InfiniRT as
+`CMAKE_INSTALL_PREFIX`; it should contain `include/infini/rt.h` and
+`lib/libinfinirt.so`.
+
+InfiniOps auto-detects available platforms on supported backends. To specify
+platforms explicitly:
 
 ```bash
-pip install . -C cmake.define.WITH_CPU=ON -C cmake.define.WITH_NVIDIA=ON
+pip install . \
+  -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix \
+  -C cmake.define.WITH_CPU=ON \
+  -C cmake.define.WITH_NVIDIA=ON
 ```
+
+The Python wheel installs the required InfiniRT shared library next to the
+InfiniOps extension so `import infini.ops` can load its runtime dependency.
 
 ### CMake Options
 
@@ -36,6 +48,10 @@ pip install . -C cmake.define.WITH_CPU=ON -C cmake.define.WITH_NVIDIA=ON
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
 | `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |
 | `-DAUTO_DETECT_DEVICES=[ON\|OFF]` | Auto-detect available platforms | ON |
+| `-DINFINI_RT_ROOT=<path>` | InfiniRT install prefix containing `include/` and `lib/` | `$INFINI_RT_ROOT` |
+| `-DINFINI_RT_INCLUDE_DIRS=<paths>` | Explicit InfiniRT include directories | empty |
+| `-DINFINI_RT_LIBRARY=<path>` | Explicit path to `libinfinirt.so` | empty |
+| `-DINFINI_RT_SOURCE_DIR=<path>` | InfiniRT source tree for development builds | empty |
 
 If no accelerator options are provided and auto-detection finds nothing, `WITH_CPU` is enabled by default.
 
