@@ -609,6 +609,19 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     endif()
 endif()
 
+find_package(Python COMPONENTS Interpreter REQUIRED)
+execute_process(
+    COMMAND ${Python_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/scripts/generate_public_operator_header.py
+        --source ${CMAKE_CURRENT_SOURCE_DIR}/operator.h
+        --output ${PROJECT_SOURCE_DIR}/generated/include/operator.h
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    RESULT_VARIABLE public_operator_header_result
+)
+if(NOT public_operator_header_result EQUAL 0)
+    message(FATAL_ERROR "Generating public operator header - failed")
+endif()
+
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
@@ -956,8 +969,12 @@ endif()
 
 file(GLOB INFINI_OPS_PUBLIC_CORE_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
+list(REMOVE_ITEM INFINI_OPS_PUBLIC_CORE_HEADERS
+    "${CMAKE_CURRENT_SOURCE_DIR}/operator.h")
 
-install(FILES ${INFINI_OPS_PUBLIC_CORE_HEADERS}
+install(FILES
+    ${PROJECT_SOURCE_DIR}/generated/include/operator.h
+    ${INFINI_OPS_PUBLIC_CORE_HEADERS}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
