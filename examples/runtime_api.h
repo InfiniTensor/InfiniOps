@@ -25,6 +25,7 @@
 #include "native/ascend/runtime_.h"
 #elif WITH_CPU
 #include <infini/rt/cpu/runtime_.h>
+
 #include "native/cpu/ops/gemm/gemm.h"
 #else
 #error "One `WITH_*` backend must be enabled for the examples."

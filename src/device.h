@@ -1,8 +1,9 @@
 #ifndef INFINI_OPS_DEVICE_H_
 #define INFINI_OPS_DEVICE_H_
 
-#include "common/traits.h"
 #include <infini/rt.h>
+
+#include "common/traits.h"
 
 namespace infini::ops {
 

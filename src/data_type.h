@@ -1,19 +1,20 @@
 #ifndef INFINI_OPS_DATA_TYPE_H_
 #define INFINI_OPS_DATA_TYPE_H_
 
+#include <infini/rt.h>
+
 #include "common/traits.h"
 #include "device.h"
-#include <infini/rt.h>
 
 namespace infini::ops {
 
 using infini::rt::DataType;
 
-using infini::rt::Float16;
 using infini::rt::BFloat16;
+using infini::rt::Float16;
 
-using infini::rt::kDataTypeToSize;
 using infini::rt::kDataTypeToDesc;
+using infini::rt::kDataTypeToSize;
 using infini::rt::kStringToDataType;
 
 template <Device::Type dev, DataType dtype>

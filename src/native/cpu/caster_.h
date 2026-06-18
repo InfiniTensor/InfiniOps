@@ -1,10 +1,11 @@
 #ifndef INFINI_OPS_COMMON_CPU_CASTER_H_
 #define INFINI_OPS_COMMON_CPU_CASTER_H_
 
+#include <infini/rt/cpu/data_type_.h>
+
 #include <type_traits>
 
 #include "caster.h"
-#include <infini/rt/cpu/data_type_.h>
 
 namespace infini::ops {
 
