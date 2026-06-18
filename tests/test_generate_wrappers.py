@@ -62,13 +62,66 @@ class Clamp {
     text = "\n".join(declarations)
 
     assert (
-        "MakeClamp(const Config& config, const Tensor input, "
+        "MakeClamp(const Config& config, Tensor input, "
         "const std::optional<double> min, const std::optional<double> max, "
         "Tensor out)"
     ) in text
     assert (
-        "MakeClamp(const Config& config, const Tensor input, "
+        "MakeClamp(const Config& config, Tensor input, "
         "std::optional<Tensor> min, std::optional<Tensor> max, Tensor out)"
+    ) in text
+
+
+def test_operator_call_instantiations_keep_optional_scalar_and_tensor_overloads_distinct(
+    monkeypatch, tmp_path
+):
+    module = _load_generator_module()
+    base_header = tmp_path / "clamp.h"
+    base_header.write_text(
+        """
+class Clamp {
+ public:
+  virtual void operator()(const Tensor input, const std::optional<double> min,
+                          const std::optional<double> max, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const std::optional<Tensor> min,
+                          const std::optional<Tensor> max, Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    operator = module._Operator(
+        "clamp",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "input"),
+                    module._ParsedArgument("const std::optional<double>", "min"),
+                    module._ParsedArgument("const std::optional<double>", "max"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            ),
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "input"),
+                    module._ParsedArgument("const std::optional<Tensor>", "min"),
+                    module._ParsedArgument("const std::optional<Tensor>", "max"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            ),
+        ],
+    )
+
+    declarations, _ = module._generate_operator_call_instantiation_entries(operator)
+
+    text = "\n".join(declarations)
+
+    assert (
+        "Call<Tensor, std::optional<double>, std::optional<double>, Tensor>"
+    ) in text
+    assert (
+        "Call<Tensor, std::optional<Tensor>, std::optional<Tensor>, Tensor>"
     ) in text
 
 
