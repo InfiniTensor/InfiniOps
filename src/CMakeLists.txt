@@ -539,6 +539,7 @@ if(WITH_TORCH)
                     -std=c++17 -fPIC -O0
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
                     "-I${PROJECT_SOURCE_DIR}/generated"
+                    ${INFINI_RT_INCLUDE_FLAGS}
                     ${_torch_include_flags}
                     ${_torch_extra_flags}
                     -c "${_src}" -o "${_obj}"
@@ -564,6 +565,7 @@ if(WITH_TORCH)
             PROPERTIES POSITION_INDEPENDENT_CODE ON)
         target_include_directories(infini_ops_torch_objs PRIVATE
             $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>
+            ${INFINI_RT_INCLUDE_DIRS}
             ${TORCH_INCLUDE_DIRS}
             ${PROJECT_SOURCE_DIR}/generated)
         target_compile_definitions(infini_ops_torch_objs PRIVATE
