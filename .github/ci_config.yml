@@ -20,6 +20,7 @@ platforms:
       gpu:
         type: unittest
         resources:
+          gpu_ids: "1"
           ngpus: 1                         # Auto allocator picks this many free GPUs.
           memory: 32GB
           shm_size: 16g                    # Prevent PyTorch default 64MB shared memory limit.
@@ -55,7 +56,7 @@ platforms:
       gpu:
         type: unittest
         resources:
-          gpu_ids: "0"
+          gpu_ids: "1"
           ngpus: 1
           gpu_style: none
           memory: 32GB
@@ -85,6 +86,7 @@ platforms:
       gpu:
         type: unittest
         resources:
+          gpu_ids: "1"
           ngpus: 1
           gpu_style: none                  # MetaX uses passthrough via `--privileged`; `CUDA_VISIBLE_DEVICES` controls visibility.
           memory: 32GB
@@ -112,6 +114,7 @@ platforms:
       gpu:
         type: unittest
         resources:
+          gpu_ids: "1"
           ngpus: 1
           gpu_style: none                  # Moore uses passthrough via `--privileged`; `MTHREADS_VISIBLE_DEVICES` controls device selection.
           memory: 32GB
@@ -138,6 +141,7 @@ platforms:
       gpu:
         type: unittest
         resources:
+          gpu_ids: "1"
           ngpus: 1
           gpu_style: mlu                   # Cambricon uses passthrough via `--privileged`; `MLU_VISIBLE_DEVICES` controls device selection.
           memory: 32GB
@@ -210,6 +214,7 @@ platforms:
       npu:
         type: unittest
         resources:
+          gpu_ids: "1"
           ngpus: 1
           gpu_style: none
           memory: 32GB
