@@ -142,19 +142,21 @@ class Operator : public OperatorBase {
   static void clear_cache() { ++cache_generation_; }
 
   template <typename... Args>
-  static auto Make(const Config& config, const Tensor tensor, Args&&... args) {
+  static std::unique_ptr<Operator> Make(const Config& config,
+                                        const Tensor tensor, Args&&... args) {
     return MakeWithDevice(config, tensor.device().type(), tensor,
                           std::forward<Args>(args)...);
   }
 
   template <typename... Args>
-  static auto Make(const Tensor tensor, Args&&... args) {
+  static std::unique_ptr<Operator> Make(const Tensor tensor, Args&&... args) {
     return Make({}, tensor, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
-  static auto Make(const Config& config, const std::vector<Tensor> tensors,
-                   Args&&... args) {
+  static std::unique_ptr<Operator> Make(const Config& config,
+                                        const std::vector<Tensor> tensors,
+                                        Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
     return MakeWithDevice(config, tensors.front().device().type(), tensors,
@@ -162,12 +164,13 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto Make(const std::vector<Tensor> tensors, Args&&... args) {
+  static std::unique_ptr<Operator> Make(const std::vector<Tensor> tensors,
+                                        Args&&... args) {
     return Make({}, tensors, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
-  static auto Call(const Handle& handle, const Config& config,
+  static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
     static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
         cache;
@@ -192,7 +195,7 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static auto Call(const Tensor tensor, const Args&... args) {
+  static void Call(const Tensor tensor, const Args&... args) {
     return Call({}, {}, tensor, args...);
   }
 
@@ -215,7 +218,7 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  auto operator()(const Handle& handle, const Args&... args) {
+  void operator()(const Handle& handle, const Args&... args) {
     set_handle(handle);
     set_stream(handle.stream());
     set_workspace(handle.workspace());
@@ -225,7 +228,7 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  auto operator()(const Args&... args) const {
+  void operator()(const Args&... args) const {
     return (*static_cast<const Key*>(this))(args...);
   }
 
@@ -236,9 +239,8 @@ class Operator : public OperatorBase {
 
  private:
   template <typename... Args>
-  static auto MakeWithDevice(const Config& config,
-                             Device::Type dispatch_device_type,
-                             Args&&... args) {
+  static std::unique_ptr<Operator> MakeWithDevice(
+      const Config& config, Device::Type dispatch_device_type, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
     auto cache_args = std::forward_as_tuple(args...);
 
