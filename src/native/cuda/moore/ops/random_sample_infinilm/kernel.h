@@ -8,8 +8,7 @@
 // clang-format on
 
 #include "native/cuda/moore/caster.cuh"
-#include <infini/rt/moore/runtime_.h>
-#include "native/cuda/moore/runtime_utils.h"
+#include "native/cuda/moore/runtime_.h"
 #include "native/cuda/ops/random_sample_infinilm/kernel.h"
 
 namespace infini::ops {

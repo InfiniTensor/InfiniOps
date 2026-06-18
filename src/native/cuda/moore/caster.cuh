@@ -2,7 +2,7 @@
 #define INFINI_OPS_MOORE_CASTER__H_
 
 #include "native/cuda/caster.cuh"
-#include <infini/rt/moore/data_type_.h>
+#include "native/cuda/moore/data_type_.h"
 
 namespace infini::ops {
 

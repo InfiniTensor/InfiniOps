@@ -5,7 +5,7 @@
 
 #include "acl/acl.h"
 #include "data_type.h"
-#include <infini/rt/ascend/device_.h>
+#include "native/ascend/device_.h"
 
 namespace infini::ops::ascend {
 

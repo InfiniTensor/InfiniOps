@@ -5,8 +5,7 @@
 
 #include "native/cuda/moore/caster.cuh"
 #include "native/cuda/moore/polyfills.cuh"
-#include <infini/rt/moore/runtime_.h>
-#include "native/cuda/moore/runtime_utils.h"
+#include "native/cuda/moore/runtime_.h"
 #include "native/cuda/ops/gelu_infinilm/kernel.h"
 
 namespace infini::ops {
