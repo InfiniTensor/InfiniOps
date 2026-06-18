@@ -83,6 +83,38 @@ def _op_relative_type(op_name):
     return "::".join(parts)
 
 
+def _get_infini_rt_include_flags():
+    include_dirs = []
+
+    for include_dir in os.environ.get("INFINI_RT_INCLUDE_DIRS", "").split(os.pathsep):
+        if include_dir:
+            include_dirs.append(pathlib.Path(include_dir))
+
+    infini_rt_root = os.environ.get("INFINI_RT_ROOT")
+    if infini_rt_root:
+        include_dirs.append(pathlib.Path(infini_rt_root) / "include")
+
+    infini_rt_source_dir = os.environ.get("INFINI_RT_SOURCE_DIR")
+    if infini_rt_source_dir:
+        infini_rt_source_path = pathlib.Path(infini_rt_source_dir)
+        include_dirs.extend(
+            (
+                infini_rt_source_path / "include",
+                infini_rt_source_path / "generated" / "include",
+            )
+        )
+
+    flags = []
+    seen = set()
+    for include_dir in include_dirs:
+        include_dir = include_dir.resolve()
+        if include_dir.exists() and include_dir not in seen:
+            flags.extend(("-I", str(include_dir)))
+            seen.add(include_dir)
+
+    return tuple(flags)
+
+
 def _write_text_if_changed(path: pathlib.Path, content: str) -> bool:
     """Write `content` only when the file's bytes would change."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,6 +226,7 @@ class _OperatorExtractor:
                 "-I",
                 str(_GENERATION_DIR),
             )
+            + _get_infini_rt_include_flags()
             + _get_system_include_flags()
         )
         translation_unit = index.parse(str(_find_base_header(op_name)), args=args)
