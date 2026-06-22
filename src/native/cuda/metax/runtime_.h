@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_METAX_RUNTIME_H_
 #define INFINI_OPS_METAX_RUNTIME_H_
 
+#include <utility>
+
 #include <mcr/mc_runtime.h>
 
 #include "native/cuda/metax/device_.h"
@@ -16,7 +18,9 @@ struct Runtime<Device::Type::kMetax>
 
   static constexpr Device::Type kDeviceType = Device::Type::kMetax;
 
-  static constexpr auto Malloc = mcMalloc;
+  static constexpr auto Malloc = [](auto&&... args) {
+    return mcMalloc(std::forward<decltype(args)>(args)...);
+  };
 
   static constexpr auto Memcpy = mcMemcpy;
 
