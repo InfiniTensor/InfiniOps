@@ -281,6 +281,9 @@ if(WITH_ASCEND)
     # environments (e.g., Docker CI images without hardware drivers installed).
     # CANN <= 8.0: stub at runtime/lib64/stub/; CANN >= 8.5: devlib/<arch>-linux/devlib/.
     set(ASCEND_HAL_REAL   "${ASCEND_ROOT}/driver/lib64/driver/libascend_hal.so")
+    if(NOT EXISTS "${ASCEND_HAL_REAL}" AND EXISTS "/usr/local/Ascend/driver/lib64/driver/libascend_hal.so")
+        set(ASCEND_HAL_REAL "/usr/local/Ascend/driver/lib64/driver/libascend_hal.so")
+    endif()
     set(ASCEND_HAL_STUB   "${ASCEND_HOME}/runtime/lib64/stub/libascend_hal.so")
     set(ASCEND_HAL_DEVLIB "${ASCEND_HOME}/${CMAKE_SYSTEM_PROCESSOR}-linux/devlib/libascend_hal.so")
     if(EXISTS "${ASCEND_HAL_REAL}")
