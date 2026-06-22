@@ -2215,6 +2215,27 @@ __device__ void FlashAttentionDecodeCtaGqaKernel(
 namespace infini::ops {
 
 template <typename TIndex, typename TData, int kHeadSize>
+__global__ void PagedAttentionInfinilmSplitKvWarpKernel(
+    float* __restrict__ partial_acc, float* __restrict__ partial_m,
+    float* __restrict__ partial_l, const TData* __restrict__ q,
+    const TData* __restrict__ k_cache, const TData* __restrict__ v_cache,
+    const TIndex* __restrict__ block_tables, const TIndex* __restrict__ seqlens,
+    const float* __restrict__ alibi_slopes, std::size_t num_kv_heads,
+    float scale, std::size_t max_num_blocks_per_seq, std::size_t block_size,
+    std::ptrdiff_t qstride, std::ptrdiff_t k_cacheblock_stride,
+    std::ptrdiff_t k_cacheslot_stride, std::ptrdiff_t k_cachehead_stride,
+    std::ptrdiff_t v_cacheblock_stride, std::ptrdiff_t v_cacheslot_stride,
+    std::ptrdiff_t v_cachehead_stride, int num_splits) {
+  op::paged_attention::cuda::FlashAttentionDecodeSplitKvWarpKernel<
+      TIndex, TData, kHeadSize>(
+      partial_acc, partial_m, partial_l, q, k_cache, v_cache, block_tables,
+      seqlens, alibi_slopes, num_kv_heads, scale, max_num_blocks_per_seq,
+      block_size, qstride, k_cacheblock_stride, k_cacheslot_stride,
+      k_cachehead_stride, v_cacheblock_stride, v_cacheslot_stride,
+      v_cachehead_stride, num_splits);
+}
+
+template <typename TIndex, typename TData, int kHeadSize>
 __global__ void PagedAttentionInfinilmSplitKvCtaKernel(
     float* __restrict__ partial_acc, float* __restrict__ partial_m,
     float* __restrict__ partial_l, const TData* __restrict__ q,
