@@ -48,6 +48,11 @@
     #source { max-height: calc(100vh - 178px); }
     #output { min-height: 260px; max-height: 420px; white-space: pre-wrap; }
     .meta { display: grid; grid-template-columns: 92px 1fr; gap: 8px 12px; margin-top: 14px; font-size: 13px; }
+    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .metric { border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fbfcfa; min-height: 66px; }
+    .metric .key { font-size: 11px; margin-bottom: 5px; }
+    .metric .value { font-size: 20px; font-weight: 850; color: var(--ink); overflow-wrap: anywhere; }
+    .metric .unit { font-size: 11px; color: var(--muted); margin-left: 3px; font-weight: 650; }
     .key { color: var(--muted); }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; overflow-wrap: anywhere; font-size: 12px; }
     @media (max-width: 980px) { main { grid-template-columns: 1fr; padding: 14px; } #source { max-height: 520px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -84,6 +89,12 @@
           <div><label for="n">N</label><input id="n" type="number" min="1" max="8192" value="1024"></div>
         </div>
         <button class="run" id="run">Run on selected platform</button>
+        <div class="metrics">
+          <div class="metric"><div class="key">Global TFLOPS</div><div class="value"><span id="metricTflops">-</span><span class="unit">TFLOPS</span></div></div>
+          <div class="metric"><div class="key">Average GEMM time</div><div class="value"><span id="metricMs">-</span><span class="unit">ms</span></div></div>
+          <div class="metric"><div class="key">Max error</div><div class="value"><span id="metricError">-</span></div></div>
+          <div class="metric"><div class="key">Global shape</div><div class="value"><span id="metricShape">-</span></div></div>
+        </div>
         <div class="status" id="status">Ready.</div>
       </div>
       <pre id="output">Result output will appear here.</pre>
@@ -106,6 +117,20 @@
 
     function val(id) { return Number(document.getElementById(id).value); }
     function commandText() { return 'NP=' + val('np') + ' ROWS=' + val('rows') + ' K=' + val('k') + ' N=' + val('n') + ' ./examples/distributed_matmul/run_remote.sh ' + selected; }
+    function resetMetrics() {
+      ['metricTflops', 'metricMs', 'metricError', 'metricShape'].forEach(function(id) { document.getElementById(id).textContent = '-'; });
+    }
+    function updateMetrics(lines) {
+      var joined = (lines || []).join(' ');
+      var tflops = joined.match(/global_tflops=([^\s]+)/);
+      var avgMs = joined.match(/avg_ms=([^\s]+)/);
+      var err = joined.match(/max_error=([^\s]+)/);
+      var shape = joined.match(/global_shape=\[([^\]]+)\]/);
+      document.getElementById('metricTflops').textContent = tflops ? Number(tflops[1]).toFixed(2) : '-';
+      document.getElementById('metricMs').textContent = avgMs ? Number(avgMs[1]).toFixed(3) : '-';
+      document.getElementById('metricError').textContent = err ? err[1] : '-';
+      document.getElementById('metricShape').textContent = shape ? '[' + shape[1] + ']' : '-';
+    }
     function render() {
       platformBox.innerHTML = '';
       Object.keys(platforms).forEach(function(key) {
@@ -133,6 +158,7 @@
       runButton.disabled = true;
       statusBox.className = 'status busy';
       statusBox.textContent = 'Running: ' + commandText();
+      resetMetrics();
       outputBox.textContent = 'Running... this may take a few minutes.\n';
       fetch('/api/run', {
         method: 'POST',
@@ -140,6 +166,7 @@
         body: JSON.stringify({ platform: selected, np: val('np'), rows: val('rows'), k: val('k'), n: val('n') })
       }).then(function(r) { return r.json(); }).then(function(data) {
         statusBox.className = 'status ' + (data.ok ? 'ok' : 'fail');
+        updateMetrics(data.summary || []);
         statusBox.textContent = (data.ok ? 'Finished successfully. ' : 'Run failed. ') + (data.summary || []).join(' | ');
         outputBox.textContent = '$ ' + data.command + '\n\n' + data.output;
       }).catch(function(err) {

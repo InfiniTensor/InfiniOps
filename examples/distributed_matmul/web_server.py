@@ -78,6 +78,8 @@ class Handler(BaseHTTPRequestHandler):
             "ROWS": str(clean_int("rows", 1024, 1, 8192)),
             "K": str(clean_int("k", 2048, 1, 8192)),
             "N": str(clean_int("n", 1024, 1, 8192)),
+            "WARMUP": str(clean_int("warmup", 2, 0, 100)),
+            "ITERS": str(clean_int("iters", 5, 1, 100)),
         })
         if "remoteRoot" in payload and payload["remoteRoot"]:
             env["REMOTE_ROOT"] = str(payload["remoteRoot"])
@@ -94,11 +96,11 @@ class Handler(BaseHTTPRequestHandler):
                 timeout=int(os.environ.get("DEMO_RUN_TIMEOUT", "900")),
             )
             output = proc.stdout
-            lines = [line for line in output.splitlines() if "max_error=" in line or "global_shape=" in line or "failed:" in line]
+            lines = [line for line in output.splitlines() if "max_error=" in line or "global_shape=" in line or "tflops=" in line or "failed:" in line]
             json_response(self, 200, {
                 "ok": proc.returncode == 0,
                 "returncode": proc.returncode,
-                "command": " ".join([f"{k}={env[k]}" for k in ("NP", "ROWS", "K", "N")]) + " " + " ".join(cmd),
+                "command": " ".join([f"{k}={env[k]}" for k in ("NP", "ROWS", "K", "N", "WARMUP", "ITERS")]) + " " + " ".join(cmd),
                 "summary": lines[-3:],
                 "output": output,
             })

@@ -6,6 +6,8 @@ rows="${ROWS:-1024}"
 k_size="${K:-2048}"
 n_size="${N:-1024}"
 np="${NP:-2}"
+warmup="${WARMUP:-2}"
+iters="${ITERS:-5}"
 
 case "${platform}" in
   nvidia) host="${HOST:-nvidia}"; image="${IMAGE:-accelerator-dev/nvidia:latest}"; backend_flag="-DWITH_NVIDIA=ON"; docker_args="--gpus=all" ;;
@@ -93,7 +95,7 @@ cmake --build build/distributed-matmul -j2 --target distributed_matmul
 
 run_log="/tmp/distributed_matmul.out"
 set +e
-LD_LIBRARY_PATH="/usr/local/gcc-11.4.0/lib64:/workspace/install/infiniccl/lib:/workspace/install/infiniccl/lib64:/workspace/InfiniOps/build/distributed-matmul/src:${LD_LIBRARY_PATH:-}" mpirun -np "${DEMO_NP}" ${mpi_root_args} /workspace/InfiniOps/build/distributed-matmul/examples/distributed_matmul "${DEMO_ROWS}" "${DEMO_K}" "${DEMO_N}" 2>&1 | tee "${run_log}"
+LD_LIBRARY_PATH="/usr/local/gcc-11.4.0/lib64:/workspace/install/infiniccl/lib:/workspace/install/infiniccl/lib64:/workspace/InfiniOps/build/distributed-matmul/src:${LD_LIBRARY_PATH:-}" mpirun -np "${DEMO_NP}" ${mpi_root_args} /workspace/InfiniOps/build/distributed-matmul/examples/distributed_matmul "${DEMO_ROWS}" "${DEMO_K}" "${DEMO_N}" "${DEMO_WARMUP}" "${DEMO_ITERS}" 2>&1 | tee "${run_log}"
 run_status="${PIPESTATUS[0]}"
 set -e
 if [ "${run_status}" -eq 137 ] && grep -q "global_shape=.*max_error=" "${run_log}"; then
@@ -105,7 +107,7 @@ INNER
 chmod +x "${remote_root}/run_inside_container.sh"
 REMOTE_SETUP
 
-ssh "${ssh_opts[@]}" "${host}" bash -s -- "${remote_root}" "${image}" "${backend_flag}" "${np}" "${rows}" "${k_size}" "${n_size}" "${platform}" "${docker_args}" <<'REMOTE_RUN'
+ssh "${ssh_opts[@]}" "${host}" bash -s -- "${remote_root}" "${image}" "${backend_flag}" "${np}" "${rows}" "${k_size}" "${n_size}" "${warmup}" "${iters}" "${platform}" "${docker_args}" <<'REMOTE_RUN'
 set -euo pipefail
 remote_root="$1"
 image="$2"
@@ -114,14 +116,16 @@ np="$4"
 rows="$5"
 k_size="$6"
 n_size="$7"
-platform="$8"
-docker_args="$9"
+warmup="$8"
+iters="$9"
+platform="${10}"
+docker_args="${11}"
 container="infini-distmatmul-${platform}-$(id -u)"
 
 docker rm -f "${container}" >/dev/null 2>&1 || true
 docker_log="${remote_root}/docker_run_${platform}.out"
 set +e
-docker run --rm --name "${container}" --network host --ipc host --ulimit memlock=-1 --ulimit stack=67108864 ${docker_args} -e DEMO_PLATFORM="${platform}" -e DEMO_IMAGE="${image}" -e DEMO_BACKEND_FLAG="${backend_flag}" -e DEMO_NP="${np}" -e DEMO_ROWS="${rows}" -e DEMO_K="${k_size}" -e DEMO_N="${n_size}" -v "${remote_root}:/workspace" "${image}" /workspace/run_inside_container.sh 2>&1 | tee "${docker_log}"
+docker run --rm --name "${container}" --network host --ipc host --ulimit memlock=-1 --ulimit stack=67108864 ${docker_args} -e DEMO_PLATFORM="${platform}" -e DEMO_IMAGE="${image}" -e DEMO_BACKEND_FLAG="${backend_flag}" -e DEMO_NP="${np}" -e DEMO_ROWS="${rows}" -e DEMO_K="${k_size}" -e DEMO_N="${n_size}" -e DEMO_WARMUP="${warmup}" -e DEMO_ITERS="${iters}" -v "${remote_root}:/workspace" "${image}" /workspace/run_inside_container.sh 2>&1 | tee "${docker_log}"
 docker_status="${PIPESTATUS[0]}"
 set -e
 if [ "${docker_status}" -eq 137 ] && grep -q "global_shape=.*max_error=" "${docker_log}"; then

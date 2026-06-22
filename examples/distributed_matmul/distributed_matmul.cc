@@ -1,6 +1,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -210,8 +211,13 @@ int main(int argc, char **argv) {
     const int rows_per_rank = argc > 1 ? std::atoi(argv[1]) : 64;
     const int k_size = argc > 2 ? std::atoi(argv[2]) : 128;
     const int n_size = argc > 3 ? std::atoi(argv[3]) : 96;
+    const int warmup_iters = argc > 4 ? std::atoi(argv[4]) : 2;
+    const int timed_iters = argc > 5 ? std::atoi(argv[5]) : 5;
     if (rows_per_rank <= 0 || k_size <= 0 || n_size <= 0) {
       throw std::runtime_error("matrix sizes must be positive");
+    }
+    if (warmup_iters < 0 || timed_iters <= 0) {
+      throw std::runtime_error("iteration counts must be non-negative warmup and positive timed iterations");
     }
 
     const int local_rank = LocalRank();
@@ -274,10 +280,27 @@ int main(int argc, char **argv) {
         infini::ops::DataType::kFloat32,
         infini::ops::Device{Rt::kDeviceType, local_rank});
 
-    infini::ops::Gemm::Call(handle, {}, a, b, std::optional<float>{1.0f},
-                            std::optional<float>{0.0f},
-                            std::optional<int>{0}, std::optional<int>{0}, c);
+    infinicclComm_t comm = nullptr;
+    CHECK_CCL(infinicclCommInitAll(&comm, world, nullptr));
+
+    for (int iter = 0; iter < warmup_iters; ++iter) {
+      infini::ops::Gemm::Call(handle, {}, a, b, std::optional<float>{1.0f},
+                              std::optional<float>{0.0f},
+                              std::optional<int>{0}, std::optional<int>{0}, c);
+    }
     device.Synchronize();
+
+    auto t0 = std::chrono::steady_clock::now();
+    for (int iter = 0; iter < timed_iters; ++iter) {
+      infini::ops::Gemm::Call(handle, {}, a, b, std::optional<float>{1.0f},
+                              std::optional<float>{0.0f},
+                              std::optional<int>{0}, std::optional<int>{0}, c);
+    }
+    device.Synchronize();
+    auto t1 = std::chrono::steady_clock::now();
+    const double avg_ms =
+        std::chrono::duration<double, std::milli>(t1 - t0).count() / timed_iters;
+
     CHECK_RT(Rt::Memcpy(h_c.data(), d_c, c_bytes, Rt::MemcpyDeviceToHost));
     device.Synchronize();
 
@@ -291,8 +314,9 @@ int main(int argc, char **argv) {
       }
     }
 
-    infinicclComm_t comm = nullptr;
-    CHECK_CCL(infinicclCommInitAll(&comm, world, nullptr));
+    std::vector<double> rank_avg_ms(static_cast<size_t>(world));
+    CHECK_CCL(infinicclAllGather(&avg_ms, rank_avg_ms.data(), 1,
+                                 infinicclFloat64, comm, nullptr));
 
     std::vector<float> gathered(static_cast<size_t>(world) * h_c.size());
     CHECK_CCL(infinicclAllGather(h_c.data(), gathered.data(), h_c.size(),
@@ -311,12 +335,23 @@ int main(int argc, char **argv) {
           }
         }
       }
+      const double max_avg_ms =
+          *std::max_element(rank_avg_ms.begin(), rank_avg_ms.end());
+      const double global_flops = 2.0 * static_cast<double>(world) *
+                                  rows_per_rank * k_size * n_size;
+      const double global_tflops = global_flops / (max_avg_ms / 1000.0) / 1.0e12;
       std::cout << "global_shape=[" << world * rows_per_rank << ", " << n_size
                 << "] k=" << k_size << " max_error=" << max_global_error
-                << " sample_c00=" << gathered[0] << std::endl;
+                << " sample_c00=" << gathered[0]
+                << " avg_ms=" << max_avg_ms
+                << " global_tflops=" << global_tflops << std::endl;
     }
 
+    const double local_flops =
+        2.0 * static_cast<double>(rows_per_rank) * k_size * n_size;
+    const double local_tflops = local_flops / (avg_ms / 1000.0) / 1.0e12;
     std::cout << "[rank " << rank << "] local max_error=" << max_local_error
+              << " avg_ms=" << avg_ms << " local_tflops=" << local_tflops
               << std::endl;
 
     CHECK_CCL(infinicclCommDestroy(comm));
