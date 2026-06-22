@@ -10,8 +10,11 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[2]
 DEMO_DIR = ROOT / "examples" / "distributed_matmul"
 RUNNER = DEMO_DIR / "run_remote.sh"
+NINETOOTHED_RUNNER = DEMO_DIR / "run_ninetoothed_remote.sh"
 SOURCE = DEMO_DIR / "distributed_matmul.cc"
+NINETOOTHED_SOURCE = DEMO_DIR / "ninetoothed_matmul_demo.py"
 INDEX = DEMO_DIR / "showcase.html"
+NINETOOTHED_INDEX = DEMO_DIR / "ninetoothed_showcase.html"
 
 PLATFORMS = {"nvidia", "metax", "iluvatar", "moore", "cambricon", "ascend"}
 
@@ -41,15 +44,27 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if parsed.path == "/ninetoothed.html":
+            data = NINETOOTHED_INDEX.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if parsed.path == "/api/source":
             text = SOURCE.read_text(encoding="utf-8")
+            json_response(self, 200, {"source": text})
+            return
+        if parsed.path == "/api/ninetoothed/source":
+            text = NINETOOTHED_SOURCE.read_text(encoding="utf-8")
             json_response(self, 200, {"source": text})
             return
         json_response(self, 404, {"error": "not found"})
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path != "/api/run":
+        if parsed.path not in ("/api/run", "/api/ninetoothed/run"):
             json_response(self, 404, {"error": "not found"})
             return
 
@@ -73,6 +88,37 @@ class Handler(BaseHTTPRequestHandler):
             return max(low, min(high, value))
 
         env = os.environ.copy()
+        if parsed.path == "/api/ninetoothed/run":
+            cmd = [str(NINETOOTHED_RUNNER), platform]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=str(ROOT),
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=int(os.environ.get("NINETOOTHED_RUN_TIMEOUT", "900")),
+                )
+                output = proc.stdout
+                lines = [line for line in output.splitlines() if "tflops=" in line or "max_error=" in line or line.startswith("torch=") or line.startswith("torch ") or line.startswith("triton ") or line.startswith("cuda_available") or line.startswith("mlu_available") or line.startswith("musa_available") or line.startswith("npu_available") or "ERROR" in line or "timed out" in line]
+                json_response(self, 200, {
+                    "ok": proc.returncode == 0,
+                    "returncode": proc.returncode,
+                    "command": " ".join(cmd),
+                    "summary": lines[-5:],
+                    "output": output,
+                })
+            except subprocess.TimeoutExpired as exc:
+                json_response(self, 200, {
+                    "ok": False,
+                    "returncode": None,
+                    "command": " ".join(cmd),
+                    "summary": ["run timed out"],
+                    "output": (exc.stdout or "") + "\n[timeout]",
+                })
+            return
+
         env.update({
             "NP": str(clean_int("np", 2, 1, 8)),
             "ROWS": str(clean_int("rows", 1024, 1, 8192)),
