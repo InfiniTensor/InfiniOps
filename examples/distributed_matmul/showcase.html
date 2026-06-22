@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InfiniOps Distributed Matmul Runner</title>
+  <style>
+    :root {
+      --bg: #f5f6f3;
+      --panel: #fff;
+      --ink: #17211b;
+      --muted: #68736b;
+      --line: #d9ddd6;
+      --green: #18784f;
+      --blue: #2266a8;
+      --amber: #a85d12;
+      --red: #a12f2f;
+      --code: #101511;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); }
+    header { border-bottom: 1px solid var(--line); background: #fff; }
+    .bar { max-width: 1320px; margin: 0 auto; padding: 16px 22px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 0; }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
+    main { max-width: 1320px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: minmax(420px, 1.05fr) minmax(360px, 0.95fr); gap: 18px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 12px 30px rgba(35, 44, 38, 0.08); }
+    .head { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h2 { margin: 0; font-size: 15px; letter-spacing: 0; }
+    .body { padding: 16px; }
+    .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    button { font: inherit; cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+    .platform { height: 48px; text-align: left; padding: 7px 9px; }
+    .platform strong { display: block; font-size: 13px; }
+    .platform span { color: var(--muted); font-size: 11px; }
+    .platform.active { border-color: var(--green); background: #edf8f1; box-shadow: inset 0 0 0 1px var(--green); }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+    input { width: 100%; height: 36px; border: 1px solid var(--line); border-radius: 6px; padding: 0 9px; font: inherit; }
+    .run { width: 100%; height: 42px; margin-top: 14px; border-color: var(--green); background: var(--green); color: #fff; font-weight: 800; }
+    .run:disabled { opacity: 0.62; cursor: wait; }
+    .status { margin-top: 12px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.45; min-height: 42px; }
+    .status.ok { border-color: #b9dfc9; background: #e7f6ed; color: var(--green); }
+    .status.fail { border-color: #edb8b8; background: #fff0f0; color: var(--red); }
+    .status.busy { border-color: #bfd4ee; background: #e8f0fb; color: var(--blue); }
+    pre { margin: 0; padding: 14px; background: var(--code); color: #eff8ef; overflow: auto; line-height: 1.5; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; white-space: pre; }
+    #source { max-height: calc(100vh - 178px); }
+    #output { min-height: 260px; max-height: 420px; white-space: pre-wrap; }
+    .meta { display: grid; grid-template-columns: 92px 1fr; gap: 8px 12px; margin-top: 14px; font-size: 13px; }
+    .key { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; overflow-wrap: anywhere; font-size: 12px; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; padding: 14px; } #source { max-height: 520px; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .bar { align-items: flex-start; flex-direction: column; } .platforms { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>一套代码，到处运行</h1>
+        <div class="sub">展示同一个 distributed_matmul.cc 在不同 accelerator-dev 镜像里构建和运行</div>
+      </div>
+      <div class="mono" id="commandPreview"></div>
+    </div>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="head"><h2>Same C++ Source</h2><span class="mono">distributed_matmul.cc</span></div>
+      <pre id="source">Loading source...</pre>
+    </section>
+    <section class="panel">
+      <div class="head"><h2>Run Demo</h2><span id="selectedLabel">NVIDIA</span></div>
+      <div class="body">
+        <div class="platforms" id="platforms"></div>
+        <div class="meta">
+          <div class="key">Image</div><div class="mono" id="image"></div>
+          <div class="key">Build flag</div><div class="mono" id="flag"></div>
+        </div>
+        <div class="grid">
+          <div><label for="np">NP</label><input id="np" type="number" min="1" max="8" value="1"></div>
+          <div><label for="rows">ROWS</label><input id="rows" type="number" min="1" max="4096" value="4"></div>
+          <div><label for="k">K</label><input id="k" type="number" min="1" max="4096" value="8"></div>
+          <div><label for="n">N</label><input id="n" type="number" min="1" max="4096" value="6"></div>
+        </div>
+        <button class="run" id="run">Run on selected platform</button>
+        <div class="status" id="status">Ready.</div>
+      </div>
+      <pre id="output">Result output will appear here.</pre>
+    </section>
+  </main>
+  <script>
+    var platforms = {
+      nvidia: ['NVIDIA', 'accelerator-dev/nvidia:latest', '-DWITH_NVIDIA=ON'],
+      metax: ['MetaX', 'accelerator-dev/metax:latest', '-DWITH_METAX=ON'],
+      iluvatar: ['Iluvatar', 'accelerator-dev/iluvatar:latest', '-DWITH_ILUVATAR=ON'],
+      moore: ['Moore', 'accelerator-dev/moore:latest', '-DWITH_MOORE=ON'],
+      cambricon: ['Cambricon', 'accelerator-dev/cambricon:latest', '-DWITH_CAMBRICON=ON'],
+      ascend: ['Ascend', 'accelerator-dev/ascend:latest', '-DWITH_ASCEND=ON']
+    };
+    var selected = 'nvidia';
+    var platformBox = document.getElementById('platforms');
+    var statusBox = document.getElementById('status');
+    var outputBox = document.getElementById('output');
+    var runButton = document.getElementById('run');
+
+    function val(id) { return Number(document.getElementById(id).value); }
+    function commandText() { return 'NP=' + val('np') + ' ROWS=' + val('rows') + ' K=' + val('k') + ' N=' + val('n') + ' ./examples/distributed_matmul/run_remote.sh ' + selected; }
+    function render() {
+      platformBox.innerHTML = '';
+      Object.keys(platforms).forEach(function(key) {
+        var p = platforms[key];
+        var b = document.createElement('button');
+        b.className = 'platform' + (key === selected ? ' active' : '');
+        b.innerHTML = '<strong>' + p[0] + '</strong><span>' + key + '</span>';
+        b.onclick = function() { selected = key; render(); };
+        platformBox.appendChild(b);
+      });
+      document.getElementById('selectedLabel').textContent = platforms[selected][0];
+      document.getElementById('image').textContent = platforms[selected][1];
+      document.getElementById('flag').textContent = platforms[selected][2] + (selected === 'ascend' ? ' -DASCEND_HOME=/usr/local/Ascend/driver/../cann-8.5.1' : '');
+      document.getElementById('commandPreview').textContent = commandText();
+    }
+    ['np', 'rows', 'k', 'n'].forEach(function(id) { document.getElementById(id).oninput = render; });
+
+    fetch('/api/source').then(function(r) { return r.json(); }).then(function(data) {
+      document.getElementById('source').textContent = data.source;
+    }).catch(function() {
+      document.getElementById('source').textContent = 'Start this page with web_server.py to load the source file.';
+    });
+
+    runButton.onclick = function() {
+      runButton.disabled = true;
+      statusBox.className = 'status busy';
+      statusBox.textContent = 'Running: ' + commandText();
+      outputBox.textContent = 'Running... this may take a few minutes.\n';
+      fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: selected, np: val('np'), rows: val('rows'), k: val('k'), n: val('n') })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        statusBox.className = 'status ' + (data.ok ? 'ok' : 'fail');
+        statusBox.textContent = (data.ok ? 'Finished successfully. ' : 'Run failed. ') + (data.summary || []).join(' | ');
+        outputBox.textContent = '$ ' + data.command + '\n\n' + data.output;
+      }).catch(function(err) {
+        statusBox.className = 'status fail';
+        statusBox.textContent = 'Request failed: ' + err;
+        outputBox.textContent = String(err);
+      }).finally(function() { runButton.disabled = false; });
+    };
+    render();
+  </script>
+</body>
+</html>

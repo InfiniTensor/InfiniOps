@@ -47,3 +47,13 @@ Remote helper examples:
 Override size or rank count:
 
     NP=4 ROWS=128 K=256 N=192 ./examples/distributed_matmul/run_remote.sh nvidia
+
+Local showcase page:
+
+    examples/distributed_matmul/showcase.html
+
+Runnable local web console:
+
+    python3 examples/distributed_matmul/web_server.py --port 8765
+
+Then open http://127.0.0.1:8765/.
