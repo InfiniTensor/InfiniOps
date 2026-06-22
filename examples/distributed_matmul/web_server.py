@@ -74,10 +74,10 @@ class Handler(BaseHTTPRequestHandler):
 
         env = os.environ.copy()
         env.update({
-            "NP": str(clean_int("np", 1, 1, 8)),
-            "ROWS": str(clean_int("rows", 4, 1, 4096)),
-            "K": str(clean_int("k", 8, 1, 4096)),
-            "N": str(clean_int("n", 6, 1, 4096)),
+            "NP": str(clean_int("np", 2, 1, 8)),
+            "ROWS": str(clean_int("rows", 1024, 1, 8192)),
+            "K": str(clean_int("k", 2048, 1, 8192)),
+            "N": str(clean_int("n", 1024, 1, 8192)),
         })
         if "remoteRoot" in payload and payload["remoteRoot"]:
             env["REMOTE_ROOT"] = str(payload["remoteRoot"])

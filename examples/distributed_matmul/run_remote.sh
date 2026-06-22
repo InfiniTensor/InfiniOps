@@ -2,9 +2,9 @@
 set -euo pipefail
 
 platform="${1:?usage: $0 <nvidia|metax|iluvatar|moore|cambricon|ascend>}"
-rows="${ROWS:-64}"
-k_size="${K:-128}"
-n_size="${N:-96}"
+rows="${ROWS:-1024}"
+k_size="${K:-2048}"
+n_size="${N:-1024}"
 np="${NP:-2}"
 
 case "${platform}" in

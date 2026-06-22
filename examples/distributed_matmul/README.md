@@ -46,7 +46,9 @@ Remote helper examples:
 
 Override size or rank count:
 
-    NP=4 ROWS=128 K=256 N=192 ./examples/distributed_matmul/run_remote.sh nvidia
+    NP=2 ROWS=1024 K=2048 N=1024 ./examples/distributed_matmul/run_remote.sh nvidia
+
+`ROWS` is the per-rank row count. With the default `NP=2`, the demo computes `A[2048, 2048] x B[2048, 1024] = C[2048, 1024]`.
 
 Local showcase page:
 
