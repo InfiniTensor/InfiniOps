@@ -53,24 +53,81 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
               TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
           constexpr int kHeadSize = ListGet<2>(list_tag);
 
-          PagedAttentionPrefillInfinilmKernel<TData, TIndex, kHeadSize>
-              <<<grid, 32, 0, cuda_stream>>>(
-                  reinterpret_cast<TData*>(out.data()),
-                  reinterpret_cast<const TData*>(q.data()),
-                  reinterpret_cast<const TData*>(k_cache.data()),
-                  reinterpret_cast<const TData*>(v_cache.data()),
-                  reinterpret_cast<const TIndex*>(block_tables.data()),
-                  reinterpret_cast<const TIndex*>(seq_lens.data()),
-                  reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
-                  alibi_slopes.has_value()
-                      ? reinterpret_cast<const float*>(alibi_slopes->data())
-                      : nullptr,
-                  num_heads_, num_kv_heads_, scale, max_num_blocks_per_seq_,
-                  block_size_, k_cache_block_stride_, k_cache_head_stride_,
-                  k_cache_slot_stride_, v_cache_block_stride_,
-                  v_cache_head_stride_, v_cache_slot_stride_, q_stride_,
-                  q_head_stride_, out_stride_, out_head_stride_,
-                  block_table_batch_stride_, num_seqs_);
+          if constexpr (kHeadSize == 128) {
+            if (block_size_ == 256) {
+              constexpr int kWarps = 8;
+              dim3 pipe_grid(static_cast<unsigned>(num_heads_),
+                             static_cast<unsigned>(num_seqs_),
+                             static_cast<unsigned>(
+                                 (total_q_tokens_ + kWarps - 1) / kWarps));
+              PagedAttentionPrefillInfinilmHd128WarpCta8PipeKernel<TIndex,
+                                                                   TData>
+                  <<<pipe_grid, kWarps * 32, 0, cuda_stream>>>(
+                      reinterpret_cast<TData*>(out.data()),
+                      reinterpret_cast<const TData*>(q.data()),
+                      reinterpret_cast<const TData*>(k_cache.data()),
+                      reinterpret_cast<const TData*>(v_cache.data()),
+                      reinterpret_cast<const TIndex*>(block_tables.data()),
+                      reinterpret_cast<const TIndex*>(seq_lens.data()),
+                      reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
+                      alibi_slopes.has_value()
+                          ? reinterpret_cast<const float*>(alibi_slopes->data())
+                          : nullptr,
+                      num_kv_heads_, scale, max_num_blocks_per_seq_,
+                      block_size_, block_table_batch_stride_, q_stride_,
+                      q_head_stride_, k_cache_block_stride_,
+                      k_cache_slot_stride_, k_cache_head_stride_,
+                      v_cache_block_stride_, v_cache_slot_stride_,
+                      v_cache_head_stride_, out_stride_, out_head_stride_);
+            } else {
+              dim3 legacy_grid(static_cast<unsigned>(num_heads_),
+                               static_cast<unsigned>(total_q_tokens_));
+              op::paged_attention_prefill::cuda::
+                  PagedAttentionPrefillWarpGlobalKernel<TIndex, TData,
+                                                        kHeadSize>
+                  <<<legacy_grid, 32, 0, cuda_stream>>>(
+                      reinterpret_cast<TData*>(out.data()),
+                      reinterpret_cast<const TData*>(q.data()),
+                      reinterpret_cast<const TData*>(k_cache.data()),
+                      reinterpret_cast<const TData*>(v_cache.data()),
+                      reinterpret_cast<const TIndex*>(block_tables.data()),
+                      reinterpret_cast<const TIndex*>(seq_lens.data()),
+                      reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
+                      alibi_slopes.has_value()
+                          ? reinterpret_cast<const float*>(alibi_slopes->data())
+                          : nullptr,
+                      num_heads_, num_seqs_, num_kv_heads_, total_q_tokens_,
+                      scale, max_num_blocks_per_seq_, block_size_,
+                      block_table_batch_stride_, q_stride_, q_head_stride_,
+                      k_cache_block_stride_, k_cache_slot_stride_,
+                      k_cache_head_stride_, v_cache_block_stride_,
+                      v_cache_slot_stride_, v_cache_head_stride_, out_stride_,
+                      out_head_stride_);
+            }
+          } else {
+            dim3 legacy_grid(static_cast<unsigned>(num_heads_),
+                             static_cast<unsigned>(total_q_tokens_));
+            op::paged_attention_prefill::cuda::
+                PagedAttentionPrefillWarpGlobalKernel<TIndex, TData, kHeadSize>
+                <<<legacy_grid, 32, 0, cuda_stream>>>(
+                    reinterpret_cast<TData*>(out.data()),
+                    reinterpret_cast<const TData*>(q.data()),
+                    reinterpret_cast<const TData*>(k_cache.data()),
+                    reinterpret_cast<const TData*>(v_cache.data()),
+                    reinterpret_cast<const TIndex*>(block_tables.data()),
+                    reinterpret_cast<const TIndex*>(seq_lens.data()),
+                    reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
+                    alibi_slopes.has_value()
+                        ? reinterpret_cast<const float*>(alibi_slopes->data())
+                        : nullptr,
+                    num_heads_, num_seqs_, num_kv_heads_, total_q_tokens_,
+                    scale, max_num_blocks_per_seq_, block_size_,
+                    block_table_batch_stride_, q_stride_, q_head_stride_,
+                    k_cache_block_stride_, k_cache_slot_stride_,
+                    k_cache_head_stride_, v_cache_block_stride_,
+                    v_cache_slot_stride_, v_cache_head_stride_, out_stride_,
+                    out_head_stride_);
+          }
         },
         "CudaPagedAttentionPrefillInfinilm::operator()");
   }
