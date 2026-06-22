@@ -1,4 +1,5 @@
-add_library(infiniops SHARED)
+add_library(infiniops SHARED operator.h)
+set_target_properties(infiniops PROPERTIES LINKER_LANGUAGE CXX)
 
 function(_infini_ops_write_if_different path content)
     set(_should_write TRUE)
@@ -35,7 +36,16 @@ endfunction()
 include(GNUInstallDirs)
 
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
+list(FILTER BASE_SRCS EXCLUDE REGEX ".*tensor\\.cc$")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
+
+target_link_libraries(infiniops PUBLIC infinirt)
+
+set(INFINI_RT_INCLUDE_FLAGS "")
+foreach(_include_dir IN LISTS INFINI_RT_INCLUDE_DIRS)
+    list(APPEND INFINI_RT_INCLUDE_FLAGS "-I${_include_dir}")
+endforeach()
+list(JOIN INFINI_RT_INCLUDE_DIRS ":" INFINI_RT_INCLUDE_DIRS_ENV)
 
 set(DEVICE_LIST "")
 
@@ -46,7 +56,7 @@ if(WITH_CPU)
     )
 
     file(GLOB_RECURSE CPU_SOURCES CONFIGURE_DEPENDS ${CPU_PATTERNS})
-    list(APPEND CORE_SOURCES ${CPU_SOURCES})
+    target_sources(infiniops PRIVATE ${CPU_SOURCES})
 
     target_compile_definitions(infiniops PUBLIC WITH_CPU=1)
 
@@ -222,6 +232,7 @@ if(WITH_CAMBRICON)
         set(MLU_COMPILE_OPTS
             -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
             -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
+            ${INFINI_RT_INCLUDE_FLAGS}
             -idirafter /usr/local/neuware/lib/clang/11.1.0/include
         )
         function(compile_mlu_file src_file)
@@ -528,6 +539,7 @@ if(WITH_TORCH)
                     -std=c++17 -fPIC -O0
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
                     "-I${PROJECT_SOURCE_DIR}/generated"
+                    ${INFINI_RT_INCLUDE_FLAGS}
                     ${_torch_include_flags}
                     ${_torch_extra_flags}
                     -c "${_src}" -o "${_obj}"
@@ -553,6 +565,7 @@ if(WITH_TORCH)
             PROPERTIES POSITION_INDEPENDENT_CODE ON)
         target_include_directories(infini_ops_torch_objs PRIVATE
             $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>
+            ${INFINI_RT_INCLUDE_DIRS}
             ${TORCH_INCLUDE_DIRS}
             ${PROJECT_SOURCE_DIR}/generated)
         target_compile_definitions(infini_ops_torch_objs PRIVATE
@@ -597,7 +610,11 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     endif()
 
     execute_process(
-        COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py ${GENERATOR_ARGS}
+        COMMAND ${CMAKE_COMMAND} -E env
+                INFINI_RT_INCLUDE_DIRS=${INFINI_RT_INCLUDE_DIRS_ENV}
+                ${Python_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py
+                ${GENERATOR_ARGS}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         RESULT_VARIABLE script_result
     )
@@ -621,6 +638,11 @@ execute_process(
 if(NOT public_operator_header_result EQUAL 0)
     message(FATAL_ERROR "Generating public operator header - failed")
 endif()
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/config.h
+    ${PROJECT_SOURCE_DIR}/generated/include/config.h
+    COPYONLY
+)
 
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
@@ -635,7 +657,8 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}/generated"
-            "-I${PROJECT_SOURCE_DIR}/generated/include")
+            "-I${PROJECT_SOURCE_DIR}/generated/include"
+            ${INFINI_RT_INCLUDE_FLAGS})
         foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
             list(APPEND _iluvatar_call_instantiation_include_flags "-I${_dir}")
         endforeach()
@@ -809,7 +832,8 @@ if(GENERATE_PYTHON_BINDINGS)
         set(_iluvatar_dispatch_include_flags
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
-            "-I${PROJECT_SOURCE_DIR}/generated")
+            "-I${PROJECT_SOURCE_DIR}/generated"
+            ${INFINI_RT_INCLUDE_FLAGS})
         foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
             list(APPEND _iluvatar_dispatch_include_flags "-I${_dir}")
         endforeach()
@@ -937,7 +961,14 @@ if(GENERATE_PYTHON_BINDINGS)
     set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
     set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
 
-    install(TARGETS infiniops ops DESTINATION .)
+    get_target_property(_infinirt_imported infinirt IMPORTED)
+    if(_infinirt_imported)
+        install(TARGETS infiniops ops DESTINATION .)
+        get_target_property(_infinirt_imported_location infinirt IMPORTED_LOCATION)
+        install(FILES "${_infinirt_imported_location}" DESTINATION .)
+    else()
+        install(TARGETS infinirt infiniops ops DESTINATION .)
+    endif()
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)

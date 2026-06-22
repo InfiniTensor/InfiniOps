@@ -2,6 +2,7 @@
 #define INFINI_OPS_EXAMPLES_RUNTIME_API_H_
 
 #include "device.h"
+#include "runtime.h"
 
 #ifdef WITH_NVIDIA
 #include "native/cuda/nvidia/ops/gemm/cublas.h"
@@ -23,8 +24,9 @@
 #include "native/ascend/ops/gemm/kernel.h"
 #include "native/ascend/runtime_.h"
 #elif WITH_CPU
+#include <infini/rt/cpu/runtime_.h>
+
 #include "native/cpu/ops/gemm/gemm.h"
-#include "native/cpu/runtime_.h"
 #else
 #error "One `WITH_*` backend must be enabled for the examples."
 #endif

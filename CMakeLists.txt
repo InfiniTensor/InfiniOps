@@ -294,8 +294,6 @@ if(WITH_TORCH)
     message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
 endif()
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
-
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
 foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MOORE WITH_ASCEND)
@@ -501,6 +499,90 @@ endif()
 if(WITH_HYGON AND NOT EXISTS "${DTK_ROOT}/llvm/lib/LLVMgold.so")
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
+
+set(INFINI_RT_ROOT "$ENV{INFINI_RT_ROOT}" CACHE PATH "Installed InfiniRT prefix")
+set(INFINI_RT_SOURCE_DIR "" CACHE PATH "InfiniRT source directory for development builds")
+set(INFINI_RT_INCLUDE_DIRS "" CACHE STRING "InfiniRT include directories")
+set(INFINI_RT_LIBRARY "" CACHE FILEPATH "InfiniRT library")
+
+function(_infiniops_configure_infinirt)
+    if(TARGET infinirt)
+        get_target_property(_infinirt_include_dirs infinirt INTERFACE_INCLUDE_DIRECTORIES)
+        if(_infinirt_include_dirs)
+            set(INFINI_RT_INCLUDE_DIRS "${_infinirt_include_dirs}" CACHE STRING "InfiniRT include directories" FORCE)
+        endif()
+        return()
+    endif()
+
+    if(INFINI_RT_SOURCE_DIR)
+        if(NOT EXISTS "${INFINI_RT_SOURCE_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "InfiniRT source tree not found at `${INFINI_RT_SOURCE_DIR}`. "
+                "Unset `INFINI_RT_SOURCE_DIR` to use an installed InfiniRT package.")
+        endif()
+
+        add_subdirectory("${INFINI_RT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/InfiniRT")
+        set(INFINI_RT_INCLUDE_DIRS
+            "${INFINI_RT_SOURCE_DIR}/include;${INFINI_RT_SOURCE_DIR}/generated/include"
+            CACHE STRING "InfiniRT include directories" FORCE)
+        return()
+    endif()
+
+    set(_infinirt_include_hints ${INFINI_RT_INCLUDE_DIRS})
+    if(INFINI_RT_ROOT)
+        list(APPEND _infinirt_include_hints "${INFINI_RT_ROOT}/include")
+    endif()
+
+    find_path(_INFINI_RT_INCLUDE_DIR
+        NAMES infini/rt.h
+        HINTS ${_infinirt_include_hints}
+        PATH_SUFFIXES include
+    )
+
+    if(INFINI_RT_LIBRARY)
+        set(_INFINI_RT_LIBRARY "${INFINI_RT_LIBRARY}")
+    else()
+        set(_infinirt_library_hints "")
+        if(INFINI_RT_ROOT)
+            list(APPEND _infinirt_library_hints
+                "${INFINI_RT_ROOT}/lib"
+                "${INFINI_RT_ROOT}/lib64")
+        endif()
+        find_library(_INFINI_RT_LIBRARY
+            NAMES infinirt
+            HINTS ${_infinirt_library_hints}
+        )
+    endif()
+
+    if(NOT _INFINI_RT_INCLUDE_DIR OR NOT _INFINI_RT_LIBRARY)
+        message(FATAL_ERROR
+            "InfiniRT installed headers/library were not found. "
+            "Set `INFINI_RT_ROOT` to an installed InfiniRT prefix, or set "
+            "`INFINI_RT_INCLUDE_DIRS` and `INFINI_RT_LIBRARY` explicitly. "
+            "For development builds from source, set `INFINI_RT_SOURCE_DIR`.")
+    endif()
+
+    set(_infinirt_resolved_include_dirs "")
+    foreach(_infinirt_include_dir IN LISTS _infinirt_include_hints)
+        if(_infinirt_include_dir AND EXISTS "${_infinirt_include_dir}")
+            list(APPEND _infinirt_resolved_include_dirs "${_infinirt_include_dir}")
+        endif()
+    endforeach()
+    list(APPEND _infinirt_resolved_include_dirs "${_INFINI_RT_INCLUDE_DIR}")
+    list(REMOVE_DUPLICATES _infinirt_resolved_include_dirs)
+
+    add_library(infinirt SHARED IMPORTED GLOBAL)
+    set_target_properties(infinirt PROPERTIES
+        IMPORTED_LOCATION "${_INFINI_RT_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_infinirt_resolved_include_dirs}"
+    )
+
+    set(INFINI_RT_INCLUDE_DIRS "${_infinirt_resolved_include_dirs}" CACHE STRING "InfiniRT include directories" FORCE)
+    set(INFINI_RT_LIBRARY "${_INFINI_RT_LIBRARY}" CACHE FILEPATH "InfiniRT library" FORCE)
+    message(STATUS "Using installed InfiniRT: ${_INFINI_RT_LIBRARY}")
+endfunction()
+
+_infiniops_configure_infinirt()
 
 add_subdirectory(src)
 

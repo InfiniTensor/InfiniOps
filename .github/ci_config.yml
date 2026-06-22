@@ -15,7 +15,7 @@ platforms:
         BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
         SKIP_APT: "1"
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_NVIDIA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
@@ -51,7 +51,7 @@ platforms:
       - /lib/firmware:/lib/firmware
       - /usr/src:/usr/src
       - /lib/modules:/lib/modules
-    setup: python -m pip install packaging exceptiongroup typing-extensions pygments pybind11 libclang && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: python -m pip install scikit-build-core packaging exceptiongroup typing-extensions pygments pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_ILUVATAR=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix -DCMAKE_CUDA_ARCHITECTURES=OFF -DCMAKE_CUDA_COMPILER=/usr/local/corex-4.3.0.20250624/bin/clang++ -DCUDAToolkit_ROOT=/usr/local/corex-4.3.0.20250624 && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
@@ -81,7 +81,7 @@ platforms:
       - "--privileged"
       - "--ulimit=memlock=-1"
       - "--ulimit=stack=67108864"
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_METAX=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
@@ -109,7 +109,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_MOORE=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
@@ -136,7 +136,7 @@ platforms:
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
       - "--privileged"
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_CAMBRICON=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
@@ -172,7 +172,7 @@ platforms:
       - "--group-add=video"
     volumes:
       - /opt/hyhal:/opt/hyhal:ro
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_HYGON=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
@@ -209,7 +209,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_ASCEND=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       npu:
         type: unittest
