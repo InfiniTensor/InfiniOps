@@ -638,6 +638,11 @@ execute_process(
 if(NOT public_operator_header_result EQUAL 0)
     message(FATAL_ERROR "Generating public operator header - failed")
 endif()
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/config.h
+    ${PROJECT_SOURCE_DIR}/generated/include/config.h
+    COPYONLY
+)
 
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
