@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 
 #include "base/paged_attention_infinilm.h"
@@ -19,6 +20,9 @@ using PagedAttentionInfinilmIndexTypes =
 
 static constexpr int kMaxSplits = 8;
 static constexpr int kDefaultNumSplits = 4;
+static constexpr int kLongSequenceNumSplits = 8;
+static constexpr std::size_t kLongSequenceMinBlocks = 32;
+static constexpr std::size_t kLowBatchMaxNumSeqs = 4;
 
 template <typename Backend>
 class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
@@ -59,7 +63,14 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
               TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
           constexpr int kHeadSize = ListGet<2>(list_tag);
 
-          const int num_splits = kDefaultNumSplits;
+          // Low-batch long-context decode benefits from more KV parallelism.
+          // High-batch runs already expose enough work and pay extra combine
+          // overhead, so keep the default split count there.
+          const int num_splits =
+              max_num_blocks_per_seq_ >= kLongSequenceMinBlocks &&
+                      num_seqs_ <= kLowBatchMaxNumSeqs
+                  ? kLongSequenceNumSplits
+                  : kDefaultNumSplits;
           const std::size_t n = num_seqs_ * num_heads_;
           const std::size_t acc_elems =
               static_cast<std::size_t>(kMaxSplits) * n * kHeadSize;
