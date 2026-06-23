@@ -172,9 +172,10 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
-    static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
+    static thread_local std::unordered_map<detail::CacheKey,
+                                           std::unique_ptr<Operator>>
         cache;
-    static std::size_t generation{0};
+    static thread_local std::size_t generation{0};
 
     if (generation != cache_generation_) {
       cache.clear();

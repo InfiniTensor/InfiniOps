@@ -148,7 +148,7 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
 
  private:
   static cublasLtHandle_t& GetHandle() {
-    static cublasLtHandle_t handle = []() {
+    static thread_local cublasLtHandle_t handle = []() {
       cublasLtHandle_t h{};
       auto status = cublasLtCreate(&h);
       assert(status == CUBLAS_STATUS_SUCCESS &&
