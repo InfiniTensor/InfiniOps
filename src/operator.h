@@ -5,7 +5,6 @@
 #include <memory>
 #include <optional>
 #include <tuple>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -98,7 +97,14 @@ struct std::equal_to<infini::ops::detail::CacheKey> {
 
 namespace infini::ops {
 
-// Forward declaration — defined after `Operator` using SFINAE auto-detection.
+template <typename Key>
+struct CacheKeyBuilder {
+  template <typename... Args>
+  detail::CacheKey operator()(const Config& config, const Args&... args) const {
+    return detail::CacheKey::Build(config.implementation_index(), args...);
+  }
+};
+
 template <typename Key, Device::Type kDev>
 struct ActiveImplementations;
 
@@ -182,7 +188,7 @@ class Operator : public OperatorBase {
       generation = cache_generation_;
     }
 
-    auto key = detail::CacheKey::Build(config.implementation_index(), args...);
+    auto key = CacheKeyBuilder<Key>{}(config, args...);
 
     auto it{cache.find(key)};
 
