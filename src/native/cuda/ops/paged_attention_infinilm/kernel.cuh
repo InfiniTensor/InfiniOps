@@ -369,12 +369,16 @@ __device__ void FlashAttentionDecodeSplitKvWarpKernel(
                 "kHeadSize must be divisible by 32.");
   constexpr int kDimsPerThread = kHeadSize / kWarpSize;
 
-  const int seqlen = static_cast<int>(cache_lens[seqidx]);
+  const int pbs = static_cast<int>(page_block_size);
+  const int raw_seqlen = static_cast<int>(cache_lens[seqidx]);
+  const int max_reachable_tokens =
+      static_cast<int>(max_num_blocks_per_seq) * pbs;
+  const int seqlen = min(raw_seqlen, max_reachable_tokens);
   if (seqlen <= 0 || num_splits <= 0) {
     return;
   }
 
-  // Split the [0, seqlen) range into num_splits contiguous shards.
+  // Split the accessible [0, seqlen) range into num_splits contiguous shards.
   const int shard = (seqlen + num_splits - 1) / num_splits;
   const int start = split_idx * shard;
   const int end = min(seqlen, start + shard);
@@ -439,7 +443,6 @@ __device__ void FlashAttentionDecodeSplitKvWarpKernel(
 
   float m = -INFINITY;
   float l = 0.0f;
-  const int pbs = static_cast<int>(page_block_size);
 
   // Scan only [start, end).
   int t = start;
@@ -663,12 +666,16 @@ __device__ void FlashAttentionDecodeSplitKvCtaKernel(
   const int lane = tid % kWarpSize;
   const int warp_id = tid / kWarpSize;
 
-  const int seqlen = static_cast<int>(cache_lens[seqidx]);
+  const int pbs = static_cast<int>(page_block_size);
+  const int raw_seqlen = static_cast<int>(cache_lens[seqidx]);
+  const int max_reachable_tokens =
+      static_cast<int>(max_num_blocks_per_seq) * pbs;
+  const int seqlen = min(raw_seqlen, max_reachable_tokens);
   if (seqlen <= 0 || num_splits <= 0) {
     return;
   }
 
-  // Split the [0, seqlen) range into num_splits contiguous shards.
+  // Split the accessible [0, seqlen) range into num_splits contiguous shards.
   const int shard = (seqlen + num_splits - 1) / num_splits;
   const int start = split_idx * shard;
   const int end = min(seqlen, start + shard);
@@ -761,7 +768,6 @@ __device__ void FlashAttentionDecodeSplitKvCtaKernel(
   __shared__ float alpha_shared;
   __shared__ float weights_shared[kTokensPerTile];
 
-  const int pbs = static_cast<int>(page_block_size);
   const float alibi_slope =
       (alibi_slopes == nullptr) ? 0.0f : alibi_slopes[head_idx];
   constexpr float kLog2e = 1.4426950408889634f;
