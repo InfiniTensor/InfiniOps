@@ -19,7 +19,6 @@ class RandomSampleInfinilm : public Operator<RandomSampleInfinilm> {
         out_dtype_{out.dtype()},
         n_{logits.size(0)},
         logits_stride_{logits.stride(0)},
-        random_val_{random_val},
         topp_{topp},
         topk_{topk},
         temperature_{temperature} {
@@ -41,6 +40,15 @@ class RandomSampleInfinilm : public Operator<RandomSampleInfinilm> {
                           int64_t topk, float temperature,
                           Tensor out) const = 0;
 
+  static detail::CacheKey BuildCacheKey(const Config& config,
+                                        const Tensor logits,
+                                        float /*random_val*/, float topp,
+                                        int64_t topk, float temperature,
+                                        Tensor out) {
+    return detail::CacheKey::Build(config.implementation_index(), logits, topp,
+                                   topk, temperature, out);
+  }
+
  protected:
   static bool IsFloatDtype(DataType dtype) {
     return dtype == DataType::kFloat16 || dtype == DataType::kBFloat16 ||
@@ -61,8 +69,6 @@ class RandomSampleInfinilm : public Operator<RandomSampleInfinilm> {
   Tensor::Size n_{0};
 
   Tensor::Stride logits_stride_{1};
-
-  float random_val_{0.0f};
 
   float topp_{0.0f};
 

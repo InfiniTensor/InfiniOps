@@ -79,8 +79,8 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
                               static_cast<unsigned>(num_seqs_),
                               static_cast<unsigned>(num_splits));
 
-              PagedAttentionInfinilmSplitKvWarpKernel<TIndex, TData, kHeadSize>
-                  <<<grid_split, 32, 0, cuda_stream>>>(
+              PagedAttentionInfinilmSplitKvCtaKernel<TIndex, TData, kHeadSize>
+                  <<<grid_split, 64, 0, cuda_stream>>>(
                       partial_acc, partial_m, partial_l,
                       reinterpret_cast<const TData*>(q.data()),
                       reinterpret_cast<const TData*>(k_cache.data()),

@@ -73,6 +73,23 @@ bool ListContains(ValueType value, List<values...>) {
   return ((value == static_cast<ValueType>(values)) || ...);
 }
 
+template <typename Key, typename... Args>
+auto BuildOperatorCacheKeyImpl(int, const Config& config, const Args&... args)
+    -> decltype(Key::BuildCacheKey(config, args...)) {
+  return Key::BuildCacheKey(config, args...);
+}
+
+template <typename Key, typename... Args>
+CacheKey BuildOperatorCacheKeyImpl(long, const Config& config,
+                                   const Args&... args) {
+  return CacheKey::Build(config.implementation_index(), args...);
+}
+
+template <typename Key, typename... Args>
+CacheKey BuildOperatorCacheKey(const Config& config, const Args&... args) {
+  return BuildOperatorCacheKeyImpl<Key>(0, config, args...);
+}
+
 }  // namespace infini::ops::detail
 
 template <>
@@ -172,21 +189,23 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
-    static std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>
+    static thread_local std::unordered_map<detail::CacheKey,
+                                           std::unique_ptr<Operator>>
         cache;
-    static std::size_t generation{0};
+    static thread_local std::size_t generation{0};
 
     if (generation != cache_generation_) {
       cache.clear();
       generation = cache_generation_;
     }
 
-    auto key = detail::CacheKey::Build(config.implementation_index(), args...);
+    auto key = detail::BuildOperatorCacheKey<Key>(config, args...);
 
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      it = cache.emplace(std::move(key), Make(config, args...)).first;
+      auto op = Make(config, args...);
+      it = cache.emplace(std::move(key), std::move(op)).first;
     }
 
     auto& op{it->second};
