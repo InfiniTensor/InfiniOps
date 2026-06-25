@@ -47,6 +47,7 @@ InfiniOps extension so `import infini.ops` can load its runtime dependency.
 | `-DWITH_MOORE=[ON\|OFF]` | Compile the Moore implementation | OFF |
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
 | `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |
+| `-DWITH_TORCH=[ON\|OFF]` | Compile generated PyTorch ATen-backed operators | OFF |
 | `-DAUTO_DETECT_DEVICES=[ON\|OFF]` | Auto-detect available platforms | ON |
 | `-DINFINI_RT_ROOT=<path>` | InfiniRT install prefix containing `include/` and `lib/` | `$INFINI_RT_ROOT` |
 
@@ -57,6 +58,10 @@ For Hygon builds, set `DTK_ROOT` to the DTK installation root if it is not insta
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, commit conventions, PR workflow, development guide, and troubleshooting.
+
+## Development Docs
+
+- [Adding ATen-backed operators](docs/aten-operators.md)
 
 ## License
 
