@@ -9,6 +9,8 @@ namespace infini::ops {
 
 class Add : public Operator<Add> {
  public:
+  using Operator<Add>::Call;
+
   Add(const Tensor input, const Tensor other, Tensor out)
       : ndim_{out.ndim()},
         output_size_{out.numel()},
@@ -35,6 +37,21 @@ class Add : public Operator<Add> {
 
   virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;
+
+  template <typename TensorLike>
+  static auto Call(const TensorLike& input, const TensorLike& other) {
+    auto out = TensorLike::Empty(input.shape(), input.dtype(), input.device());
+    Tensor input_view{const_cast<void*>(static_cast<const void*>(input.data())),
+                      input.shape(), input.dtype(), input.device(),
+                      input.strides()};
+    Tensor other_view{const_cast<void*>(static_cast<const void*>(other.data())),
+                      other.shape(), other.dtype(), other.device(),
+                      other.strides()};
+    Tensor out_view{out.data(), out.shape(), out.dtype(), out.device(),
+                    out.strides()};
+    Add::Call(input_view, other_view, out_view);
+    return out;
+  }
 
  protected:
   Tensor::Size ndim_{0};

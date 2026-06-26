@@ -10,6 +10,8 @@ namespace infini::ops {
 
 class Gemm : public Operator<Gemm> {
  public:
+  using Operator<Gemm>::Call;
+
   Gemm(const Tensor a, const Tensor b, std::optional<float> alpha,
        std::optional<float> beta, std::optional<int> trans_a,
        std::optional<int> trans_b, Tensor c)
@@ -53,6 +55,33 @@ class Gemm : public Operator<Gemm> {
                           std::optional<float> alpha, std::optional<float> beta,
                           Tensor c) const {
     return operator()(a, b, alpha, beta, std::nullopt, std::nullopt, c);
+  }
+
+  template <typename TensorLike>
+  static auto Call(const TensorLike& a, const TensorLike& b) {
+    return Call(a, b, false, false);
+  }
+
+  template <typename TensorLike>
+  static auto Call(const TensorLike& a, const TensorLike& b, bool trans_a,
+                   bool trans_b) {
+    Tensor::Shape c_shape{
+        trans_a ? a.shape()[a.shape().size() - 1]
+                : a.shape()[a.shape().size() - 2],
+        trans_b ? b.shape()[b.shape().size() - 2]
+                : b.shape()[b.shape().size() - 1],
+    };
+    auto c = TensorLike::Empty(c_shape, a.dtype(), a.device());
+    Tensor a_view{const_cast<void*>(static_cast<const void*>(a.data())),
+                  a.shape(), a.dtype(), a.device(), a.strides()};
+    Tensor b_view{const_cast<void*>(static_cast<const void*>(b.data())),
+                  b.shape(), b.dtype(), b.device(), b.strides()};
+    Tensor c_view{c.data(), c.shape(), c.dtype(), c.device(), c.strides()};
+    Gemm::Call(a_view, b_view, std::optional<float>{1.0f},
+               std::optional<float>{0.0f},
+               std::optional<int>{static_cast<int>(trans_a)},
+               std::optional<int>{static_cast<int>(trans_b)}, c_view);
+    return c;
   }
 
  protected:
