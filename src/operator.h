@@ -5,7 +5,9 @@
 #include <memory>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "config.h"
@@ -71,6 +73,50 @@ template <typename ValueType, auto... values>
 bool ListContains(ValueType value, List<values...>) {
   return ((value == static_cast<ValueType>(values)) || ...);
 }
+
+template <typename TensorLike, typename = void>
+class IsTensorLike : public std::false_type {};
+
+template <typename TensorLike>
+class IsTensorLike<
+    TensorLike,
+    std::void_t<decltype(std::declval<const TensorLike&>().data()),
+                decltype(std::declval<const TensorLike&>().shape()),
+                decltype(std::declval<const TensorLike&>().strides()),
+                decltype(std::declval<const TensorLike&>().dtype()),
+                decltype(std::declval<const TensorLike&>().device())>>
+    : public std::true_type {};
+
+template <typename T, typename std::enable_if_t<
+                          IsTensorLike<std::decay_t<T>>::value, int> = 0>
+Tensor AsCallArg(const T& tensor) {
+  return Tensor{tensor};
+}
+
+template <typename T, typename std::enable_if_t<
+                          !IsTensorLike<std::decay_t<T>>::value, int> = 0>
+const T& AsCallArg(const T& value) {
+  return value;
+}
+
+template <typename Key, typename TensorLike, typename Args, typename = void>
+class HasMakeReturnValueImpl : public std::false_type {};
+
+template <typename Key, typename TensorLike, typename... Args>
+class HasMakeReturnValueImpl<
+    Key, TensorLike, std::tuple<Args...>,
+    std::void_t<decltype(Key::MakeReturnValue(std::declval<const TensorLike&>(),
+                                              std::declval<const Args&>()...))>>
+    : public std::true_type {};
+
+template <typename Key, typename... Args>
+class HasMakeReturnValueImpl<Key, Tensor, std::tuple<Args...>>
+    : public std::false_type {};
+
+template <typename Key, typename TensorLike, typename... Args>
+class HasMakeReturnValue
+    : public HasMakeReturnValueImpl<Key, std::decay_t<TensorLike>,
+                                    std::tuple<Args...>> {};
 
 }  // namespace infini::ops::detail
 
@@ -206,6 +252,14 @@ class Operator : public OperatorBase {
     return Call({}, {}, tensor, args...);
   }
 
+  template <
+      typename TensorLike, typename... Args,
+      typename std::enable_if_t<
+          detail::HasMakeReturnValue<Key, TensorLike, Args...>::value, int> = 0>
+  static auto Call(const TensorLike& tensor, const Args&... args) {
+    return CallReturning(tensor, args...);
+  }
+
   static std::vector<std::size_t> active_implementation_indices(
       Device::Type dev_type) {
     if (!detail::ListContains(dev_type, ActiveDevices<Key>{})) {
@@ -245,6 +299,14 @@ class Operator : public OperatorBase {
   static constexpr std::size_t implementation_index_{implementation_index};
 
  private:
+  template <typename TensorLike, typename... Args>
+  static auto CallReturning(const TensorLike& tensor, const Args&... args) {
+    auto out = Key::MakeReturnValue(tensor, args...);
+    Key::Call(detail::AsCallArg(tensor), detail::AsCallArg(args)...,
+              detail::AsCallArg(out));
+    return out;
+  }
+
   template <typename... Args>
   static std::unique_ptr<Operator> MakeWithDevice(
       const Config& config, Device::Type dispatch_device_type, Args&&... args) {
