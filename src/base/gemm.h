@@ -55,6 +55,13 @@ class Gemm : public Operator<Gemm> {
     return operator()(a, b, alpha, beta, std::nullopt, std::nullopt, c);
   }
 
+  template <typename TensorLike>
+  static auto MakeReturnValue(const TensorLike& a, const TensorLike& b) {
+    Tensor::Shape c_shape{a.shape()[a.shape().size() - 2],
+                          b.shape()[b.shape().size() - 1]};
+    return TensorLike::Empty(c_shape, a.dtype(), a.device());
+  }
+
  protected:
   float alpha_{1.0};
 
