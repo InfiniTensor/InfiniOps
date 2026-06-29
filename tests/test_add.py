@@ -86,6 +86,44 @@ def test_add(
     )
 
 
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "shape, input_strides, other_strides",
+    (
+        ((13, 4), None, None),
+        ((13, 4), (0, 1), None),
+    ),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+    ),
+)
+def test_add_returning(
+    shape,
+    input_strides,
+    other_strides,
+    implementation_index,
+    dtype,
+    device,
+    rtol,
+    atol,
+):
+    input = randn_strided(shape, input_strides, dtype=dtype, device=device)
+    other = randn_strided(shape, other_strides, dtype=dtype, device=device)
+
+    return Payload(
+        lambda *args: _add_returning(*args, implementation_index=implementation_index),
+        torch.add,
+        (input, other),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
 def _add(input, other, out, implementation_index=0):
     infini.ops.add(
         input,
@@ -96,6 +134,15 @@ def _add(input, other, out, implementation_index=0):
     )
 
     return out
+
+
+def _add_returning(input, other, implementation_index=0):
+    return infini.ops.add(
+        input,
+        other,
+        stream=get_stream(input.device),
+        implementation_index=implementation_index,
+    )
 
 
 def _torch_add(input, other, out):

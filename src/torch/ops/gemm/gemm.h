@@ -12,6 +12,13 @@ class Operator<Gemm, kDev, 2> : public Gemm {
            std::optional<float> beta, std::optional<int> trans_a,
            std::optional<int> trans_b, Tensor c);
 
+  Operator(const Tensor a, const Tensor b, Tensor c)
+      : Operator{a, b, std::nullopt, 0.0F, std::nullopt, std::nullopt, c} {}
+
+  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
+           std::optional<float> beta, Tensor c)
+      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+
   using Gemm::operator();
 
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,

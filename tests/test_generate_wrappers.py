@@ -176,6 +176,89 @@ class Mul {
     assert 'py::arg("implementation_index") = py::none()' in text
 
 
+def test_pybind_generates_returning_call_when_make_return_value_exists(
+    monkeypatch, tmp_path
+):
+    module = _load_generator_module()
+    base_header = tmp_path / "add.h"
+    base_header.write_text(
+        """
+class Add {
+ public:
+  virtual void operator()(const Tensor input, const Tensor other, Tensor out) const = 0;
+
+  template <typename TensorLike>
+  static auto MakeReturnValue(const TensorLike& input, const TensorLike& other) {
+    return TensorLike::Empty(input.shape(), input.dtype(), input.device());
+  }
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    operator = module._Operator(
+        "add",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "input"),
+                    module._ParsedArgument("const Tensor", "other"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            )
+        ],
+    )
+
+    text = module._generate_pybind11(operator)
+
+    assert (
+        'm.def("add", [](py::object input, py::object other, '
+        "std::uintptr_t stream, std::optional<std::size_t> implementation_index)"
+    ) in text
+    assert "Pybind11Tensor infini_input{input};" in text
+    assert "Pybind11Tensor infini_other{other};" in text
+    assert "auto out = Self::MakeReturnValue(infini_input, infini_other);" in text
+    assert (
+        "generated_dispatch::CallAdd(handle, config, Tensor{infini_input}, "
+        "Tensor{infini_other}, Tensor{out});"
+    ) in text
+    assert "return out.object();" in text
+
+
+def test_pybind_skips_returning_call_without_make_return_value(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    base_header = tmp_path / "mul.h"
+    base_header.write_text(
+        """
+class Mul {
+ public:
+  virtual void operator()(const Tensor input, const Tensor other, Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    operator = module._Operator(
+        "mul",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "input"),
+                    module._ParsedArgument("const Tensor", "other"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            )
+        ],
+    )
+
+    text = module._generate_pybind11(operator)
+
+    assert "Self::MakeReturnValue" not in text
+    assert text.count('m.def("mul"') == 1
+
+
 def test_normalize_op_allowlist_accepts_spaces_and_commas():
     module = _load_generator_module()
 
