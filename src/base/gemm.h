@@ -37,7 +37,7 @@ class Gemm : public Operator<Gemm> {
   }
 
   Gemm(const Tensor a, const Tensor b, Tensor c)
-      : Gemm{a, b, std::nullopt, 0.0F, std::nullopt, std::nullopt, c} {}
+      : Gemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
 
   virtual void operator()(const Tensor a, const Tensor b,
                           std::optional<float> alpha, std::optional<float> beta,
@@ -45,7 +45,8 @@ class Gemm : public Operator<Gemm> {
                           std::optional<int> trans_b, Tensor c) const = 0;
 
   virtual void operator()(const Tensor a, const Tensor b, Tensor c) const {
-    return operator()(a, b, std::nullopt, 0.0F, std::nullopt, std::nullopt, c);
+    return operator()(a, b, std::nullopt, std::nullopt, std::nullopt,
+                      std::nullopt, c);
   }
 
   virtual void operator()(const Tensor a, const Tensor b,

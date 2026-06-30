@@ -37,6 +37,11 @@ _INDENTATION = "  "
 
 _OP_NAMESPACE_PREFIXES = ("special", "linalg", "fft")
 
+# Keep Python returning overloads explicitly opt-in while the API is being
+# rolled out.  Some C++ returning-capable ops have extra semantics that need
+# separate Python review before exposure.
+_PY_RETURNING_OPS = frozenset({"add"})
+
 
 def _op_namespace_parts(op_name):
     parts = op_name.split("_")
@@ -737,7 +742,7 @@ def _generate_pybind11(operator):
     inits = "\n".join(_generate_init(constructor) for constructor in constructors)
     calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
     returning_calls = []
-    if _has_make_return_value(operator.name):
+    if operator.name in _PY_RETURNING_OPS and _has_make_return_value(operator.name):
         returning_calls = sorted(
             (call for call in operator_calls if _is_returning_candidate(call)),
             key=lambda call: len(_args_without_stream(call)),

@@ -75,49 +75,15 @@ def test_add(
         other = randn_strided(shape, other_strides, dtype=dtype, device=device)
 
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
+    call = _add
+
+    if input_strides is None and other_strides is None and out_strides is None:
+        call = _add_returning
 
     return Payload(
-        lambda *args: _add(*args, implementation_index=implementation_index),
+        lambda *args: call(*args, implementation_index=implementation_index),
         _torch_add,
         (input, other, out),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )
-
-
-@pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    "shape, input_strides, other_strides",
-    (
-        ((13, 4), None, None),
-        ((13, 4), (0, 1), None),
-    ),
-)
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float32, 1e-7, 1e-7),
-        (torch.float16, 1e-3, 1e-3),
-    ),
-)
-def test_add_returning(
-    shape,
-    input_strides,
-    other_strides,
-    implementation_index,
-    dtype,
-    device,
-    rtol,
-    atol,
-):
-    input = randn_strided(shape, input_strides, dtype=dtype, device=device)
-    other = randn_strided(shape, other_strides, dtype=dtype, device=device)
-
-    return Payload(
-        lambda *args: _add_returning(*args, implementation_index=implementation_index),
-        torch.add,
-        (input, other),
         {},
         rtol=rtol,
         atol=atol,
@@ -136,7 +102,7 @@ def _add(input, other, out, implementation_index=0):
     return out
 
 
-def _add_returning(input, other, implementation_index=0):
+def _add_returning(input, other, out, implementation_index=0):
     return infini.ops.add(
         input,
         other,

@@ -110,64 +110,6 @@ def test_gemm(
     )
 
 
-@pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    "a_shape, b_shape, a_strides, b_strides",
-    (
-        ((4, 64), (64, 32), None, None),
-        ((6, 2048), (2048, 2560), (2048, 1), (1, 2048)),
-    ),
-)
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float32, 1e-3, 1e-3),
-        (torch.float16, 1e-2, 1e-2),
-    ),
-)
-def test_gemm_returning(
-    a_shape,
-    b_shape,
-    a_strides,
-    b_strides,
-    implementation_index,
-    dtype,
-    device,
-    rtol,
-    atol,
-):
-    if implementation_index == 1 and dtype == torch.float16:
-        pytest.skip("cuBLASLt half-precision exceeds current tolerances")
-
-    if implementation_index == 2 and device == "cpu" and dtype == torch.float16:
-        pytest.skip("ATen CPU `addmm` does not support half-precision")
-
-    if (
-        device == "cuda"
-        and dtype == torch.float16
-        and infini.ops.Gemm.active_implementation_indices("iluvatar")
-    ):
-        pytest.skip("Iluvatar GEMM reports fp16 execution failures")
-
-    if implementation_index == 2 and device == "npu":
-        pytest.skip(
-            "Gemm impl=2 on Ascend is a torch-fallback stub without an "
-            "instantiated specialization"
-        )
-
-    a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
-    b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
-
-    return Payload(
-        lambda *args: _gemm_returning(*args, implementation_index=implementation_index),
-        torch.matmul,
-        (a, b),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )
-
-
 def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
     infini.ops.gemm(
         a,
@@ -182,15 +124,6 @@ def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
     )
 
     return c
-
-
-def _gemm_returning(a, b, implementation_index=0):
-    return infini.ops.gemm(
-        a,
-        b,
-        stream=get_stream(a.device),
-        implementation_index=implementation_index,
-    )
 
 
 def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None):

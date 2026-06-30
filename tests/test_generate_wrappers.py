@@ -226,6 +226,44 @@ class Add {
     assert "return out.object();" in text
 
 
+def test_pybind_skips_returning_call_for_unenabled_op(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    base_header = tmp_path / "gemm.h"
+    base_header.write_text(
+        """
+class Gemm {
+ public:
+  virtual void operator()(const Tensor a, const Tensor b, Tensor c) const = 0;
+
+  template <typename TensorLike>
+  static auto MakeReturnValue(const TensorLike& a, const TensorLike& b) {
+    return TensorLike::Empty(a.shape(), a.dtype(), a.device());
+  }
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    operator = module._Operator(
+        "gemm",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "a"),
+                    module._ParsedArgument("const Tensor", "b"),
+                    module._ParsedArgument("Tensor", "c"),
+                ]
+            )
+        ],
+    )
+
+    text = module._generate_pybind11(operator)
+
+    assert "Self::MakeReturnValue" not in text
+    assert text.count('m.def("gemm"') == 1
+
+
 def test_pybind_skips_returning_call_without_make_return_value(monkeypatch, tmp_path):
     module = _load_generator_module()
     base_header = tmp_path / "mul.h"
