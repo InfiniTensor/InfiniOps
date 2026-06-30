@@ -61,7 +61,7 @@ inline std::string DataTypeToTorchName(DataType dtype) {
     case DataType::kFloat64:
       return "float64";
     default:
-      throw py::value_error("Unsupported dtype for PyTorch tensor creation");
+      throw py::value_error("unsupported `dtype` for PyTorch tensor creation");
   }
 }
 
@@ -70,7 +70,7 @@ inline py::object TorchDType(DataType dtype) {
   auto name = DataTypeToTorchName(dtype);
 
   if (!py::hasattr(torch, name.c_str())) {
-    throw py::value_error("Current PyTorch build does not expose dtype `" +
+    throw py::value_error("current PyTorch build does not expose `dtype` `" +
                           name + "`");
   }
 
@@ -105,7 +105,7 @@ inline std::string TorchDeviceTypeName(Device::Type type) {
     case Device::Type::kQy:
       return std::string{detail::TorchDeviceName<Device::Type::kQy>::kValue};
     default:
-      throw py::value_error("Unsupported device for PyTorch tensor creation");
+      throw py::value_error("unsupported `device` for PyTorch tensor creation");
   }
 }
 
