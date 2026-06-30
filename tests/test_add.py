@@ -75,9 +75,13 @@ def test_add(
         other = randn_strided(shape, other_strides, dtype=dtype, device=device)
 
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
+    call = _add
+
+    if input_strides is None and other_strides is None and out_strides is None:
+        call = _add_returning
 
     return Payload(
-        lambda *args: _add(*args, implementation_index=implementation_index),
+        lambda *args: call(*args, implementation_index=implementation_index),
         _torch_add,
         (input, other, out),
         {},
@@ -96,6 +100,15 @@ def _add(input, other, out, implementation_index=0):
     )
 
     return out
+
+
+def _add_returning(input, other, out, implementation_index=0):
+    return infini.ops.add(
+        input,
+        other,
+        stream=get_stream(input.device),
+        implementation_index=implementation_index,
+    )
 
 
 def _torch_add(input, other, out):
