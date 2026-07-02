@@ -366,6 +366,8 @@ if(WITH_ASCEND)
         file(GLOB_RECURSE _custom_srcs CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/*.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/*.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/*.cmake"
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/CMakeLists.txt"
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/build.sh")
 
         # Scrub env inherited from the outer `scikit-build-core` invocation
