@@ -235,6 +235,13 @@ _VENDOR_CRASH_OPS = frozenset(
     }
 )
 
+# Ops whose reference path needs too much memory for the generic large CI shape.
+_HIGH_MEMORY_REFERENCE_CASES = frozenset(
+    {
+        ("cuda", "svd", (4, 4, 5632)),
+    }
+)
+
 # Ops where the ATen `_out` schema and the Python reference (`torch.<op>`,
 # `torch.nn.functional.<op>`) diverge in positional-argument ordering or
 # parameter representation, so the harness's purely-positional reference call
@@ -497,6 +504,9 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
 
     if (device, aten_name) in _VENDOR_CRASH_OPS:
         pytest.skip(f"`{aten_name}` crashes on `{device}` vendor kernel")
+
+    if (device, aten_name, shape) in _HIGH_MEMORY_REFERENCE_CASES:
+        pytest.skip(f"`{aten_name}` reference path needs too much memory")
 
     if device == "cuda" and aten_name in _DEVICE_ASSERTING_OPS:
         pytest.skip(
