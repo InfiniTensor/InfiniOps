@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_ASCEND_ADD_RMS_NORM_KERNEL_H_
 #define INFINI_OPS_ASCEND_ADD_RMS_NORM_KERNEL_H_
 
+#include <cassert>
 #include <optional>
 #include <vector>
 
@@ -32,6 +33,9 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 0> : public AddRmsNorm {
         weight_cache_(weight),
         out_cache_(out),
         residual_out_cache_(residual_out) {
+    assert(out.IsContiguous() &&
+           "`AddRmsNorm` Ascend path requires contiguous `out`.");
+
     // Alpha scalar for `aclnnAdd` (`residual_out = input + 1.0 * residual`).
     alpha_ = aclCreateScalar(&alpha_storage_, ACL_FLOAT);
 
