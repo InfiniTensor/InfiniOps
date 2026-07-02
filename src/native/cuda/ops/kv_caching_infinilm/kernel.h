@@ -50,7 +50,7 @@ class CudaKvCachingInfinilm : public KvCachingInfinilm {
     std::memcpy(metadata.data() + offset, v_strides_.data(), strides_size);
 
     Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::MemcpyHostToDevice);
+                    Backend::kMemcpyHostToDevice);
   }
 
   ~CudaKvCachingInfinilm() { Backend::Free(d_metadata_); }

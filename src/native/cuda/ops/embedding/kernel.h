@@ -57,7 +57,7 @@ class CudaEmbedding : public Embedding {
                 out_strides_size);
 
     Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::MemcpyHostToDevice);
+                    Backend::kMemcpyHostToDevice);
   }
 
   ~CudaEmbedding() { Backend::Free(d_metadata_); }

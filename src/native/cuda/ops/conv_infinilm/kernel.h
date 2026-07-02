@@ -93,7 +93,7 @@ class CudaConvInfinilm : public ConvInfinilm {
     std::memcpy(metadata.data() + offset, dilation_.data(), attrs_size);
 
     Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::MemcpyHostToDevice);
+                    Backend::kMemcpyHostToDevice);
   }
 
   ~CudaConvInfinilm() { Backend::Free(d_metadata_); }

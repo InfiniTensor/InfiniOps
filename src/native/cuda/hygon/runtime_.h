@@ -16,9 +16,13 @@ namespace infini::ops {
 template <>
 struct Runtime<Device::Type::kHygon>
     : CudaRuntime<Runtime<Device::Type::kHygon>> {
+  using Error = cudaError_t;
+
   using Stream = cudaStream_t;
 
   static constexpr Device::Type kDeviceType = Device::Type::kHygon;
+
+  static constexpr Error kSuccess = cudaSuccess;
 
   static constexpr auto Malloc = [](auto&&... args) {
     return cudaMalloc(std::forward<decltype(args)>(args)...);
@@ -30,9 +34,9 @@ struct Runtime<Device::Type::kHygon>
     return cudaFree(std::forward<decltype(args)>(args)...);
   };
 
-  static constexpr auto MemcpyHostToDevice = cudaMemcpyHostToDevice;
+  static constexpr auto kMemcpyHostToDevice = cudaMemcpyHostToDevice;
 
-  static constexpr auto MemcpyDeviceToHost = cudaMemcpyDeviceToHost;
+  static constexpr auto kMemcpyDeviceToHost = cudaMemcpyDeviceToHost;
 
   static constexpr auto Memset = cudaMemset;
 };

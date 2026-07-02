@@ -6,10 +6,10 @@
 namespace infini::ops {
 
 template <Device::Type device_type>
-using Runtime = infini::rt::Runtime<device_type>;
+using Runtime = infini::rt::runtime::Runtime<device_type>;
 
 template <typename Derived>
-using DeviceRuntime = infini::rt::DeviceRuntime<Derived>;
+using DeviceRuntime = infini::rt::runtime::DeviceRuntime<Derived>;
 
 }  // namespace infini::ops
 
