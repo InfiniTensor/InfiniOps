@@ -181,8 +181,8 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
            "`aclnnAddRmsNorm` Ascend path failed to allocate `rstdOut`.");
 
     rstd_tensor_ = aclCreateTensor(
-        rstd_shape_.data(), static_cast<int64_t>(rstd_shape_.size()),
-        ACL_FLOAT, /*strides=*/nullptr, 0, ACL_FORMAT_ND, rstd_shape_.data(),
+        rstd_shape_.data(), static_cast<int64_t>(rstd_shape_.size()), ACL_FLOAT,
+        /*strides=*/nullptr, 0, ACL_FORMAT_ND, rstd_shape_.data(),
         static_cast<int64_t>(rstd_shape_.size()), rstd_data_);
   }
 
@@ -225,8 +225,7 @@ class Operator<AddRmsNorm, Device::Type::kAscend, 1> : public AddRmsNorm {
                             const_cast<void*>(weight.data()));
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       // `rstd` at output index 1 has a stable address.
-      aclSetOutputTensorAddr(executor_, 2, t_residual_out,
-                             residual_out.data());
+      aclSetOutputTensorAddr(executor_, 2, t_residual_out, residual_out.data());
     }
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_);
