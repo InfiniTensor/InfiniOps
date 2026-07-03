@@ -571,6 +571,14 @@ if(WITH_TORCH)
             list(APPEND _torch_include_flags "-isystem" "${_dir}")
         endforeach()
 
+        set(_torch_vendor_include_flags "")
+        if(WITH_METAX)
+            list(APPEND _torch_vendor_include_flags "-I${MACA_PATH}/include")
+        endif()
+        if(WITH_MOORE)
+            list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
+        endif()
+
         # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
         if(WITH_METAX)
@@ -604,6 +612,7 @@ if(WITH_TORCH)
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
                     "-I${PROJECT_SOURCE_DIR}/generated"
                     ${INFINI_RT_INCLUDE_FLAGS}
+                    ${_torch_vendor_include_flags}
                     ${_torch_include_flags}
                     ${_torch_extra_flags}
                     -c "${_src}" -o "${_obj}"
