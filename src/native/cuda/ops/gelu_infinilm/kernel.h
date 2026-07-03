@@ -46,7 +46,7 @@ class CudaGeluInfinilm : public GeluInfinilm {
     std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
     Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::MemcpyHostToDevice);
+                    Backend::kMemcpyHostToDevice);
   }
 
   ~CudaGeluInfinilm() { Backend::Free(d_metadata_); }
