@@ -127,7 +127,8 @@ if(WITH_NINETOOTHED)
 endif()
 
 if(WITH_TRITON)
-    find_package(Python COMPONENTS Interpreter REQUIRED)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    find_package(pybind11 CONFIG REQUIRED)
 
     if(TRITON_PYTHON_EXECUTABLE)
         set(_triton_python "${TRITON_PYTHON_EXECUTABLE}")
@@ -156,9 +157,11 @@ if(WITH_TRITON)
     enable_language(C)
 
     include("${_triton_output_dir}/manifest.cmake")
-    target_compile_definitions(infiniops PUBLIC WITH_TRITON=1)
-    target_include_directories(infiniops PRIVATE ${INFINIOPS_TRITON_INCLUDE_DIRS})
-    target_sources(infiniops PRIVATE ${INFINIOPS_TRITON_SOURCES})
+    target_compile_definitions(infiniops PUBLIC WITH_TRITON=1
+        TRITON_JIT_CACHE_DIR="/tmp/triton_jit_cache")
+    target_include_directories(infiniops PRIVATE ${INFINIOPS_TRITON_INCLUDE_DIRS} ${pybind11_INCLUDE_DIRS})
+    target_link_libraries(infiniops PRIVATE pybind11::embed Python::Python)
+    target_sources(infiniops PRIVATE ${INFINIOPS_TRITON_SOURCES} triton/jit/jit.cc triton/jit/compiler.cc)
 endif()
 
 if(WITH_ILUVATAR)
@@ -1104,6 +1107,19 @@ if(GENERATE_PYTHON_BINDINGS)
         # torch op test can discover what to exercise at runtime.
         install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
             DESTINATION .)
+    endif()
+
+    if(WITH_TRITON)
+        # Ship the JIT compiler and kernel sources so Triton JIT operators
+        # can compile kernels at runtime.  compile.py uses __file__ to
+        # locate ops/ relative to itself; both must live under triton/.
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/triton/jit/compile.py"
+                DESTINATION triton/jit)
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/triton/ops/"
+                DESTINATION triton/ops
+                FILES_MATCHING
+                PATTERN "*.py"
+                PATTERN "build.py" EXCLUDE)
     endif()
 endif()
 
