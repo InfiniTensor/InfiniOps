@@ -323,9 +323,7 @@ template class Operator<Foo, Device::Type::kAscend, kIndex>;
 template class Operator<Foo, Device::Type::kMetax, kIndex>;
 template class Operator<Foo, Device::Type::kMoore, kIndex>;
 template class Operator<Foo, Device::Type::kIluvatar, kIndex>;
-template class Operator<Foo, Device::Type::kKunlun, kIndex>;
 template class Operator<Foo, Device::Type::kHygon, kIndex>;
-template class Operator<Foo, Device::Type::kQy, kIndex>;
 
 }  // namespace infini::ops
 ```

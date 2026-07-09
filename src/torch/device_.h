@@ -46,17 +46,7 @@ struct TorchDeviceName<Device::Type::kIluvatar> {
 };
 
 template <>
-struct TorchDeviceName<Device::Type::kKunlun> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
 struct TorchDeviceName<Device::Type::kHygon> {
-  static constexpr std::string_view kValue{"cuda"};
-};
-
-template <>
-struct TorchDeviceName<Device::Type::kQy> {
   static constexpr std::string_view kValue{"cuda"};
 };
 

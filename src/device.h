@@ -15,8 +15,7 @@ using DeviceEnabled = infini::rt::DeviceEnabled<device_type>;
 using AllDeviceTypes =
     List<Device::Type::kCpu, Device::Type::kNvidia, Device::Type::kCambricon,
          Device::Type::kAscend, Device::Type::kMetax, Device::Type::kMoore,
-         Device::Type::kIluvatar, Device::Type::kKunlun, Device::Type::kHygon,
-         Device::Type::kQy>;
+         Device::Type::kIluvatar, Device::Type::kHygon>;
 
 template <typename>
 struct ActiveDevicesImpl {
