@@ -1,0 +1,44 @@
+:root {
+  --primary-color: #225f8f;
+  --primary-dark-color: #174866;
+  --primary-light-color: #3d7fa8;
+  --page-background-color: #ffffff;
+  --page-foreground-color: #20262d;
+  --side-nav-background: #f7f9fb;
+  --code-background: #f3f5f7;
+  --fragment-background: #f6f8fa;
+  --fragment-foreground: #1f2933;
+}
+
+html {
+  --searchbar-background: #ffffff;
+  --searchbar-foreground: #20262d;
+}
+
+body {
+  line-height: 1.5;
+}
+
+a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+code,
+tt {
+  border-radius: 4px;
+}
+
+.contents,
+.textblock {
+  max-width: 1100px;
+}
+
+.fragment {
+  border-radius: 6px;
+}
+
+.memproto,
+.memdoc {
+  border-radius: 6px;
+}
