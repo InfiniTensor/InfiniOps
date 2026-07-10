@@ -119,4 +119,7 @@ cmake --build build --target infiniops_docs
 
 The generated HTML is written to `build/docs/reference/html`.
 
+The Documentation Pages workflow uses the same target to validate pull requests
+and publish `master` builds through GitHub Pages.
+
 See [API Reference](api/reference.md) for reference scope and preview commands.

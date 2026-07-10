@@ -35,6 +35,6 @@ Start with these pages:
 - [Compatibility](compatibility.md): public API boundary, generated files, and
   internal implementation headers.
 
-The API reference can be generated locally with Doxygen. Publishing the
-generated HTML is intentionally handled separately from the local documentation
-target.
+The API reference can be generated locally with Doxygen. The Documentation Pages
+workflow validates that generated HTML for pull requests and publishes `master`
+builds through GitHub Pages.

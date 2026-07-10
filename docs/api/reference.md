@@ -68,5 +68,7 @@ Use [Compatibility](../compatibility.md) for the supported API boundary.
 
 ## Publishing
 
-This target only generates local HTML. GitHub Pages validation and publishing
-should be added in a dedicated CI PR.
+The Documentation Pages workflow builds the same `infiniops_docs` target for
+pull requests and uploads the generated HTML as a Pages artifact. Pushes to
+`master` deploy the artifact through GitHub Pages when the repository Pages
+source is configured for GitHub Actions.
