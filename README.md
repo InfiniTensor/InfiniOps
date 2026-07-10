@@ -15,10 +15,10 @@ InfiniOps is a high-performance, cross-platform operator library supporting mult
 Install InfiniRT first, then build InfiniOps with the InfiniRT install prefix:
 
 ```bash
-pip install . -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix
+pip install . -C cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix
 ```
 
-`/path/to/infinirt-prefix` is the directory passed to InfiniRT as
+`/path/to/infini-rt-prefix` is the directory passed to InfiniRT as
 `CMAKE_INSTALL_PREFIX`; it should contain `include/infini/rt.h` and
 `lib/libinfinirt.so`.
 
@@ -27,7 +27,7 @@ platforms explicitly:
 
 ```bash
 pip install . \
-  -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix \
+  -C cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix \
   -C cmake.define.WITH_CPU=ON \
   -C cmake.define.WITH_NVIDIA=ON
 ```
@@ -59,9 +59,18 @@ For Hygon builds, set `DTK_ROOT` to the DTK installation root if it is not insta
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, commit conventions, PR workflow, development guide, and troubleshooting.
 
-## Development Docs
+## Documentation
 
+Full user and contributor documentation starts at [docs/README.md](docs/README.md).
+
+Useful entry points:
+
+- [Getting Started](docs/getting-started.md)
+- [Build and Test](docs/build.md)
+- [Backends](docs/backends.md)
+- [Operators](docs/api/operators.md)
 - [Adding ATen-backed operators](docs/aten-operators.md)
+- [Compatibility](docs/compatibility.md)
 
 ## License
 

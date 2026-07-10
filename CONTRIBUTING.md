@@ -70,12 +70,12 @@ Using Nvidia as an example:
 
 ```bash
 pip install .[dev] \
-  -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix \
+  -C cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix \
   -C cmake.define.WITH_CPU=ON \
   -C cmake.define.WITH_NVIDIA=ON
 ```
 
-`/path/to/infinirt-prefix` is the InfiniRT install prefix, typically the value
+`/path/to/infini-rt-prefix` is the InfiniRT install prefix, typically the value
 used for InfiniRT's `CMAKE_INSTALL_PREFIX`. It should contain
 `include/infini/rt.h` and `lib/libinfinirt.so`.
 
@@ -83,7 +83,7 @@ Auto-detection is supported for some platforms, so you can also let InfiniOps
 detect the device backends while still pointing it at the installed InfiniRT:
 
 ```bash
-pip install .[dev] -C cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix
+pip install .[dev] -C cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix
 ```
 
 > `[dev]` installs optional development dependencies (e.g. `pytest`) that are not needed for production but required for development and testing. After the first install, subsequent installs only need `pip install .`.
@@ -102,7 +102,7 @@ For routine development and pull requests, start with a smoke build plus the smo
 
 ```bash
 python -m pip install .[dev] --no-build-isolation --no-deps \
-  --config-settings=cmake.define.INFINI_RT_ROOT=/path/to/infinirt-prefix \
+  --config-settings=cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix \
   --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON
 python -m pytest tests -m smoke -q
 ```
