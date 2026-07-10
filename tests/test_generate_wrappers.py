@@ -125,6 +125,69 @@ class Clamp {
     ) in text
 
 
+def test_extractor_prefers_header_types_for_reused_parameter_names(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    base_header = tmp_path / "histogram.h"
+    base_header.write_text(
+        """
+class Histogram {
+ public:
+  virtual void operator()(const Tensor input, const Tensor bins,
+                          const std::optional<Tensor> weight,
+                          const bool density, Tensor hist,
+                          Tensor bin_edges) const = 0;
+  virtual void operator()(const Tensor input, const int64_t bins,
+                          const std::optional<std::vector<double>> range,
+                          const std::optional<Tensor> weight,
+                          const bool density, Tensor hist,
+                          Tensor bin_edges) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    clang_calls = [
+        module._ParsedFunction(
+            [
+                module._ParsedArgument("const int", "input"),
+                module._ParsedArgument("const int", "bins"),
+                module._ParsedArgument("const int", "weight"),
+                module._ParsedArgument("const bool", "density"),
+                module._ParsedArgument("int", "hist"),
+                module._ParsedArgument("int", "bin_edges"),
+            ]
+        ),
+        module._ParsedFunction(
+            [
+                module._ParsedArgument("const int", "input"),
+                module._ParsedArgument("const int64_t", "bins"),
+                module._ParsedArgument("const int", "range"),
+                module._ParsedArgument("const int", "weight"),
+                module._ParsedArgument("const bool", "density"),
+                module._ParsedArgument("int", "hist"),
+                module._ParsedArgument("int", "bin_edges"),
+            ]
+        ),
+    ]
+
+    operator = module._Operator(
+        "histogram",
+        constructors=[],
+        calls=module._prefer_header_type_spellings(
+            clang_calls, module._parse_operator_header("histogram").calls
+        ),
+    )
+
+    declarations, _ = module._generate_operator_call_instantiation_entries(operator)
+    text = "\n".join(declarations)
+
+    assert (
+        "Call<Tensor, int64_t, std::optional<std::vector<double>>, "
+        "std::optional<Tensor>, bool, Tensor, Tensor>"
+    ) in text
+    assert "Call<Tensor, Tensor, int, std::optional<Tensor>" not in text
+
+
 def test_pybind_default_implementation_uses_first_active_index(monkeypatch, tmp_path):
     module = _load_generator_module()
     base_header = tmp_path / "mul.h"
