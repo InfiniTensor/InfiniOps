@@ -68,6 +68,7 @@ Useful entry points:
 - [Getting Started](docs/getting-started.md)
 - [Build and Test](docs/build.md)
 - [Backends](docs/backends.md)
+- [Examples](docs/examples.md)
 - [Operators](docs/api/operators.md)
 - [Adding ATen-backed operators](docs/aten-operators.md)
 - [Compatibility](docs/compatibility.md)
