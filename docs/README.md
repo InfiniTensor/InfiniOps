@@ -23,6 +23,8 @@ Start with these pages:
 - [Build and Test](build.md): build options, smoke builds, and test commands.
 - [Backends](backends.md): supported backend options and backend-specific
   requirements.
+- [Examples](examples.md): Python and C++ examples currently available in the
+  repository.
 - [Core Types](api/core-types.md): tensors, devices, data types, handles, and
   configuration objects.
 - [Operators](api/operators.md): the operator API model, dispatch, caching, and

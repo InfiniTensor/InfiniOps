@@ -79,6 +79,7 @@ print(z)
 ```
 
 The repository also contains `examples/gemm.py` for a runnable Python example.
+See [Examples](examples.md) for the full example inventory.
 
 ## Minimal C++ Include
 
@@ -89,8 +90,9 @@ The common public include entry is:
 ```
 
 Most C++ examples in this repository currently exercise in-tree development
-headers and backend implementations. A consumer CMake example should be added
-as a follow-up once the installed C++ package boundary is documented and tested.
+headers and backend implementations. See [Examples](examples.md) for build
+commands and backend notes. A consumer CMake example should be added as a
+follow-up once the installed C++ package boundary is documented and tested.
 
 ## Next Steps
 
