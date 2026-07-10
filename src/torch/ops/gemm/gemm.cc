@@ -73,8 +73,6 @@ template class Operator<Gemm, Device::Type::kAscend, 2>;
 template class Operator<Gemm, Device::Type::kMetax, 2>;
 template class Operator<Gemm, Device::Type::kMoore, 2>;
 template class Operator<Gemm, Device::Type::kIluvatar, 2>;
-template class Operator<Gemm, Device::Type::kKunlun, 2>;
 template class Operator<Gemm, Device::Type::kHygon, 2>;
-template class Operator<Gemm, Device::Type::kQy, 2>;
 
 }  // namespace infini::ops

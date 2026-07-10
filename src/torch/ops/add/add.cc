@@ -31,8 +31,6 @@ template class Operator<Add, Device::Type::kAscend, 1>;
 template class Operator<Add, Device::Type::kMetax, 1>;
 template class Operator<Add, Device::Type::kMoore, 1>;
 template class Operator<Add, Device::Type::kIluvatar, 1>;
-template class Operator<Add, Device::Type::kKunlun, 1>;
 template class Operator<Add, Device::Type::kHygon, 1>;
-template class Operator<Add, Device::Type::kQy, 1>;
 
 }  // namespace infini::ops

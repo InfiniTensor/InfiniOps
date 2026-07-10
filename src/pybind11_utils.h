@@ -96,9 +96,7 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
       {"metax", Device::Type::kMetax},
       {"moore", Device::Type::kMoore},
       {"iluvatar", Device::Type::kIluvatar},
-      {"kunlun", Device::Type::kKunlun},
       {"hygon", Device::Type::kHygon},
-      {"qy", Device::Type::kQy},
   };
 
   auto platform_it{kPlatformNames.find(name)};
