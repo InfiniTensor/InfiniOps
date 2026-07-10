@@ -70,6 +70,7 @@ Useful entry points:
 - [Backends](docs/backends.md)
 - [Examples](docs/examples.md)
 - [Operators](docs/api/operators.md)
+- [API Reference](docs/api/reference.md)
 - [Adding ATen-backed operators](docs/aten-operators.md)
 - [Compatibility](docs/compatibility.md)
 

@@ -22,6 +22,7 @@ entry is `python -m pip install` with CMake options passed through
 | `AUTO_DETECT_BACKENDS` | Auto-detect available backend packages. | `OFF` |
 | `GENERATE_OPERATOR_CALL_INSTANTIATIONS` | Generate explicit C++ operator call instantiations. | `ON` |
 | `GENERATE_PYTHON_BINDINGS` | Generate Python bindings. | `OFF` in raw CMake, `ON` in `pyproject.toml` |
+| `INFINI_OPS_BUILD_DOCS` | Enable the Doxygen documentation target. | `OFF` |
 | `INFINI_RT_ROOT` | InfiniRT install prefix containing `include/` and `lib/`. | `$INFINI_RT_ROOT` |
 | `INFINI_OPS_SMOKE_BUILD` | Build only the smoke-test operator subset. | `OFF` |
 | `INFINI_OPS_OPS` | Comma- or semicolon-separated operator allowlist. | empty |
@@ -103,3 +104,19 @@ ruff check .
 
 C++ changes should also pass the repository `clang-format` and `clang-tidy`
 expectations described in `CONTRIBUTING.md`.
+
+## Documentation
+
+Enable the Doxygen documentation target with:
+
+```bash
+cmake -S . -B build \
+  -DINFINI_RT_ROOT=/path/to/infini-rt-prefix \
+  -DWITH_CPU=ON \
+  -DINFINI_OPS_BUILD_DOCS=ON
+cmake --build build --target infiniops_docs
+```
+
+The generated HTML is written to `build/docs/reference/html`.
+
+See [API Reference](api/reference.md) for reference scope and preview commands.

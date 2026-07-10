@@ -29,11 +29,12 @@ Start with these pages:
   configuration objects.
 - [Operators](api/operators.md): the operator API model, dispatch, caching, and
   implementation layout.
+- [API Reference](api/reference.md): generate the Doxygen C++ API reference.
 - [Adding ATen-backed operators](aten-operators.md): generated and hand-written
   PyTorch ATen backend guidance.
 - [Compatibility](compatibility.md): public API boundary, generated files, and
   internal implementation headers.
 
-Generated API reference pages are intentionally left out of this first
-documentation pass. They should be added through a dedicated Doxygen build and
-publishing change.
+The API reference can be generated locally with Doxygen. Publishing the
+generated HTML is intentionally handled separately from the local documentation
+target.
