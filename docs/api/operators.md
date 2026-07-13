@@ -13,7 +13,7 @@ import infini.ops
 infini.ops.gemm(a, b, out)
 ```
 
-C++ development code calls operator classes:
+C++ users call documented operator classes:
 
 ```cpp
 infini::ops::Gemm::Call(a, b, out);

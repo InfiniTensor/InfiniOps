@@ -3,9 +3,9 @@
 This page defines the current documentation and compatibility boundary for
 InfiniOps users and contributors.
 
-## Stable User Entries
+## Public API Entries
 
-The intended public entries are:
+The formal public entries are:
 
 ```cpp
 #include <infini/ops.h>
@@ -15,10 +15,18 @@ The intended public entries are:
 import infini.ops
 ```
 
-The installed Python wheel is the primary user-facing package surface today.
-C++ headers are installed for operator development and integration, but the
-consumer-facing C++ package boundary should be kept conservative until covered
-by dedicated install-consumer tests.
+InfiniOps exposes C++ as its formal native API and generated Python bindings as
+its formal Python API. A separate C API is not currently exposed or planned.
+
+The supported C++ compatibility boundary includes:
+
+- the installed `<infini/ops.h>` entry point
+- the core types documented under `docs/api/`
+- the documented operator classes and `Call(...)` forms
+
+The C++ boundary is intentionally narrower than the complete installed header
+tree. A header being installed or included transitively does not by itself make
+every symbol in that header part of the public API.
 
 ## InfiniRT Dependency
 
@@ -40,11 +48,16 @@ The build may generate files under `generated/`, including:
 Generated files are build artifacts. Do not edit them by hand. Change the
 source generator, allowlist, or source operator definitions instead.
 
-## Internal Headers
+## Implementation Details
 
-Headers under `src/native/**`, `src/torch/**`, and backend-specific runtime
-adapters are implementation-facing. They are useful for in-tree development,
-tests, and examples, but ordinary users should prefer the public entries above.
+Backend implementations under `src/native/**` and `src/torch/**`, generated
+implementation sources, generated binding sources, and backend-specific runtime
+adapters are implementation-facing. They are useful for contributors, tests,
+and repository examples, but downstream users should not include them directly.
+
+Support headers pulled in transitively by `<infini/ops.h>` compile the public C++
+API. Undocumented helpers and templates in those headers remain implementation
+details unless an API page explicitly includes them in the supported boundary.
 
 ## Backend-Specific Behavior
 
@@ -52,9 +65,9 @@ Operator availability and supported dtypes, layouts, strides, and implementation
 indexes can differ by backend. Tests should document backend-specific skips or
 tolerances explicitly instead of hiding them in broad generated results.
 
-## Source Compatibility
+## Public API Compatibility
 
-Follow these rules when changing public or semi-public surfaces:
+Follow these rules when changing public C++ and Python surfaces:
 
 - Keep operator signatures stable unless the PR clearly documents the migration
   path.

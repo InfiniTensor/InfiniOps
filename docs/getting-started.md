@@ -83,16 +83,18 @@ See [Examples](examples.md) for the full example inventory.
 
 ## Minimal C++ Include
 
-The common public include entry is:
+The formal C++ API entry point is:
 
 ```cpp
 #include <infini/ops.h>
 ```
 
-Most C++ examples in this repository currently exercise in-tree development
-headers and backend implementations. See [Examples](examples.md) for build
-commands and backend notes. A consumer CMake example should be added as a
-follow-up once the installed C++ package boundary is documented and tested.
+This header exposes the documented core types and generated operator call
+surface. Downstream C++ code should use this installed entry point. Repository
+examples may use narrower headers or implementation details to exercise specific
+components; see [Examples](examples.md) for build commands and backend notes. An
+installed-consumer CMake example would add packaging validation, but is not a
+prerequisite for treating the documented C++ interface as public API.
 
 ## Next Steps
 
