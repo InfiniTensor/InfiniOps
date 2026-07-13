@@ -242,6 +242,12 @@ class _OperatorExtractor:
             elif node.kind == CursorKind.CXX_METHOD and node.spelling == "operator()":
                 calls.append(node)
 
+        parsed_operator = _parse_operator_header(op_name)
+        constructors = _prefer_header_type_spellings(
+            constructors, parsed_operator.constructors
+        )
+        calls = _prefer_header_type_spellings(calls, parsed_operator.calls)
+
         return _Operator(op_name, constructors, calls)
 
     @staticmethod
@@ -273,6 +279,27 @@ def _parse_operator_header(op_name):
     ]
 
     return _Operator(op_name, constructors, calls)
+
+
+def _prefer_header_type_spellings(functions, header_functions):
+    header_by_names = {}
+
+    for function in header_functions:
+        names = tuple(arg.spelling for arg in function.get_arguments())
+        header_by_names.setdefault(names, []).append(function)
+
+    aligned = []
+
+    for function in functions:
+        names = tuple(arg.spelling for arg in function.get_arguments())
+        matches = header_by_names.get(names, ())
+
+        if len(matches) == 1:
+            aligned.append(matches[0])
+        else:
+            aligned.append(function)
+
+    return aligned
 
 
 def _strip_cpp_comments(source):
@@ -443,6 +470,22 @@ def _find_vector_int64_params(op_name):
     return set(re.findall(r"std::vector<int64_t>\s+(\w+)", source))
 
 
+def _find_optional_vector_int64_params(op_name):
+    """Return params declared as `std::optional<std::vector<int64_t>>`.
+
+    libclang can report these as plain `int`, just like non-optional vector
+    params, so scan the base header to preserve the generated API signature.
+    """
+    source = _find_base_header(op_name).read_text()
+
+    return set(
+        re.findall(
+            r"std::optional\s*<\s*std::vector\s*<\s*int64_t\s*>\s*>\s+(\w+)",
+            source,
+        )
+    )
+
+
 def _find_tensor_params(op_name):
     source = _find_base_header(op_name).read_text()
 
@@ -474,6 +517,7 @@ def _generate_pybind11(operator):
     optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
+    optional_vector_int64_params = _find_optional_vector_int64_params(operator.name)
     params_with_defaults = _find_params_with_defaults(operator.name)
 
     def _is_optional_tensor(arg):
@@ -489,6 +533,9 @@ def _generate_pybind11(operator):
 
     def _is_optional(arg):
         return "std::optional" in arg.type.spelling
+
+    def _is_optional_vector_int64(arg):
+        return arg.spelling in optional_vector_int64_params
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -510,6 +557,10 @@ def _generate_pybind11(operator):
                 parts.append(f"std::optional<py::object> {arg.spelling}")
             elif _is_vector_tensor(arg):
                 parts.append(f"std::vector<py::object> {arg.spelling}")
+            elif _is_optional_vector_int64(arg):
+                parts.append(
+                    f"const std::optional<std::vector<int64_t>> {arg.spelling}"
+                )
             elif _is_vector_int64(arg):
                 parts.append(f"const std::vector<int64_t> {arg.spelling}")
             else:
@@ -908,6 +959,7 @@ def _generate_generated_dispatch_entries(operator):
     tensor_params = _find_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
+    optional_vector_int64_params = _find_optional_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
         spelling = arg.type.spelling
@@ -919,6 +971,9 @@ def _generate_generated_dispatch_entries(operator):
             return False
 
         return arg.spelling in optional_tensor_params
+
+    def _is_optional_vector_int64(arg):
+        return arg.spelling in optional_vector_int64_params
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -933,10 +988,13 @@ def _generate_generated_dispatch_entries(operator):
         if arg.spelling in optional_non_tensor_params:
             return False
 
-        if arg.spelling in tensor_params:
+        if "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling:
             return True
 
-        return "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling
+        if _is_known_non_tensor_type(arg.type.spelling):
+            return False
+
+        return arg.spelling in tensor_params
 
     def _generate_params(node):
         parts = []
@@ -949,6 +1007,8 @@ def _generate_generated_dispatch_entries(operator):
                 parts.append(f"std::optional<Tensor> {arg.spelling}")
             elif _is_vector_tensor(arg):
                 parts.append(f"std::vector<Tensor> {arg.spelling}")
+            elif _is_optional_vector_int64(arg):
+                parts.append(f"std::optional<std::vector<int64_t>> {arg.spelling}")
             elif _is_vector_int64(arg):
                 parts.append(f"std::vector<int64_t> {arg.spelling}")
             elif _is_tensor(arg):
@@ -1108,12 +1168,32 @@ def _strip_top_level_const(type_spelling):
     return type_spelling
 
 
+def _is_known_non_tensor_type(type_spelling):
+    type_spelling = _strip_top_level_const(type_spelling)
+
+    if "Tensor" in type_spelling or "TensorView" in type_spelling:
+        return False
+
+    if type_spelling in {
+        "bool",
+        "double",
+        "float",
+        "int64_t",
+        "std::size_t",
+        "std::string",
+    }:
+        return True
+
+    return type_spelling.startswith("std::optional<")
+
+
 def _generate_operator_call_instantiation_entries(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
     tensor_params = _find_tensor_params(operator.name)
     vector_tensor_params = _find_vector_tensor_params(operator.name)
     vector_int64_params = _find_vector_int64_params(operator.name)
+    optional_vector_int64_params = _find_optional_vector_int64_params(operator.name)
 
     def _is_optional_tensor(arg):
         spelling = arg.type.spelling
@@ -1128,6 +1208,9 @@ def _generate_operator_call_instantiation_entries(operator):
             return True
 
         return False
+
+    def _is_optional_vector_int64(arg):
+        return arg.spelling in optional_vector_int64_params
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -1144,10 +1227,13 @@ def _generate_operator_call_instantiation_entries(operator):
         if arg.spelling in optional_non_tensor_params:
             return False
 
-        if arg.spelling in tensor_params:
+        if "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling:
             return True
 
-        return "Tensor" in arg.type.spelling or "TensorView" in arg.type.spelling
+        if _is_known_non_tensor_type(arg.type.spelling):
+            return False
+
+        return arg.spelling in tensor_params
 
     def _normalized_type(arg):
         if _is_optional_tensor(arg):
@@ -1155,6 +1241,9 @@ def _generate_operator_call_instantiation_entries(operator):
 
         if _is_vector_tensor(arg):
             return "std::vector<Tensor>"
+
+        if _is_optional_vector_int64(arg):
+            return "std::optional<std::vector<int64_t>>"
 
         if _is_vector_int64(arg):
             return "std::vector<int64_t>"
@@ -1188,6 +1277,16 @@ def _generate_operator_call_instantiation_entries(operator):
     declarations = []
     definitions = []
 
+    seen_entries = set()
+
+    def _append_unique(declaration, definition):
+        if definition in seen_entries:
+            return
+
+        seen_entries.add(definition)
+        declarations.append(declaration)
+        definitions.append(definition)
+
     for call in operator.calls:
         template_arguments = _generate_template_arguments(call)
         params = _generate_parameters(call)
@@ -1202,14 +1301,13 @@ def _generate_operator_call_instantiation_entries(operator):
         )
 
         make_template_arguments = ", ".join(
-            f"const {_strip_top_level_const(arg.type.spelling)}&" for arg in rest_args
+            f"const {_normalized_type(arg)}&" for arg in rest_args
         )
         make_params = ", ".join(
-            f"const {_strip_top_level_const(arg.type.spelling)}& {arg.spelling}"
-            for arg in rest_args
+            f"const {_normalized_type(arg)}& {arg.spelling}" for arg in rest_args
         )
         make_function_params = _append_optional_params(
-            f"const Config& config, const {_strip_top_level_const(first_arg.type.spelling)} {first_arg.spelling}",
+            f"const Config& config, const {_normalized_type(first_arg)} {first_arg.spelling}",
             make_params,
         )
         make_instantiation = f"Operator<{op_type}>::Make<{make_template_arguments}>({make_function_params})"
@@ -1218,16 +1316,18 @@ def _generate_operator_call_instantiation_entries(operator):
             f"Operator<{op_type}>::operator()<{template_arguments}>({params}) const"
         )
 
-        declarations.append(f"extern template void {instantiation};")
-        declarations.append(
-            f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};"
+        _append_unique(
+            f"extern template void {instantiation};",
+            f"template void {instantiation};",
         )
-        declarations.append(f"extern template void {operator_instantiation};")
-        definitions.append(f"template void {instantiation};")
-        definitions.append(
-            f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};"
+        _append_unique(
+            f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
+            f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
         )
-        definitions.append(f"template void {operator_instantiation};")
+        _append_unique(
+            f"extern template void {operator_instantiation};",
+            f"template void {operator_instantiation};",
+        )
 
     return declarations, definitions
 
