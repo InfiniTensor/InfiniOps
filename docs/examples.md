@@ -54,7 +54,9 @@ cmake --build build --target gemm
 
 ## Scope
 
-The current C++ examples include in-tree development headers such as
-`tensor.h`, `runtime_api.h`, and backend implementation headers. A fully
-installed downstream CMake consumer example should be added separately once the
-installed C++ package boundary is tested.
+The C++ examples are repository-local validation programs, not the definition of
+the public API boundary. They may include narrower headers such as `tensor.h`,
+`runtime_api.h`, or backend implementation headers to exercise specific
+components. Downstream C++ code should start with `<infini/ops.h>` and use the
+documented API surface. A separate installed-consumer CMake example would be
+useful for validating packaging and header discovery.
