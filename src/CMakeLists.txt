@@ -442,7 +442,7 @@ if(WITH_TORCH)
     # Auto-generate ATen-backed operator wrappers from `scripts/torch_ops.yaml`.
     # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
     # which we then glob below alongside any hand-written torch sources.
-    find_package(Python COMPONENTS Interpreter REQUIRED)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
 
     # Pin codegen to the locally installed torch version so vendor
     # forks (Cambricon's `torch_mlu` 2.1.0, etc.) get a schema whose
@@ -488,6 +488,13 @@ if(WITH_TORCH)
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
+
+    # Tensor extraction runs once per input on every Python binding call. Keep
+    # this small bridge out of the -O0 generated-wrapper target while still
+    # compiling it with a host compiler on vendor platforms.
+    set(TORCH_PYBIND_BRIDGE_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/torch/pybind11_.cc")
+    list(REMOVE_ITEM TORCH_SOURCES "${TORCH_PYBIND_BRIDGE_SOURCE}")
 
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
@@ -567,7 +574,7 @@ if(WITH_TORCH)
         endif()
 
         set(_torch_include_flags "")
-        foreach(_dir ${TORCH_INCLUDE_DIRS})
+        foreach(_dir ${TORCH_INCLUDE_DIRS} ${Python_INCLUDE_DIRS})
             list(APPEND _torch_include_flags "-isystem" "${_dir}")
         endforeach()
 
@@ -623,6 +630,24 @@ if(WITH_TORCH)
             list(APPEND TORCH_OBJECT_FILES "${_obj}")
         endforeach()
 
+        set(_torch_bridge_obj "${TORCH_OBJECT_DIR}/torch_pybind11_.o")
+        add_custom_command(
+            OUTPUT "${_torch_bridge_obj}"
+            COMMAND ${SYSTEM_CXX}
+                -std=c++17 -fPIC -O2
+                "-I${CMAKE_CURRENT_SOURCE_DIR}"
+                "-I${PROJECT_SOURCE_DIR}/generated"
+                ${INFINI_RT_INCLUDE_FLAGS}
+                ${_torch_vendor_include_flags}
+                ${_torch_include_flags}
+                ${_torch_extra_flags}
+                -c "${TORCH_PYBIND_BRIDGE_SOURCE}" -o "${_torch_bridge_obj}"
+            DEPENDS "${TORCH_PYBIND_BRIDGE_SOURCE}"
+            COMMENT "Compiling torch/pybind11_.cc with system C++ compiler"
+            JOB_POOL torch_compile
+        )
+        list(APPEND TORCH_OBJECT_FILES "${_torch_bridge_obj}")
+
         set_source_files_properties(${TORCH_OBJECT_FILES}
             PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
         target_sources(infiniops PRIVATE ${TORCH_OBJECT_FILES})
@@ -640,6 +665,7 @@ if(WITH_TORCH)
             $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>
             ${INFINI_RT_INCLUDE_DIRS}
             ${TORCH_INCLUDE_DIRS}
+            ${Python_INCLUDE_DIRS}
             ${PROJECT_SOURCE_DIR}/generated)
         target_compile_definitions(infini_ops_torch_objs PRIVATE
             $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
@@ -652,6 +678,23 @@ if(WITH_TORCH)
         endif()
         target_sources(infiniops PRIVATE
             $<TARGET_OBJECTS:infini_ops_torch_objs>)
+
+        add_library(infini_ops_torch_bridge_obj OBJECT
+            ${TORCH_PYBIND_BRIDGE_SOURCE})
+        set_target_properties(infini_ops_torch_bridge_obj
+            PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_include_directories(infini_ops_torch_bridge_obj PRIVATE
+            $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>
+            ${INFINI_RT_INCLUDE_DIRS}
+            ${TORCH_INCLUDE_DIRS}
+            ${Python_INCLUDE_DIRS}
+            ${PROJECT_SOURCE_DIR}/generated)
+        target_compile_definitions(infini_ops_torch_bridge_obj PRIVATE
+            $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
+        target_compile_options(infini_ops_torch_bridge_obj PRIVATE
+            $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS>)
+        target_sources(infiniops PRIVATE
+            $<TARGET_OBJECTS:infini_ops_torch_bridge_obj>)
     endif()
 endif()
 

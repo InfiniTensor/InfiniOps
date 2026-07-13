@@ -49,9 +49,33 @@ def test_schema_self_param_renders_as_input_in_public_cpp_api():
     assert "Softmax(const Tensor input, const int64_t dim" in base
     assert "self_shape_" not in base
     assert "input_shape_" in base
-    assert "auto at_self = ToAtenTensor<kDev>" in source
-    assert "input_shape_" in source
+    assert "auto at_self = AtenFromTensor<kDev>(input);" in source
+    assert "input_shape_" not in source
     assert "at::_softmax_out(at_out, at_self" in source
+
+
+def test_pybind_tensor_bridge_keeps_aten_headers_out_of_generated_bindings():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    pybind_utils = (root / "src" / "pybind11_utils.h").read_text()
+    bridge_header = (root / "src" / "torch" / "pybind11_.h").read_text()
+    bridge_source = (root / "src" / "torch" / "pybind11_.cc").read_text()
+
+    assert '"torch/pybind11_.h"' in pybind_utils
+    assert "torch/csrc/" not in pybind_utils
+    assert '"torch/tensor_.h"' not in pybind_utils
+    assert "AtenTensorMetadataFromPyObject" in pybind_utils
+    assert "torch/csrc/autograd/python_variable.h" not in bridge_header
+    assert "torch/csrc/autograd/python_variable.h" in bridge_source
+    assert "THPVariable_Unpack" in bridge_source
+
+
+def test_pybind_tensor_bridge_uses_an_optimized_host_compiler_target():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    cmake = (root / "src" / "CMakeLists.txt").read_text()
+
+    assert 'list(REMOVE_ITEM TORCH_SOURCES "${TORCH_PYBIND_BRIDGE_SOURCE}")' in cmake
+    assert "add_library(infini_ops_torch_bridge_obj OBJECT" in cmake
+    assert "-std=c++17 -fPIC -O2" in cmake
 
 
 def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():

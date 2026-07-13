@@ -5,9 +5,11 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <memory>
 
 #include "tensor.h"
 #include "torch/device_.h"
+#include "torch/pybind11_.h"
 
 namespace py = pybind11;
 
@@ -119,21 +121,13 @@ inline Device DeviceFromPybind11Handle(py::handle obj) {
 }
 
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
-  auto data{
-      reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
-
-  auto shape{obj.attr("shape").cast<typename Tensor::Shape>()};
-
-  auto dtype_str{py::str(obj.attr("dtype")).cast<std::string>()};
-  auto pos{dtype_str.find_last_of('.')};
-  auto dtype{DataTypeFromString(
-      pos == std::string::npos ? dtype_str : dtype_str.substr(pos + 1))};
-
-  auto device{DeviceFromPybind11Handle(obj)};
-
-  auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
-
-  return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
+  auto metadata{AtenTensorMetadataFromPyObject(obj.ptr())};
+  Device device{DeviceTypeFromString(metadata.device_type),
+                metadata.device_index};
+  Tensor tensor{metadata.data, std::move(metadata.shape), metadata.dtype,
+                device, std::move(metadata.strides)};
+  tensor.set_source_handle(std::move(metadata.source_handle));
+  return tensor;
 }
 
 inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
