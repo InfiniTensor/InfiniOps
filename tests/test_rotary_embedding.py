@@ -39,7 +39,6 @@ def test_rotary_embedding(
     rtol,
     atol,
 ):
-    num_tokens = 4
     num_heads, num_kv_heads = 4, 2
     head_size, rot_dim = 12, 8
     positions = torch.tensor((0, 3, 5, 7), dtype=torch.int64, device=device).view(
