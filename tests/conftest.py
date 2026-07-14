@@ -192,13 +192,13 @@ def _is_smoke_item(item):
         "tests/test_add.py": _is_smoke_add_case,
         "tests/test_cast.py": _is_smoke_cast_case,
         "tests/test_cat.py": _is_smoke_cat_case,
-        "tests/test_causal_softmax.py": _is_smoke_causal_softmax_case,
+        "tests/test_internal_causal_softmax.py": _is_smoke_internal_causal_softmax_case,
         "tests/test_gemm.py": _is_smoke_gemm_case,
         "tests/test_linear.py": _is_smoke_linear_case,
         "tests/test_matmul.py": _is_smoke_matmul_case,
         "tests/test_mul.py": _is_smoke_mul_case,
         "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
-        "tests/test_swiglu.py": _is_smoke_swiglu_case,
+        "tests/test_silu_and_mul.py": _is_smoke_silu_and_mul_case,
         "tests/test_torch_ops.py": _is_smoke_torch_op_case,
     }
     matcher = matchers.get(module_path)
@@ -378,26 +378,25 @@ def _is_smoke_rms_norm_case(params):
     )
 
 
-def _is_smoke_swiglu_case(params):
+def _is_smoke_silu_and_mul_case(params):
     cases = {
-        ((13, 4), None, None, None),
-        ((16, 5632), None, None, None),
+        ((13, 4), None, None),
+        ((16, 5632), None, None),
     }
 
     return (
         _is_float32(params)
         and _shape_case(
             params,
-            "shape",
+            "out_shape",
             "input_strides",
-            "gate_strides",
             "out_strides",
         )
         in cases
     )
 
 
-def _is_smoke_causal_softmax_case(params):
+def _is_smoke_internal_causal_softmax_case(params):
     cases = {
         ((3, 3), None, None),
         ((32, 512), None, None),
