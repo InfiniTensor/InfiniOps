@@ -68,6 +68,7 @@
 - bitwise_xor
 - bmm
 - bucketize
+- cat
 - ceil
 - chain_matmul
 - cholesky

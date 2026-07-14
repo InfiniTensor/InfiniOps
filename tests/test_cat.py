@@ -23,6 +23,10 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         (((2, 4, 32), (2, 4, 64)), 2, (2, 4, 96)),
         # 4 inputs, dim=1
         (((1, 1024), (1, 1024), (1, 1024), (1, 1024)), 1, (1, 4096)),
+        # 1 input
+        (((4, 64),), 0, (4, 64)),
+        # Empty input dimension
+        (((0, 4), (3, 4)), 0, (3, 4)),
     ),
 )
 @pytest.mark.parametrize(
@@ -51,10 +55,7 @@ def _cat(*args, dim):
     inputs = list(args[:-1])
     out = args[-1]
 
-    first = inputs[0]
-    rest = inputs[1:]
-
-    infini.ops.cat(first, rest, dim, out, stream=get_stream(first.device))
+    infini.ops.cat(inputs, dim, out, stream=get_stream(inputs[0].device))
 
     return out
 
@@ -67,3 +68,29 @@ def _torch_cat(*args, dim):
     out.copy_(result)
 
     return out
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+def test_cat_noncontiguous(dtype, device, rtol, atol):
+    inputs = [
+        randn_strided((2, 3, 4), (4, 8, 1), dtype=dtype, device=device)
+        for _ in range(2)
+    ]
+    out = empty_strided((2, 6, 4), None, dtype=dtype, device=device)
+
+    return Payload(
+        lambda *args: _cat(*args, dim=1),
+        lambda *args: _torch_cat(*args, dim=1),
+        (*inputs, out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )

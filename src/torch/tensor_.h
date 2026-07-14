@@ -97,6 +97,10 @@ inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
     options = options.device(device_str);
   }
 
+  for (auto dim : shape) {
+    if (dim == 0) return at::empty_strided(at_shape, at_strides, options);
+  }
+
   return at::from_blob(data, at_shape, at_strides, options);
 }
 
