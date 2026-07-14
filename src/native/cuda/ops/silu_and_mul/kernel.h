@@ -1,27 +1,26 @@
-#ifndef INFINI_OPS_CUDA_SWIGLU_KERNEL_H_
-#define INFINI_OPS_CUDA_SWIGLU_KERNEL_H_
+#ifndef INFINI_OPS_CUDA_SILU_AND_MUL_KERNEL_H_
+#define INFINI_OPS_CUDA_SILU_AND_MUL_KERNEL_H_
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 
-#include "base/swiglu.h"
+#include "base/silu_and_mul.h"
 #include "common/generic_utils.h"
-#include "native/cuda/ops/swiglu/kernel.cuh"
+#include "native/cuda/ops/silu_and_mul/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
 
 template <typename Backend>
-class CudaSwiglu : public Swiglu {
+class CudaSiluAndMul : public SiluAndMul {
  public:
-  CudaSwiglu(const Tensor input, const Tensor gate, Tensor out)
-      : Swiglu{input, gate, out} {
+  CudaSiluAndMul(const Tensor input, Tensor out) : SiluAndMul{input, out} {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
 
-    const size_t metadata_size = 3 * (shape_size + strides_size);
+    const size_t metadata_size = 2 * (shape_size + strides_size);
     std::vector<std::byte> metadata(metadata_size);
 
     Backend::Malloc((void**)&d_metadata_, metadata_size);
@@ -29,10 +28,6 @@ class CudaSwiglu : public Swiglu {
     size_t offset = 0;
     d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
     std::memcpy(metadata.data() + offset, input_shape_.data(), shape_size);
-    offset += shape_size;
-
-    d_gate_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, gate_shape_.data(), shape_size);
     offset += shape_size;
 
     d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -43,10 +38,6 @@ class CudaSwiglu : public Swiglu {
     std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
     offset += strides_size;
 
-    d_gate_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, gate_strides_.data(), strides_size);
-    offset += strides_size;
-
     d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
     std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
@@ -54,10 +45,9 @@ class CudaSwiglu : public Swiglu {
                     Backend::kMemcpyHostToDevice);
   }
 
-  ~CudaSwiglu() { Backend::Free(d_metadata_); }
+  ~CudaSiluAndMul() { Backend::Free(d_metadata_); }
 
-  void operator()(const Tensor input, const Tensor gate,
-                  Tensor out) const override {
+  void operator()(const Tensor input, Tensor out) const override {
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllFloatTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size},
@@ -73,16 +63,13 @@ class CudaSwiglu : public Swiglu {
 
           T* d_out = reinterpret_cast<T*>(out.data());
           const T* d_input = reinterpret_cast<const T*>(input.data());
-          const T* d_gate = reinterpret_cast<const T*>(gate.data());
-
-          SwigluKernel<Backend::kDeviceType, T, kBlockSize>
+          SiluAndMulKernel<Backend::kDeviceType, T, kBlockSize>
               <<<gridDims, blockDims, 0, cuda_stream>>>(
-                  d_out, d_input, d_gate, d_out_shape_, d_input_shape_,
-                  d_gate_shape_, d_out_strides_, d_input_strides_,
-                  d_gate_strides_, output_size_, ndim_, is_out_contiguous_,
-                  is_input_contiguous_, is_gate_contiguous_);
+                  d_out, d_input, d_out_shape_, d_input_shape_, d_out_strides_,
+                  d_input_strides_, output_size_, ndim_, hidden_size_,
+                  is_out_contiguous_, is_input_contiguous_);
         },
-        "CudaSwiglu::operator()");
+        "CudaSiluAndMul::operator()");
   }
 
  private:
@@ -90,13 +77,9 @@ class CudaSwiglu : public Swiglu {
 
   Tensor::Size* d_input_shape_{nullptr};
 
-  Tensor::Size* d_gate_shape_{nullptr};
-
   Tensor::Size* d_out_shape_{nullptr};
 
   Tensor::Stride* d_input_strides_{nullptr};
-
-  Tensor::Stride* d_gate_strides_{nullptr};
 
   Tensor::Stride* d_out_strides_{nullptr};
 };

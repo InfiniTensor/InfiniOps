@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CUDA_SWIGLU_KERNEL_CUH_
-#define INFINI_OPS_CUDA_SWIGLU_KERNEL_CUH_
+#ifndef INFINI_OPS_CUDA_SILU_AND_MUL_KERNEL_CUH_
+#define INFINI_OPS_CUDA_SILU_AND_MUL_KERNEL_CUH_
 
 #include <cmath>
 
@@ -28,23 +28,20 @@ __device__ __forceinline__ T Sigmoid(const T& x) {
 
 }  // namespace detail
 
-// SwiGLU(x, gate) = Swish(x) * gate = (x * sigmoid(x)) * gate.
 template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
-__global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
-                             const T* __restrict__ b,
-                             const size_t* __restrict__ out_shape,
-                             const size_t* __restrict__ input_shape,
-                             const size_t* __restrict__ gate_shape,
-                             const ptrdiff_t* __restrict__ out_strides,
-                             const ptrdiff_t* __restrict__ input_strides,
-                             const ptrdiff_t* __restrict__ gate_strides,
-                             size_t output_size, size_t ndim,
-                             bool out_contiguous, bool input_contiguous,
-                             bool gate_contiguous) {
+__global__ void SiluAndMulKernel(T* __restrict__ out,
+                                 const T* __restrict__ input,
+                                 const size_t* __restrict__ out_shape,
+                                 const size_t* __restrict__ input_shape,
+                                 const ptrdiff_t* __restrict__ out_strides,
+                                 const ptrdiff_t* __restrict__ input_strides,
+                                 size_t output_size, size_t ndim,
+                                 size_t hidden_size, bool out_contiguous,
+                                 bool input_contiguous) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (idx < output_size) {
-    size_t out_idx, input_idx, gate_idx;
+    size_t out_idx;
 
     if (out_contiguous) {
       out_idx = idx;
@@ -52,20 +49,21 @@ __global__ void SwigluKernel(T* __restrict__ out, const T* __restrict__ a,
       out_idx = IndexToOffset(idx, ndim, out_shape, out_strides);
     }
 
-    if (input_contiguous) {
-      input_idx = idx;
-    } else {
-      input_idx = IndexToOffset(idx, ndim, input_shape, input_strides);
-    }
+    const size_t row = idx / hidden_size;
+    const size_t column = idx % hidden_size;
+    const size_t gate_logical_idx = row * 2 * hidden_size + column;
+    const size_t up_logical_idx = gate_logical_idx + hidden_size;
+    const size_t gate_idx =
+        input_contiguous
+            ? gate_logical_idx
+            : IndexToOffset(gate_logical_idx, ndim, input_shape, input_strides);
+    const size_t up_idx =
+        input_contiguous
+            ? up_logical_idx
+            : IndexToOffset(up_logical_idx, ndim, input_shape, input_strides);
 
-    if (gate_contiguous) {
-      gate_idx = idx;
-    } else {
-      gate_idx = IndexToOffset(idx, ndim, gate_shape, gate_strides);
-    }
-
-    T up = a[input_idx];
-    T gate = b[gate_idx];
+    T gate = input[gate_idx];
+    T up = input[up_idx];
 
     if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
       float gatef = Caster<kDev>::template Cast<float>(gate);
