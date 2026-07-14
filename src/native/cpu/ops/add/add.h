@@ -13,25 +13,30 @@ template <>
 class Operator<Add, Device::Type::kCpu> : public Add,
                                           Caster<Device::Type::kCpu> {
  public:
-  Operator(const Tensor input, const Tensor other, Tensor out)
-      : Add{input, other, out} {
+  Operator(const Tensor input, const Tensor other, const double alpha,
+           Tensor out)
+      : Add{input, other, alpha, out} {
     // TODO: Check constraints.
   }
 
-  void operator()(const Tensor input, const Tensor other,
+  Operator(const Tensor input, const Tensor other, Tensor out)
+      : Operator{input, other, 1.0, out} {}
+
+  void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
     DispatchFunc<Device::Type::kCpu, AllTypes>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          Compute<T>(input, other, out);
+          Compute<T>(input, other, alpha, out);
         },
         "`Operator<Add, Device::Type::kCpu>::operator()`");
   }
 
  private:
   template <typename T>
-  void Compute(const Tensor input, const Tensor other, Tensor out) const {
+  void Compute(const Tensor input, const Tensor other, const double alpha,
+               Tensor out) const {
     using ComputeType = std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||
                                                IsFP16<Device::Type::kCpu, T>,
                                            float, T>;
@@ -55,7 +60,8 @@ class Operator<Add, Device::Type::kCpu> : public Add,
                              out_strides_.data());
 
       out_ptr[out_idx] = Cast<T>(Cast<ComputeType>(input_ptr[input_idx]) +
-                                 Cast<ComputeType>(other_ptr[other_idx]));
+                                 Cast<ComputeType>(alpha) *
+                                     Cast<ComputeType>(other_ptr[other_idx]));
     }
   }
 };

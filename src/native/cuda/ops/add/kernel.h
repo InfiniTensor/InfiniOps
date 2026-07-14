@@ -17,8 +17,9 @@ namespace infini::ops {
 template <typename Backend>
 class CudaAdd : public Add {
  public:
-  CudaAdd(const Tensor input, const Tensor other, Tensor out)
-      : Add{input, other, out} {
+  CudaAdd(const Tensor input, const Tensor other, const double alpha,
+          Tensor out)
+      : Add{input, other, alpha, out} {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 3 * (shape_size + strides_size);
@@ -54,9 +55,12 @@ class CudaAdd : public Add {
                     Backend::kMemcpyHostToDevice);
   }
 
+  CudaAdd(const Tensor input, const Tensor other, Tensor out)
+      : CudaAdd{input, other, 1.0, out} {}
+
   ~CudaAdd() { Backend::Free(d_metadata_); }
 
-  void operator()(const Tensor input, const Tensor other,
+  void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllTypes, AllCudaBlockSizes>(
@@ -80,7 +84,7 @@ class CudaAdd : public Add {
                   d_out, d_input, d_other, d_out_shape_, d_input_shape_,
                   d_other_shape_, d_out_strides_, d_input_strides_,
                   d_other_strides_, output_size_, ndim_, is_out_contiguous_,
-                  is_input_contiguous_, is_other_contiguous_);
+                  is_input_contiguous_, is_other_contiguous_, alpha);
         },
         "CudaAdd::operator()");
   }

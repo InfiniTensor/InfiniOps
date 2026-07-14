@@ -109,3 +109,59 @@ def _torch_add(input, other, out):
     out.copy_(res.to(out.dtype))
 
     return out
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "input_shape, other_shape, out_shape",
+    (
+        ((3, 1), (1, 5), (3, 5)),
+        ((5,), (2, 3, 5), (2, 3, 5)),
+    ),
+)
+@pytest.mark.parametrize("alpha", (0.0, 0.5, 1.0, 2.0))
+@pytest.mark.parametrize(
+    "dtype", (torch.float32, torch.float16, torch.bfloat16)
+)
+def test_add_alpha_and_broadcast(
+    input_shape,
+    other_shape,
+    out_shape,
+    alpha,
+    dtype,
+    device,
+    implementation_index,
+):
+    input = randn_strided(input_shape, None, dtype=dtype, device=device)
+    other = randn_strided(other_shape, None, dtype=dtype, device=device)
+    out = empty_strided(out_shape, None, dtype=dtype, device=device)
+
+    return Payload(
+        lambda *args: _add_alpha(
+            *args, alpha=alpha, implementation_index=implementation_index
+        ),
+        lambda *args: _torch_add_alpha(*args, alpha=alpha),
+        (input, other, out),
+        {},
+        rtol=1e-2 if dtype != torch.float32 else 1e-6,
+        atol=1e-2 if dtype != torch.float32 else 1e-6,
+    )
+
+
+def _add_alpha(input, other, out, *, alpha, implementation_index):
+    infini.ops.add(
+        input,
+        other,
+        alpha,
+        out,
+        stream=get_stream(input.device),
+        implementation_index=implementation_index,
+    )
+
+    return out
+
+
+def _torch_add_alpha(input, other, out, *, alpha):
+    torch.add(input, other, alpha=alpha, out=out)
+
+    return out

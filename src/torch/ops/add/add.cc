@@ -6,12 +6,17 @@ namespace infini::ops {
 
 template <Device::Type kDev>
 Operator<Add, kDev, 1>::Operator(const Tensor input, const Tensor other,
+                                 const double alpha, Tensor out)
+    : Add{input, other, alpha, out}, device_index_{out.device().index()} {}
+
+template <Device::Type kDev>
+Operator<Add, kDev, 1>::Operator(const Tensor input, const Tensor other,
                                  Tensor out)
-    : Add{input, other, out}, device_index_{out.device().index()} {}
+    : Operator{input, other, 1.0, out} {}
 
 template <Device::Type kDev>
 void Operator<Add, kDev, 1>::operator()(const Tensor input, const Tensor other,
-                                        Tensor out) const {
+                                        const double alpha, Tensor out) const {
   auto at_input =
       ToAtenTensor<kDev>(const_cast<void*>(input.data()), input_shape_,
                          input_strides_, input_type_, device_index_);
@@ -21,7 +26,10 @@ void Operator<Add, kDev, 1>::operator()(const Tensor input, const Tensor other,
   auto at_out = ToAtenTensor<kDev>(out.data(), out_shape_, out_strides_,
                                    out_type_, device_index_);
 
-  at::add_out(at_out, at_input, at_other);
+  auto at_alpha = at_input.is_floating_point()
+                      ? at::Scalar(alpha)
+                      : at::Scalar(static_cast<int64_t>(alpha));
+  at::add_out(at_out, at_input, at_other, at_alpha);
 }
 
 template class Operator<Add, Device::Type::kCpu, 1>;

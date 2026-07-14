@@ -15,8 +15,9 @@ namespace infini::ops {
 template <>
 class Operator<Add, Device::Type::kAscend> : public Add {
  public:
-  Operator(const Tensor input, const Tensor other, Tensor out)
-      : Add(input, other, out),
+  Operator(const Tensor input, const Tensor other, const double alpha,
+           Tensor out)
+      : Add(input, other, alpha, out),
         in_cache_(input),
         oth_cache_(other),
         out_cache_(out) {
@@ -25,11 +26,18 @@ class Operator<Add, Device::Type::kAscend> : public Add {
     // The alpha scalar type must match the tensor dtype: use int64 for integer
     // dtypes and float for floating-point dtypes.
     if (ascend::IsIntegerDtype(input.dtype())) {
+      assert(alpha == static_cast<int64_t>(alpha) &&
+             "operator `Add` requires integral `alpha` for integer tensors");
+      alpha_int_storage_ = static_cast<int64_t>(alpha);
       alpha_ = aclCreateScalar(&alpha_int_storage_, ACL_INT64);
     } else {
+      alpha_float_storage_ = static_cast<float>(alpha);
       alpha_ = aclCreateScalar(&alpha_float_storage_, ACL_FLOAT);
     }
   }
+
+  Operator(const Tensor input, const Tensor other, Tensor out)
+      : Operator(input, other, 1.0, out) {}
 
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
@@ -46,7 +54,7 @@ class Operator<Add, Device::Type::kAscend> : public Add {
   }
 
   void operator()(const Tensor input, const Tensor other,
-                  Tensor out) const override {
+                  const double /*alpha*/, Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
     auto t_in = in_cache_.get(const_cast<void*>(input.data()));
     auto t_oth = oth_cache_.get(const_cast<void*>(other.data()));
