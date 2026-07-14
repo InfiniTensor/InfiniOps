@@ -8,32 +8,43 @@ namespace infini::ops {
 
 class Matmul : public Operator<Matmul> {
  public:
-  // `trans_a` / `trans_b`: If true, transpose the last two dims of `a` / `b`
-  // before multiplying.  These are constructor parameters so the `CacheKey`
-  // encodes the transposition and distinct descriptors are cached for each
-  // combination.
-  Matmul(const Tensor a, const Tensor b, Tensor c, bool trans_a, bool trans_b)
-      : a_shape_{a.shape()},
-        b_shape_{b.shape()},
-        c_shape_{c.shape()},
-        trans_a_{trans_a},
-        trans_b_{trans_b} {
-    assert(a.dtype() == b.dtype());
+  Matmul(const Tensor input, const Tensor other, Tensor out)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        other_shape_{other.shape()},
+        other_strides_{other.strides()},
+        other_type_{other.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()} {
+    assert(input.dtype() == other.dtype() &&
+           "operator `Matmul` requires inputs to have the same dtype");
+    assert(input.dtype() == out.dtype() &&
+           "operator `Matmul` requires output to have the input dtype");
   }
 
-  virtual void operator()(const Tensor a, const Tensor b, Tensor c,
-                          bool trans_a, bool trans_b) const = 0;
+  virtual void operator()(const Tensor input, const Tensor other,
+                          Tensor out) const = 0;
 
  protected:
-  Tensor::Shape a_shape_;
+  Tensor::Shape input_shape_;
 
-  Tensor::Shape b_shape_;
+  Tensor::Strides input_strides_;
 
-  Tensor::Shape c_shape_;
+  DataType input_type_;
 
-  bool trans_a_{false};
+  Tensor::Shape other_shape_;
 
-  bool trans_b_{false};
+  Tensor::Strides other_strides_;
+
+  DataType other_type_;
+
+  Tensor::Shape out_shape_;
+
+  Tensor::Strides out_strides_;
+
+  DataType out_type_;
 };
 
 }  // namespace infini::ops

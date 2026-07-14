@@ -260,6 +260,7 @@
 - lu_solve
 - lu_unpack
 - masked_select
+- matmul
 - matrix_power
 - max
 - max_pool2d_with_indices

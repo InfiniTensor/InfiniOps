@@ -336,11 +336,8 @@ def _is_smoke_matmul_case(params):
         ((2, 4, 64), (2, 64, 32), (2, 4, 32)),
     }
 
-    return (
-        _is_float32(params)
-        and params.get("trans_a") is False
-        and params.get("trans_b") is False
-        and _shape_case(params, "a_shape", "b_shape", "c_shape") in cases
+    return _is_float32(params) and (
+        _shape_case(params, "a_shape", "b_shape", "c_shape") in cases
     )
 
 
