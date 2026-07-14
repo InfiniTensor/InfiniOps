@@ -69,31 +69,112 @@ def test_embedding(
             *args, **kwargs, implementation_index=implementation_index
         ),
         _torch_embedding,
-        (input, weight),
+        (weight, input),
         {"out": out},
         rtol=rtol,
         atol=atol,
     )
 
 
-def _embedding(input, weight, *, out=None, implementation_index=0):
+def _embedding(weight, indices, *, out=None, implementation_index=0):
     infini.ops.embedding(
-        input,
         weight,
+        indices,
         out,
         implementation_index=implementation_index,
-        stream=get_stream(input.device),
+        stream=get_stream(indices.device),
     )
 
     return out
 
 
-def _torch_embedding(input, weight, *, out=None):
-    result = torch.nn.functional.embedding(input, weight)
+def _torch_embedding(weight, indices, *, out=None):
+    result = torch.nn.functional.embedding(indices, weight)
 
     if out is not None:
         out.copy_(result)
     else:
         out = result
+
+    return out
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize("padding_idx", (-1, 0))
+@pytest.mark.parametrize("scale_grad_by_freq", (False, True))
+@pytest.mark.parametrize("sparse", (False, True))
+def test_embedding_parameters(
+    padding_idx,
+    scale_grad_by_freq,
+    sparse,
+    device,
+    implementation_index,
+):
+    weight = randn_strided((8, 4), None, dtype=torch.float32, device=device)
+    indices = randint_strided(
+        0, 8, (2, 3), None, dtype=torch.int64, device=device
+    )
+    out = empty_strided((2, 3, 4), None, dtype=torch.float32, device=device)
+
+    return Payload(
+        lambda *args: _embedding_with_parameters(
+            *args,
+            padding_idx=padding_idx,
+            scale_grad_by_freq=scale_grad_by_freq,
+            sparse=sparse,
+            implementation_index=implementation_index,
+        ),
+        lambda *args: _torch_embedding_with_parameters(
+            *args,
+            padding_idx=padding_idx,
+            scale_grad_by_freq=scale_grad_by_freq,
+            sparse=sparse,
+        ),
+        (weight, indices, out),
+        {},
+    )
+
+
+def _embedding_with_parameters(
+    weight,
+    indices,
+    out,
+    *,
+    padding_idx,
+    scale_grad_by_freq,
+    sparse,
+    implementation_index,
+):
+    infini.ops.embedding(
+        weight,
+        indices,
+        padding_idx,
+        scale_grad_by_freq,
+        sparse,
+        out,
+        implementation_index=implementation_index,
+        stream=get_stream(indices.device),
+    )
+
+    return out
+
+
+def _torch_embedding_with_parameters(
+    weight,
+    indices,
+    out,
+    *,
+    padding_idx,
+    scale_grad_by_freq,
+    sparse,
+):
+    result = torch.nn.functional.embedding(
+        indices,
+        weight,
+        padding_idx=padding_idx,
+        scale_grad_by_freq=scale_grad_by_freq,
+        sparse=sparse,
+    )
+    out.copy_(result)
 
     return out
