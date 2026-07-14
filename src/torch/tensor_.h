@@ -4,6 +4,8 @@
 #include <torch/torch.h>
 #include <torch/version.h>
 
+#include <optional>
+
 #include "tensor.h"
 #include "torch/device_.h"
 
@@ -82,13 +84,15 @@ inline at::ScalarType ToAtenDataType(DataType dtype) {
 // shape/strides from the `Tensor` parameter, which may have been moved-from
 // by the `Call()` dispatch path (see `operator.h`).
 template <Device::Type kDev>
-inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
-                               const Tensor::Strides& strides, DataType dtype,
-                               int device_index = 0) {
+inline at::Tensor ToAtenTensor(
+    void* data, const Tensor::Shape& shape, const Tensor::Strides& strides,
+    DataType dtype, int device_index = 0,
+    std::optional<at::ScalarType> dtype_override = std::nullopt) {
   std::vector<int64_t> at_shape(shape.begin(), shape.end());
   std::vector<int64_t> at_strides(strides.begin(), strides.end());
 
-  auto options = at::TensorOptions().dtype(ToAtenDataType(dtype));
+  auto options =
+      at::TensorOptions().dtype(dtype_override.value_or(ToAtenDataType(dtype)));
 
   if constexpr (kDev != Device::Type::kCpu) {
     std::string device_str =
