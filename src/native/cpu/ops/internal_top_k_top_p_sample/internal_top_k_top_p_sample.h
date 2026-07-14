@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CPU_TOP_K_TOP_P_SAMPLER_H_
-#define INFINI_OPS_CPU_TOP_K_TOP_P_SAMPLER_H_
+#ifndef INFINI_OPS_CPU_INTERNAL_TOP_K_TOP_P_SAMPLE_H_
+#define INFINI_OPS_CPU_INTERNAL_TOP_K_TOP_P_SAMPLE_H_
 
 #include <algorithm>
 #include <cassert>
@@ -11,7 +11,7 @@
 #include <random>
 #include <vector>
 
-#include "base/top_k_top_p_sampler.h"
+#include "base/internal_top_k_top_p_sample.h"
 #include "data_type.h"
 #include "native/cpu/caster_.h"
 #include "operator.h"
@@ -20,42 +20,45 @@
 namespace infini::ops {
 
 template <>
-class Operator<TopKTopPSampler, Device::Type::kCpu>
-    : public TopKTopPSampler, Caster<Device::Type::kCpu> {
+class Operator<internal::TopKTopPSample, Device::Type::kCpu>
+    : public internal::TopKTopPSample, Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor logits, std::optional<Tensor> k,
-           std::optional<Tensor> p, Tensor out)
-      : TopKTopPSampler(logits, k, p, out) {}
+           std::optional<Tensor> p, uint64_t seed, uint64_t offset, Tensor out)
+      : internal::TopKTopPSample(logits, k, p, seed, offset, out) {}
 
   void operator()(const Tensor logits, std::optional<Tensor> k,
-                  std::optional<Tensor> p, Tensor out) const override {
+                  std::optional<Tensor> p, uint64_t seed, uint64_t offset,
+                  Tensor out) const override {
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         logits.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          Compute<T>(logits, k, p, out);
+          Compute<T>(logits, k, p, seed, offset, out);
         },
-        "`Operator<TopKTopPSampler, Device::Type::kCpu>::operator()`");
+        "`Operator<TopKTopPSample, Device::Type::kCpu>::operator()`");
   }
 
  private:
   template <typename T>
   void Compute(const Tensor logits, std::optional<Tensor> k,
-               std::optional<Tensor> p, Tensor out) const {
+               std::optional<Tensor> p, uint64_t seed, uint64_t offset,
+               Tensor out) const {
     const auto* logits_ptr = static_cast<const T*>(logits.data());
     auto* out_ptr = static_cast<int32_t*>(out.data());
 
     for (Tensor::Size row = 0; row < batch_size_; ++row) {
       const int64_t top_k = GetK(k, row);
       const double top_p = GetP(p, row);
-      out_ptr[row * out.stride(0)] = SampleRow(
-          logits_ptr + row * logits.stride(0), logits.stride(1), top_k, top_p);
+      out_ptr[row * out.stride(0)] =
+          SampleRow(logits_ptr + row * logits.stride(0), logits.stride(1),
+                    top_k, top_p, seed, offset + row);
     }
   }
 
   template <typename T>
   int32_t SampleRow(const T* row, Tensor::Stride stride, int64_t top_k,
-                    double top_p) const {
+                    double top_p, uint64_t seed, uint64_t offset) const {
     std::vector<int64_t> indices(vocab_size_);
     std::iota(indices.begin(), indices.end(), 0);
     std::sort(indices.begin(), indices.end(), [&](int64_t a, int64_t b) {
@@ -84,7 +87,9 @@ class Operator<TopKTopPSampler, Device::Type::kCpu>
 
     std::discrete_distribution<Tensor::Size> dist(weights.begin(),
                                                   weights.end());
-    return static_cast<int32_t>(indices[dist(rng_)]);
+    std::mt19937_64 rng(seed);
+    rng.discard(offset);
+    return static_cast<int32_t>(indices[dist(rng)]);
   }
 
   template <typename T>
@@ -147,14 +152,12 @@ class Operator<TopKTopPSampler, Device::Type::kCpu>
       case DataType::kFloat64:
         return static_cast<const double*>(p->data())[offset];
       default:
-        assert(false && "`TopKTopPSampler` has unsupported `p` dtype.");
+        assert(false && "`TopKTopPSample` has unsupported `p` dtype.");
         return 1.0;
     }
   }
-
-  mutable std::mt19937 rng_{std::random_device{}()};
 };
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_CPU_TOP_K_TOP_P_SAMPLER_H_
+#endif  // INFINI_OPS_CPU_INTERNAL_TOP_K_TOP_P_SAMPLE_H_

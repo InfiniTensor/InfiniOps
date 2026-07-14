@@ -1,0 +1,22 @@
+#ifndef INFINI_OPS_ILUVATAR_INTERNAL_CAUSAL_SOFTMAX_KERNEL_H_
+#define INFINI_OPS_ILUVATAR_INTERNAL_CAUSAL_SOFTMAX_KERNEL_H_
+
+#include <utility>
+
+#include "native/cuda/iluvatar/caster.cuh"
+#include "native/cuda/iluvatar/runtime_.h"
+#include "native/cuda/ops/internal_causal_softmax/kernel.h"
+
+namespace infini::ops {
+
+template <>
+class Operator<internal::CausalSoftmax, Device::Type::kIluvatar>
+    : public internal::CudaCausalSoftmax<Runtime<Device::Type::kIluvatar>> {
+ public:
+  using internal::CudaCausalSoftmax<
+      Runtime<Device::Type::kIluvatar>>::CudaCausalSoftmax;
+};
+
+}  // namespace infini::ops
+
+#endif

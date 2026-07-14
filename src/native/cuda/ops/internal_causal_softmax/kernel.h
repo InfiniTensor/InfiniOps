@@ -1,18 +1,18 @@
-#ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
-#define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_H_
+#ifndef INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_H_
+#define INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_H_
 
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 
-#include "base/causal_softmax.h"
+#include "base/internal_causal_softmax.h"
 #include "data_type.h"
 #include "dispatcher.h"
 #include "native/cuda/kernel_commons.cuh"
-#include "native/cuda/ops/causal_softmax/kernel.cuh"
+#include "native/cuda/ops/internal_causal_softmax/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
 
-namespace infini::ops {
+namespace infini::ops::internal {
 
 template <typename Backend>
 class CudaCausalSoftmax : public CausalSoftmax {
@@ -58,6 +58,6 @@ class CudaCausalSoftmax : public CausalSoftmax {
   }
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::internal
 
 #endif

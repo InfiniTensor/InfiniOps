@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_CUH_
-#define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_KERNEL_CUH_
+#ifndef INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_CUH_
+#define INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_CUH_
 
 #include <cmath>
 #include <cstddef>
@@ -8,7 +8,7 @@
 #include "native/cuda/caster.cuh"
 #include "native/cuda/kernel_commons.cuh"
 
-namespace infini::ops {
+namespace infini::ops::internal {
 
 namespace {
 
@@ -101,6 +101,6 @@ __global__ void CausalSoftmaxKernel(
   }
 }
 
-}  // namespace infini::ops
+}  // namespace infini::ops::internal
 
 #endif

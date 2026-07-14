@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_ASCEND_SCALED_SOFTMAX_KERNEL_H_
-#define INFINI_OPS_ASCEND_SCALED_SOFTMAX_KERNEL_H_
+#ifndef INFINI_OPS_ASCEND_INTERNAL_SCALED_SOFTMAX_KERNEL_H_
+#define INFINI_OPS_ASCEND_INTERNAL_SCALED_SOFTMAX_KERNEL_H_
 
 #include <cmath>
 
@@ -7,7 +7,7 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnn_mul.h"
 #include "aclnn_softmax.h"
-#include "base/scaled_softmax.h"
+#include "base/internal_scaled_softmax.h"
 #include "data_type.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -16,10 +16,11 @@
 namespace infini::ops {
 
 template <>
-class Operator<ScaledSoftmax, Device::Type::kAscend> : public ScaledSoftmax {
+class Operator<internal::ScaledSoftmax, Device::Type::kAscend>
+    : public internal::ScaledSoftmax {
  public:
   Operator(const Tensor input, double scale, Tensor out)
-      : ScaledSoftmax(input, scale, out),
+      : internal::ScaledSoftmax(input, scale, out),
         in_cache_(input),
         out_cache_(out),
         temp_cache_(input),
@@ -121,4 +122,4 @@ class Operator<ScaledSoftmax, Device::Type::kAscend> : public ScaledSoftmax {
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_ASCEND_SCALED_SOFTMAX_KERNEL_H_
+#endif  // INFINI_OPS_ASCEND_INTERNAL_SCALED_SOFTMAX_KERNEL_H_

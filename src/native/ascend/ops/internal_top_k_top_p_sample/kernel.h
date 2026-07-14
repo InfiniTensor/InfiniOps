@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_ASCEND_TOP_K_TOP_P_SAMPLER_KERNEL_H_
-#define INFINI_OPS_ASCEND_TOP_K_TOP_P_SAMPLER_KERNEL_H_
+#ifndef INFINI_OPS_ASCEND_INTERNAL_TOP_K_TOP_P_SAMPLE_KERNEL_H_
+#define INFINI_OPS_ASCEND_INTERNAL_TOP_K_TOP_P_SAMPLE_KERNEL_H_
 
 #include <algorithm>
 #include <cassert>
@@ -13,7 +13,7 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_cast.h"
 #include "aclnnop/aclnn_top_k_top_p_sample.h"
-#include "base/top_k_top_p_sampler.h"
+#include "base/internal_top_k_top_p_sample.h"
 #include "data_type.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -23,19 +23,19 @@
 namespace infini::ops {
 
 template <>
-class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
-    : public TopKTopPSampler {
+class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
+    : public internal::TopKTopPSample {
  public:
   Operator(const Tensor logits, std::optional<Tensor> k,
-           std::optional<Tensor> p, Tensor out)
-      : TopKTopPSampler(logits, k, p, out) {
+           std::optional<Tensor> p, uint64_t seed, uint64_t offset, Tensor out)
+      : internal::TopKTopPSample(logits, k, p, seed, offset, out) {
     assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kBFloat16) &&
-           "`TopKTopPSampler` Ascend ACLNN path requires float16 or bfloat16 "
+           "`TopKTopPSample` Ascend ACLNN path requires float16 or bfloat16 "
            "logits");
     assert(logits.IsContiguous() &&
-           "`TopKTopPSampler` Ascend ACLNN path requires contiguous logits");
+           "`TopKTopPSample` Ascend ACLNN path requires contiguous logits");
     assert(out.IsContiguous() &&
-           "`TopKTopPSampler` Ascend ACLNN path requires contiguous output");
+           "`TopKTopPSample` Ascend ACLNN path requires contiguous output");
     ValidateHostTensor(k);
     ValidateHostTensor(p);
 
@@ -68,11 +68,12 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
   }
 
   void operator()(const Tensor logits, std::optional<Tensor> k,
-                  std::optional<Tensor> p, Tensor out) const override {
+                  std::optional<Tensor> p, uint64_t seed, uint64_t offset,
+                  Tensor out) const override {
     assert(logits.IsContiguous() &&
-           "`TopKTopPSampler` Ascend ACLNN path requires contiguous logits");
+           "`TopKTopPSample` Ascend ACLNN path requires contiguous logits");
     assert(out.IsContiguous() &&
-           "`TopKTopPSampler` Ascend ACLNN path requires contiguous output");
+           "`TopKTopPSample` Ascend ACLNN path requires contiguous output");
 
     auto stream = static_cast<aclrtStream>(stream_);
     auto top_k_bytes = batch_size_ * kDataTypeToSize.at(DataType::kInt32);
@@ -84,7 +85,7 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
     auto selected_logits_bytes =
         batch_size_ * vocab_size_ * kDataTypeToSize.at(DataType::kFloat32);
 
-    FillParams(k, p);
+    FillParams(k, p, seed, offset);
 
     auto& top_k_arena = ascend::GetWorkspacePool().Ensure(
         stream, top_k_bytes, "top_k_top_p_sample_top_k");
@@ -95,15 +96,15 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
     auto ret = aclrtMemcpy(top_k_arena.buf, top_k_bytes, top_k_host_.data(),
                            top_k_bytes, ACL_MEMCPY_HOST_TO_DEVICE);
     assert(ret == ACL_SUCCESS &&
-           "`TopKTopPSampler`: copying `top_k` to Ascend failed");
+           "`TopKTopPSample`: copying `top_k` to Ascend failed");
     ret = aclrtMemcpy(top_p_arena.buf, top_p_bytes, top_p_host_.data(),
                       top_p_bytes, ACL_MEMCPY_HOST_TO_DEVICE);
     assert(ret == ACL_SUCCESS &&
-           "`TopKTopPSampler`: copying `top_p` to Ascend failed");
+           "`TopKTopPSample`: copying `top_p` to Ascend failed");
     ret = aclrtMemcpy(q_arena.buf, q_bytes, q_host_.data(), q_bytes,
                       ACL_MEMCPY_HOST_TO_DEVICE);
     assert(ret == ACL_SUCCESS &&
-           "`TopKTopPSampler`: copying `q` to Ascend failed");
+           "`TopKTopPSample`: copying `q` to Ascend failed");
 
     auto& selected_idx_arena = ascend::GetWorkspacePool().Ensure(
         stream, selected_idx_bytes, "top_k_top_p_sample_idx");
@@ -152,10 +153,10 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
     if (!tensor.has_value()) return;
 
     assert(tensor->device().type() == Device::Type::kCpu &&
-           "`TopKTopPSampler` Ascend path currently requires host-side "
+           "`TopKTopPSample` Ascend path currently requires host-side "
            "`k`/`p` tensors");
     assert(tensor->IsContiguous() &&
-           "`TopKTopPSampler` Ascend path requires contiguous `k`/`p` "
+           "`TopKTopPSample` Ascend path requires contiguous `k`/`p` "
            "tensors");
   }
 
@@ -180,11 +181,14 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
     assert(ret == ACL_SUCCESS && "`aclnnCast` failed");
   }
 
-  void FillParams(std::optional<Tensor> k, std::optional<Tensor> p) const {
+  void FillParams(std::optional<Tensor> k, std::optional<Tensor> p,
+                  uint64_t seed, uint64_t offset) const {
     top_k_host_.resize(batch_size_);
     top_p_host_.resize(batch_size_ * kDataTypeToSize.at(dtype_));
     q_host_.resize(batch_size_ * vocab_size_);
     std::exponential_distribution<float> dist(1.0F);
+    std::mt19937_64 rng(seed);
+    rng.discard(offset);
 
     for (Tensor::Size row = 0; row < batch_size_; ++row) {
       top_k_host_[row] = static_cast<int32_t>(GetK(k, row));
@@ -203,7 +207,7 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
     // CANN samples by taking argmax of softmax probabilities divided by
     // exponential noise.
     for (auto& value : q_host_) {
-      value = dist(rng_);
+      value = dist(rng);
     }
   }
 
@@ -241,7 +245,7 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
         value = static_cast<const double*>(p->data())[offset];
         break;
       default:
-        assert(false && "`TopKTopPSampler` has unsupported `p` dtype");
+        assert(false && "`TopKTopPSample` has unsupported `p` dtype");
     }
 
     if (value <= 0.0 || value > 1.0) return 1.0;
@@ -268,8 +272,6 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
 
   mutable std::vector<float> q_host_;
 
-  mutable std::mt19937 rng_{std::random_device{}()};
-
   mutable aclOpExecutor* sample_exec_ = nullptr;
 
   mutable uint64_t sample_ws_size_ = 0;
@@ -281,4 +283,4 @@ class Operator<TopKTopPSampler, Device::Type::kAscend, 0>
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_ASCEND_TOP_K_TOP_P_SAMPLER_KERNEL_H_
+#endif  // INFINI_OPS_ASCEND_INTERNAL_TOP_K_TOP_P_SAMPLE_KERNEL_H_

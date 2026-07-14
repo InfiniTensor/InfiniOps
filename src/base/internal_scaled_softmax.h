@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_BASE_SCALED_SOFTMAX_H_
-#define INFINI_OPS_BASE_SCALED_SOFTMAX_H_
+#ifndef INFINI_OPS_BASE_INTERNAL_SCALED_SOFTMAX_H_
+#define INFINI_OPS_BASE_INTERNAL_SCALED_SOFTMAX_H_
 
 #include <cassert>
 #include <cmath>
@@ -9,7 +9,7 @@
 #include "operator.h"
 #include "tensor.h"
 
-namespace infini::ops {
+namespace infini::ops::internal {
 
 class ScaledSoftmax : public Operator<ScaledSoftmax> {
  public:
@@ -50,6 +50,6 @@ class ScaledSoftmax : public Operator<ScaledSoftmax> {
   Tensor::Strides out_strides_;
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::internal
 
-#endif  // INFINI_OPS_BASE_SCALED_SOFTMAX_H_
+#endif  // INFINI_OPS_BASE_INTERNAL_SCALED_SOFTMAX_H_

@@ -1,9 +1,9 @@
-#ifndef INFINI_OPS_CPU_CAUSAL_SOFTMAX_H_
-#define INFINI_OPS_CPU_CAUSAL_SOFTMAX_H_
+#ifndef INFINI_OPS_CPU_INTERNAL_CAUSAL_SOFTMAX_H_
+#define INFINI_OPS_CPU_INTERNAL_CAUSAL_SOFTMAX_H_
 
 #include <cmath>
 
-#include "base/causal_softmax.h"
+#include "base/internal_causal_softmax.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "native/cpu/caster_.h"
@@ -12,10 +12,11 @@
 namespace infini::ops {
 
 template <>
-class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax,
-                                                    Caster<Device::Type::kCpu> {
+class Operator<internal::CausalSoftmax, Device::Type::kCpu>
+    : public internal::CausalSoftmax, Caster<Device::Type::kCpu> {
  public:
-  Operator(const Tensor input, Tensor out) : CausalSoftmax{input, out} {}
+  Operator(const Tensor input, Tensor out)
+      : internal::CausalSoftmax{input, out} {}
 
   void operator()(const Tensor input, Tensor out) const override {
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
@@ -24,7 +25,7 @@ class Operator<CausalSoftmax, Device::Type::kCpu> : public CausalSoftmax,
           using T = typename decltype(tag)::type;
           Compute<T>(input, out);
         },
-        "`Operator<CausalSoftmax, Device::Type::kCpu>::operator()`");
+        "`Operator<internal::CausalSoftmax, Device::Type::kCpu>::operator()`");
   }
 
  private:

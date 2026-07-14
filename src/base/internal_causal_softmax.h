@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_BASE_CAUSAL_SOFTMAX_H_
-#define INFINI_OPS_BASE_CAUSAL_SOFTMAX_H_
+#ifndef INFINI_OPS_BASE_INTERNAL_CAUSAL_SOFTMAX_H_
+#define INFINI_OPS_BASE_INTERNAL_CAUSAL_SOFTMAX_H_
 
 #include <cassert>
 #include <cstddef>
@@ -7,7 +7,7 @@
 #include "operator.h"
 #include "tensor.h"
 
-namespace infini::ops {
+namespace infini::ops::internal {
 
 class CausalSoftmax : public Operator<CausalSoftmax> {
  public:
@@ -47,6 +47,6 @@ class CausalSoftmax : public Operator<CausalSoftmax> {
   Tensor::Strides out_strides_;
 };
 
-}  // namespace infini::ops
+}  // namespace infini::ops::internal
 
 #endif
