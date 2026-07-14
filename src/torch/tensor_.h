@@ -100,6 +100,20 @@ inline at::Tensor ToAtenTensor(void* data, const Tensor::Shape& shape,
   return at::from_blob(data, at_shape, at_strides, options);
 }
 
+// Convert an InfiniOps `Tensor` to an `at::Tensor`. Reuse the original
+// `at::Tensor` when available to avoid a `from_blob` allocation; otherwise
+// reconstruct it from the stored tensor metadata.
+template <Device::Type kDev>
+inline at::Tensor AtenFromTensor(const Tensor& t) {
+  if (t.source_handle()) {
+    return *std::static_pointer_cast<at::Tensor>(
+        std::const_pointer_cast<void>(t.source_handle()));
+  }
+
+  return ToAtenTensor<kDev>(const_cast<void*>(t.data()), t.shape(), t.strides(),
+                            t.dtype(), t.device().index());
+}
+
 }  // namespace infini::ops
 
 #endif

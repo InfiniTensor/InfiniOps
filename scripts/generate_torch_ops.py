@@ -1257,15 +1257,10 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             conversion_lines.append("  }")
             continue
 
-        data_expr = (
-            f"{api_name}.data()"
-            if param.is_mutable_tensor
-            else f"const_cast<void*>({api_name}.data())"
-        )
+        # Reuse the original `at::Tensor` carried by the InfiniOps Tensor when
+        # present (zero-copy); fall back to `from_blob` only otherwise.
         conversion_lines.append(
-            f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
-            f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
-            f"      {api_name}_type_, device_index);"
+            f"  auto at_{param.name} = AtenFromTensor<kDev>({api_name});"
         )
 
     for schema_index, param in enumerate(op.params):
