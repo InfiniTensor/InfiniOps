@@ -236,6 +236,7 @@
 - linalg_tensorsolve
 - linalg_vecdot
 - linalg_vector_norm
+- linear
 - linspace
 - log
 - log10

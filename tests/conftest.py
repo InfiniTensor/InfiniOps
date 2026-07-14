@@ -343,16 +343,14 @@ def _is_smoke_matmul_case(params):
 
 def _is_smoke_linear_case(params):
     cases = {
-        (((4, 64), (64, 32), (4, 32)), False),
-        (((2, 4, 64), (2, 64, 32), (2, 4, 32)), True),
+        (((4, 64), (32, 64), (4, 32)), False),
+        (((2, 4, 64), (32, 64), (2, 4, 32)), True),
     }
 
     return (
         _is_float32(params)
-        and params.get("trans_a") is False
-        and params.get("trans_b") is False
         and (
-            _shape_case(params, "a_shape", "b_shape", "out_shape"),
+            _shape_case(params, "input_shape", "weight_shape", "out_shape"),
             params.get("has_bias"),
         )
         in cases
