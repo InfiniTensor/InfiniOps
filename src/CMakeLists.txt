@@ -496,6 +496,18 @@ if(WITH_TORCH)
         "${CMAKE_CURRENT_SOURCE_DIR}/torch/pybind11_.cc")
     list(REMOVE_ITEM TORCH_SOURCES "${TORCH_PYBIND_BRIDGE_SOURCE}")
 
+    set(INFINI_OPS_TORCH_OPT_LEVEL "3" CACHE STRING
+        "Optimization level for generated PyTorch wrapper sources")
+    set_property(CACHE INFINI_OPS_TORCH_OPT_LEVEL
+        PROPERTY STRINGS 0 1 2 3 s)
+    if(NOT INFINI_OPS_TORCH_OPT_LEVEL MATCHES "^(0|1|2|3|s)$")
+        message(FATAL_ERROR
+            "INFINI_OPS_TORCH_OPT_LEVEL must be one of 0, 1, 2, 3, or s")
+    endif()
+    set(_torch_optimization_flag "-O${INFINI_OPS_TORCH_OPT_LEVEL}")
+    message(STATUS
+        "Torch wrapper optimization: ${_torch_optimization_flag}")
+
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
     set(TORCH_COMPILE_SOURCES ${TORCH_SOURCES})
@@ -615,7 +627,7 @@ if(WITH_TORCH)
             add_custom_command(
                 OUTPUT "${_obj}"
                 COMMAND ${SYSTEM_CXX}
-                    -std=c++17 -fPIC -O0
+                    -std=c++17 -fPIC ${_torch_optimization_flag}
                     "-I${CMAKE_CURRENT_SOURCE_DIR}"
                     "-I${PROJECT_SOURCE_DIR}/generated"
                     ${INFINI_RT_INCLUDE_FLAGS}
@@ -671,7 +683,7 @@ if(WITH_TORCH)
             $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
         target_compile_options(infini_ops_torch_objs PRIVATE
             $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS>
-            -O0)
+            ${_torch_optimization_flag})
         if(CMAKE_GENERATOR MATCHES "Ninja")
             set_target_properties(infini_ops_torch_objs
                 PROPERTIES JOB_POOL_COMPILE torch_compile)
