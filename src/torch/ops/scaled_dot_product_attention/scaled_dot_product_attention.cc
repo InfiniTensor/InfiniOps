@@ -37,7 +37,7 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
   auto at_out = ToAtenTensor<kDev>(out.data(), out_shape_, out_strides_,
                                    query_type_, device_index_);
 
-  std::optional<at::Tensor> at_attn_mask;
+  c10::optional<at::Tensor> at_attn_mask;
   if (attn_mask.has_value()) {
     const auto dtype_override = attn_mask_type_ == DataType::kUInt8
                                     ? std::optional<at::ScalarType>{at::kBool}
@@ -47,9 +47,26 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
         attn_mask_strides_, attn_mask_type_, device_index_, dtype_override));
   }
 
-  auto result =
-      at::scaled_dot_product_attention(at_query, at_key, at_value, at_attn_mask,
-                                       dropout_p, is_causal, scale, enable_gqa);
+  c10::optional<double> at_scale;
+  if (scale.has_value()) {
+    at_scale = *scale;
+  }
+
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 5)
+  auto result = at::scaled_dot_product_attention(
+      at_query, at_key, at_value, at_attn_mask, dropout_p, is_causal, at_scale,
+      enable_gqa);
+#else
+  if (enable_gqa) {
+    at_key = at_key.repeat_interleave(at_query.size(-3) / at_key.size(-3), -3);
+    at_value =
+        at_value.repeat_interleave(at_query.size(-3) / at_value.size(-3), -3);
+  }
+
+  auto result = at::scaled_dot_product_attention(
+      at_query, at_key, at_value, at_attn_mask, dropout_p, is_causal, at_scale);
+#endif
   at_out.copy_(result);
 }
 

@@ -8,6 +8,15 @@
 namespace infini::ops {
 
 class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
+ protected:
+  template <typename TensorLike>
+  static auto ReturnShape(const TensorLike& query, const TensorLike& value) {
+    auto shape = query.shape();
+    shape.back() = value.size(-1);
+
+    return shape;
+  }
+
  public:
   ScaledDotProductAttention(const Tensor query, const Tensor key,
                             const Tensor value,
@@ -86,14 +95,6 @@ class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
   }
 
  protected:
-  template <typename TensorLike>
-  static auto ReturnShape(const TensorLike& query, const TensorLike& value) {
-    auto shape = query.shape();
-    shape.back() = value.size(-1);
-
-    return shape;
-  }
-
   Tensor::Shape query_shape_;
 
   Tensor::Shape key_shape_;
