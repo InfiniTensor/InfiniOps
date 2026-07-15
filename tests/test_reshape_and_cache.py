@@ -87,12 +87,8 @@ def test_reshape_and_cache(
     )
 
     assert result is None
-    torch.testing.assert_close(
-        key_cache, expected_key_cache, rtol=rtol, atol=atol
-    )
-    torch.testing.assert_close(
-        value_cache, expected_value_cache, rtol=rtol, atol=atol
-    )
+    torch.testing.assert_close(key_cache, expected_key_cache, rtol=rtol, atol=atol)
+    torch.testing.assert_close(value_cache, expected_value_cache, rtol=rtol, atol=atol)
 
 
 def _torch_reshape_and_cache(
@@ -118,9 +114,7 @@ def _torch_reshape_and_cache(
 
     if kv_cache_dtype != "auto":
         fp8_dtype = (
-            torch.float8_e5m2
-            if kv_cache_dtype == "fp8_e5m2"
-            else torch.float8_e4m3fn
+            torch.float8_e5m2 if kv_cache_dtype == "fp8_e5m2" else torch.float8_e4m3fn
         )
         key_values = (key_values / k_scale).to(fp8_dtype).view(torch.uint8)
         value_values = (value_values / v_scale).to(fp8_dtype).view(torch.uint8)

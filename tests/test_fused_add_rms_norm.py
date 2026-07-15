@@ -44,9 +44,7 @@ def test_fused_add_rms_norm(
 ):
     input = randn_strided(shape, input_strides, dtype=dtype, device=device)
     residual = randn_strided(shape, residual_strides, dtype=dtype, device=device)
-    weight = (
-        torch.randn(shape[-1], dtype=dtype, device=device) if has_weight else None
-    )
+    weight = torch.randn(shape[-1], dtype=dtype, device=device) if has_weight else None
     expected_input = clone_strided(input)
     expected_residual = clone_strided(residual)
 

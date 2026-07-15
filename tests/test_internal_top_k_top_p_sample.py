@@ -65,9 +65,7 @@ def test_internal_top_k_top_p_sample_filters(
     )
     out = torch.empty((32,), dtype=torch.int32, device=device)
 
-    _internal_top_k_top_p_sample(
-        logits, k, p, 1234, 0, out, implementation_index
-    )
+    _internal_top_k_top_p_sample(logits, k, p, 1234, 0, out, implementation_index)
 
     allowed_tensor = torch.tensor(allowed, dtype=torch.int32, device=device)
     assert torch.all(torch.isin(out, allowed_tensor))

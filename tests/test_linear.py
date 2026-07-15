@@ -58,9 +58,7 @@ def test_linear(
 
 
 def _linear(input, weight, bias, out):
-    infini.ops.linear(
-        input, weight, bias, out, stream=get_stream(input.device)
-    )
+    infini.ops.linear(input, weight, bias, out, stream=get_stream(input.device))
 
     return out
 
@@ -76,9 +74,7 @@ def _torch_linear(input, weight, bias, out):
 
 
 @pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    "dtype", (torch.float32, torch.float16, torch.bfloat16)
-)
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
 def test_linear_noncontiguous_weight(dtype, device):
     input = randn_strided((3, 8), None, dtype=dtype, device=device)
     weight = randn_strided((5, 8), (1, 5), dtype=dtype, device=device)

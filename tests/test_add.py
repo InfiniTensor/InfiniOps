@@ -120,9 +120,7 @@ def _torch_add(input, other, out):
     ),
 )
 @pytest.mark.parametrize("alpha", (0.0, 0.5, 1.0, 2.0))
-@pytest.mark.parametrize(
-    "dtype", (torch.float32, torch.float16, torch.bfloat16)
-)
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
 def test_add_alpha_and_broadcast(
     input_shape,
     other_shape,

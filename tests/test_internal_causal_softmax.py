@@ -42,9 +42,7 @@ def test_internal_causal_softmax(
 
 
 def _internal_causal_softmax(input, out):
-    infini.ops.internal_causal_softmax(
-        input, out, stream=get_stream(input.device)
-    )
+    infini.ops.internal_causal_softmax(input, out, stream=get_stream(input.device))
 
     return out
 

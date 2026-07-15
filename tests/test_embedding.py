@@ -111,9 +111,7 @@ def test_embedding_parameters(
     implementation_index,
 ):
     weight = randn_strided((8, 4), None, dtype=torch.float32, device=device)
-    indices = randint_strided(
-        0, 8, (2, 3), None, dtype=torch.int64, device=device
-    )
+    indices = randint_strided(0, 8, (2, 3), None, dtype=torch.int64, device=device)
     out = empty_strided((2, 3, 4), None, dtype=torch.float32, device=device)
 
     return Payload(
