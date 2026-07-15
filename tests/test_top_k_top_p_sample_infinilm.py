@@ -65,9 +65,7 @@ def test_top_k_top_p_sample_infinilm_filters(
     )
     out = torch.empty((32,), dtype=torch.int32, device=device)
 
-    _top_k_top_p_sample_infinilm(
-        logits, k, p, 1234, 0, out, implementation_index
-    )
+    _top_k_top_p_sample_infinilm(logits, k, p, 1234, 0, out, implementation_index)
 
     allowed_tensor = torch.tensor(allowed, dtype=torch.int32, device=device)
     assert torch.all(torch.isin(out, allowed_tensor))

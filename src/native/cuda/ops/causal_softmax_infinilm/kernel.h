@@ -47,7 +47,8 @@ class CudaCausalSoftmaxInfinilm : public CausalSoftmaxInfinilm {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
-          CausalSoftmaxInfinilmKernel<kBlockSize, Backend::kDeviceType, T, float>
+          CausalSoftmaxInfinilmKernel<kBlockSize, Backend::kDeviceType, T,
+                                      float>
               <<<grid, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()),
                   reinterpret_cast<const T*>(input.data()), batch_size_,
