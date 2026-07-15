@@ -11,7 +11,7 @@ namespace infini::ops {
 class RotaryEmbedding : public Operator<RotaryEmbedding> {
  public:
   RotaryEmbedding(const Tensor positions, Tensor query,
-                  const std::optional<Tensor> key, int64_t head_size,
+                  std::optional<Tensor> key, int64_t head_size,
                   const Tensor cos_sin_cache, bool is_neox,
                   int64_t rope_dim_offset = 0, bool inverse = false)
       : positions_shape_{positions.shape()},
@@ -28,7 +28,7 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
         num_tokens_{positions.numel()},
         positions_ndim_{positions.ndim()},
         head_size_{head_size},
-        rot_dim_{cos_sin_cache.size(1)},
+        rot_dim_{static_cast<int64_t>(cos_sin_cache.size(1))},
         rope_dim_offset_{rope_dim_offset},
         is_neox_{is_neox},
         inverse_{inverse},
@@ -117,7 +117,7 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
   }
 
   virtual void operator()(const Tensor positions, Tensor query,
-                          const std::optional<Tensor> key, int64_t head_size,
+                          std::optional<Tensor> key, int64_t head_size,
                           const Tensor cos_sin_cache, bool is_neox,
                           int64_t rope_dim_offset = 0,
                           bool inverse = false) const = 0;
