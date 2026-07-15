@@ -1,23 +1,23 @@
-#ifndef INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_H_
-#define INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_H_
+#ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_INFINILM_KERNEL_H_
+#define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_INFINILM_KERNEL_H_
 
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 
-#include "base/internal_causal_softmax.h"
+#include "base/causal_softmax_infinilm.h"
 #include "data_type.h"
 #include "dispatcher.h"
 #include "native/cuda/kernel_commons.cuh"
-#include "native/cuda/ops/internal_causal_softmax/kernel.cuh"
+#include "native/cuda/ops/causal_softmax_infinilm/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
 
-namespace infini::ops::internal {
+namespace infini::ops {
 
 template <typename Backend>
-class CudaCausalSoftmax : public CausalSoftmax {
+class CudaCausalSoftmaxInfinilm : public CausalSoftmaxInfinilm {
  public:
-  using CausalSoftmax::CausalSoftmax;
+  using CausalSoftmaxInfinilm::CausalSoftmaxInfinilm;
 
   void operator()(const Tensor input, Tensor out) const override {
     auto cuda_stream =
@@ -47,17 +47,17 @@ class CudaCausalSoftmax : public CausalSoftmax {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
-          CausalSoftmaxKernel<kBlockSize, Backend::kDeviceType, T, float>
+          CausalSoftmaxInfinilmKernel<kBlockSize, Backend::kDeviceType, T, float>
               <<<grid, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()),
                   reinterpret_cast<const T*>(input.data()), batch_size_,
                   seq_len_, total_seq_len_, stride_out_batch, stride_out_row,
                   stride_input_batch, stride_input_row);
         },
-        "CudaCausalSoftmax::operator()");
+        "CudaCausalSoftmaxInfinilm::operator()");
   }
 };
 
-}  // namespace infini::ops::internal
+}  // namespace infini::ops
 
 #endif

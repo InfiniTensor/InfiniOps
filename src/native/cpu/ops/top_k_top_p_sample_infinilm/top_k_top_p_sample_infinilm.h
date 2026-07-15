@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CPU_INTERNAL_TOP_K_TOP_P_SAMPLE_H_
-#define INFINI_OPS_CPU_INTERNAL_TOP_K_TOP_P_SAMPLE_H_
+#ifndef INFINI_OPS_CPU_TOP_K_TOP_P_SAMPLE_INFINILM_H_
+#define INFINI_OPS_CPU_TOP_K_TOP_P_SAMPLE_INFINILM_H_
 
 #include <algorithm>
 #include <cassert>
@@ -11,7 +11,7 @@
 #include <random>
 #include <vector>
 
-#include "base/internal_top_k_top_p_sample.h"
+#include "base/top_k_top_p_sample_infinilm.h"
 #include "data_type.h"
 #include "native/cpu/caster_.h"
 #include "operator.h"
@@ -20,12 +20,12 @@
 namespace infini::ops {
 
 template <>
-class Operator<internal::TopKTopPSample, Device::Type::kCpu>
-    : public internal::TopKTopPSample, Caster<Device::Type::kCpu> {
+class Operator<TopKTopPSampleInfinilm, Device::Type::kCpu>
+    : public TopKTopPSampleInfinilm, Caster<Device::Type::kCpu> {
  public:
   Operator(const Tensor logits, std::optional<Tensor> k,
            std::optional<Tensor> p, uint64_t seed, uint64_t offset, Tensor out)
-      : internal::TopKTopPSample(logits, k, p, seed, offset, out) {}
+      : TopKTopPSampleInfinilm(logits, k, p, seed, offset, out) {}
 
   void operator()(const Tensor logits, std::optional<Tensor> k,
                   std::optional<Tensor> p, uint64_t seed, uint64_t offset,
@@ -36,7 +36,7 @@ class Operator<internal::TopKTopPSample, Device::Type::kCpu>
           using T = typename decltype(tag)::type;
           Compute<T>(logits, k, p, seed, offset, out);
         },
-        "`Operator<TopKTopPSample, Device::Type::kCpu>::operator()`");
+        "`Operator<TopKTopPSampleInfinilm, Device::Type::kCpu>::operator()`");
   }
 
  private:
@@ -152,7 +152,7 @@ class Operator<internal::TopKTopPSample, Device::Type::kCpu>
       case DataType::kFloat64:
         return static_cast<const double*>(p->data())[offset];
       default:
-        assert(false && "`TopKTopPSample` has unsupported `p` dtype.");
+        assert(false && "`TopKTopPSampleInfinilm` has unsupported `p` dtype.");
         return 1.0;
     }
   }
@@ -160,4 +160,4 @@ class Operator<internal::TopKTopPSample, Device::Type::kCpu>
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_CPU_INTERNAL_TOP_K_TOP_P_SAMPLE_H_
+#endif  // INFINI_OPS_CPU_TOP_K_TOP_P_SAMPLE_INFINILM_H_

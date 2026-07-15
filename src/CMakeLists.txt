@@ -420,7 +420,7 @@ set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infini_ops_smoke_ops
     add mul cast cat gemm matmul linear rms_norm silu_and_mul
-    internal_causal_softmax abs clamp exp)
+    causal_softmax_infinilm abs clamp exp)
 set(_infini_ops_smoke_torch_ops abs clamp exp)
 
 if(INFINI_OPS_SMOKE_BUILD)

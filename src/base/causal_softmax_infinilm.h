@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_BASE_INTERNAL_CAUSAL_SOFTMAX_H_
-#define INFINI_OPS_BASE_INTERNAL_CAUSAL_SOFTMAX_H_
+#ifndef INFINI_OPS_BASE_CAUSAL_SOFTMAX_INFINILM_H_
+#define INFINI_OPS_BASE_CAUSAL_SOFTMAX_INFINILM_H_
 
 #include <cassert>
 #include <cstddef>
@@ -7,11 +7,11 @@
 #include "operator.h"
 #include "tensor.h"
 
-namespace infini::ops::internal {
+namespace infini::ops {
 
-class CausalSoftmax : public Operator<CausalSoftmax> {
+class CausalSoftmaxInfinilm : public Operator<CausalSoftmaxInfinilm> {
  public:
-  CausalSoftmax(const Tensor input, Tensor out)
+  CausalSoftmaxInfinilm(const Tensor input, Tensor out)
       : dtype_{input.dtype()},
         ndim_{out.ndim()},
         batch_size_{ndim_ == 2 ? 1 : out.size(-3)},
@@ -20,13 +20,13 @@ class CausalSoftmax : public Operator<CausalSoftmax> {
         input_strides_{input.strides()},
         out_strides_{out.strides()} {
     assert(input.shape() == out.shape() &&
-           "`CausalSoftmax` requires `input` and `out` same shape");
+           "`CausalSoftmaxInfinilm` requires `input` and `out` same shape");
     assert(input.dtype() == out.dtype() &&
-           "`CausalSoftmax` requires `input` and `out` same dtype");
+           "`CausalSoftmaxInfinilm` requires `input` and `out` same dtype");
     assert((ndim_ == 2 || ndim_ == 3) &&
-           "`CausalSoftmax` requires 2D or 3D tensor");
+           "`CausalSoftmaxInfinilm` requires 2D or 3D tensor");
     assert(seq_len_ <= total_seq_len_ &&
-           "`CausalSoftmax` requires shape[-2] <= shape[-1]");
+           "`CausalSoftmaxInfinilm` requires shape[-2] <= shape[-1]");
   }
 
   virtual void operator()(const Tensor input, Tensor out) const = 0;
@@ -47,6 +47,6 @@ class CausalSoftmax : public Operator<CausalSoftmax> {
   Tensor::Strides out_strides_;
 };
 
-}  // namespace infini::ops::internal
+}  // namespace infini::ops
 
 #endif

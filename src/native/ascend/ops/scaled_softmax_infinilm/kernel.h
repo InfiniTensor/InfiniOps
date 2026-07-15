@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_ASCEND_INTERNAL_SCALED_SOFTMAX_KERNEL_H_
-#define INFINI_OPS_ASCEND_INTERNAL_SCALED_SOFTMAX_KERNEL_H_
+#ifndef INFINI_OPS_ASCEND_SCALED_SOFTMAX_INFINILM_KERNEL_H_
+#define INFINI_OPS_ASCEND_SCALED_SOFTMAX_INFINILM_KERNEL_H_
 
 #include <cmath>
 
@@ -7,7 +7,7 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnn_mul.h"
 #include "aclnn_softmax.h"
-#include "base/internal_scaled_softmax.h"
+#include "base/scaled_softmax_infinilm.h"
 #include "data_type.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -16,11 +16,11 @@
 namespace infini::ops {
 
 template <>
-class Operator<internal::ScaledSoftmax, Device::Type::kAscend>
-    : public internal::ScaledSoftmax {
+class Operator<ScaledSoftmaxInfinilm, Device::Type::kAscend>
+    : public ScaledSoftmaxInfinilm {
  public:
   Operator(const Tensor input, double scale, Tensor out)
-      : internal::ScaledSoftmax(input, scale, out),
+      : ScaledSoftmaxInfinilm(input, scale, out),
         in_cache_(input),
         out_cache_(out),
         temp_cache_(input),
@@ -28,12 +28,12 @@ class Operator<internal::ScaledSoftmax, Device::Type::kAscend>
         needs_scale_(std::fabs(scale - 1.0) > 1e-6) {
     assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kBFloat16 ||
             dtype_ == DataType::kFloat32) &&
-           "`ScaledSoftmax` Ascend path requires float16, bfloat16, or "
+           "`ScaledSoftmaxInfinilm` Ascend path requires float16, bfloat16, or "
            "float32 input");
     assert(input.IsContiguous() &&
-           "`ScaledSoftmax` Ascend path requires contiguous input");
+           "`ScaledSoftmaxInfinilm` Ascend path requires contiguous input");
     assert(out.IsContiguous() &&
-           "`ScaledSoftmax` Ascend path requires contiguous output");
+           "`ScaledSoftmaxInfinilm` Ascend path requires contiguous output");
 
     temp_size_ = input.numel() * kDataTypeToSize.at(dtype_);
     scale_scalar_ = aclCreateScalar(&scale_storage_, ACL_FLOAT);
@@ -51,7 +51,7 @@ class Operator<internal::ScaledSoftmax, Device::Type::kAscend>
 
   void operator()(const Tensor input, double scale, Tensor out) const override {
     assert(scale == scale_ &&
-           "`ScaledSoftmax` scale changed after descriptor creation");
+           "`ScaledSoftmaxInfinilm` scale changed after descriptor creation");
 
     auto stream = static_cast<aclrtStream>(stream_);
     auto t_in = in_cache_.get(const_cast<void*>(input.data()));
@@ -122,4 +122,4 @@ class Operator<internal::ScaledSoftmax, Device::Type::kAscend>
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_ASCEND_INTERNAL_SCALED_SOFTMAX_KERNEL_H_
+#endif  // INFINI_OPS_ASCEND_SCALED_SOFTMAX_INFINILM_KERNEL_H_

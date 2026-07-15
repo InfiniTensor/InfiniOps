@@ -6,7 +6,7 @@ from tests.utils import get_stream
 
 
 @pytest.mark.parametrize("dtype", (torch.float16, torch.bfloat16))
-def test_internal_top_k_top_p_sample_reproducible(
+def test_top_k_top_p_sample_infinilm_reproducible(
     dtype,
     device,
     implementation_index,
@@ -16,13 +16,13 @@ def test_internal_top_k_top_p_sample_reproducible(
     second = torch.empty_like(first)
     different_seed = torch.empty_like(first)
 
-    _internal_top_k_top_p_sample(
+    _top_k_top_p_sample_infinilm(
         logits, None, None, 1234, 9, first, implementation_index
     )
-    _internal_top_k_top_p_sample(
+    _top_k_top_p_sample_infinilm(
         logits, None, None, 1234, 9, second, implementation_index
     )
-    _internal_top_k_top_p_sample(
+    _top_k_top_p_sample_infinilm(
         logits, None, None, 5678, 9, different_seed, implementation_index
     )
 
@@ -41,7 +41,7 @@ def test_internal_top_k_top_p_sample_reproducible(
     ),
 )
 @pytest.mark.parametrize("dtype", (torch.float16, torch.bfloat16))
-def test_internal_top_k_top_p_sample_filters(
+def test_top_k_top_p_sample_infinilm_filters(
     k_value,
     p_value,
     allowed,
@@ -65,13 +65,15 @@ def test_internal_top_k_top_p_sample_filters(
     )
     out = torch.empty((32,), dtype=torch.int32, device=device)
 
-    _internal_top_k_top_p_sample(logits, k, p, 1234, 0, out, implementation_index)
+    _top_k_top_p_sample_infinilm(
+        logits, k, p, 1234, 0, out, implementation_index
+    )
 
     allowed_tensor = torch.tensor(allowed, dtype=torch.int32, device=device)
     assert torch.all(torch.isin(out, allowed_tensor))
 
 
-def _internal_top_k_top_p_sample(
+def _top_k_top_p_sample_infinilm(
     logits,
     k,
     p,
@@ -80,7 +82,7 @@ def _internal_top_k_top_p_sample(
     out,
     implementation_index,
 ):
-    infini.ops.internal_top_k_top_p_sample(
+    infini.ops.top_k_top_p_sample_infinilm(
         logits,
         k,
         p,

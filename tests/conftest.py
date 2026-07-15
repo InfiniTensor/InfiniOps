@@ -192,7 +192,7 @@ def _is_smoke_item(item):
         "tests/test_add.py": _is_smoke_add_case,
         "tests/test_cast.py": _is_smoke_cast_case,
         "tests/test_cat.py": _is_smoke_cat_case,
-        "tests/test_internal_causal_softmax.py": _is_smoke_internal_causal_softmax_case,
+        "tests/test_causal_softmax_infinilm.py": _is_smoke_causal_softmax_case,
         "tests/test_gemm.py": _is_smoke_gemm_case,
         "tests/test_linear.py": _is_smoke_linear_case,
         "tests/test_matmul.py": _is_smoke_matmul_case,
@@ -396,7 +396,7 @@ def _is_smoke_silu_and_mul_case(params):
     )
 
 
-def _is_smoke_internal_causal_softmax_case(params):
+def _is_smoke_causal_softmax_case(params):
     cases = {
         ((3, 3), None, None),
         ((32, 512), None, None),

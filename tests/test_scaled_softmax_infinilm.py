@@ -23,7 +23,7 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         (torch.bfloat16, 1e-2, 1e-2),
     ),
 )
-def test_internal_scaled_softmax(
+def test_scaled_softmax_infinilm(
     shape,
     scale,
     dtype,
@@ -36,7 +36,7 @@ def test_internal_scaled_softmax(
     out = empty_strided(shape, None, dtype=dtype, device=device)
 
     return Payload(
-        _internal_scaled_softmax,
+        _scaled_softmax_infinilm,
         _torch_scaled_softmax,
         (input_tensor, out),
         {"scale": scale, "implementation_index": implementation_index},
@@ -45,8 +45,8 @@ def test_internal_scaled_softmax(
     )
 
 
-def _internal_scaled_softmax(input_tensor, out, *, scale, implementation_index):
-    infini.ops.internal_scaled_softmax(
+def _scaled_softmax_infinilm(input_tensor, out, *, scale, implementation_index):
+    infini.ops.scaled_softmax_infinilm(
         input_tensor,
         scale,
         out,

@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_ASCEND_INTERNAL_TOP_K_TOP_P_SAMPLE_KERNEL_H_
-#define INFINI_OPS_ASCEND_INTERNAL_TOP_K_TOP_P_SAMPLE_KERNEL_H_
+#ifndef INFINI_OPS_ASCEND_TOP_K_TOP_P_SAMPLE_INFINILM_KERNEL_H_
+#define INFINI_OPS_ASCEND_TOP_K_TOP_P_SAMPLE_INFINILM_KERNEL_H_
 
 #include <algorithm>
 #include <cassert>
@@ -13,7 +13,7 @@
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_cast.h"
 #include "aclnnop/aclnn_top_k_top_p_sample.h"
-#include "base/internal_top_k_top_p_sample.h"
+#include "base/top_k_top_p_sample_infinilm.h"
 #include "data_type.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -23,19 +23,22 @@
 namespace infini::ops {
 
 template <>
-class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
-    : public internal::TopKTopPSample {
+class Operator<TopKTopPSampleInfinilm, Device::Type::kAscend, 0>
+    : public TopKTopPSampleInfinilm {
  public:
   Operator(const Tensor logits, std::optional<Tensor> k,
            std::optional<Tensor> p, uint64_t seed, uint64_t offset, Tensor out)
-      : internal::TopKTopPSample(logits, k, p, seed, offset, out) {
+      : TopKTopPSampleInfinilm(logits, k, p, seed, offset, out) {
     assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kBFloat16) &&
-           "`TopKTopPSample` Ascend ACLNN path requires float16 or bfloat16 "
+           "`TopKTopPSampleInfinilm` Ascend ACLNN path requires float16 or "
+           "bfloat16 "
            "logits");
     assert(logits.IsContiguous() &&
-           "`TopKTopPSample` Ascend ACLNN path requires contiguous logits");
+           "`TopKTopPSampleInfinilm` Ascend ACLNN path requires contiguous "
+           "logits");
     assert(out.IsContiguous() &&
-           "`TopKTopPSample` Ascend ACLNN path requires contiguous output");
+           "`TopKTopPSampleInfinilm` Ascend ACLNN path requires contiguous "
+           "output");
     ValidateHostTensor(k);
     ValidateHostTensor(p);
 
@@ -71,9 +74,11 @@ class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
                   std::optional<Tensor> p, uint64_t seed, uint64_t offset,
                   Tensor out) const override {
     assert(logits.IsContiguous() &&
-           "`TopKTopPSample` Ascend ACLNN path requires contiguous logits");
+           "`TopKTopPSampleInfinilm` Ascend ACLNN path requires contiguous "
+           "logits");
     assert(out.IsContiguous() &&
-           "`TopKTopPSample` Ascend ACLNN path requires contiguous output");
+           "`TopKTopPSampleInfinilm` Ascend ACLNN path requires contiguous "
+           "output");
 
     auto stream = static_cast<aclrtStream>(stream_);
     auto top_k_bytes = batch_size_ * kDataTypeToSize.at(DataType::kInt32);
@@ -96,15 +101,15 @@ class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
     auto ret = aclrtMemcpy(top_k_arena.buf, top_k_bytes, top_k_host_.data(),
                            top_k_bytes, ACL_MEMCPY_HOST_TO_DEVICE);
     assert(ret == ACL_SUCCESS &&
-           "`TopKTopPSample`: copying `top_k` to Ascend failed");
+           "`TopKTopPSampleInfinilm`: copying `top_k` to Ascend failed");
     ret = aclrtMemcpy(top_p_arena.buf, top_p_bytes, top_p_host_.data(),
                       top_p_bytes, ACL_MEMCPY_HOST_TO_DEVICE);
     assert(ret == ACL_SUCCESS &&
-           "`TopKTopPSample`: copying `top_p` to Ascend failed");
+           "`TopKTopPSampleInfinilm`: copying `top_p` to Ascend failed");
     ret = aclrtMemcpy(q_arena.buf, q_bytes, q_host_.data(), q_bytes,
                       ACL_MEMCPY_HOST_TO_DEVICE);
     assert(ret == ACL_SUCCESS &&
-           "`TopKTopPSample`: copying `q` to Ascend failed");
+           "`TopKTopPSampleInfinilm`: copying `q` to Ascend failed");
 
     auto& selected_idx_arena = ascend::GetWorkspacePool().Ensure(
         stream, selected_idx_bytes, "top_k_top_p_sample_idx");
@@ -153,10 +158,10 @@ class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
     if (!tensor.has_value()) return;
 
     assert(tensor->device().type() == Device::Type::kCpu &&
-           "`TopKTopPSample` Ascend path currently requires host-side "
+           "`TopKTopPSampleInfinilm` Ascend path currently requires host-side "
            "`k`/`p` tensors");
     assert(tensor->IsContiguous() &&
-           "`TopKTopPSample` Ascend path requires contiguous `k`/`p` "
+           "`TopKTopPSampleInfinilm` Ascend path requires contiguous `k`/`p` "
            "tensors");
   }
 
@@ -245,7 +250,7 @@ class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
         value = static_cast<const double*>(p->data())[offset];
         break;
       default:
-        assert(false && "`TopKTopPSample` has unsupported `p` dtype");
+        assert(false && "`TopKTopPSampleInfinilm` has unsupported `p` dtype");
     }
 
     if (value <= 0.0 || value > 1.0) return 1.0;
@@ -283,4 +288,4 @@ class Operator<internal::TopKTopPSample, Device::Type::kAscend, 0>
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_ASCEND_INTERNAL_TOP_K_TOP_P_SAMPLE_KERNEL_H_
+#endif  // INFINI_OPS_ASCEND_TOP_K_TOP_P_SAMPLE_INFINILM_KERNEL_H_

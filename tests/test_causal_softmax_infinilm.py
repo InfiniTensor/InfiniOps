@@ -25,14 +25,14 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         (torch.bfloat16, 1e-2, 1e-2),
     ),
 )
-def test_internal_causal_softmax(
+def test_causal_softmax_infinilm(
     shape, input_strides, out_strides, dtype, device, rtol, atol
 ):
     input_tensor = randn_strided(shape, input_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
-        _internal_causal_softmax,
+        _causal_softmax_infinilm,
         _torch_causal_softmax,
         (input_tensor, out),
         {},
@@ -41,8 +41,8 @@ def test_internal_causal_softmax(
     )
 
 
-def _internal_causal_softmax(input, out):
-    infini.ops.internal_causal_softmax(input, out, stream=get_stream(input.device))
+def _causal_softmax_infinilm(input, out):
+    infini.ops.causal_softmax_infinilm(input, out, stream=get_stream(input.device))
 
     return out
 

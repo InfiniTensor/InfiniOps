@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_CUH_
-#define INFINI_OPS_CUDA_INTERNAL_CAUSAL_SOFTMAX_KERNEL_CUH_
+#ifndef INFINI_OPS_CUDA_CAUSAL_SOFTMAX_INFINILM_KERNEL_CUH_
+#define INFINI_OPS_CUDA_CAUSAL_SOFTMAX_INFINILM_KERNEL_CUH_
 
 #include <cmath>
 #include <cstddef>
@@ -8,7 +8,7 @@
 #include "native/cuda/caster.cuh"
 #include "native/cuda/kernel_commons.cuh"
 
-namespace infini::ops::internal {
+namespace infini::ops {
 
 namespace {
 
@@ -54,7 +54,7 @@ __device__ __forceinline__ Compute BlockSum(const Data* data_ptr,
 
 template <unsigned int block_size, Device::Type kDev, typename Data,
           typename Compute>
-__global__ void CausalSoftmaxKernel(
+__global__ void CausalSoftmaxInfinilmKernel(
     Data* __restrict__ out_ptr, const Data* __restrict__ input_ptr,
     size_t batch_size, size_t seq_len, size_t total_seq_len,
     int64_t stride_out_batch, int64_t stride_out_row,
@@ -101,6 +101,6 @@ __global__ void CausalSoftmaxKernel(
   }
 }
 
-}  // namespace infini::ops::internal
+}  // namespace infini::ops
 
 #endif

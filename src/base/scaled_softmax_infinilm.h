@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_BASE_INTERNAL_SCALED_SOFTMAX_H_
-#define INFINI_OPS_BASE_INTERNAL_SCALED_SOFTMAX_H_
+#ifndef INFINI_OPS_BASE_SCALED_SOFTMAX_INFINILM_H_
+#define INFINI_OPS_BASE_SCALED_SOFTMAX_INFINILM_H_
 
 #include <cassert>
 #include <cmath>
@@ -9,11 +9,11 @@
 #include "operator.h"
 #include "tensor.h"
 
-namespace infini::ops::internal {
+namespace infini::ops {
 
-class ScaledSoftmax : public Operator<ScaledSoftmax> {
+class ScaledSoftmaxInfinilm : public Operator<ScaledSoftmaxInfinilm> {
  public:
-  ScaledSoftmax(const Tensor input, double scale, Tensor out)
+  ScaledSoftmaxInfinilm(const Tensor input, double scale, Tensor out)
       : scale_{scale},
         batch_size_{input.size(0)},
         vocab_size_{input.size(1)},
@@ -21,16 +21,19 @@ class ScaledSoftmax : public Operator<ScaledSoftmax> {
         input_strides_{input.strides()},
         out_strides_{out.strides()} {
     assert(input.ndim() == 2 &&
-           "`ScaledSoftmax` currently supports 2D `[batch, vocab]` input");
+           "`ScaledSoftmaxInfinilm` currently supports 2D `[batch, vocab]` "
+           "input");
     assert(input.shape() == out.shape() &&
-           "`ScaledSoftmax` requires `input` and `out` to have the same shape");
+           "`ScaledSoftmaxInfinilm` requires `input` and `out` to have the "
+           "same shape");
     assert(input.dtype() == out.dtype() &&
-           "`ScaledSoftmax` requires `input` and `out` to have the same dtype");
+           "`ScaledSoftmaxInfinilm` requires `input` and `out` to have the "
+           "same dtype");
     assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kBFloat16 ||
             dtype_ == DataType::kFloat32 || dtype_ == DataType::kFloat64) &&
-           "`ScaledSoftmax` requires a floating point dtype");
+           "`ScaledSoftmaxInfinilm` requires a floating point dtype");
     assert(std::isfinite(scale_) &&
-           "`ScaledSoftmax` requires a finite `scale`");
+           "`ScaledSoftmaxInfinilm` requires a finite `scale`");
   }
 
   virtual void operator()(const Tensor input, double scale,
@@ -50,6 +53,6 @@ class ScaledSoftmax : public Operator<ScaledSoftmax> {
   Tensor::Strides out_strides_;
 };
 
-}  // namespace infini::ops::internal
+}  // namespace infini::ops
 
-#endif  // INFINI_OPS_BASE_INTERNAL_SCALED_SOFTMAX_H_
+#endif  // INFINI_OPS_BASE_SCALED_SOFTMAX_INFINILM_H_
