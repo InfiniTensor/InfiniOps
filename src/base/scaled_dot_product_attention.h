@@ -8,15 +8,6 @@
 namespace infini::ops {
 
 class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
- protected:
-  template <typename TensorLike>
-  static auto ReturnShape(const TensorLike& query, const TensorLike& value) {
-    auto shape = query.shape();
-    shape.back() = value.size(-1);
-
-    return shape;
-  }
-
  public:
   ScaledDotProductAttention(const Tensor query, const Tensor key,
                             const Tensor value,
@@ -52,7 +43,9 @@ class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
            "dtypes");
     assert(query.size(-1) == key.size(-1) && key.size(-2) == value.size(-2) &&
            "`ScaledDotProductAttention` input dimensions are incompatible");
-    assert(out.shape() == ReturnShape(query, value) &&
+    auto expected_out_shape = query.shape();
+    expected_out_shape.back() = value.size(-1);
+    assert(out.shape() == expected_out_shape &&
            "`ScaledDotProductAttention` output shape is incorrect");
     assert(dropout_p_ >= 0.0 && dropout_p_ <= 1.0 &&
            "`ScaledDotProductAttention` requires `dropout_p` in [0, 1]");
@@ -90,8 +83,9 @@ class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
     (void)scale;
     (void)enable_gqa;
 
-    return TensorLike::Empty(ReturnShape(query, value), query.dtype(),
-                             query.device());
+    auto out_shape = query.shape();
+    out_shape.back() = value.size(-1);
+    return TensorLike::Empty(out_shape, query.dtype(), query.device());
   }
 
  protected:
