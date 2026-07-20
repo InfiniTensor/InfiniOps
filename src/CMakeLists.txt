@@ -67,6 +67,14 @@ if(WITH_CPU)
 endif()
 
 if(WITH_NVIDIA)
+    set(_cutlass_include_dir
+        "${PROJECT_SOURCE_DIR}/third_party/cutlass/include")
+    if(NOT EXISTS "${_cutlass_include_dir}/cutlass/cutlass.h")
+        message(FATAL_ERROR
+            "CUTLASS is required by the NVIDIA backend. Run "
+            "`git submodule update --init --checkout third_party/cutlass`.")
+    endif()
+
     set(NVIDIA_PATTERNS
         "native/cuda/*.cc"
         "native/cuda/*.cpp"
@@ -82,6 +90,7 @@ if(WITH_NVIDIA)
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
+    target_include_directories(infiniops PRIVATE "${_cutlass_include_dir}")
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
