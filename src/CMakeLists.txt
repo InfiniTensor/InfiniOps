@@ -86,6 +86,15 @@ if(WITH_NVIDIA)
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
 
+    # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
+    # the extra code objects to this provider source so other CUDA operators
+    # retain the caller/compiler architecture configuration unchanged.
+    set(_cutlass_scaled_mm_source
+        "${CMAKE_CURRENT_SOURCE_DIR}/native/cuda/nvidia/ops/scaled_mm/cutlass.cu")
+    set_source_files_properties("${_cutlass_scaled_mm_source}" PROPERTIES
+        COMPILE_OPTIONS
+            "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
+
     enable_language(CUDA)
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
@@ -428,8 +437,13 @@ set(INFINI_OPS_OPS "" CACHE STRING
 set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infini_ops_smoke_ops
-    add mul cast cat gemm matmul linear rms_norm swiglu causal_softmax abs clamp exp)
+    add mul cast cat gemm matmul linear rms_norm swiglu
+    causal_softmax abs clamp exp)
 set(_infini_ops_smoke_torch_ops abs clamp exp)
+
+if(WITH_NVIDIA)
+    list(APPEND _infini_ops_smoke_ops scaled_mm)
+endif()
 
 if(INFINI_OPS_SMOKE_BUILD)
     if(NOT INFINI_OPS_OPS)
