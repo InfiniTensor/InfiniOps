@@ -67,12 +67,42 @@ if(WITH_CPU)
 endif()
 
 if(WITH_NVIDIA)
-    set(_cutlass_include_dir
-        "${PROJECT_SOURCE_DIR}/third_party/cutlass/include")
-    if(NOT EXISTS "${_cutlass_include_dir}/cutlass/cutlass.h")
-        message(FATAL_ERROR
-            "CUTLASS is required by the NVIDIA backend. Run "
-            "`git submodule update --init --checkout third_party/cutlass`.")
+    if(NOT TARGET nvidia::cutlass::cutlass)
+        find_package(NvidiaCutlass 4.4.1 EXACT CONFIG QUIET)
+    endif()
+
+    if(NOT TARGET nvidia::cutlass::cutlass)
+        include(FetchContent)
+        cmake_policy(PUSH)
+        if(POLICY CMP0135)
+            cmake_policy(SET CMP0135 NEW)
+        endif()
+        if(POLICY CMP0169)
+            cmake_policy(SET CMP0169 OLD)
+        endif()
+
+        FetchContent_Declare(
+            cutlass
+            URL https://github.com/NVIDIA/cutlass/archive/087c84df83d254b5fb295a7a408f1a1d554085cf.tar.gz
+            URL_HASH SHA256=99340f7a8c87f5295b91aecf8295df6693ad954807672c3869a7fb3d0084f709
+        )
+        # Populate only to avoid CUTLASS 4.4.1's CMake 3.19 requirement and install rules.
+        FetchContent_GetProperties(cutlass)
+        if(NOT cutlass_POPULATED)
+            FetchContent_Populate(cutlass)
+        endif()
+        cmake_policy(POP)
+
+        if(NOT EXISTS "${cutlass_SOURCE_DIR}/include/cutlass/cutlass.h")
+            message(FATAL_ERROR
+                "CUTLASS source directory `${cutlass_SOURCE_DIR}` does not contain "
+                "`include/cutlass/cutlass.h`.")
+        endif()
+
+        add_library(infiniops_cutlass_headers INTERFACE)
+        target_include_directories(infiniops_cutlass_headers INTERFACE
+            "${cutlass_SOURCE_DIR}/include")
+        add_library(nvidia::cutlass::cutlass ALIAS infiniops_cutlass_headers)
     endif()
 
     set(NVIDIA_PATTERNS
@@ -99,7 +129,7 @@ if(WITH_NVIDIA)
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
-    target_include_directories(infiniops PRIVATE "${_cutlass_include_dir}")
+    target_link_libraries(infiniops PRIVATE nvidia::cutlass::cutlass)
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)

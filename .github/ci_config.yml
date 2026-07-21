@@ -15,7 +15,7 @@ platforms:
         BASE_IMAGE: nvcr.io/nvidia/pytorch:24.10-py3
         SKIP_APT: "1"
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
-    setup: git submodule update --init --checkout --depth 1 third_party/cutlass && pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_NVIDIA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_NVIDIA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
