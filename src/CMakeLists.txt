@@ -67,6 +67,44 @@ if(WITH_CPU)
 endif()
 
 if(WITH_NVIDIA)
+    if(NOT TARGET nvidia::cutlass::cutlass)
+        find_package(NvidiaCutlass 4.4.1 EXACT CONFIG QUIET)
+    endif()
+
+    if(NOT TARGET nvidia::cutlass::cutlass)
+        include(FetchContent)
+        cmake_policy(PUSH)
+        if(POLICY CMP0135)
+            cmake_policy(SET CMP0135 NEW)
+        endif()
+        if(POLICY CMP0169)
+            cmake_policy(SET CMP0169 OLD)
+        endif()
+
+        FetchContent_Declare(
+            cutlass
+            URL https://github.com/NVIDIA/cutlass/archive/087c84df83d254b5fb295a7a408f1a1d554085cf.tar.gz
+            URL_HASH SHA256=99340f7a8c87f5295b91aecf8295df6693ad954807672c3869a7fb3d0084f709
+        )
+        # Populate only to avoid CUTLASS 4.4.1's CMake 3.19 requirement and install rules.
+        FetchContent_GetProperties(cutlass)
+        if(NOT cutlass_POPULATED)
+            FetchContent_Populate(cutlass)
+        endif()
+        cmake_policy(POP)
+
+        if(NOT EXISTS "${cutlass_SOURCE_DIR}/include/cutlass/cutlass.h")
+            message(FATAL_ERROR
+                "CUTLASS source directory `${cutlass_SOURCE_DIR}` does not contain "
+                "`include/cutlass/cutlass.h`.")
+        endif()
+
+        add_library(infiniops_cutlass_headers INTERFACE)
+        target_include_directories(infiniops_cutlass_headers INTERFACE
+            "${cutlass_SOURCE_DIR}/include")
+        add_library(nvidia::cutlass::cutlass ALIAS infiniops_cutlass_headers)
+    endif()
+
     set(NVIDIA_PATTERNS
         "native/cuda/*.cc"
         "native/cuda/*.cpp"
@@ -78,10 +116,20 @@ if(WITH_NVIDIA)
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
 
+    # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
+    # the extra code objects to this provider source so other CUDA operators
+    # retain the caller/compiler architecture configuration unchanged.
+    set(_cutlass_scaled_mm_source
+        "${CMAKE_CURRENT_SOURCE_DIR}/native/cuda/nvidia/ops/cutlass_scaled_mm/cutlass.cu")
+    set_source_files_properties("${_cutlass_scaled_mm_source}" PROPERTIES
+        COMPILE_OPTIONS
+            "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
+
     enable_language(CUDA)
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
+    target_link_libraries(infiniops PRIVATE nvidia::cutlass::cutlass)
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
@@ -419,8 +467,13 @@ set(INFINI_OPS_OPS "" CACHE STRING
 set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infini_ops_smoke_ops
-    add mul cast cat gemm matmul linear rms_norm swiglu causal_softmax abs clamp exp)
+    add mul cast cat gemm matmul linear rms_norm swiglu
+    causal_softmax abs clamp exp)
 set(_infini_ops_smoke_torch_ops abs clamp exp)
+
+if(WITH_NVIDIA)
+    list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm)
+endif()
 
 if(INFINI_OPS_SMOKE_BUILD)
     if(NOT INFINI_OPS_OPS)

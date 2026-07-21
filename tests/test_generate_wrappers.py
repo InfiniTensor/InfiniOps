@@ -241,6 +241,49 @@ class Mul {
     assert 'py::arg("implementation_index") = py::none()' in text
 
 
+_DTYPE_OP_SOURCE = """
+namespace infini::ops {
+
+struct Tensor {};
+
+enum class DataType {};
+
+template <typename T>
+class Operator {};
+
+class DtypeOp : public Operator<DtypeOp> {
+ public:
+  DtypeOp(const Tensor input, const DataType out_dtype, Tensor out) {}
+
+  virtual void operator()(const Tensor input, const DataType out_dtype,
+                          Tensor out) const = 0;
+};
+
+}  // namespace infini::ops
+"""
+
+
+def test_pybind_converts_data_type_arguments_from_torch_dtype(tmp_path, monkeypatch):
+    text = _generate_binding("dtype_op", tmp_path, monkeypatch, _DTYPE_OP_SOURCE)
+
+    assert "py::object out_dtype" in text
+    assert "DataTypeFromPybind11Handle(out_dtype)" in text
+    assert 'py::arg("out_dtype")' in text
+
+
+def test_legacy_c_converts_data_type_arguments_from_infini_dtype(tmp_path, monkeypatch):
+    module = _load_generator_module()
+    base_header = tmp_path / "dtype_op.h"
+    base_header.write_text(_DTYPE_OP_SOURCE)
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+    operator = module._OperatorExtractor()("dtype_op")
+
+    source, header = module._generate_legacy_c(operator, ())
+
+    assert "const infiniDtype_t out_dtype" in header
+    assert "DataTypeFromInfiniDType(out_dtype)" in source
+
+
 def test_normalize_op_allowlist_accepts_spaces_and_commas():
     module = _load_generator_module()
 
