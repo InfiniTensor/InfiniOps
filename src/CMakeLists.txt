@@ -90,7 +90,7 @@ if(WITH_NVIDIA)
     # the extra code objects to this provider source so other CUDA operators
     # retain the caller/compiler architecture configuration unchanged.
     set(_cutlass_scaled_mm_source
-        "${CMAKE_CURRENT_SOURCE_DIR}/native/cuda/nvidia/ops/scaled_mm/cutlass.cu")
+        "${CMAKE_CURRENT_SOURCE_DIR}/native/cuda/nvidia/ops/cutlass_scaled_mm/cutlass.cu")
     set_source_files_properties("${_cutlass_scaled_mm_source}" PROPERTIES
         COMPILE_OPTIONS
             "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
@@ -442,7 +442,7 @@ set(_infini_ops_smoke_ops
 set(_infini_ops_smoke_torch_ops abs clamp exp)
 
 if(WITH_NVIDIA)
-    list(APPEND _infini_ops_smoke_ops scaled_mm)
+    list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm)
 endif()
 
 if(INFINI_OPS_SMOKE_BUILD)

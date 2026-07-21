@@ -5,8 +5,10 @@ import torch
 from tests.utils import Payload, empty_strided, get_stream, randint_strided
 
 
-if not hasattr(infini.ops, "ScaledMm"):
-    pytest.skip("`ScaledMm` is not available on this platform", allow_module_level=True)
+if not hasattr(infini.ops, "CutlassScaledMm"):
+    pytest.skip(
+        "`CutlassScaledMm` is not available on this platform", allow_module_level=True
+    )
 
 
 @pytest.mark.auto_act_and_assert
@@ -24,7 +26,7 @@ if not hasattr(infini.ops, "ScaledMm"):
         (torch.bfloat16, 1e-2, 3e-1),
     ),
 )
-def test_scaled_mm(
+def test_cutlass_scaled_mm(
     m,
     n,
     k,
@@ -52,8 +54,8 @@ def test_scaled_mm(
     out = empty_strided((m, n), out_strides, dtype=dtype, device=device)
 
     return Payload(
-        _scaled_mm,
-        _torch_scaled_mm,
+        _cutlass_scaled_mm,
+        _torch_cutlass_scaled_mm,
         (a, b, scale_a, scale_b, bias, out),
         {"implementation_index": implementation_index},
         rtol=rtol,
@@ -61,8 +63,8 @@ def test_scaled_mm(
     )
 
 
-def _scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_index):
-    infini.ops.scaled_mm(
+def _cutlass_scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_index):
+    infini.ops.cutlass_scaled_mm(
         a,
         b,
         scale_a,
@@ -76,7 +78,9 @@ def _scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_index):
     return out
 
 
-def _torch_scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_index):
+def _torch_cutlass_scaled_mm(
+    a, b, scale_a, scale_b, bias, out, *, implementation_index
+):
     del implementation_index
 
     result = torch.matmul(a.float(), b.float()) * scale_a * scale_b
@@ -89,7 +93,7 @@ def _torch_scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_index)
     return out
 
 
-def test_scaled_mm_non_default_stream(device, implementation_index):
+def test_cutlass_scaled_mm_non_default_stream(device, implementation_index):
     if device != "cuda":
         pytest.skip("non-default CUDA streams require the NVIDIA backend")
 
@@ -103,7 +107,7 @@ def test_scaled_mm_non_default_stream(device, implementation_index):
     stream.wait_stream(torch.cuda.current_stream())
 
     with torch.cuda.stream(stream):
-        _scaled_mm(
+        _cutlass_scaled_mm(
             a,
             b,
             scale_a,
@@ -118,7 +122,7 @@ def test_scaled_mm_non_default_stream(device, implementation_index):
     torch.testing.assert_close(out, expected.to(out.dtype), rtol=1e-2, atol=3e-1)
 
 
-def test_scaled_mm_multi_gpu_device_guard(device, implementation_index):
+def test_cutlass_scaled_mm_multi_gpu_device_guard(device, implementation_index):
     if device != "cuda" or torch.cuda.device_count() < 2:
         pytest.skip("multi-GPU device guard test requires two NVIDIA GPUs")
 
@@ -136,7 +140,7 @@ def test_scaled_mm_multi_gpu_device_guard(device, implementation_index):
         stream = torch.cuda.Stream(device=target_device)
         stream.wait_stream(torch.cuda.current_stream(target_device))
 
-        infini.ops.scaled_mm(
+        infini.ops.cutlass_scaled_mm(
             a,
             b,
             scale_a,

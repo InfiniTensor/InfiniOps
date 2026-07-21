@@ -9,7 +9,7 @@
 #include <cutlass/epilogue/threadblock/fusion/visitors.hpp>
 #include <type_traits>
 
-#include "native/cuda/nvidia/ops/scaled_mm/cutlass.h"
+#include "native/cuda/nvidia/ops/cutlass_scaled_mm/cutlass.h"
 #include "native/cuda/nvidia/runtime_.h"
 
 namespace infini::ops {
@@ -161,11 +161,11 @@ void Execute(const Tensor a, const Tensor b, const Tensor scale_a,
   Gemm gemm;
   auto status{gemm.can_implement(arguments)};
   assert(status == cutlass::Status::kSuccess &&
-         "CUTLASS cannot implement the requested `ScaledMm` geometry");
+         "CUTLASS cannot implement the requested `CutlassScaledMm` geometry");
 
   status = gemm(arguments, nullptr, static_cast<cudaStream_t>(stream));
   assert(status == cutlass::Status::kSuccess &&
-         "CUTLASS failed to execute `ScaledMm`");
+         "CUTLASS failed to execute `CutlassScaledMm`");
 
   const auto launch_status{cudaGetLastError()};
   assert(launch_status == cudaSuccess &&
@@ -199,10 +199,10 @@ void DispatchScaleLayout(const Tensor a, const Tensor b, const Tensor scale_a,
 
 }  // namespace
 
-CutlassScaledMm::CutlassScaledMm(const Tensor a, const Tensor b,
-                                 const Tensor scale_a, const Tensor scale_b,
-                                 std::optional<Tensor> bias, Tensor out)
-    : ScaledMm{a, b, scale_a, scale_b, bias, out},
+Operator<CutlassScaledMm, Device::Type::kNvidia, 0>::Operator(
+    const Tensor a, const Tensor b, const Tensor scale_a, const Tensor scale_b,
+    std::optional<Tensor> bias, Tensor out)
+    : CutlassScaledMm{a, b, scale_a, scale_b, bias, out},
       device_index_{a.device().index()} {
   cudaDeviceProp properties{};
   const auto status{cudaGetDeviceProperties(&properties, device_index_)};
@@ -213,9 +213,9 @@ CutlassScaledMm::CutlassScaledMm(const Tensor a, const Tensor b,
          "`CutlassScaledMm` requires compute capability 7.5 or newer");
 }
 
-void CutlassScaledMm::operator()(const Tensor a, const Tensor b,
-                                 const Tensor scale_a, const Tensor scale_b,
-                                 std::optional<Tensor> bias, Tensor out) const {
+void Operator<CutlassScaledMm, Device::Type::kNvidia, 0>::operator()(
+    const Tensor a, const Tensor b, const Tensor scale_a, const Tensor scale_b,
+    std::optional<Tensor> bias, Tensor out) const {
   DeviceGuard device_guard{device_index_};
 
   switch (out_dtype_) {

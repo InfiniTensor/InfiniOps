@@ -198,7 +198,7 @@ def _is_smoke_item(item):
         "tests/test_matmul.py": _is_smoke_matmul_case,
         "tests/test_mul.py": _is_smoke_mul_case,
         "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
-        "tests/test_scaled_mm.py": _is_smoke_scaled_mm_case,
+        "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
         "tests/test_swiglu.py": _is_smoke_swiglu_case,
         "tests/test_torch_ops.py": _is_smoke_torch_op_case,
     }
@@ -384,7 +384,7 @@ def _is_smoke_rms_norm_case(params):
     )
 
 
-def _is_smoke_scaled_mm_case(params):
+def _is_smoke_cutlass_scaled_mm_case(params):
     return (
         params.get("m") == 16
         and params.get("n") == 32
