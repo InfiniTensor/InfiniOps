@@ -12,7 +12,8 @@ namespace infini::ops {
 class CutlassScaledMm : public Operator<CutlassScaledMm> {
  public:
   CutlassScaledMm(const Tensor a, const Tensor b, const Tensor scale_a,
-                  const Tensor scale_b, std::optional<Tensor> bias, Tensor out)
+                  const Tensor scale_b, const DataType out_dtype,
+                  std::optional<Tensor> bias, Tensor out)
       : m_{a.ndim() == 2 ? a.size(0) : 0},
         n_{b.ndim() == 2 ? b.size(1) : 0},
         k_{a.ndim() == 2 ? a.size(1) : 0},
@@ -21,7 +22,7 @@ class CutlassScaledMm : public Operator<CutlassScaledMm> {
         ldo_{out.ndim() == 2 ? out.stride(0) : 0},
         scale_a_size_{scale_a.numel()},
         scale_b_size_{scale_b.numel()},
-        out_dtype_{out.dtype()} {
+        out_dtype_{out_dtype} {
     assert(a.ndim() == 2 && b.ndim() == 2 && out.ndim() == 2 &&
            "`CutlassScaledMm` requires 2D matrices");
     assert(a.dtype() == DataType::kInt8 && b.dtype() == DataType::kInt8 &&
@@ -29,6 +30,8 @@ class CutlassScaledMm : public Operator<CutlassScaledMm> {
     assert((out_dtype_ == DataType::kFloat16 ||
             out_dtype_ == DataType::kBFloat16) &&
            "`CutlassScaledMm` requires float16 or bfloat16 output");
+    assert(out.dtype() == out_dtype_ &&
+           "`CutlassScaledMm` requires `out_dtype` to match the output dtype");
     assert(a.size(1) == b.size(0) && out.size(0) == a.size(0) &&
            out.size(1) == b.size(1) &&
            "`CutlassScaledMm` matrix shapes are incompatible");
@@ -80,8 +83,8 @@ class CutlassScaledMm : public Operator<CutlassScaledMm> {
   }
 
   virtual void operator()(const Tensor a, const Tensor b, const Tensor scale_a,
-                          const Tensor scale_b, std::optional<Tensor> bias,
-                          Tensor out) const = 0;
+                          const Tensor scale_b, const DataType out_dtype,
+                          std::optional<Tensor> bias, Tensor out) const = 0;
 
  protected:
   Tensor::Size m_{0};

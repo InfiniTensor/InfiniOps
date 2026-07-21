@@ -29,6 +29,14 @@ inline DataType DataTypeFromString(const std::string& name) {
   return kStringToDataType.at(name);
 }
 
+inline DataType DataTypeFromPybind11Handle(py::handle obj) {
+  auto dtype_str{py::str(obj).cast<std::string>()};
+  const auto pos{dtype_str.find_last_of('.')};
+
+  return DataTypeFromString(
+      pos == std::string::npos ? dtype_str : dtype_str.substr(pos + 1));
+}
+
 template <typename T = void>
 inline Device::Type DeviceTypeFromString(const std::string& name) {
   static const auto kTorchNameToTypes{
@@ -124,10 +132,7 @@ inline Tensor TensorFromPybind11Handle(py::handle obj) {
 
   auto shape{obj.attr("shape").cast<typename Tensor::Shape>()};
 
-  auto dtype_str{py::str(obj.attr("dtype")).cast<std::string>()};
-  auto pos{dtype_str.find_last_of('.')};
-  auto dtype{DataTypeFromString(
-      pos == std::string::npos ? dtype_str : dtype_str.substr(pos + 1))};
+  auto dtype{DataTypeFromPybind11Handle(obj.attr("dtype"))};
 
   auto device{DeviceFromPybind11Handle(obj)};
 

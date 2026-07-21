@@ -201,8 +201,8 @@ void DispatchScaleLayout(const Tensor a, const Tensor b, const Tensor scale_a,
 
 Operator<CutlassScaledMm, Device::Type::kNvidia, 0>::Operator(
     const Tensor a, const Tensor b, const Tensor scale_a, const Tensor scale_b,
-    std::optional<Tensor> bias, Tensor out)
-    : CutlassScaledMm{a, b, scale_a, scale_b, bias, out},
+    const DataType out_dtype, std::optional<Tensor> bias, Tensor out)
+    : CutlassScaledMm{a, b, scale_a, scale_b, out_dtype, bias, out},
       device_index_{a.device().index()} {
   cudaDeviceProp properties{};
   const auto status{cudaGetDeviceProperties(&properties, device_index_)};
@@ -215,7 +215,14 @@ Operator<CutlassScaledMm, Device::Type::kNvidia, 0>::Operator(
 
 void Operator<CutlassScaledMm, Device::Type::kNvidia, 0>::operator()(
     const Tensor a, const Tensor b, const Tensor scale_a, const Tensor scale_b,
-    std::optional<Tensor> bias, Tensor out) const {
+    const DataType out_dtype, std::optional<Tensor> bias, Tensor out) const {
+  assert(out_dtype == out_dtype_ &&
+         "`CutlassScaledMm` output dtype changed after descriptor creation");
+  assert(out.dtype() == out_dtype_ &&
+         "`CutlassScaledMm` output tensor dtype changed after descriptor "
+         "creation");
+  assert((!bias || bias->dtype() == out_dtype_) &&
+         "`CutlassScaledMm` bias dtype changed after descriptor creation");
   DeviceGuard device_guard{device_index_};
 
   switch (out_dtype_) {

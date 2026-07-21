@@ -56,19 +56,30 @@ def test_cutlass_scaled_mm(
     return Payload(
         _cutlass_scaled_mm,
         _torch_cutlass_scaled_mm,
-        (a, b, scale_a, scale_b, bias, out),
+        (a, b, scale_a, scale_b, dtype, bias, out),
         {"implementation_index": implementation_index},
         rtol=rtol,
         atol=atol,
     )
 
 
-def _cutlass_scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_index):
+def _cutlass_scaled_mm(
+    a,
+    b,
+    scale_a,
+    scale_b,
+    out_dtype,
+    bias,
+    out,
+    *,
+    implementation_index,
+):
     infini.ops.cutlass_scaled_mm(
         a,
         b,
         scale_a,
         scale_b,
+        out_dtype,
         bias,
         out,
         stream=get_stream(a.device),
@@ -79,7 +90,15 @@ def _cutlass_scaled_mm(a, b, scale_a, scale_b, bias, out, *, implementation_inde
 
 
 def _torch_cutlass_scaled_mm(
-    a, b, scale_a, scale_b, bias, out, *, implementation_index
+    a,
+    b,
+    scale_a,
+    scale_b,
+    out_dtype,
+    bias,
+    out,
+    *,
+    implementation_index,
 ):
     del implementation_index
 
@@ -88,7 +107,7 @@ def _torch_cutlass_scaled_mm(
     if bias is not None:
         result = result + bias.float()
 
-    out.copy_(result.to(out.dtype))
+    out.copy_(result.to(out_dtype))
 
     return out
 
@@ -112,6 +131,7 @@ def test_cutlass_scaled_mm_non_default_stream(device, implementation_index):
             b,
             scale_a,
             scale_b,
+            out.dtype,
             None,
             out,
             implementation_index=implementation_index,
@@ -145,6 +165,7 @@ def test_cutlass_scaled_mm_multi_gpu_device_guard(device, implementation_index):
             b,
             scale_a,
             scale_b,
+            out.dtype,
             None,
             out,
             stream=stream.cuda_stream,

@@ -12,11 +12,12 @@ class Operator<CutlassScaledMm, Device::Type::kNvidia, 0>
     : public CutlassScaledMm {
  public:
   Operator(const Tensor a, const Tensor b, const Tensor scale_a,
-           const Tensor scale_b, std::optional<Tensor> bias, Tensor out);
+           const Tensor scale_b, const DataType out_dtype,
+           std::optional<Tensor> bias, Tensor out);
 
   void operator()(const Tensor a, const Tensor b, const Tensor scale_a,
-                  const Tensor scale_b, std::optional<Tensor> bias,
-                  Tensor out) const override;
+                  const Tensor scale_b, const DataType out_dtype,
+                  std::optional<Tensor> bias, Tensor out) const override;
 
  private:
   int device_index_{0};
