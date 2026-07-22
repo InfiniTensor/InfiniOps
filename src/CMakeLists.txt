@@ -1,6 +1,11 @@
 add_library(infiniops SHARED operator.h)
 set_target_properties(infiniops PROPERTIES LINKER_LANGUAGE CXX)
 
+# Compatibility implementations must reference deprecated public classes.
+target_compile_options(infiniops PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX,CUDA>:-Wno-deprecated-declarations>"
+)
+
 function(_infini_ops_write_if_different path content)
     set(_should_write TRUE)
     if(EXISTS "${path}")
@@ -975,6 +980,10 @@ if(GENERATE_PYTHON_BINDINGS)
     else()
         pybind11_add_module(ops NO_EXTRAS ${PYBIND11_COMPILE_SOURCES})
     endif()
+
+    target_compile_options(ops PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX,CUDA>:-Wno-deprecated-declarations>"
+    )
 
     if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")
         set(INFINI_OPS_BINDING_COMPILE_JOBS "2" CACHE STRING
