@@ -475,6 +475,10 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm)
 endif()
 
+if(WITH_NVIDIA AND WITH_TORCH)
+    list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
+endif()
+
 if(INFINI_OPS_SMOKE_BUILD)
     if(NOT INFINI_OPS_OPS)
         set(INFINI_OPS_OPS "${_infini_ops_smoke_ops}" CACHE STRING
@@ -541,6 +545,11 @@ if(WITH_TORCH)
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
+
+    if(NOT WITH_NVIDIA)
+        list(FILTER TORCH_SOURCES EXCLUDE REGEX
+            ".*/flash_attn_varlen_func/flash_attn_varlen_func\\.cc$")
+    endif()
 
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")

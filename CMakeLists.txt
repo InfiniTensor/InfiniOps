@@ -263,6 +263,15 @@ if(WITH_TORCH)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
+    if(WITH_NVIDIA)
+        find_library(TORCH_CUDA_LIB torch_cuda HINTS ${_torch_lib_dirs} REQUIRED)
+        find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
+        # `torch_cuda` registers CUDA kernels through static initializers, so
+        # retain it even though ATen dispatcher calls do not reference it directly.
+        list(APPEND TORCH_LIBRARIES
+            -Wl,--no-as-needed ${TORCH_CUDA_LIB} ${C10_CUDA_LIB} -Wl,--as-needed)
+    endif()
+
     # `auditwheel`-repaired `torch` wheels bundle transitive dependencies
     # (e.g. `libgfortran-<hash>.so`, `libopenblasp-<hash>.so`) in a sibling
     # `torch.libs/` directory that `library_paths()` does not return.  When
