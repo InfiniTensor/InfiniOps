@@ -14,7 +14,7 @@ namespace detail {
 // arithmetic instead of native vectorized intrinsics (e.g. `h2rcp`,
 // `__hmul2`). Profile and restore specialized paths if needed.
 template <Device::Type kDev, typename T>
-__device__ __forceinline__ T Sigmoid(const T& x) {
+__device__ __forceinline__ T SiluAndMulSigmoid(const T& x) {
   if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
     float xf = Caster<kDev>::template Cast<float>(x);
     return Caster<kDev>::template Cast<T>(
@@ -73,9 +73,9 @@ __global__ void SiluAndMulKernel(T* __restrict__ out,
           __fmul_rn(__fmul_rn(gatef, sigf), upf));
     } else if constexpr (std::is_same_v<T, float>) {
       out[out_idx] =
-          __fmul_rn(__fmul_rn(gate, detail::Sigmoid<kDev>(gate)), up);
+          __fmul_rn(__fmul_rn(gate, detail::SiluAndMulSigmoid<kDev>(gate)), up);
     } else {
-      out[out_idx] = gate * detail::Sigmoid<kDev>(gate) * up;
+      out[out_idx] = gate * detail::SiluAndMulSigmoid<kDev>(gate) * up;
     }
   }
 }
