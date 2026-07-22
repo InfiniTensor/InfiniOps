@@ -199,6 +199,7 @@ def _is_smoke_item(item):
         "tests/test_mul.py": _is_smoke_mul_case,
         "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
+        "tests/test_flash_attn_varlen_func.py": _is_smoke_flash_attn_varlen_func_case,
         "tests/test_swiglu.py": _is_smoke_swiglu_case,
         "tests/test_torch_ops.py": _is_smoke_torch_op_case,
     }
@@ -393,6 +394,20 @@ def _is_smoke_cutlass_scaled_mm_case(params):
         and params.get("per_channel") is True
         and params.get("has_bias") is True
         and params.get("padded") is False
+        and params.get("dtype") == torch.float16
+    )
+
+
+def _is_smoke_flash_attn_varlen_func_case(params):
+    return (
+        params.get("q_lens") == (3, 5)
+        and params.get("k_lens") == (4, 5)
+        and params.get("num_heads") == 4
+        and params.get("num_kv_heads") == 4
+        and params.get("causal") is False
+        and params.get("window_size") == (-1, -1)
+        and params.get("scale") is None
+        and params.get("head_dim") == 64
         and params.get("dtype") == torch.float16
     )
 
