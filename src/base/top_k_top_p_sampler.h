@@ -15,7 +15,8 @@ namespace infini::ops {
 // The optional `k` and `p` tensors may be shaped as `[1]` or `[batch_size]`.
 /// \deprecated Use `TopKTopPSampleInfinilm`. This interface will be removed in
 /// a future release.
-class TopKTopPSampler : public Operator<TopKTopPSampler> {
+class [[deprecated("Use `TopKTopPSampleInfinilm` instead.")]] TopKTopPSampler
+    : public Operator<TopKTopPSampler> {
  public:
   TopKTopPSampler(const Tensor logits, std::optional<Tensor> k,
                   std::optional<Tensor> p, Tensor out)

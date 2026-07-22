@@ -13,7 +13,8 @@ namespace infini::ops {
 
 /// \deprecated Use `ScaledSoftmaxInfinilm`. This interface will be removed in
 /// a future release.
-class ScaledSoftmax : public Operator<ScaledSoftmax> {
+class [[deprecated("Use `ScaledSoftmaxInfinilm` instead.")]] ScaledSoftmax
+    : public Operator<ScaledSoftmax> {
  public:
   ScaledSoftmax(const Tensor input, double scale, Tensor out)
       : scale_{scale},

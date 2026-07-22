@@ -308,7 +308,11 @@ def _strip_cpp_comments(source):
 
 
 def _extract_class_body(source, class_name):
-    match = re.search(rf"\bclass\s+{class_name}\b[^{{]*{{", source)
+    match = re.search(
+        rf"\bclass(?:\s+\[\[.*?\]\])?\s+{class_name}\b[^{{]*{{",
+        source,
+        flags=re.DOTALL,
+    )
 
     if match is None:
         raise ValueError(f"no class definition for {class_name!r}")

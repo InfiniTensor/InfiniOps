@@ -132,7 +132,7 @@ def test_extractor_prefers_header_types_for_reused_parameter_names(
     base_header = tmp_path / "histogram.h"
     base_header.write_text(
         """
-class Histogram {
+class [[deprecated("Use HistogramV2 instead.")]] Histogram {
  public:
   virtual void operator()(const Tensor input, const Tensor bins,
                           const std::optional<Tensor> weight,

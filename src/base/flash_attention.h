@@ -15,7 +15,9 @@ namespace infini::ops {
 // Decode uses `block_table` for paged KV cache lookup.
 /// \deprecated Use `ScaledDotProductAttention` for standard attention
 /// semantics. This interface will be removed in a future release.
-class FlashAttention : public Operator<FlashAttention> {
+class [[deprecated(
+    "Use `ScaledDotProductAttention` for standard attention "
+    "semantics.")]] FlashAttention : public Operator<FlashAttention> {
  public:
   FlashAttention(const Tensor query, const Tensor key, const Tensor value,
                  std::optional<Tensor> cu_seqlens_q,
