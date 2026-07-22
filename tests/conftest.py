@@ -240,9 +240,13 @@ def _is_smoke_add_case(params):
 
     return (
         _is_float32(params)
+        and params.get("alpha") is None
+        and params.get("input_shape")
+        == params.get("other_shape")
+        == params.get("out_shape")
         and _shape_case(
             params,
-            "shape",
+            "input_shape",
             "input_strides",
             "other_strides",
             "out_strides",

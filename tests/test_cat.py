@@ -7,26 +7,38 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
-    "shapes, dim, out_shape",
+    "shapes, input_strides, dim, out_shape",
     (
         # 2 inputs, dim=0
-        (((4, 64), (4, 64)), 0, (8, 64)),
+        (((4, 64), (4, 64)), None, 0, (8, 64)),
         # 2 inputs, dim=1
-        (((4, 32), (4, 64)), 1, (4, 96)),
+        (((4, 32), (4, 64)), None, 1, (4, 96)),
         # 2 inputs, dim=-1 (negative dim)
-        (((4, 32), (4, 64)), -1, (4, 96)),
+        (((4, 32), (4, 64)), None, -1, (4, 96)),
         # 3 inputs, dim=1
-        (((4, 16), (4, 32), (4, 16)), 1, (4, 64)),
+        (((4, 16), (4, 32), (4, 16)), None, 1, (4, 64)),
         # 2 inputs, dim=0, 3D
-        (((2, 4, 64), (2, 4, 64)), 0, (4, 4, 64)),
+        (((2, 4, 64), (2, 4, 64)), None, 0, (4, 4, 64)),
         # 2 inputs, dim=2, 3D
-        (((2, 4, 32), (2, 4, 64)), 2, (2, 4, 96)),
+        (((2, 4, 32), (2, 4, 64)), None, 2, (2, 4, 96)),
         # 4 inputs, dim=1
-        (((1, 1024), (1, 1024), (1, 1024), (1, 1024)), 1, (1, 4096)),
+        (
+            ((1, 1024), (1, 1024), (1, 1024), (1, 1024)),
+            None,
+            1,
+            (1, 4096),
+        ),
         # 1 input
-        (((4, 64),), 0, (4, 64)),
+        (((4, 64),), None, 0, (4, 64)),
         # Empty input dimension
-        (((0, 4), (3, 4)), 0, (3, 4)),
+        (((0, 4), (3, 4)), None, 0, (3, 4)),
+        # Non-contiguous inputs.
+        (
+            ((2, 3, 4), (2, 3, 4)),
+            ((4, 8, 1), (4, 8, 1)),
+            1,
+            (2, 6, 4),
+        ),
     ),
 )
 @pytest.mark.parametrize(
@@ -37,8 +49,14 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         (torch.bfloat16, 1e-2, 5e-3),
     ),
 )
-def test_cat(shapes, dim, out_shape, dtype, device, rtol, atol):
-    inputs = [randn_strided(s, None, dtype=dtype, device=device) for s in shapes]
+def test_cat(shapes, input_strides, dim, out_shape, dtype, device, rtol, atol):
+    if input_strides is None:
+        input_strides = (None,) * len(shapes)
+
+    inputs = [
+        randn_strided(shape, strides, dtype=dtype, device=device)
+        for shape, strides in zip(shapes, input_strides)
+    ]
     out = empty_strided(out_shape, None, dtype=dtype, device=device)
 
     return Payload(
@@ -68,29 +86,3 @@ def _torch_cat(*args, dim):
     out.copy_(result)
 
     return out
-
-
-@pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float32, 1e-7, 1e-7),
-        (torch.float16, 1e-3, 1e-3),
-        (torch.bfloat16, 1e-2, 5e-3),
-    ),
-)
-def test_cat_noncontiguous(dtype, device, rtol, atol):
-    inputs = [
-        randn_strided((2, 3, 4), (4, 8, 1), dtype=dtype, device=device)
-        for _ in range(2)
-    ]
-    out = empty_strided((2, 6, 4), None, dtype=dtype, device=device)
-
-    return Payload(
-        lambda *args: _cat(*args, dim=1),
-        lambda *args: _torch_cat(*args, dim=1),
-        (*inputs, out),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )

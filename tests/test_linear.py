@@ -7,14 +7,15 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
-    "input_shape, weight_shape, out_shape",
+    "input_shape, weight_shape, weight_strides, out_shape",
     (
-        ((64,), (32, 64), (32,)),
-        ((4, 64), (32, 64), (4, 32)),
-        ((2, 128), (256, 128), (2, 256)),
-        ((1, 4096), (4096, 4096), (1, 4096)),
-        ((2, 4, 64), (32, 64), (2, 4, 32)),
-        ((2, 3, 4, 64), (32, 64), (2, 3, 4, 32)),
+        ((64,), (32, 64), None, (32,)),
+        ((4, 64), (32, 64), None, (4, 32)),
+        ((2, 128), (256, 128), None, (2, 256)),
+        ((1, 4096), (4096, 4096), None, (1, 4096)),
+        ((2, 4, 64), (32, 64), None, (2, 4, 32)),
+        ((2, 3, 4, 64), (32, 64), None, (2, 3, 4, 32)),
+        ((3, 8), (5, 8), (1, 5), (3, 5)),
     ),
 )
 @pytest.mark.parametrize("has_bias", (False, True))
@@ -29,6 +30,7 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
 def test_linear(
     input_shape,
     weight_shape,
+    weight_strides,
     out_shape,
     has_bias,
     dtype,
@@ -37,7 +39,7 @@ def test_linear(
     atol,
 ):
     input = randn_strided(input_shape, None, dtype=dtype, device=device)
-    weight = randn_strided(weight_shape, None, dtype=dtype, device=device)
+    weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
 
     # Bias shape is [N], the last dim of the output.
     bias = None
@@ -71,20 +73,3 @@ def _torch_linear(input, weight, bias, out):
     out.copy_(result.to(out.dtype))
 
     return out
-
-
-@pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
-def test_linear_noncontiguous_weight(dtype, device):
-    input = randn_strided((3, 8), None, dtype=dtype, device=device)
-    weight = randn_strided((5, 8), (1, 5), dtype=dtype, device=device)
-    out = empty_strided((3, 5), None, dtype=dtype, device=device)
-
-    return Payload(
-        _linear,
-        _torch_linear,
-        (input, weight, None, out),
-        {},
-        rtol=1e-2,
-        atol=1e-2,
-    )
