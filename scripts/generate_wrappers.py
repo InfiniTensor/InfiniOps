@@ -516,6 +516,12 @@ def _find_params_with_defaults(op_name):
     return mapping
 
 
+def _is_data_type_spelling(spelling):
+    spelling = spelling.replace("const ", "").replace("&", "").strip()
+
+    return spelling.rsplit("::", maxsplit=1)[-1] == "DataType"
+
+
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
     optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
@@ -550,6 +556,9 @@ def _generate_pybind11(operator):
     def _is_vector_int64(arg):
         return arg.spelling in vector_int64_params
 
+    def _is_data_type(arg):
+        return _is_data_type_spelling(arg.type.spelling)
+
     def _generate_params(node):
         parts = []
 
@@ -567,6 +576,8 @@ def _generate_pybind11(operator):
                 )
             elif _is_vector_int64(arg):
                 parts.append(f"const std::vector<int64_t> {arg.spelling}")
+            elif _is_data_type(arg):
+                parts.append(f"py::object {arg.spelling}")
             else:
                 param = arg.type.spelling.replace("const Tensor", "py::object").replace(
                     "Tensor", "py::object"
@@ -588,6 +599,8 @@ def _generate_pybind11(operator):
                 args.append(f"VectorTensorFromPybind11Handle({arg.spelling})")
             elif "Tensor" in arg.type.spelling:
                 args.append(f"TensorFromPybind11Handle({arg.spelling})")
+            elif _is_data_type(arg):
+                args.append(f"DataTypeFromPybind11Handle({arg.spelling})")
             else:
                 args.append(arg.spelling)
 
@@ -934,16 +947,28 @@ __C __export {_generate_destroy_func_decl(operator)};
         def _handle_std_optional(spelling):
             return _unwrap_std_optional(spelling)
 
+        def _handle_data_type(spelling):
+            if not _is_data_type_spelling(spelling):
+                return spelling
+
+            prefix = "const " if spelling.strip().startswith("const ") else ""
+
+            return f"{prefix}infiniDtype_t"
+
         return ", ".join(
-            f"{_handle_std_optional(_handle_tensor(arg.type.spelling))} {arg.spelling}"
+            f"{_handle_data_type(_handle_std_optional(_handle_tensor(arg.type.spelling)))} {arg.spelling}"
             for arg in arguments
         )
 
     def _generate_arguments(node, is_data=False):
         return ", ".join(
-            _generate_tensor_caster(arg.spelling, is_data=is_data)
-            if "Tensor" in arg.type.spelling
-            else arg.spelling
+            f"DataTypeFromInfiniDType({arg.spelling})"
+            if _is_data_type_spelling(arg.type.spelling)
+            else (
+                _generate_tensor_caster(arg.spelling, is_data=is_data)
+                if "Tensor" in arg.type.spelling
+                else arg.spelling
+            )
             for arg in node.get_arguments()
             if arg.spelling != "handle" and arg.spelling != "stream"
         )
