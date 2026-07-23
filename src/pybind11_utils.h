@@ -26,6 +26,10 @@ std::unordered_map<std::string, Device::Type> BuildTorchNameMap(
 }  // namespace detail
 
 inline DataType DataTypeFromString(const std::string& name) {
+  // InfiniRT has no bool dtype; carry bool tensor storage as byte data and
+  // restore bool semantics in operators that accept bool tensors.
+  if (name == "bool") return DataType::kUInt8;
+
   return kStringToDataType.at(name);
 }
 

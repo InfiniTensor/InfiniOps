@@ -5,63 +5,44 @@
 #include <vector>
 
 #include "base/cat.h"
-#include "native/cpu/caster_.h"
 
 namespace infini::ops {
 
 template <>
 class Operator<Cat, Device::Type::kCpu> : public Cat {
  public:
-  Operator(const Tensor first_input, std::vector<Tensor> rest_inputs,
-           int64_t dim, Tensor out)
-      : Cat{first_input, rest_inputs, dim, out} {}
+  Operator(const std::vector<Tensor> tensors, const int64_t dim, Tensor out)
+      : Cat{tensors, dim, out} {}
 
-  void operator()(const Tensor first_input, std::vector<Tensor> rest_inputs,
-                  int64_t /*dim*/, Tensor out) const override {
-    // Collect all input tensors.
-    std::vector<const Tensor*> inputs;
-    inputs.reserve(input_count_);
-    inputs.push_back(&first_input);
-    for (const auto& t : rest_inputs) {
-      inputs.push_back(&t);
-    }
-
-    // Use normalized `dim_` from base class (handles negative dim).
-    auto dim = dim_;
+  void operator()(const std::vector<Tensor> tensors, const int64_t /*dim*/,
+                  Tensor out) const override {
     auto elem_size = kDataTypeToSize.at(out.dtype());
-    auto ndim = out.ndim();
-    auto out_shape = out.shape();
-
-    // Compute outer and inner sizes relative to the cat dimension.
-    Tensor::Size outer = 1;
-    for (int64_t i = 0; i < dim; ++i) {
-      outer *= out_shape[i];
-    }
-
-    Tensor::Size inner = 1;
-    for (size_t i = static_cast<size_t>(dim) + 1; i < ndim; ++i) {
-      inner *= out_shape[i];
-    }
-
     auto* out_ptr = static_cast<char*>(out.data());
-    Tensor::Size out_dim_size = out_shape[dim];
+    Tensor::Size cat_offset = 0;
 
-    // For each outer index, copy slices from each input along the cat dim.
-    for (Tensor::Size o = 0; o < outer; ++o) {
-      Tensor::Size offset_in_dim = 0;
+    for (const auto& tensor : tensors) {
+      auto* input_ptr = static_cast<const char*>(tensor.data());
 
-      for (size_t t = 0; t < input_count_; ++t) {
-        auto in_dim = inputs[t]->shape()[dim];
-        auto in_ptr = static_cast<const char*>(inputs[t]->data());
+      for (Tensor::Size flat_index = 0; flat_index < tensor.numel();
+           ++flat_index) {
+        auto remaining = flat_index;
+        Tensor::Stride input_offset = 0;
+        Tensor::Stride output_offset = 0;
 
-        auto src_offset = (o * in_dim) * inner * elem_size;
-        auto dst_offset =
-            (o * out_dim_size + offset_in_dim) * inner * elem_size;
-        auto copy_size = in_dim * inner * elem_size;
+        for (Tensor::Size axis = tensor.ndim(); axis-- > 0;) {
+          auto coordinate = remaining % tensor.size(axis);
+          remaining /= tensor.size(axis);
+          input_offset += coordinate * tensor.stride(axis);
+          output_offset +=
+              (coordinate +
+               (axis == static_cast<Tensor::Size>(dim_) ? cat_offset : 0)) *
+              out.stride(axis);
+        }
 
-        std::memcpy(out_ptr + dst_offset, in_ptr + src_offset, copy_size);
-        offset_in_dim += in_dim;
+        std::memcpy(out_ptr + output_offset * elem_size,
+                    input_ptr + input_offset * elem_size, elem_size);
       }
+      cat_offset += tensor.size(dim_);
     }
   }
 };

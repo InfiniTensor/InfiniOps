@@ -17,14 +17,11 @@ namespace infini::ops {
 template <>
 class Operator<Cat, Device::Type::kAscend> : public Cat {
  public:
-  Operator(const Tensor first_input, std::vector<Tensor> rest_inputs,
-           int64_t dim, Tensor out)
-      : Cat(first_input, rest_inputs, dim, out), out_cache_(out) {
-    // Build `AclTensorCache` for each input tensor.
+  Operator(const std::vector<Tensor> tensors, const int64_t dim, Tensor out)
+      : Cat(tensors, dim, out), out_cache_(out) {
     in_caches_.reserve(input_count_);
-    in_caches_.emplace_back(first_input);
-    for (const auto& t : rest_inputs) {
-      in_caches_.emplace_back(t);
+    for (const auto& tensor : tensors) {
+      in_caches_.emplace_back(tensor);
     }
   }
 
@@ -44,18 +41,9 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
     if (tensor_list_) aclDestroyTensorList(tensor_list_);
   }
 
-  void operator()(const Tensor first_input, std::vector<Tensor> rest_inputs,
-                  int64_t /*dim*/, Tensor out) const override {
+  void operator()(const std::vector<Tensor> tensors, const int64_t /*dim*/,
+                  Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
-
-    // Collect all input tensors in order.
-    std::vector<const Tensor*> inputs;
-    inputs.reserve(input_count_);
-    inputs.push_back(&first_input);
-    for (const auto& t : rest_inputs) {
-      inputs.push_back(&t);
-    }
-
     auto t_out = out_cache_.get(out.data());
 
     if (!executor_) {
@@ -63,7 +51,7 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
       std::vector<aclTensor*> acl_tensors(input_count_);
       for (size_t i = 0; i < input_count_; ++i) {
         acl_tensors[i] =
-            in_caches_[i].get(const_cast<void*>(inputs[i]->data()));
+            in_caches_[i].get(const_cast<void*>(tensors[i].data()));
       }
 
       tensor_list_ =
@@ -79,7 +67,7 @@ class Operator<Cat, Device::Type::kAscend> : public Cat {
       // `aclTensor*` objects inside `tensor_list_`, so updating their data
       // pointers is sufficient — no `aclSetInputTensorAddr` needed.
       for (size_t i = 0; i < input_count_; ++i) {
-        in_caches_[i].get(const_cast<void*>(inputs[i]->data()));
+        in_caches_[i].get(const_cast<void*>(tensors[i].data()));
       }
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
     }

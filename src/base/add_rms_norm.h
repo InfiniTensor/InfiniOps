@@ -9,8 +9,11 @@
 
 namespace infini::ops {
 
-// Fused add + RMSNorm aligned with vLLM `fused_add_rms_norm`.
-class AddRmsNorm : public Operator<AddRmsNorm> {
+// Legacy out-of-place fused add + RMSNorm interface.
+/// \deprecated Use `FusedAddRmsNorm`. This interface will be removed in a
+/// future release.
+class [[deprecated("Use `FusedAddRmsNorm` instead.")]] AddRmsNorm
+    : public Operator<AddRmsNorm> {
  public:
   AddRmsNorm(const Tensor input, const Tensor residual, const Tensor weight,
              std::optional<float> eps, Tensor out, Tensor residual_out)

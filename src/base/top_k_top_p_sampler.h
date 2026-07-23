@@ -10,11 +10,13 @@
 
 namespace infini::ops {
 
-// `TopKTopPSampler` samples token ids from 2D `logits` after optional rank and
-// nucleus filtering. The name and tensor boundary follow vLLM's
-// `TopKTopPSampler`; temperature scaling is intentionally handled by callers.
+// Legacy sampler for 2D `logits` after optional rank and nucleus filtering.
+// Temperature scaling is intentionally handled by callers.
 // The optional `k` and `p` tensors may be shaped as `[1]` or `[batch_size]`.
-class TopKTopPSampler : public Operator<TopKTopPSampler> {
+/// \deprecated Use `TopKTopPSampleInfinilm`. This interface will be removed in
+/// a future release.
+class [[deprecated("Use `TopKTopPSampleInfinilm` instead.")]] TopKTopPSampler
+    : public Operator<TopKTopPSampler> {
  public:
   TopKTopPSampler(const Tensor logits, std::optional<Tensor> k,
                   std::optional<Tensor> p, Tensor out)

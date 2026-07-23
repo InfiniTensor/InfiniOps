@@ -9,7 +9,10 @@
 
 namespace infini::ops {
 
-class CausalSoftmax : public Operator<CausalSoftmax> {
+/// \deprecated Use `CausalSoftmaxInfinilm`. This interface will be removed in
+/// a future release.
+class [[deprecated("Use `CausalSoftmaxInfinilm` instead.")]] CausalSoftmax
+    : public Operator<CausalSoftmax> {
  public:
   CausalSoftmax(const Tensor input, Tensor out)
       : dtype_{input.dtype()},

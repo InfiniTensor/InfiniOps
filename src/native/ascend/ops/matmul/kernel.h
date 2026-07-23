@@ -14,37 +14,39 @@ namespace infini::ops {
 template <>
 class Operator<Matmul, Device::Type::kAscend> : public Matmul {
  public:
-  Operator(const Tensor a, const Tensor b, Tensor c, bool trans_a, bool trans_b)
-      : Matmul(a, b, c, trans_a, trans_b),
-        a_cache_(a, trans_a),
-        b_cache_(b, trans_b),
-        out_cache_(c) {}
+  Operator(const Tensor input, const Tensor other, Tensor out)
+      : Matmul(input, other, out),
+        input_cache_(input),
+        other_cache_(other),
+        out_cache_(out) {}
 
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
     // Null cached descriptors — see `AclTensorCache::release()`.
-    a_cache_.release();
-    b_cache_.release();
+    input_cache_.release();
+    other_cache_.release();
     out_cache_.release();
   }
 
-  void operator()(const Tensor a, const Tensor b, Tensor c, bool trans_a,
-                  bool trans_b) const override {
+  void operator()(const Tensor input, const Tensor other,
+                  Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
-    auto t_a = a_cache_.get(const_cast<void*>(a.data()));
-    auto t_b = b_cache_.get(const_cast<void*>(b.data()));
-    auto t_out = out_cache_.get(c.data());
+    auto t_input = input_cache_.get(const_cast<void*>(input.data()));
+    auto t_other = other_cache_.get(const_cast<void*>(other.data()));
+    auto t_out = out_cache_.get(out.data());
 
     if (!executor_) {
       int8_t cube_math_type = 1;
-      aclnnMatmulGetWorkspaceSize(t_a, t_b, t_out, cube_math_type, &ws_size_,
-                                  &executor_);
+      aclnnMatmulGetWorkspaceSize(t_input, t_other, t_out, cube_math_type,
+                                  &ws_size_, &executor_);
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
-      aclSetInputTensorAddr(executor_, 0, t_a, const_cast<void*>(a.data()));
-      aclSetInputTensorAddr(executor_, 1, t_b, const_cast<void*>(b.data()));
-      aclSetOutputTensorAddr(executor_, 0, t_out, c.data());
+      aclSetInputTensorAddr(executor_, 0, t_input,
+                            const_cast<void*>(input.data()));
+      aclSetInputTensorAddr(executor_, 1, t_other,
+                            const_cast<void*>(other.data()));
+      aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
     }
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
@@ -52,9 +54,9 @@ class Operator<Matmul, Device::Type::kAscend> : public Matmul {
   }
 
  private:
-  mutable ascend::AclTensorCache a_cache_;
+  mutable ascend::AclTensorCache input_cache_;
 
-  mutable ascend::AclTensorCache b_cache_;
+  mutable ascend::AclTensorCache other_cache_;
 
   mutable ascend::AclTensorCache out_cache_;
 

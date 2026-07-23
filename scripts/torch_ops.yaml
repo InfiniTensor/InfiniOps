@@ -5,13 +5,11 @@
 # generator emits one InfiniOps wrapper per overload, so this
 # file lists 500+ base names and produces 500+ wrappers.
 #
-# To exclude an op, comment out its line.  Ops whose hand-written
-# `src/base/<op>.h` signature does not match the ATen-derived one
-# (currently `add`, `linear`, `matmul`, `mul` — they pre-date this
-# codegen and use a different parameter shape) must stay excluded:
-# the generator skips emitting their base, but would still emit a
-# torch backend declaring `operator()` with the ATen signature, and
-# that override would not compile against the hand-written base.
+# To exclude an op, comment out its line. Existing base operators may remain
+# on this list when their public overloads match the ATen schema; the generator
+# then emits their Torch backend. `cat`, `linear`, and `matmul` use this path.
+# Operators with handwritten Torch backends, such as `add`, stay excluded to
+# avoid generating a duplicate backend.
 
 - abs
 - absolute
@@ -68,6 +66,7 @@
 - bitwise_xor
 - bmm
 - bucketize
+- cat
 - ceil
 - chain_matmul
 - cholesky
@@ -235,6 +234,7 @@
 - linalg_tensorsolve
 - linalg_vecdot
 - linalg_vector_norm
+- linear
 - linspace
 - log
 - log10
@@ -259,6 +259,7 @@
 - lu_solve
 - lu_unpack
 - masked_select
+- matmul
 - matrix_power
 - max
 - max_pool2d_with_indices

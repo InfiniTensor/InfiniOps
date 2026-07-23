@@ -4,7 +4,6 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_addmm.h"
-#include "aclnnop/aclnn_baddbmm.h"
 #include "aclnnop/aclnn_matmul.h"
 #include "base/linear.h"
 #include "native/ascend/common.h"
@@ -16,13 +15,16 @@ namespace infini::ops {
 template <>
 class Operator<Linear, Device::Type::kAscend> : public Linear {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<Tensor> bias,
-           bool trans_a, bool trans_b, Tensor out)
-      : Linear(a, b, bias, trans_a, trans_b, out),
-        batched_{out.ndim() > 2},
-        a_cache_(a, trans_a),
-        b_cache_(b, trans_b),
-        out_cache_(out) {
+  Operator(const Tensor input, const Tensor weight, std::optional<Tensor> bias,
+           Tensor out)
+      : Linear(input, weight, bias, out),
+        input_cache_(
+            {static_cast<int64_t>(rows_), static_cast<int64_t>(input.size(-1))},
+            ascend::ToAclDtype(input.dtype()), nullptr),
+        weight_cache_(weight, true),
+        out_cache_(
+            {static_cast<int64_t>(rows_), static_cast<int64_t>(weight.size(0))},
+            ascend::ToAclDtype(out.dtype()), nullptr) {
     if (has_bias_) {
       bias_cache_ = ascend::AclTensorCache(*bias);
       alpha_scalar_ = aclCreateScalar(&alpha_storage_, ACL_FLOAT);
@@ -35,59 +37,53 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
 
     // Null cached descriptors — see `AclTensorCache::release()`.
     bias_cache_.release();
-    a_cache_.release();
-    b_cache_.release();
+    input_cache_.release();
+    weight_cache_.release();
     out_cache_.release();
 
     if (alpha_scalar_) aclDestroyScalar(alpha_scalar_);
     if (beta_scalar_) aclDestroyScalar(beta_scalar_);
   }
 
-  void operator()(const Tensor a, const Tensor b, std::optional<Tensor> bias,
-                  bool trans_a, bool trans_b, Tensor out) const override {
+  void operator()(const Tensor input, const Tensor weight,
+                  std::optional<Tensor> bias, Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
-    auto t_a = a_cache_.get(const_cast<void*>(a.data()));
-    auto t_b = b_cache_.get(const_cast<void*>(b.data()));
+    auto t_input = input_cache_.get(const_cast<void*>(input.data()));
+    auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
     auto t_out = out_cache_.get(out.data());
 
     if (has_bias_) {
       auto t_bias = bias_cache_.get(const_cast<void*>(bias->data()));
 
       if (!executor_) {
-        if (batched_) {
-          aclnnBaddbmmGetWorkspaceSize(t_bias, t_a, t_b, beta_scalar_,
-                                       alpha_scalar_, t_out, 0, &ws_size_,
-                                       &executor_);
-        } else {
-          aclnnAddmmGetWorkspaceSize(t_bias, t_a, t_b, beta_scalar_,
-                                     alpha_scalar_, t_out, 0, &ws_size_,
-                                     &executor_);
-        }
+        aclnnAddmmGetWorkspaceSize(t_bias, t_input, t_weight, beta_scalar_,
+                                   alpha_scalar_, t_out, 0, &ws_size_,
+                                   &executor_);
         aclSetAclOpExecutorRepeatable(executor_);
       } else {
         aclSetInputTensorAddr(executor_, 0, t_bias,
                               const_cast<void*>(bias->data()));
-        aclSetInputTensorAddr(executor_, 1, t_a, const_cast<void*>(a.data()));
-        aclSetInputTensorAddr(executor_, 2, t_b, const_cast<void*>(b.data()));
+        aclSetInputTensorAddr(executor_, 1, t_input,
+                              const_cast<void*>(input.data()));
+        aclSetInputTensorAddr(executor_, 2, t_weight,
+                              const_cast<void*>(weight.data()));
         aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       }
 
       auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
 
-      if (batched_) {
-        aclnnBaddbmm(arena.buf, ws_size_, executor_, stream);
-      } else {
-        aclnnAddmm(arena.buf, ws_size_, executor_, stream);
-      }
+      aclnnAddmm(arena.buf, ws_size_, executor_, stream);
     } else {
       if (!executor_) {
         int8_t cube_math_type = 1;
-        aclnnMatmulGetWorkspaceSize(t_a, t_b, t_out, cube_math_type, &ws_size_,
-                                    &executor_);
+        aclnnMatmulGetWorkspaceSize(t_input, t_weight, t_out, cube_math_type,
+                                    &ws_size_, &executor_);
         aclSetAclOpExecutorRepeatable(executor_);
       } else {
-        aclSetInputTensorAddr(executor_, 0, t_a, const_cast<void*>(a.data()));
-        aclSetInputTensorAddr(executor_, 1, t_b, const_cast<void*>(b.data()));
+        aclSetInputTensorAddr(executor_, 0, t_input,
+                              const_cast<void*>(input.data()));
+        aclSetInputTensorAddr(executor_, 1, t_weight,
+                              const_cast<void*>(weight.data()));
         aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
       }
 
@@ -97,13 +93,11 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
   }
 
  private:
-  bool batched_;
-
   mutable ascend::AclTensorCache bias_cache_;
 
-  mutable ascend::AclTensorCache a_cache_;
+  mutable ascend::AclTensorCache input_cache_;
 
-  mutable ascend::AclTensorCache b_cache_;
+  mutable ascend::AclTensorCache weight_cache_;
 
   mutable ascend::AclTensorCache out_cache_;
 

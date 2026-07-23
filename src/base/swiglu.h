@@ -7,7 +7,10 @@
 
 namespace infini::ops {
 
-class Swiglu : public Operator<Swiglu> {
+/// \deprecated Use `SiluAndMul`. This interface will be removed in a future
+/// release.
+class [[deprecated("Use `SiluAndMul` instead.")]] Swiglu
+    : public Operator<Swiglu> {
  public:
   Swiglu(const Tensor input, const Tensor gate, Tensor out)
       : ndim_{out.ndim()},

@@ -193,12 +193,14 @@ def _is_smoke_item(item):
         "tests/test_cast.py": _is_smoke_cast_case,
         "tests/test_cat.py": _is_smoke_cat_case,
         "tests/test_causal_softmax.py": _is_smoke_causal_softmax_case,
+        "tests/test_causal_softmax_infinilm.py": _is_smoke_causal_softmax_case,
         "tests/test_gemm.py": _is_smoke_gemm_case,
         "tests/test_linear.py": _is_smoke_linear_case,
         "tests/test_matmul.py": _is_smoke_matmul_case,
         "tests/test_moe_sum.py": _is_smoke_moe_sum_case,
         "tests/test_mul.py": _is_smoke_mul_case,
         "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
+        "tests/test_silu_and_mul.py": _is_smoke_silu_and_mul_case,
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
         "tests/test_flash_attn_varlen_func.py": _is_smoke_flash_attn_varlen_func_case,
         "tests/test_swiglu.py": _is_smoke_swiglu_case,
@@ -241,9 +243,13 @@ def _is_smoke_add_case(params):
 
     return (
         _is_float32(params)
+        and params.get("alpha") is None
+        and params.get("input_shape")
+        == params.get("other_shape")
+        == params.get("out_shape")
         and _shape_case(
             params,
-            "shape",
+            "input_shape",
             "input_strides",
             "other_strides",
             "out_strides",
@@ -339,26 +345,21 @@ def _is_smoke_matmul_case(params):
         ((2, 4, 64), (2, 64, 32), (2, 4, 32)),
     }
 
-    return (
-        _is_float32(params)
-        and params.get("trans_a") is False
-        and params.get("trans_b") is False
-        and _shape_case(params, "a_shape", "b_shape", "c_shape") in cases
+    return _is_float32(params) and (
+        _shape_case(params, "a_shape", "b_shape", "c_shape") in cases
     )
 
 
 def _is_smoke_linear_case(params):
     cases = {
-        (((4, 64), (64, 32), (4, 32)), False),
-        (((2, 4, 64), (2, 64, 32), (2, 4, 32)), True),
+        (((4, 64), (32, 64), (4, 32)), False),
+        (((2, 4, 64), (32, 64), (2, 4, 32)), True),
     }
 
     return (
         _is_float32(params)
-        and params.get("trans_a") is False
-        and params.get("trans_b") is False
         and (
-            _shape_case(params, "a_shape", "b_shape", "out_shape"),
+            _shape_case(params, "input_shape", "weight_shape", "out_shape"),
             params.get("has_bias"),
         )
         in cases
@@ -391,6 +392,24 @@ def _is_smoke_moe_sum_case(params):
         params.get("topk") == 2
         and params.get("hidden_size") == 64
         and params.get("dtype") == torch.float16
+    )
+
+
+def _is_smoke_silu_and_mul_case(params):
+    cases = {
+        ((13, 4), None, None),
+        ((16, 5632), None, None),
+    }
+
+    return (
+        _is_float32(params)
+        and _shape_case(
+            params,
+            "out_shape",
+            "input_strides",
+            "out_strides",
+        )
+        in cases
     )
 
 

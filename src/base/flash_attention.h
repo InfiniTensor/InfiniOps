@@ -9,15 +9,15 @@
 
 namespace infini::ops {
 
-// Fused multi-head / grouped-query attention.
-//
-// Interface follows vLLM v1 `AttentionImpl.forward()`:
-//   `vllm.v1.attention.backends.abstract.AttentionImpl`
-//
+// Legacy fused multi-head / grouped-query attention interface.
 // Layout: `query` / `key` / `value` are `[T, N, D]` (TND).
 // Prefill uses `cu_seqlens_q` / `cu_seqlens_kv` for variable-length packing.
 // Decode uses `block_table` for paged KV cache lookup.
-class FlashAttention : public Operator<FlashAttention> {
+/// \deprecated Use `ScaledDotProductAttention` for standard attention
+/// semantics. This interface will be removed in a future release.
+class [[deprecated(
+    "Use `ScaledDotProductAttention` for standard attention "
+    "semantics.")]] FlashAttention : public Operator<FlashAttention> {
  public:
   FlashAttention(const Tensor query, const Tensor key, const Tensor value,
                  std::optional<Tensor> cu_seqlens_q,
