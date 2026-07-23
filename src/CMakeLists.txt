@@ -472,7 +472,7 @@ set(_infini_ops_smoke_ops
 set(_infini_ops_smoke_torch_ops abs clamp exp)
 
 if(WITH_NVIDIA)
-    list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm)
+    list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
 if(WITH_NVIDIA AND WITH_TORCH)

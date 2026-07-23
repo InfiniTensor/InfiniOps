@@ -196,6 +196,7 @@ def _is_smoke_item(item):
         "tests/test_gemm.py": _is_smoke_gemm_case,
         "tests/test_linear.py": _is_smoke_linear_case,
         "tests/test_matmul.py": _is_smoke_matmul_case,
+        "tests/test_moe_sum.py": _is_smoke_moe_sum_case,
         "tests/test_mul.py": _is_smoke_mul_case,
         "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
@@ -382,6 +383,14 @@ def _is_smoke_rms_norm_case(params):
             "out_strides",
         )
         in cases
+    )
+
+
+def _is_smoke_moe_sum_case(params):
+    return (
+        params.get("topk") == 2
+        and params.get("hidden_size") == 64
+        and params.get("dtype") == torch.float16
     )
 
 
