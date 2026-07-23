@@ -371,6 +371,21 @@ def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
         )
 
 
+def test_generated_cache_clear_is_defined_only_by_core_dispatch(tmp_path, monkeypatch):
+    module = _load_generator_module()
+    operator = _make_profile_operator(module, tmp_path, monkeypatch)
+
+    _, definitions = module._generate_generated_dispatch_entries(operator)
+    text = "\n".join(definitions)
+
+    assert (
+        "#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS) || \\\n"
+        "    defined(INFINI_OPS_BUILD_CORE_DISPATCH)\n"
+        "void ClearCacheForProfileOp()"
+    ) in text
+    assert text.count("void ClearCacheForProfileOp()") == 1
+
+
 def test_pybind_converts_data_type_arguments_from_torch_dtype(tmp_path, monkeypatch):
     text = _generate_binding("dtype_op", tmp_path, monkeypatch, _DTYPE_OP_SOURCE)
 

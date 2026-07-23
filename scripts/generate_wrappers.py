@@ -1076,9 +1076,12 @@ def _generate_generated_dispatch_entries(operator):
 
     declarations.append(f"void ClearCacheFor{symbol_name}();")
     definitions.append(
-        f"""void ClearCacheFor{symbol_name}() {{
+        f"""#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS) || \\
+    defined(INFINI_OPS_BUILD_CORE_DISPATCH)
+void ClearCacheFor{symbol_name}() {{
   Operator<{op_type}>::clear_cache();
-}}"""
+}}
+#endif"""
     )
 
     emitted_make_params = set()

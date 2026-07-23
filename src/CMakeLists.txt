@@ -6,6 +6,12 @@ if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
         INFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
 endif()
 
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    target_compile_definitions(infiniops PRIVATE
+        INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1
+        INFINI_OPS_BUILD_CORE_DISPATCH=1)
+endif()
+
 function(_infini_ops_write_if_different path content)
     set(_should_write TRUE)
     if(EXISTS "${path}")
@@ -722,6 +728,12 @@ target_include_directories(infiniops
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/operator.h"
+    "${PROJECT_SOURCE_DIR}/scripts/generate_public_operator_header.py"
+    "${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py"
+)
+
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
     # Always regenerate wrappers so emitted call instantiations and bindings
@@ -1031,6 +1043,11 @@ if(GENERATE_PYTHON_BINDINGS)
         pybind11_add_module(ops ${PYBIND11_COMPILE_SOURCES})
     else()
         pybind11_add_module(ops NO_EXTRAS ${PYBIND11_COMPILE_SOURCES})
+    endif()
+
+    if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+        target_compile_definitions(ops PRIVATE
+            INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
     endif()
 
     if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")

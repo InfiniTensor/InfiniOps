@@ -192,13 +192,7 @@ class Operator : public OperatorBase {
   // Invalidate the operator cache.  Cached operators are destroyed on the
   // next `call()` invocation.  Intended for test isolation — production
   // code should never call this.
-  static void clear_cache() {
-#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
-    HostRangeProfiler::InvalidateOperatorCaches();
-#else
-    ++cache_generation_;
-#endif
-  }
+  static void clear_cache() { ++cache_generation_; }
 
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
@@ -238,17 +232,9 @@ class Operator : public OperatorBase {
         cache;
     static thread_local std::size_t generation{0};
 
-    const auto current_generation = [&]() {
-#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
-      return HostRangeProfiler::OperatorCacheGeneration();
-#else
-      return cache_generation_;
-#endif
-    }();
-
-    if (generation != current_generation) {
+    if (generation != cache_generation_) {
       cache.clear();
-      generation = current_generation;
+      generation = cache_generation_;
     }
 
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
@@ -384,11 +370,7 @@ class Operator : public OperatorBase {
     return op_ptr;
   }
 
-  // Profiling builds use a process-wide generation owned by
-  // `HostRangeProfiler` so pybind and libinfiniops share invalidation state.
-#if !defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
   static inline std::size_t cache_generation_{0};
-#endif
 };
 
 // Maximum number of implementation slots per (operator, device) pair.

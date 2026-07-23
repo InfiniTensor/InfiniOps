@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -12,21 +11,15 @@
 namespace infini::ops {
 namespace {
 
-constexpr std::array<const char *,
+constexpr std::array<const char*,
                      static_cast<std::size_t>(HostRangeLayer::kCount)>
     kLayerNames{
-        "binding.body",
-        "binding.tensor_conversion",
-        "dispatch.call",
-        "operator.call",
-        "cache.key",
-        "cache.lookup",
-        "cache.construct",
-        "operator.invoke",
-        "backend.submit",
-        "calibration.depth1",
-        "calibration.depth2",
-        "calibration.depth3",
+        "binding.body",       "binding.tensor_conversion",
+        "dispatch.call",      "operator.call",
+        "cache.key",          "cache.lookup",
+        "cache.construct",    "operator.invoke",
+        "backend.submit",     "calibration.depth1",
+        "calibration.depth2", "calibration.depth3",
     };
 
 std::size_t LayerIndex(HostRangeLayer layer) {
@@ -66,9 +59,8 @@ struct CollectorState {
 
 thread_local CollectorState collector_state;
 thread_local std::uint64_t next_session_id{0};
-std::atomic<std::size_t> operator_cache_generation{0};
 
-double Mean(const std::vector<DurationNs> &samples) {
+double Mean(const std::vector<DurationNs>& samples) {
   long double total = 0;
   for (const auto sample : samples) {
     total += sample;
@@ -83,13 +75,12 @@ double Median(std::vector<DurationNs> samples) {
     return static_cast<double>(samples[middle]);
   }
   return static_cast<double>(
-      (static_cast<long double>(samples[middle - 1]) + samples[middle]) /
-      2.0L);
+      (static_cast<long double>(samples[middle - 1]) + samples[middle]) / 2.0L);
 }
 
-void ReserveCollectorStorage(CollectorState &state) {
+void ReserveCollectorStorage(CollectorState& state) {
   state.stack.reserve(kInitialStackCapacity);
-  for (auto &samples : state.samples) {
+  for (auto& samples : state.samples) {
     samples.inclusive.reserve(kInitialSampleCapacity);
     samples.self.reserve(kInitialSampleCapacity);
   }
@@ -99,7 +90,7 @@ void ReserveCollectorStorage(CollectorState &state) {
 
 }  // namespace
 
-const char *HostRangeLayerName(HostRangeLayer layer) {
+const char* HostRangeLayerName(HostRangeLayer layer) {
   return kLayerNames[LayerIndex(layer)];
 }
 
@@ -149,7 +140,7 @@ std::vector<HostRangeSummary> HostRangeProfiler::Stop() {
   std::vector<HostRangeSummary> summaries;
   summaries.reserve(kLayerNames.size());
   for (std::size_t index = 0; index < completed_state.samples.size(); ++index) {
-    const auto &samples = completed_state.samples[index];
+    const auto& samples = completed_state.samples[index];
     if (samples.inclusive.empty()) {
       continue;
     }
@@ -201,18 +192,6 @@ std::vector<HostRangeSummary> HostRangeProfiler::Calibrate(
   throw std::runtime_error("host range profiling is not compiled");
 #endif
 }
-
-#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
-
-std::size_t HostRangeProfiler::OperatorCacheGeneration() {
-  return operator_cache_generation.load(std::memory_order_relaxed);
-}
-
-void HostRangeProfiler::InvalidateOperatorCaches() {
-  operator_cache_generation.fetch_add(1, std::memory_order_relaxed);
-}
-
-#endif
 
 HostRangeScope::HostRangeScope(HostRangeLayer layer) {
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
@@ -266,8 +245,7 @@ HostRangeScope::~HostRangeScope() noexcept {
                         : DurationNs{0};
 
   if (!collector_state.stack.empty()) {
-    auto &parent_child_duration =
-        collector_state.stack.back().child_duration;
+    auto& parent_child_duration = collector_state.stack.back().child_duration;
     if (inclusive >
         std::numeric_limits<DurationNs>::max() - parent_child_duration) {
       parent_child_duration = std::numeric_limits<DurationNs>::max();
@@ -276,7 +254,8 @@ HostRangeScope::~HostRangeScope() noexcept {
     }
   }
 
-  auto &samples = collector_state.samples[static_cast<std::size_t>(frame.layer)];
+  auto& samples =
+      collector_state.samples[static_cast<std::size_t>(frame.layer)];
   try {
     samples.inclusive.push_back(inclusive);
     try {
