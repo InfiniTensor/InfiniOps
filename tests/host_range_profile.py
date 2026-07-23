@@ -133,6 +133,18 @@ def collect_ranges(start, stop, callback):
     return result, summaries
 
 
+def collect_replayed_ranges(start, stop, callback, measurement):
+    call_count = len(measurement.raw_times) * measurement.number_per_run
+
+    def replay_calls():
+        for _ in range(call_count):
+            callback()
+
+    _, summaries = collect_ranges(start, stop, replay_calls)
+
+    return summaries
+
+
 def operator_from_module(module):
     module_name = module.__name__.rsplit(".", 1)[-1]
 

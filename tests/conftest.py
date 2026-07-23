@@ -1,5 +1,6 @@
 import hashlib
 import random
+import time
 
 import pytest
 import torch
@@ -621,15 +622,18 @@ def pytest_pyfunc_call(pyfuncitem):
 
         if pyfuncitem.config.getoption("--benchmark"):
             stmt = "func(*args, **kwargs)"
+            profile_output = pyfuncitem.config._infini_host_range_profile_output
+            timer_kwargs = (
+                {"timer": time.perf_counter} if profile_output is not None else {}
+            )
 
             func_timer = benchmark.Timer(
                 stmt=stmt,
                 globals={"func": func, "args": args, "kwargs": kwargs},
                 label=func.__name__,
                 description="InfiniOps",
+                **timer_kwargs,
             )
-
-            profile_output = pyfuncitem.config._infini_host_range_profile_output
 
             if profile_output is None:
                 func_measurement = func_timer.blocked_autorange()
@@ -666,10 +670,12 @@ def pytest_pyfunc_call(pyfuncitem):
                     ),
                 )
 
-                func_measurement, warm_summaries = host_range_profile.collect_ranges(
+                func_measurement = func_timer.blocked_autorange()
+                warm_summaries = host_range_profile.collect_replayed_ranges(
                     ops._host_range_profile_start,
                     ops._host_range_profile_stop,
-                    func_timer.blocked_autorange,
+                    lambda: func(*args, **kwargs),
+                    func_measurement,
                 )
                 warm_rows = host_range_profile.expand_summary_rows(
                     warm_summaries, phase="warm", **context
@@ -686,6 +692,7 @@ def pytest_pyfunc_call(pyfuncitem):
                 globals={"func": ref, "args": ref_args, "kwargs": ref_kwargs},
                 label=func.__name__,
                 description="Reference",
+                **timer_kwargs,
             )
             ref_measurement = ref_timer.blocked_autorange()
 

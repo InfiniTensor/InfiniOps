@@ -154,3 +154,28 @@ def test_collect_ranges_stops_after_profiled_call_raises():
         host_range_profile.collect_ranges(start, stop, fail)
 
     assert state.active is False
+
+
+def test_collect_replayed_ranges_profiles_exact_measurement_call_count():
+    state = SimpleNamespace(active=False, calls=0)
+    measurement = SimpleNamespace(raw_times=[0.1, 0.2, 0.3], number_per_run=4)
+
+    def start():
+        state.active = True
+
+    def stop():
+        state.active = False
+
+        return [{"range": "binding.body", "count": state.calls}]
+
+    def callback():
+        assert state.active is True
+        state.calls += 1
+
+    summaries = host_range_profile.collect_replayed_ranges(
+        start, stop, callback, measurement
+    )
+
+    assert state.active is False
+    assert state.calls == 12
+    assert summaries == [{"range": "binding.body", "count": 12}]

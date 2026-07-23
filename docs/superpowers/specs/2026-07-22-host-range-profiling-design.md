@@ -62,9 +62,11 @@ does not synchronize the stream, so it excludes device execution.
 
 The generated pybind lambda begins after part of pybind11's own function-dispatch
 machinery. Therefore `binding.body` is not labelled as total pybind overhead.
-The existing `torch.utils.benchmark.Timer` measurement remains the end-to-end
-Python-call measurement; its residual relative to the C++ ranges is reported as
-unattributed Python/pybind boundary overhead rather than assigned to a range.
+The profiling path passes `time.perf_counter` to
+`torch.utils.benchmark.Timer`, avoiding its accelerator-synchronizing default
+timer. The resulting `end_to_end` row is therefore host call/submission time,
+not kernel execution time. Its difference from the C++ ranges remains
+unattributed Python/pybind boundary time rather than being assigned to a range.
 
 ## Cold And Warm Measurements
 
@@ -73,10 +75,15 @@ profiling, pytest performs two separate windows:
 
 1. Clear the selected operator cache, start profiling, invoke once, and stop.
    This is the cold phase and includes one cache construction.
-2. Start profiling around `blocked_autorange()` with the now-warm cache. This is
-   the warm phase and contains many calls suitable for mean/median statistics.
+2. Run `blocked_autorange()` with the host-only timer while the collector is
+   inactive, then replay exactly its formal call count inside one profiling
+   window. This keeps estimation calls out of the warm range population while
+   retaining many calls suitable for mean/median statistics.
 
-The reference timer runs after the host range collector is stopped.
+The reference timer uses the same host-only timer after the collector is stopped.
+Cache invalidation is lazy, so destruction of an old cached operator can affect
+the enclosing cold `binding.body` and `dispatch.call` inclusive samples. The
+single cold sample is diagnostic and is not used as a stable numeric baseline.
 
 ## Output
 
@@ -104,14 +111,14 @@ unit or metric kind into `mean` and `median` field names.
 
 The experiment records three controls:
 
-- profiling disabled: normal pytest benchmark result;
-- profiling enabled with a start/stop window containing no range;
+- profiling disabled: a host-only control script using `time.perf_counter`;
+- profiling enabled but inactive: the same host-only control script;
 - profiling enabled with fixed empty nested ranges.
 
-The final report states the empty-range cost and the change in end-to-end Add
-and GEMM measurements. A layer is not treated as a stable numeric baseline when
-the empty-range cost is at least 10% of that layer's median. Such a layer must
-be merged with its parent or treated only as diagnostic trace data.
+The final report states the empty-range cost and the change in host-only Add and
+GEMM measurements. A layer is not treated as a stable numeric baseline when the
+empty-range cost is at least 10% of that layer's median. Such a layer must be
+merged with its parent or treated only as diagnostic trace data.
 
 ## Error Handling
 
