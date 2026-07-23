@@ -13,6 +13,7 @@
 #include "config.h"
 #include "dispatcher.h"
 #include "handle.h"
+#include "host_range_profiler.h"
 #include "tensor.h"
 
 namespace infini::ops::detail {
@@ -224,6 +225,8 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
+    INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kOperatorCall);
+
     static thread_local std::unordered_map<detail::CacheKey,
                                            std::unique_ptr<Operator>>
         cache;
@@ -234,6 +237,23 @@ class Operator : public OperatorBase {
       generation = cache_generation_;
     }
 
+#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+    auto key = [&]() {
+      INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kCacheKey);
+      return CacheKeyBuilder<Key>{}(config, args...);
+    }();
+
+    auto it = [&]() {
+      INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kCacheLookup);
+      return cache.find(key);
+    }();
+
+    if (it == cache.end()) {
+      INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kCacheConstruct);
+      auto new_op = Make(config, args...);
+      it = cache.emplace(std::move(key), std::move(new_op)).first;
+    }
+#else
     auto key = CacheKeyBuilder<Key>{}(config, args...);
 
     auto it{cache.find(key)};
@@ -241,9 +261,11 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       it = cache.emplace(std::move(key), Make(config, args...)).first;
     }
+#endif
 
     auto& op{it->second};
 
+    INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kOperatorInvoke);
     return (*op)(handle, args...);
   }
 

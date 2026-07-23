@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "host_range_profiler.h"
 #include "tensor.h"
 #include "torch/device_.h"
 
@@ -29,12 +30,21 @@ inline DataType DataTypeFromString(const std::string& name) {
   return kStringToDataType.at(name);
 }
 
-inline DataType DataTypeFromPybind11Handle(py::handle obj) {
+namespace detail {
+
+inline DataType DataTypeFromPybind11HandleImpl(py::handle obj) {
   auto dtype_str{py::str(obj).cast<std::string>()};
   const auto pos{dtype_str.find_last_of('.')};
 
   return DataTypeFromString(
       pos == std::string::npos ? dtype_str : dtype_str.substr(pos + 1));
+}
+
+}  // namespace detail
+
+inline DataType DataTypeFromPybind11Handle(py::handle obj) {
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kTensorConversion);
+  return detail::DataTypeFromPybind11HandleImpl(obj);
 }
 
 template <typename T = void>
@@ -116,7 +126,9 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
   return std::nullopt;
 }
 
-inline Device DeviceFromPybind11Handle(py::handle obj) {
+namespace detail {
+
+inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
   auto device_obj{obj.attr("device")};
   auto device_type_str{device_obj.attr("type").cast<std::string>()};
   auto device_index_obj{device_obj.attr("index")};
@@ -126,33 +138,47 @@ inline Device DeviceFromPybind11Handle(py::handle obj) {
   return Device{DeviceTypeFromString(device_type_str), device_index};
 }
 
-inline Tensor TensorFromPybind11Handle(py::handle obj) {
+inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
   auto data{
       reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
 
   auto shape{obj.attr("shape").cast<typename Tensor::Shape>()};
 
-  auto dtype{DataTypeFromPybind11Handle(obj.attr("dtype"))};
+  auto dtype{DataTypeFromPybind11HandleImpl(obj.attr("dtype"))};
 
-  auto device{DeviceFromPybind11Handle(obj)};
+  auto device{DeviceFromPybind11HandleImpl(obj)};
 
   auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
 
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }
 
+}  // namespace detail
+
+inline Device DeviceFromPybind11Handle(py::handle obj) {
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kTensorConversion);
+  return detail::DeviceFromPybind11HandleImpl(obj);
+}
+
+inline Tensor TensorFromPybind11Handle(py::handle obj) {
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kTensorConversion);
+  return detail::TensorFromPybind11HandleImpl(obj);
+}
+
 inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
     const std::optional<py::object>& obj) {
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kTensorConversion);
   if (!obj.has_value() || obj->is_none()) return std::nullopt;
-  return TensorFromPybind11Handle(*obj);
+  return detail::TensorFromPybind11HandleImpl(*obj);
 }
 
 inline std::vector<Tensor> VectorTensorFromPybind11Handle(
     const std::vector<py::object>& objs) {
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kTensorConversion);
   std::vector<Tensor> result;
   result.reserve(objs.size());
   for (const auto& obj : objs) {
-    result.push_back(TensorFromPybind11Handle(obj));
+    result.push_back(detail::TensorFromPybind11HandleImpl(obj));
   }
   return result;
 }
