@@ -153,3 +153,53 @@ def test_host_range_profile_calibration_reports_nested_summary_schema():
 
     inclusive_medians = [row["inclusive_median"] for row in rows]
     assert inclusive_medians == sorted(inclusive_medians, reverse=True)
+
+
+def test_host_range_profile_clear_cache_forces_next_call_to_construct():
+    _require_profile_build()
+
+    import torch
+
+    from tests.utils import get_stream
+
+    add_cls = getattr(ops, "Add", None)
+    if add_cls is None:
+        pytest.skip("Add is not included in this profiling build")
+
+    if 0 in add_cls.active_implementation_indices("cpu"):
+        device = "cpu"
+    elif torch.cuda.is_available() and 0 in add_cls.active_implementation_indices(
+        "nvidia"
+    ):
+        device = "cuda"
+    else:
+        pytest.skip("Add implementation 0 is not active on CPU or NVIDIA")
+
+    input = torch.randn((13, 4), device=device)
+    other = torch.randn_like(input)
+    out = torch.empty_like(input)
+    kwargs = {
+        "stream": get_stream(input.device),
+        "implementation_index": 0,
+    }
+
+    ops.add(input, other, out, **kwargs)
+    add_cls.clear_cache()
+
+    ops._host_range_profile_start()
+    try:
+        ops.add(input, other, out, **kwargs)
+    finally:
+        rows = ops._host_range_profile_stop()
+
+    construct = [row for row in rows if row["range"] == "cache.construct"]
+    assert len(construct) == 1
+    assert construct[0]["count"] == 1
+
+    ops._host_range_profile_start()
+    try:
+        ops.add(input, other, out, **kwargs)
+    finally:
+        rows = ops._host_range_profile_stop()
+
+    assert all(row["range"] != "cache.construct" for row in rows)

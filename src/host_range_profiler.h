@@ -39,6 +39,11 @@ class HostRangeProfiler {
   static void Start();
   static std::vector<HostRangeSummary> Stop();
   static std::vector<HostRangeSummary> Calibrate(std::size_t iterations);
+
+#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+  static std::size_t OperatorCacheGeneration();
+  static void InvalidateOperatorCaches();
+#endif
 };
 
 class HostRangeScope {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -65,6 +66,7 @@ struct CollectorState {
 
 thread_local CollectorState collector_state;
 thread_local std::uint64_t next_session_id{0};
+std::atomic<std::size_t> operator_cache_generation{0};
 
 double Mean(const std::vector<DurationNs> &samples) {
   long double total = 0;
@@ -199,6 +201,18 @@ std::vector<HostRangeSummary> HostRangeProfiler::Calibrate(
   throw std::runtime_error("host range profiling is not compiled");
 #endif
 }
+
+#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+
+std::size_t HostRangeProfiler::OperatorCacheGeneration() {
+  return operator_cache_generation.load(std::memory_order_relaxed);
+}
+
+void HostRangeProfiler::InvalidateOperatorCaches() {
+  operator_cache_generation.fetch_add(1, std::memory_order_relaxed);
+}
+
+#endif
 
 HostRangeScope::HostRangeScope(HostRangeLayer layer) {
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)

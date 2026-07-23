@@ -133,4 +133,3 @@
   checks; record any validation unavailable locally.
 - [ ] Report the actual inclusive/self statistics, calibration overhead, known
   attribution gaps, and whether pure ranges are suitable for the next phase.
-
