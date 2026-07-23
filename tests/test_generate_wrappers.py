@@ -371,19 +371,24 @@ def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
         )
 
 
-def test_generated_cache_clear_is_defined_only_by_core_dispatch(tmp_path, monkeypatch):
+def test_generated_cache_clear_has_a_backend_independent_core_source(
+    tmp_path, monkeypatch
+):
     module = _load_generator_module()
     operator = _make_profile_operator(module, tmp_path, monkeypatch)
 
     _, definitions = module._generate_generated_dispatch_entries(operator)
-    text = "\n".join(definitions)
+    dispatch_text = "\n".join(definitions)
+    core_text = module._generate_cache_clear_dispatch_source(["profile_op"])
 
     assert (
-        "#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS) || \\\n"
-        "    defined(INFINI_OPS_BUILD_CORE_DISPATCH)\n"
+        "#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS)\n"
         "void ClearCacheForProfileOp()"
-    ) in text
-    assert text.count("void ClearCacheForProfileOp()") == 1
+    ) in dispatch_text
+    assert "INFINI_OPS_BUILD_CORE_DISPATCH" not in dispatch_text
+    assert core_text.count("void ClearCacheForProfileOp()") == 1
+    assert '#include "base/profile_op.h"' in core_text
+    assert "Operator<::infini::ops::ProfileOp>::clear_cache();" in core_text
 
 
 def test_pybind_converts_data_type_arguments_from_torch_dtype(tmp_path, monkeypatch):

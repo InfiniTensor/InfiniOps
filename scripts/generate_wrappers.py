@@ -1076,8 +1076,7 @@ def _generate_generated_dispatch_entries(operator):
 
     declarations.append(f"void ClearCacheFor{symbol_name}();")
     definitions.append(
-        f"""#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS) || \\
-    defined(INFINI_OPS_BUILD_CORE_DISPATCH)
+        f"""#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS)
 void ClearCacheFor{symbol_name}() {{
   Operator<{op_type}>::clear_cache();
 }}
@@ -1186,6 +1185,27 @@ def _generate_generated_dispatch_source(impl_paths, definitions):
 namespace infini::ops::generated_dispatch {{
 
 {chr(10).join(definitions)}
+
+}}  // namespace infini::ops::generated_dispatch
+"""
+
+
+def _generate_cache_clear_dispatch_source(op_names):
+    base_includes = "\n".join(f'#include "base/{name}.h"' for name in op_names)
+    definitions = "\n\n".join(
+        f"""void ClearCacheFor{_op_symbol_name(name)}() {{
+  Operator<{_op_cpp_type(name)}>::clear_cache();
+}}"""
+        for name in op_names
+    )
+
+    return f"""#include "operator.h"
+
+{base_includes}
+
+namespace infini::ops::generated_dispatch {{
+
+{definitions}
 
 }}  // namespace infini::ops::generated_dispatch
 """
@@ -1821,6 +1841,15 @@ if __name__ == "__main__":
     )
     _write_text_if_changed(call_instantiation_header_path, call_instantiation_header)
     expected_include_files.add(call_instantiation_header_path)
+
+    cache_clear_dispatch_source = _generate_cache_clear_dispatch_source(op_names)
+    cache_clear_dispatch_source_path = (
+        _GENERATED_SRC_DIR / "cache_clear_dispatch.cc"
+    )
+    _write_text_if_changed(
+        cache_clear_dispatch_source_path, cache_clear_dispatch_source
+    )
+    expected_generated_src_files.add(cache_clear_dispatch_source_path)
 
     dispatch_batch_size = _dispatch_gen_batch_size()
 

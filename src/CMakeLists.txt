@@ -8,8 +8,7 @@ endif()
 
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     target_compile_definitions(infiniops PRIVATE
-        INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1
-        INFINI_OPS_BUILD_CORE_DISPATCH=1)
+        INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
 endif()
 
 function(_infini_ops_write_if_different path content)
@@ -788,6 +787,9 @@ configure_file(
 )
 
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    target_sources(infiniops PRIVATE
+        "${PROJECT_SOURCE_DIR}/generated/src/cache_clear_dispatch.cc")
+
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
 
@@ -806,7 +808,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             list(APPEND _iluvatar_call_instantiation_include_flags "-I${_dir}")
         endforeach()
 
-        set(_iluvatar_call_instantiation_defs -DWITH_ILUVATAR=1)
+        set(_iluvatar_call_instantiation_defs
+            -DWITH_ILUVATAR=1
+            -DINFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
         if(WITH_CPU)
             list(APPEND _iluvatar_call_instantiation_defs -DWITH_CPU=1)
         endif()
@@ -982,6 +986,10 @@ if(GENERATE_PYTHON_BINDINGS)
         endforeach()
 
         set(_iluvatar_dispatch_defs -DWITH_ILUVATAR=1)
+        if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+            list(APPEND _iluvatar_dispatch_defs
+                -DINFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
+        endif()
         if(WITH_TORCH)
             list(APPEND _iluvatar_dispatch_defs -DWITH_TORCH=1)
         endif()
