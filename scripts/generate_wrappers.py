@@ -1843,9 +1843,7 @@ if __name__ == "__main__":
     expected_include_files.add(call_instantiation_header_path)
 
     cache_clear_dispatch_source = _generate_cache_clear_dispatch_source(op_names)
-    cache_clear_dispatch_source_path = (
-        _GENERATED_SRC_DIR / "cache_clear_dispatch.cc"
-    )
+    cache_clear_dispatch_source_path = _GENERATED_SRC_DIR / "cache_clear_dispatch.cc"
     _write_text_if_changed(
         cache_clear_dispatch_source_path, cache_clear_dispatch_source
     )
