@@ -1,6 +1,11 @@
 add_library(infiniops SHARED operator.h)
 set_target_properties(infiniops PROPERTIES LINKER_LANGUAGE CXX)
 
+if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+    target_compile_definitions(infiniops PUBLIC
+        INFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
+endif()
+
 function(_infini_ops_write_if_different path content)
     set(_should_write TRUE)
     if(EXISTS "${path}")

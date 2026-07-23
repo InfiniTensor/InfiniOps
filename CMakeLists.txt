@@ -46,6 +46,8 @@ option(GENERATE_OPERATOR_CALL_INSTANTIATIONS
     "Generate explicit operator call instantiations" ON)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
 option(INFINI_OPS_BUILD_DOCS "Build InfiniOps documentation" OFF)
+option(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING
+    "Enable host-side range profiling" OFF)
 
 set(_DEFAULT_HYGON_DTK_ROOT "/opt/dtk")
 
