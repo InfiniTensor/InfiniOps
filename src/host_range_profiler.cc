@@ -133,13 +133,13 @@ std::vector<HostRangeSummary> HostRangeProfiler::Stop() {
   if (!collector_state.active) {
     throw std::runtime_error("host range profiler is not active");
   }
-  if (!collector_state.recording_failed && !collector_state.stack.empty()) {
-    throw std::runtime_error("host range profiler has unclosed ranges");
-  }
 
   CollectorState completed_state = std::move(collector_state);
   collector_state = CollectorState{};
 
+  if (!completed_state.stack.empty()) {
+    throw std::runtime_error("host range profiler has unclosed ranges");
+  }
   if (completed_state.recording_failed) {
     throw std::runtime_error("host range profiler failed to record a sample");
   }
