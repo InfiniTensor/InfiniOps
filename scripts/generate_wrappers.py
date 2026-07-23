@@ -673,6 +673,7 @@ def _generate_pybind11(operator):
 
             return (
                 f'  m.def("{op_name}", []({params}) {{\n'
+                f"    INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kBindingBody);\n"
                 f"    Handle handle;\n"
                 f"    if (stream) {{\n"
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
@@ -742,6 +743,7 @@ def _generate_pybind11(operator):
 #include "config.h"
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
+#include "host_range_profiler.h"
 #include "pybind11_utils.h"
 
 namespace py = pybind11;
@@ -1125,6 +1127,7 @@ def _generate_generated_dispatch_entries(operator):
         )
         definitions.append(
             f"""void Call{symbol_name}(const Handle& handle, {_append_optional_params("const Config& config", params)}) {{
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kDispatchCall);
   return Operator<{op_type}>::Call({_append_optional_args("handle, config", args)});
 }}"""
         )
@@ -1171,6 +1174,7 @@ def _generate_generated_dispatch_source(impl_paths, definitions):
     impl_includes = "\n".join(f'#include "{impl_path}"' for impl_path in impl_paths)
 
     return f"""#include "generated_dispatch.h"
+#include "host_range_profiler.h"
 
 // clang-format off
 {impl_includes}
@@ -1601,6 +1605,80 @@ def _use_monolithic_bindings():
     return value.upper() in {"1", "ON", "TRUE"}
 
 
+def _generate_ops_module_source(bind_func_names, op_includes=(), monolithic=False):
+    bind_func_names = list(bind_func_names)
+    bind_func_calls = "\n".join(
+        f"{bind_func_name}(m);" for bind_func_name in bind_func_names
+    )
+    profile_bindings = """namespace {
+
+pybind11::list HostRangeSummariesToPybind11(
+    const std::vector<HostRangeSummary>& summaries) {
+  pybind11::list result;
+  for (const auto& summary : summaries) {
+    pybind11::dict row;
+    row["range"] = HostRangeLayerName(summary.layer);
+    row["count"] = summary.count;
+    row["unit"] = "ns";
+    row["inclusive_mean"] = summary.inclusive_mean;
+    row["inclusive_median"] = summary.inclusive_median;
+    row["self_mean"] = summary.self_mean;
+    row["self_median"] = summary.self_median;
+    result.append(row);
+  }
+  return result;
+}
+
+void BindHostRangeProfileControls(pybind11::module& m) {
+  m.def("_host_range_profile_compiled", &HostRangeProfiler::IsCompiled);
+  m.def("_host_range_profile_start", &HostRangeProfiler::Start);
+  m.def("_host_range_profile_stop", []() {
+    return HostRangeSummariesToPybind11(HostRangeProfiler::Stop());
+  });
+  m.def("_host_range_profile_calibrate", [](std::size_t iterations) {
+    return HostRangeSummariesToPybind11(
+        HostRangeProfiler::Calibrate(iterations));
+  }, pybind11::arg("iterations"));
+}
+
+}  // namespace
+"""
+
+    if monolithic:
+        op_includes = "\n".join(op_includes)
+        pre_namespace = f"""// Generated with `INFINI_OPS_MONOLITHIC_BINDINGS=1`.
+{op_includes}"""
+        bind_func_declarations = ""
+    else:
+        pre_namespace = ""
+        bind_func_declarations = "\n".join(
+            f"void {bind_func_name}(pybind11::module& m);"
+            for bind_func_name in bind_func_names
+        )
+
+    module_calls = "BindHostRangeProfileControls(m);"
+    if bind_func_calls:
+        module_calls = f"{module_calls}\n{bind_func_calls}"
+
+    return f"""#include <pybind11/pybind11.h>
+
+#include "host_range_profiler.h"
+
+{pre_namespace}
+
+namespace infini::ops {{
+
+{bind_func_declarations}
+
+{profile_bindings}
+PYBIND11_MODULE(ops, m) {{
+{textwrap.indent(module_calls, _INDENTATION)}
+}}
+
+}}  // namespace infini::ops
+"""
+
+
 def _dispatch_gen_batch_size():
     raw = os.environ.get("INFINI_OPS_DISPATCH_BATCH_SIZE")
 
@@ -1783,42 +1861,11 @@ if __name__ == "__main__":
         )
         expected_generated_src_files.add(call_instantiation_source_path)
 
-    bind_func_calls = "\n".join(
-        f"{bind_func_name}(m);" for bind_func_name in bind_func_names
+    ops_source = _generate_ops_module_source(
+        bind_func_names,
+        op_includes=op_includes,
+        monolithic=use_monolithic_bindings,
     )
-
-    if use_monolithic_bindings:
-        op_includes = "\n".join(op_includes)
-        ops_source = f"""#include <pybind11/pybind11.h>
-
-// Generated with `INFINI_OPS_MONOLITHIC_BINDINGS=1`.
-{op_includes}
-
-namespace infini::ops {{
-
-PYBIND11_MODULE(ops, m) {{
-{textwrap.indent(bind_func_calls, _INDENTATION)}
-}}
-
-}}  // namespace infini::ops
-"""
-    else:
-        bind_func_declarations = "\n".join(
-            f"void {bind_func_name}(pybind11::module& m);"
-            for bind_func_name in bind_func_names
-        )
-        ops_source = f"""#include <pybind11/pybind11.h>
-
-namespace infini::ops {{
-
-{bind_func_declarations}
-
-PYBIND11_MODULE(ops, m) {{
-{textwrap.indent(bind_func_calls, _INDENTATION)}
-}}
-
-}}  // namespace infini::ops
-"""
 
     ops_source_path = _BINDINGS_DIR / "ops.cc"
     _write_text_if_changed(ops_source_path, ops_source)

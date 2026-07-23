@@ -310,7 +310,7 @@ def test_generated_free_calls_start_with_binding_body_profile_scope(
     scope = "INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kBindingBody);"
     assert '#include "host_range_profiler.h"' in text
     free_call_bodies = re.findall(
-        r'm\.def\("profile_op", \[\]\([^)]*\) \{\n(.*?)\n  \}\},',
+        r'm\.def\("profile_op", \[\]\([^)]*\) \{\n(.*?)\n  \},',
         text,
         flags=re.DOTALL,
     )
@@ -366,7 +366,9 @@ def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
         statements = [line.strip() for line in body.splitlines() if line.strip()]
         assert statements[0] == scope
         assert body.count(scope) == 1
-        assert body.index(scope) < body.index("Operator<ProfileOp>::Call")
+        assert body.index(scope) < body.index(
+            "Operator<::infini::ops::ProfileOp>::Call"
+        )
 
 
 def test_pybind_converts_data_type_arguments_from_torch_dtype(tmp_path, monkeypatch):
