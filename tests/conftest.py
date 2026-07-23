@@ -5,6 +5,7 @@ import pytest
 import torch
 import torch.utils.benchmark as benchmark
 
+from tests import host_range_profile
 from tests.report import register_reporter
 from tests.utils import clone_strided, get_available_devices
 
@@ -12,6 +13,12 @@ from tests.utils import clone_strided, get_available_devices
 def pytest_addoption(parser):
     parser.addoption(
         "--benchmark", action="store_true", help="Run performance benchmarks."
+    )
+    parser.addoption(
+        "--host-range-profile",
+        action="store",
+        default=None,
+        help="Write host-range benchmark timings as JSON lines.",
     )
     parser.addoption(
         "--devices",
@@ -30,8 +37,38 @@ def pytest_addoption(parser):
     )
 
 
+def _host_range_profile_compiled():
+    import infini.ops as ops
+
+    compiled_fn = getattr(ops, "_host_range_profile_compiled", None)
+
+    return callable(compiled_fn) and compiled_fn() is True
+
+
 def pytest_configure(config):
     torch.backends.fp32_precision = "tf32"
+
+    profile_output = config.getoption("--host-range-profile")
+    config._infini_host_range_profile_output = None
+
+    if profile_output:
+        try:
+            host_range_profile.validate_request(
+                profile_output,
+                benchmark_enabled=config.getoption("--benchmark"),
+                compiled=_host_range_profile_compiled,
+                xdist_workers=getattr(config.option, "numprocesses", None),
+            )
+        except ValueError as error:
+            raise pytest.UsageError(str(error)) from error
+        except Exception as error:
+            raise pytest.UsageError(
+                "host-range profiling is not compiled into infini.ops"
+            ) from error
+
+        config._infini_host_range_profile_output = host_range_profile.truncate_output(
+            profile_output
+        )
 
     config.addinivalue_line(
         "markers",
@@ -592,14 +629,64 @@ def pytest_pyfunc_call(pyfuncitem):
                 description="InfiniOps",
             )
 
+            profile_output = pyfuncitem.config._infini_host_range_profile_output
+
+            if profile_output is None:
+                func_measurement = func_timer.blocked_autorange()
+            else:
+                import infini.ops as ops
+
+                op_cls = _op_class_from_module(pyfuncitem.module)
+                clear_cache = getattr(op_cls, "clear_cache", None)
+
+                if callable(clear_cache):
+                    clear_cache()
+
+                params = _callspec_params(pyfuncitem)
+                context = {
+                    "nodeid": pyfuncitem.nodeid,
+                    "operator": host_range_profile.operator_from_module(
+                        pyfuncitem.module
+                    ),
+                    "backend": host_range_profile.backend_from_devices(
+                        pyfuncitem.config.getoption("--devices"),
+                        params.get("device"),
+                    ),
+                }
+
+                _, cold_summaries = host_range_profile.collect_ranges(
+                    ops._host_range_profile_start,
+                    ops._host_range_profile_stop,
+                    lambda: func(*args, **kwargs),
+                )
+                host_range_profile.append_rows(
+                    profile_output,
+                    host_range_profile.expand_summary_rows(
+                        cold_summaries, phase="cold", **context
+                    ),
+                )
+
+                func_measurement, warm_summaries = host_range_profile.collect_ranges(
+                    ops._host_range_profile_start,
+                    ops._host_range_profile_stop,
+                    func_timer.blocked_autorange,
+                )
+                warm_rows = host_range_profile.expand_summary_rows(
+                    warm_summaries, phase="warm", **context
+                )
+                warm_rows.append(
+                    host_range_profile.measurement_row(
+                        func_measurement, phase="warm", **context
+                    )
+                )
+                host_range_profile.append_rows(profile_output, warm_rows)
+
             ref_timer = benchmark.Timer(
                 stmt=stmt,
                 globals={"func": ref, "args": ref_args, "kwargs": ref_kwargs},
                 label=func.__name__,
                 description="Reference",
             )
-
-            func_measurement = func_timer.blocked_autorange()
             ref_measurement = ref_timer.blocked_autorange()
 
             benchmark.Compare((func_measurement, ref_measurement)).print()
