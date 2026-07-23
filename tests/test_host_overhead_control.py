@@ -36,12 +36,14 @@ def test_measure_host_submission_keeps_synchronization_outside_timed_interval():
     result = control.measure_host_submission(
         callback,
         synchronize,
+        warmup_iterations=2,
         iterations=2,
         rounds=2,
         timer_ns=timer_ns,
     )
 
     assert events == [
+        "call",
         "call",
         "synchronize",
         "synchronize",
@@ -58,6 +60,7 @@ def test_measure_host_submission_keeps_synchronization_outside_timed_interval():
         "synchronize",
     ]
     assert result == {
+        "warmup_iterations": 2,
         "iterations_per_round": 2,
         "rounds": 2,
         "unit": "ns",
@@ -71,8 +74,18 @@ def test_measure_host_submission_rejects_empty_measurements():
     control = _load_control_module()
 
     for name, arguments in (
-        ("iterations", {"iterations": 0, "rounds": 1}),
-        ("rounds", {"iterations": 1, "rounds": 0}),
+        (
+            "warmup_iterations",
+            {"warmup_iterations": -1, "iterations": 1, "rounds": 1},
+        ),
+        (
+            "iterations",
+            {"warmup_iterations": 1, "iterations": 0, "rounds": 1},
+        ),
+        (
+            "rounds",
+            {"warmup_iterations": 1, "iterations": 1, "rounds": 0},
+        ),
     ):
         try:
             control.measure_host_submission(lambda: None, lambda: None, **arguments)

@@ -13,18 +13,24 @@ def measure_host_submission(
     callback,
     synchronize,
     *,
+    warmup_iterations,
     iterations,
     rounds,
     timer_ns=time.perf_counter_ns,
 ):
     """Return per-call host timing with synchronization outside each interval."""
+    if warmup_iterations < 0:
+        raise ValueError("warmup_iterations must be non-negative")
+
     if iterations <= 0:
         raise ValueError("iterations must be positive")
 
     if rounds <= 0:
         raise ValueError("rounds must be positive")
 
-    callback()
+    for _ in range(warmup_iterations):
+        callback()
+
     synchronize()
 
     samples = []
@@ -41,6 +47,7 @@ def measure_host_submission(
         samples.append(elapsed / iterations)
 
     return {
+        "warmup_iterations": warmup_iterations,
         "iterations_per_round": iterations,
         "rounds": rounds,
         "unit": "ns",
@@ -122,6 +129,7 @@ def _parse_args():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--warmup-iterations", type=int, default=2_000)
     parser.add_argument("--iterations", type=int, default=5_000)
     parser.add_argument("--rounds", type=int, default=7)
 
@@ -137,6 +145,7 @@ def main():
         result = measure_host_submission(
             callback,
             lambda: torch.cuda.synchronize(args.device),
+            warmup_iterations=args.warmup_iterations,
             iterations=args.iterations,
             rounds=args.rounds,
         )
