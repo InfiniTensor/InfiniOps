@@ -15,12 +15,12 @@ class Operator<GetCutlassMoeMmData, Device::Type::kNvidia, 0>
 
   using GetCutlassMoeMmData::operator();
 
-  void operator()(
-      const Tensor topk_ids, const int64_t num_experts, const int64_t n,
-      const int64_t k, const bool is_gated, Tensor expert_offsets,
-      Tensor problem_sizes1, Tensor problem_sizes2, Tensor input_permutation,
-      Tensor output_permutation,
-      std::optional<Tensor> blockscale_offsets) const override;
+  void operator()(const Tensor topk_ids, const int64_t num_experts,
+                  const int64_t n, const int64_t k, const bool is_gated,
+                  Tensor expert_offsets, Tensor problem_sizes1,
+                  Tensor problem_sizes2, Tensor input_permutation,
+                  Tensor output_permutation,
+                  std::optional<Tensor> blockscale_offsets) const override;
 };
 
 }  // namespace infini::ops

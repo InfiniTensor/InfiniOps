@@ -45,8 +45,7 @@ void Operator<GetCutlassMoeMmData, Device::Type::kNvidia, 0>::operator()(
     const Tensor topk_ids, const int64_t num_experts, const int64_t n,
     const int64_t k, const bool is_gated, Tensor expert_offsets,
     Tensor problem_sizes1, Tensor problem_sizes2, Tensor input_permutation,
-    Tensor output_permutation,
-    std::optional<Tensor> blockscale_offsets) const {
+    Tensor output_permutation, std::optional<Tensor> blockscale_offsets) const {
   ValidateCallMetadata(topk_ids, num_experts, n, k, is_gated, expert_offsets,
                        problem_sizes1, problem_sizes2, input_permutation,
                        output_permutation, blockscale_offsets);
@@ -55,8 +54,8 @@ void Operator<GetCutlassMoeMmData, Device::Type::kNvidia, 0>::operator()(
   constexpr int32_t kThreads = 512;
   auto stream = static_cast<cudaStream_t>(stream_ ? stream_ : 0);
 
-  get_cutlass_moe_mm_data_detail::GetCutlassMoeMmDataKernel
-      <<<1, kThreads, 0, stream>>>(
+  get_cutlass_moe_mm_data_detail::
+      GetCutlassMoeMmDataKernel<<<1, kThreads, 0, stream>>>(
           reinterpret_cast<const int32_t*>(topk_ids.data()),
           reinterpret_cast<int32_t*>(expert_offsets.data()),
           reinterpret_cast<int32_t*>(problem_sizes1.data()),

@@ -14,11 +14,11 @@ namespace infini::ops {
 // Aligned with vLLM `get_cutlass_moe_mm_data`.
 class GetCutlassMoeMmData : public Operator<GetCutlassMoeMmData> {
  public:
-  GetCutlassMoeMmData(
-      const Tensor topk_ids, const int64_t num_experts, const int64_t n,
-      const int64_t k, Tensor expert_offsets, Tensor problem_sizes1,
-      Tensor problem_sizes2, Tensor input_permutation, Tensor output_permutation,
-      std::optional<Tensor> blockscale_offsets = std::nullopt)
+  GetCutlassMoeMmData(const Tensor topk_ids, const int64_t num_experts,
+                      const int64_t n, const int64_t k, Tensor expert_offsets,
+                      Tensor problem_sizes1, Tensor problem_sizes2,
+                      Tensor input_permutation, Tensor output_permutation,
+                      std::optional<Tensor> blockscale_offsets = std::nullopt)
       : GetCutlassMoeMmData{topk_ids,
                             num_experts,
                             n,
@@ -31,12 +31,12 @@ class GetCutlassMoeMmData : public Operator<GetCutlassMoeMmData> {
                             output_permutation,
                             blockscale_offsets} {}
 
-  GetCutlassMoeMmData(
-      const Tensor topk_ids, const int64_t num_experts, const int64_t n,
-      const int64_t k, const bool is_gated, Tensor expert_offsets,
-      Tensor problem_sizes1, Tensor problem_sizes2, Tensor input_permutation,
-      Tensor output_permutation,
-      std::optional<Tensor> blockscale_offsets = std::nullopt)
+  GetCutlassMoeMmData(const Tensor topk_ids, const int64_t num_experts,
+                      const int64_t n, const int64_t k, const bool is_gated,
+                      Tensor expert_offsets, Tensor problem_sizes1,
+                      Tensor problem_sizes2, Tensor input_permutation,
+                      Tensor output_permutation,
+                      std::optional<Tensor> blockscale_offsets = std::nullopt)
       : topk_ids_metadata_{topk_ids},
         expert_offsets_metadata_{expert_offsets},
         problem_sizes1_metadata_{problem_sizes1},
@@ -58,7 +58,8 @@ class GetCutlassMoeMmData : public Operator<GetCutlassMoeMmData> {
   void operator()(
       const Tensor topk_ids, const int64_t num_experts, const int64_t n,
       const int64_t k, Tensor expert_offsets, Tensor problem_sizes1,
-      Tensor problem_sizes2, Tensor input_permutation, Tensor output_permutation,
+      Tensor problem_sizes2, Tensor input_permutation,
+      Tensor output_permutation,
       std::optional<Tensor> blockscale_offsets = std::nullopt) const {
     (*this)(topk_ids, num_experts, n, k, true, expert_offsets, problem_sizes1,
             problem_sizes2, input_permutation, output_permutation,
@@ -175,14 +176,14 @@ class GetCutlassMoeMmData : public Operator<GetCutlassMoeMmData> {
       return tensor.device().type() == topk_ids.device().type() &&
              tensor.device().index() == topk_ids.device().index();
     };
-    assert(same_device_as_topk_ids(expert_offsets) &&
-           same_device_as_topk_ids(problem_sizes1) &&
-           same_device_as_topk_ids(problem_sizes2) &&
-           same_device_as_topk_ids(input_permutation) &&
-           same_device_as_topk_ids(output_permutation) &&
-           (!blockscale_offsets ||
-            same_device_as_topk_ids(*blockscale_offsets)) &&
-           "`GetCutlassMoeMmData` requires all tensors on the same device");
+    assert(
+        same_device_as_topk_ids(expert_offsets) &&
+        same_device_as_topk_ids(problem_sizes1) &&
+        same_device_as_topk_ids(problem_sizes2) &&
+        same_device_as_topk_ids(input_permutation) &&
+        same_device_as_topk_ids(output_permutation) &&
+        (!blockscale_offsets || same_device_as_topk_ids(*blockscale_offsets)) &&
+        "`GetCutlassMoeMmData` requires all tensors on the same device");
 
     const auto num_experts = static_cast<Tensor::Size>(num_experts_);
     assert(expert_offsets.ndim() == 1 &&

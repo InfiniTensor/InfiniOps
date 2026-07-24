@@ -14,8 +14,7 @@ constexpr int64_t kSwapAbThreshold = 64;
 
 __global__ void GetCutlassMoeMmDataKernel(
     const int32_t* __restrict__ topk_ids, int32_t* __restrict__ expert_offsets,
-    int32_t* __restrict__ problem_sizes1,
-    int32_t* __restrict__ problem_sizes2,
+    int32_t* __restrict__ problem_sizes1, int32_t* __restrict__ problem_sizes2,
     int32_t* __restrict__ input_permutation,
     int32_t* __restrict__ output_permutation,
     int32_t* __restrict__ blockscale_offsets, int64_t numel, int32_t topk,

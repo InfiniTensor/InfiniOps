@@ -1,7 +1,7 @@
 import infini.ops
 import pytest
-import torch
 
+import torch
 from tests.utils import get_stream
 
 
