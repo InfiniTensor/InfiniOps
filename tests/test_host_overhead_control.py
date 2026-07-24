@@ -33,12 +33,20 @@ def test_measure_host_submission_keeps_synchronization_outside_timed_interval():
 
         return next(clock)
 
+    def before_round():
+        events.append("profile_start")
+
+    def after_round():
+        events.append("profile_stop")
+
     result = control.measure_host_submission(
         callback,
         synchronize,
         warmup_iterations=2,
         iterations=2,
         rounds=2,
+        before_round=before_round,
+        after_round=after_round,
         timer_ns=timer_ns,
     )
 
@@ -47,16 +55,20 @@ def test_measure_host_submission_keeps_synchronization_outside_timed_interval():
         "call",
         "synchronize",
         "synchronize",
+        "profile_start",
         "timer",
         "call",
         "call",
         "timer",
+        "profile_stop",
         "synchronize",
         "synchronize",
+        "profile_start",
         "timer",
         "call",
         "call",
         "timer",
+        "profile_stop",
         "synchronize",
     ]
     assert result == {

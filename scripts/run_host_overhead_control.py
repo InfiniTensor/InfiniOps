@@ -1,4 +1,4 @@
-"""Measure InfiniOps host submission with profiling inactive."""
+"""Measure InfiniOps host submission with optional host-range collection."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ def measure_host_submission(
     warmup_iterations,
     iterations,
     rounds,
+    before_round=None,
+    after_round=None,
     timer_ns=time.perf_counter_ns,
 ):
     """Return per-call host timing with synchronization outside each interval."""
@@ -37,13 +39,23 @@ def measure_host_submission(
 
     for _ in range(rounds):
         synchronize()
-        start = timer_ns()
+        if before_round is not None:
+            before_round()
 
-        for _ in range(iterations):
-            callback()
+        try:
+            start = timer_ns()
 
-        elapsed = timer_ns() - start
-        synchronize()
+            for _ in range(iterations):
+                callback()
+
+            elapsed = timer_ns() - start
+        finally:
+            try:
+                if after_round is not None:
+                    after_round()
+            finally:
+                synchronize()
+
         samples.append(elapsed / iterations)
 
     return {
@@ -121,7 +133,7 @@ def _nvidia_cases(device_name):
         ),
     )
 
-    return torch, bool(compiled), cases
+    return ops, torch, bool(compiled), cases
 
 
 def _parse_args():
@@ -129,6 +141,7 @@ def _parse_args():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--activate-profile", action="store_true")
     parser.add_argument("--warmup-iterations", type=int, default=2_000)
     parser.add_argument("--iterations", type=int, default=5_000)
     parser.add_argument("--rounds", type=int, default=7)
@@ -138,7 +151,12 @@ def _parse_args():
 
 def main():
     args = _parse_args()
-    torch, profiling_compiled, cases = _nvidia_cases(args.device)
+    ops, torch, profiling_compiled, cases = _nvidia_cases(args.device)
+    if args.activate_profile and not profiling_compiled:
+        raise RuntimeError("cannot activate profiling in a profiling-disabled build")
+
+    before_round = ops._host_range_profile_start if args.activate_profile else None
+    after_round = ops._host_range_profile_stop if args.activate_profile else None
 
     results = []
     for benchmark, params, callback in cases:
@@ -148,6 +166,8 @@ def main():
             warmup_iterations=args.warmup_iterations,
             iterations=args.iterations,
             rounds=args.rounds,
+            before_round=before_round,
+            after_round=after_round,
         )
         results.append({"benchmark": benchmark, "params": params, **result})
 
@@ -159,6 +179,7 @@ def main():
             "host submission loop timed with time.perf_counter_ns; "
             "device synchronization occurs only outside each timed interval"
         ),
+        "profiling_active": args.activate_profile,
         "results": results,
     }
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
