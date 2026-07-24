@@ -285,8 +285,6 @@ _DEVICE_ASSERTING_OPS = frozenset(
         "thnn_conv2d",
         "im2col",
         "col2im",
-        "max_unpool2d",
-        "max_unpool3d",
         "reflection_pad1d",
         "reflection_pad2d",
         "reflection_pad3d",
@@ -413,9 +411,11 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
     return _TYPE_DEFAULTS.get(t, 0.5)
 
 
-def _call_infini(op_name, *args):
+def _call_infini(op_name, *args, **kwargs):
     try:
-        getattr(infini.ops, op_name)(*args, implementation_index=_PYTORCH_SLOT)
+        getattr(infini.ops, op_name)(
+            *args, **kwargs, implementation_index=_PYTORCH_SLOT
+        )
     except RuntimeError as exc:
         if any(p in str(exc) for p in _VENDOR_SKIP_PATTERNS):
             pytest.skip(f"`{op_name}` unsupported by torch on this device/dtype")
@@ -428,6 +428,150 @@ def _assert_close(actual, expected, rtol, atol):
         assert torch.allclose(actual, expected, rtol=rtol, atol=atol, equal_nan=True)
     else:
         assert torch.equal(actual, expected)
+
+
+def _run_max_unpool_cases(op_name, dtype, device, rtol, atol):
+    if op_name == "max_unpool2d":
+        pool = torch.nn.functional.max_pool2d
+        unpool = torch.nn.functional.max_unpool2d
+        default_spatial_shape = (6, 8)
+        explicit_spatial_shape = (6, 10)
+        default_kernel_size = [2, 2]
+        explicit_kernel_size = [2, 3]
+        explicit_stride = [3, 4]
+        explicit_padding = [0, 1]
+        spatial_dimensions = 2
+    else:
+        pool = torch.nn.functional.max_pool3d
+        unpool = torch.nn.functional.max_unpool3d
+        default_spatial_shape = (6, 8, 10)
+        explicit_spatial_shape = (6, 10, 6)
+        default_kernel_size = [2, 2, 2]
+        explicit_kernel_size = [2, 3, 2]
+        explicit_stride = [3, 4, 3]
+        explicit_padding = [0, 1, 0]
+        spatial_dimensions = 3
+
+    cases = (
+        (
+            "stride_default",
+            True,
+            default_spatial_shape,
+            default_kernel_size,
+            None,
+            [0] * spatial_dimensions,
+            None,
+        ),
+        (
+            "all_defaults",
+            False,
+            default_spatial_shape,
+            default_kernel_size,
+            None,
+            [0] * spatial_dimensions,
+            None,
+        ),
+        (
+            "padding_default_output",
+            True,
+            explicit_spatial_shape,
+            explicit_kernel_size,
+            None,
+            explicit_padding,
+            None,
+        ),
+        (
+            "full",
+            True,
+            explicit_spatial_shape,
+            explicit_kernel_size,
+            explicit_stride,
+            explicit_padding,
+            "full",
+        ),
+        (
+            "full",
+            False,
+            explicit_spatial_shape,
+            explicit_kernel_size,
+            explicit_stride,
+            explicit_padding,
+            "spatial",
+        ),
+    )
+
+    for (
+        overload,
+        batched,
+        spatial_shape,
+        kernel_size,
+        stride,
+        padding,
+        output_size_kind,
+    ) in cases:
+        input_shape = (1, 2, *spatial_shape) if batched else (2, *spatial_shape)
+        source = randn_strided(input_shape, None, dtype=dtype, device=device)
+        pooled, indices = pool(
+            source,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            return_indices=True,
+        )
+
+        if output_size_kind == "full":
+            output_size = list(source.shape)
+        elif output_size_kind == "spatial":
+            output_size = list(source.shape[-spatial_dimensions:])
+        else:
+            output_size = None
+
+        expected = unpool(pooled, indices, kernel_size, stride, padding, output_size)
+        actual = torch.empty_like(expected)
+
+        if overload == "all_defaults":
+            _call_infini(op_name, pooled, indices, kernel_size, actual)
+        elif overload == "stride_default":
+            _call_infini(op_name, pooled, indices, kernel_size, stride, actual)
+        elif overload == "padding_default_output":
+            _call_infini(
+                op_name,
+                pooled,
+                indices,
+                kernel_size,
+                stride,
+                padding,
+                actual,
+            )
+        else:
+            _call_infini(
+                op_name,
+                pooled,
+                indices,
+                kernel_size,
+                stride,
+                padding,
+                output_size,
+                actual,
+            )
+
+        _assert_close(actual, expected, rtol, atol)
+
+        if op_name == "max_unpool3d":
+            legacy = torch.empty_like(expected)
+            spatial_output_size = list(expected.shape[-spatial_dimensions:])
+            resolved_stride = kernel_size if stride is None else stride
+            _call_infini(
+                op_name,
+                input=pooled,
+                indices=indices,
+                output_size=spatial_output_size,
+                stride=resolved_stride,
+                padding=padding,
+                out=legacy,
+            )
+
+            _assert_close(legacy, expected, rtol, atol)
 
 
 def _testable_ops():
@@ -448,7 +592,19 @@ def _testable_ops():
     seen = set()
     keep = []
 
-    for op in _METADATA.get("ops", []):
+    ops = list(_METADATA.get("ops", []))
+
+    if not any(op["name"] == "max_unpool2d" for op in ops):
+        ops.append(
+            {
+                "name": "max_unpool2d",
+                "aten_name": "max_unpool2d",
+                "overload_name": "max_unpool2d.handwritten",
+                "params": [],
+            }
+        )
+
+    for op in ops:
         if op["aten_name"] in seen:
             continue
 
@@ -479,6 +635,11 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     is_inplace = _is_inplace_aten_name(aten_name)
     _skip_if_not_active(op_name, device)
     _skip_low_precision_reduction(aten_name, dtype, device)
+
+    if aten_name in {"max_unpool2d", "max_unpool3d"}:
+        _run_max_unpool_cases(aten_name, dtype, device, rtol, atol)
+
+        return
 
     if aten_name in _RANDOM_OPS:
         pytest.skip(f"`{aten_name}` is non-deterministic (independent draws diverge)")
