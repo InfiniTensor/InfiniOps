@@ -1124,6 +1124,7 @@ if(GENERATE_PYTHON_BINDINGS)
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" "")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" DESTINATION .)
+    install(FILES "${PROJECT_SOURCE_DIR}/python/torch.py" DESTINATION .)
 
     if(WITH_TORCH)
         # Ship the per-op metadata alongside the bindings so the unified
