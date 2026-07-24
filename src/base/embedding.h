@@ -11,38 +11,37 @@ namespace infini::ops {
 
 class Embedding : public Operator<Embedding> {
  public:
-  Embedding(const Tensor weight, const Tensor indices,
-            const int64_t padding_idx, const bool scale_grad_by_freq,
-            const bool sparse, Tensor out)
-      : indices_shape_{indices.shape()},
+  Embedding(const Tensor input, const Tensor weight, const int64_t padding_idx,
+            const bool scale_grad_by_freq, const bool sparse, Tensor out)
+      : input_shape_{input.shape()},
         weight_shape_{weight.shape()},
         out_shape_{out.shape()},
-        indices_strides_{indices.strides()},
+        input_strides_{input.strides()},
         weight_strides_{weight.strides()},
         out_strides_{out.strides()},
-        indices_dtype_{indices.dtype()},
+        input_dtype_{input.dtype()},
         weight_dtype_{weight.dtype()},
         out_dtype_{out.dtype()},
-        num_indices_{NumIndices(indices_shape_)},
+        num_indices_{NumIndices(input_shape_)},
         vocab_size_{weight.size(0)},
         embedding_dim_{weight.size(1)},
         padding_idx_{padding_idx},
         scale_grad_by_freq_{scale_grad_by_freq},
         sparse_{sparse} {
     assert(weight.ndim() == 2 && "`Embedding` requires 2D `weight`");
-    assert(out.ndim() == indices.ndim() + 1 &&
-           "`Embedding` output rank must be indices rank + 1");
+    assert(out.ndim() == input.ndim() + 1 &&
+           "`Embedding` output rank must be input rank + 1");
 
-    for (Tensor::Size i = 0; i < indices.ndim(); ++i) {
-      assert(out.size(i) == indices.size(i) &&
-             "`Embedding` output shape must match `indices` on non-last "
+    for (Tensor::Size i = 0; i < input.ndim(); ++i) {
+      assert(out.size(i) == input.size(i) &&
+             "`Embedding` output shape must match `input` on non-last "
              "dims");
     }
 
     assert(out.size(-1) == embedding_dim_ &&
            "`Embedding` output last dim must equal `weight` embedding dim");
-    assert((indices_dtype_ == DataType::kInt32 ||
-            indices_dtype_ == DataType::kInt64) &&
+    assert((input_dtype_ == DataType::kInt32 ||
+            input_dtype_ == DataType::kInt64) &&
            "`Embedding` supports int32 and int64 indices only");
     assert((weight_dtype_ == DataType::kFloat32 ||
             weight_dtype_ == DataType::kFloat16 ||
@@ -55,25 +54,24 @@ class Embedding : public Operator<Embedding> {
            "`Embedding` padding_idx must be within the weight rows");
   }
 
-  Embedding(const Tensor weight, const Tensor indices, Tensor out)
-      : Embedding{weight, indices, -1, false, false, out} {}
+  Embedding(const Tensor input, const Tensor weight, Tensor out)
+      : Embedding{input, weight, -1, false, false, out} {}
 
-  virtual void operator()(const Tensor weight, const Tensor indices,
+  virtual void operator()(const Tensor input, const Tensor weight,
                           const int64_t padding_idx,
                           const bool scale_grad_by_freq, const bool sparse,
                           Tensor out) const = 0;
 
-  void operator()(const Tensor weight, const Tensor indices, Tensor out) const {
-    (*this)(weight, indices, -1, false, false, out);
+  void operator()(const Tensor input, const Tensor weight, Tensor out) const {
+    (*this)(input, weight, -1, false, false, out);
   }
 
   template <typename TensorLike>
-  static auto MakeReturnValue(const TensorLike& weight,
-                              const TensorLike& indices,
+  static auto MakeReturnValue(const TensorLike& input, const TensorLike& weight,
                               const int64_t /*padding_idx*/ = -1,
                               const bool /*scale_grad_by_freq*/ = false,
                               const bool /*sparse*/ = false) {
-    auto out_shape = indices.shape();
+    auto out_shape = input.shape();
     out_shape.push_back(weight.size(1));
 
     return TensorLike::Empty(out_shape, weight.dtype(), weight.device());
@@ -90,19 +88,19 @@ class Embedding : public Operator<Embedding> {
     return num_indices;
   }
 
-  Tensor::Shape indices_shape_;
+  Tensor::Shape input_shape_;
 
   Tensor::Shape weight_shape_;
 
   Tensor::Shape out_shape_;
 
-  Tensor::Strides indices_strides_;
+  Tensor::Strides input_strides_;
 
   Tensor::Strides weight_strides_;
 
   Tensor::Strides out_strides_;
 
-  DataType indices_dtype_;
+  DataType input_dtype_;
 
   DataType weight_dtype_;
 
