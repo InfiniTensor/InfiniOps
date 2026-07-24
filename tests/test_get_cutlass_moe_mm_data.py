@@ -1,3 +1,7 @@
+import subprocess
+import sys
+import textwrap
+
 import infini.ops
 import pytest
 
@@ -32,6 +36,33 @@ def test_get_cutlass_moe_mm_data_problem_sizes(is_gated, device, implementation_
     )
 
     _assert_matches_reference(topk_ids, num_experts, n, k, is_gated, *outputs)
+
+
+@pytest.mark.parametrize("numel", (64, 65, 513))
+def test_get_cutlass_moe_mm_data_swap_threshold_and_large_input(
+    numel, device, implementation_index
+):
+    if device != "cuda":
+        pytest.skip("`get_cutlass_moe_mm_data` requires the NVIDIA backend")
+
+    topk_ids = (torch.arange(numel, dtype=torch.int32) % 4).reshape(numel, 1)
+    topk_ids = topk_ids.to(device)
+    num_experts = 4
+    n = 64
+    k = 128
+    outputs = _make_outputs(topk_ids, num_experts)
+
+    _get_cutlass_moe_mm_data(
+        topk_ids,
+        num_experts,
+        n,
+        k,
+        True,
+        *outputs,
+        implementation_index=implementation_index,
+    )
+
+    _assert_matches_reference(topk_ids, num_experts, n, k, True, *outputs)
 
 
 def test_get_cutlass_moe_mm_data_defaults_to_gated_and_swaps_small_problem(
@@ -159,6 +190,54 @@ def test_get_cutlass_moe_mm_data_descriptor_reuses_matching_metadata(device):
     _assert_matches_reference(
         reused_topk_ids, num_experts, n, k, False, *reused_outputs
     )
+
+
+@pytest.mark.parametrize(
+    "metadata_change",
+    (
+        "topk_strides",
+        "topk_dtype",
+        "problem_sizes_shape",
+        "blockscale_presence",
+        "num_experts",
+        "is_gated",
+    ),
+)
+def test_get_cutlass_moe_mm_data_descriptor_rejects_changed_metadata(
+    metadata_change, device
+):
+    if device != "cuda":
+        pytest.skip("`get_cutlass_moe_mm_data` requires the NVIDIA backend")
+
+    assertion_probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _DESCRIPTOR_REUSE_SCRIPT,
+            "assertions_enabled_probe",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    if assertion_probe.returncode == 0:
+        pytest.skip("descriptor validation requires an assertions-enabled build")
+
+    result = subprocess.run(
+        [sys.executable, "-c", _DESCRIPTOR_REUSE_SCRIPT, metadata_change],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    expected_message = (
+        "`GetCutlassMoeMmData` attributes changed after descriptor creation"
+        if metadata_change in ("num_experts", "is_gated")
+        else "`GetCutlassMoeMmData` tensor metadata differs from its descriptor"
+    )
+    assert expected_message in result.stderr
 
 
 def test_get_cutlass_moe_mm_data_non_default_stream(device, implementation_index):
@@ -357,3 +436,70 @@ def _assert_matches_reference(
         torch.testing.assert_close(
             blockscale_offsets, expected_blockscale_offsets.to(torch.int32)
         )
+
+
+_DESCRIPTOR_REUSE_SCRIPT = textwrap.dedent(
+    r"""
+    import sys
+
+    import infini.ops
+    import torch
+
+
+    metadata_change = sys.argv[1]
+    num_experts = 4
+    n = 64
+    k = 128
+    is_gated = False
+    topk_ids = torch.tensor(((0, 1), (2, 3)), dtype=torch.int32, device="cuda")
+    expert_offsets = torch.empty(5, dtype=torch.int32, device="cuda")
+    problem_sizes1 = torch.empty((4, 3), dtype=torch.int32, device="cuda")
+    problem_sizes2 = torch.empty_like(problem_sizes1)
+    input_permutation = torch.empty(4, dtype=torch.int32, device="cuda")
+    output_permutation = torch.empty_like(input_permutation)
+    blockscale_offsets = torch.empty_like(expert_offsets)
+    operator = infini.ops.GetCutlassMoeMmData(
+        topk_ids,
+        num_experts,
+        n,
+        k,
+        is_gated,
+        expert_offsets,
+        problem_sizes1,
+        problem_sizes2,
+        input_permutation,
+        output_permutation,
+        blockscale_offsets,
+    )
+
+    if metadata_change in ("assertions_enabled_probe", "num_experts"):
+        num_experts += 1
+    elif metadata_change == "is_gated":
+        is_gated = True
+    elif metadata_change == "topk_strides":
+        topk_ids = topk_ids.T
+    elif metadata_change == "topk_dtype":
+        topk_ids = topk_ids.to(torch.int64)
+    elif metadata_change == "problem_sizes_shape":
+        problem_sizes1 = torch.empty((4, 4), dtype=torch.int32, device="cuda")
+
+    args = (
+        topk_ids,
+        num_experts,
+        n,
+        k,
+        is_gated,
+        expert_offsets,
+        problem_sizes1,
+        problem_sizes2,
+        input_permutation,
+        output_permutation,
+    )
+    args += (
+        None if metadata_change == "blockscale_presence" else blockscale_offsets,
+    )
+
+    operator(*args)
+    torch.cuda.synchronize()
+    """
+)
