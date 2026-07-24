@@ -16,11 +16,10 @@ namespace infini::ops {
 template <>
 class Operator<Embedding, Device::Type::kAscend> : public Embedding {
  public:
-  Operator(const Tensor weight, const Tensor indices, const int64_t padding_idx,
+  Operator(const Tensor input, const Tensor weight, const int64_t padding_idx,
            const bool scale_grad_by_freq, const bool sparse, Tensor out)
-      : Embedding(weight, indices, padding_idx, scale_grad_by_freq, sparse,
-                  out),
-        indices_cache_(indices),
+      : Embedding(input, weight, padding_idx, scale_grad_by_freq, sparse, out),
+        input_cache_(input),
         weight_cache_(weight),
         out_cache_(out) {
     assert((weight_dtype_ == DataType::kFloat16 ||
@@ -30,37 +29,37 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
            "`float32` weights");
   }
 
-  Operator(const Tensor weight, const Tensor indices, Tensor out)
-      : Operator(weight, indices, -1, false, false, out) {}
+  Operator(const Tensor input, const Tensor weight, Tensor out)
+      : Operator(input, weight, -1, false, false, out) {}
 
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
 
-    indices_cache_.release();
+    input_cache_.release();
     weight_cache_.release();
     out_cache_.release();
   }
 
-  void operator()(const Tensor weight, const Tensor indices,
+  void operator()(const Tensor input, const Tensor weight,
                   const int64_t /*padding_idx*/,
                   const bool /*scale_grad_by_freq*/, const bool /*sparse*/,
                   Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
 
     auto t_weight = weight_cache_.get(const_cast<void*>(weight.data()));
-    auto t_indices = indices_cache_.get(const_cast<void*>(indices.data()));
+    auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_out = out_cache_.get(out.data());
 
     if (!executor_) {
-      auto ret = aclnnEmbeddingGetWorkspaceSize(t_weight, t_indices, t_out,
+      auto ret = aclnnEmbeddingGetWorkspaceSize(t_weight, t_input, t_out,
                                                 &ws_size_, &executor_);
       assert(ret == ACL_SUCCESS && "`aclnnEmbeddingGetWorkspaceSize` failed");
       aclSetAclOpExecutorRepeatable(executor_);
     } else {
       aclSetInputTensorAddr(executor_, 0, t_weight,
                             const_cast<void*>(weight.data()));
-      aclSetInputTensorAddr(executor_, 1, t_indices,
-                            const_cast<void*>(indices.data()));
+      aclSetInputTensorAddr(executor_, 1, t_input,
+                            const_cast<void*>(input.data()));
       aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
     }
 
@@ -70,7 +69,7 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
   }
 
  private:
-  mutable ascend::AclTensorCache indices_cache_;
+  mutable ascend::AclTensorCache input_cache_;
 
   mutable ascend::AclTensorCache weight_cache_;
 
