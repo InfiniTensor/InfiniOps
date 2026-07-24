@@ -490,6 +490,26 @@ def _find_optional_vector_int64_params(op_name):
     )
 
 
+def _vector_int64_kind(arg, vector_params, optional_vector_params):
+    """Classify a vector parameter, preferring its overload-local type."""
+    spelling = "".join(arg.type.spelling.split())
+    spelling = spelling.removeprefix("const").removesuffix("&")
+
+    if spelling == "std::optional<std::vector<int64_t>>":
+        return "optional"
+
+    if spelling == "std::vector<int64_t>":
+        return "vector"
+
+    if arg.spelling in optional_vector_params:
+        return "optional"
+
+    if arg.spelling in vector_params:
+        return "vector"
+
+    return None
+
+
 def _find_tensor_params(op_name):
     source = _find_base_header(op_name).read_text()
 
@@ -545,7 +565,10 @@ def _generate_pybind11(operator):
         return "std::optional" in arg.type.spelling
 
     def _is_optional_vector_int64(arg):
-        return arg.spelling in optional_vector_int64_params
+        return (
+            _vector_int64_kind(arg, vector_int64_params, optional_vector_int64_params)
+            == "optional"
+        )
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -554,7 +577,10 @@ def _generate_pybind11(operator):
         return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
     def _is_vector_int64(arg):
-        return arg.spelling in vector_int64_params
+        return (
+            _vector_int64_kind(arg, vector_int64_params, optional_vector_int64_params)
+            == "vector"
+        )
 
     def _is_data_type(arg):
         return _is_data_type_spelling(arg.type.spelling)
@@ -1002,7 +1028,10 @@ def _generate_generated_dispatch_entries(operator):
         return arg.spelling in optional_tensor_params
 
     def _is_optional_vector_int64(arg):
-        return arg.spelling in optional_vector_int64_params
+        return (
+            _vector_int64_kind(arg, vector_int64_params, optional_vector_int64_params)
+            == "optional"
+        )
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -1011,7 +1040,10 @@ def _generate_generated_dispatch_entries(operator):
         return "std::vector" in arg.type.spelling and "Tensor" in arg.type.spelling
 
     def _is_vector_int64(arg):
-        return arg.spelling in vector_int64_params
+        return (
+            _vector_int64_kind(arg, vector_int64_params, optional_vector_int64_params)
+            == "vector"
+        )
 
     def _is_tensor(arg):
         if arg.spelling in optional_non_tensor_params:
@@ -1239,7 +1271,10 @@ def _generate_operator_call_instantiation_entries(operator):
         return False
 
     def _is_optional_vector_int64(arg):
-        return arg.spelling in optional_vector_int64_params
+        return (
+            _vector_int64_kind(arg, vector_int64_params, optional_vector_int64_params)
+            == "optional"
+        )
 
     def _is_vector_tensor(arg):
         if arg.spelling in vector_tensor_params:
@@ -1250,7 +1285,10 @@ def _generate_operator_call_instantiation_entries(operator):
         )
 
     def _is_vector_int64(arg):
-        return arg.spelling in vector_int64_params
+        return (
+            _vector_int64_kind(arg, vector_int64_params, optional_vector_int64_params)
+            == "vector"
+        )
 
     def _is_tensor(arg):
         if arg.spelling in optional_non_tensor_params:

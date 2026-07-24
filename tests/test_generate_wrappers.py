@@ -190,6 +190,80 @@ class [[deprecated("Use HistogramV2 instead.")]] Histogram {
     assert "Call<Tensor, Tensor, int, std::optional<Tensor>" not in text
 
 
+def test_vector_classification_is_overload_local_and_preserves_nesting(
+    monkeypatch, tmp_path
+):
+    module = _load_generator_module()
+    base_header = tmp_path / "max_unpool3d.h"
+    base_header.write_text(
+        """
+class MaxUnpool3d {
+ public:
+  void operator()(const Tensor input, const Tensor indices,
+                  const std::vector<int64_t> kernel_size,
+                  const std::optional<std::vector<int64_t>> stride,
+                  const std::vector<int64_t> padding,
+                  const std::optional<std::vector<int64_t>> output_size,
+                  Tensor out) const;
+  virtual void operator()(const Tensor input, const Tensor indices,
+                          const std::vector<int64_t> output_size,
+                          const std::vector<int64_t> stride,
+                          const std::vector<int64_t> padding,
+                          Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    canonical = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "input"),
+            module._ParsedArgument("const Tensor", "indices"),
+            module._ParsedArgument("const std::vector<int64_t>", "kernel_size"),
+            module._ParsedArgument(
+                "const std::optional<std::vector<int64_t>>", "stride"
+            ),
+            module._ParsedArgument("const std::vector<int64_t>", "padding"),
+            module._ParsedArgument(
+                "const std::optional<std::vector<int64_t>>", "output_size"
+            ),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    legacy = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "input"),
+            module._ParsedArgument("const Tensor", "indices"),
+            module._ParsedArgument("const std::vector<int64_t>", "output_size"),
+            module._ParsedArgument("const std::vector<int64_t>", "stride"),
+            module._ParsedArgument("const std::vector<int64_t>", "padding"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    nested = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "a"),
+            module._ParsedArgument("const Tensor", "b"),
+            module._ParsedArgument("const std::vector<std::vector<int64_t>>", "dims"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    operator = module._Operator(
+        "max_unpool3d", constructors=[], calls=[canonical, legacy, nested]
+    )
+
+    binding = module._generate_pybind11(operator)
+    dispatch, _ = module._generate_generated_dispatch_entries(operator)
+    instantiations, _ = module._generate_operator_call_instantiation_entries(operator)
+    generated = "\n".join((binding, *dispatch, *instantiations))
+
+    assert "const std::optional<std::vector<int64_t>> stride" in generated
+    assert "const std::optional<std::vector<int64_t>> output_size" in generated
+    assert "const std::vector<int64_t> stride" in generated
+    assert "const std::vector<int64_t> output_size" in generated
+    assert "const std::vector<std::vector<int64_t>> dims" in generated
+
+
 def test_pybind_default_implementation_uses_first_active_index(monkeypatch, tmp_path):
     module = _load_generator_module()
     base_header = tmp_path / "mul.h"
