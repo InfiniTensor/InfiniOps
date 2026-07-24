@@ -107,42 +107,78 @@ def measurement_row(measurement, *, nodeid, operator, backend, phase):
     }
 
 
-def collect_ranges(start, stop, callback):
-    start()
+def collect_ranges(start, stop, callback, synchronize=None):
+    if synchronize is not None:
+        synchronize()
 
     try:
-        result = callback()
-    except BaseException:
+        start()
+
         try:
-            stop()
+            result = callback()
         except BaseException:
-            pass
+            try:
+                stop()
+            except BaseException:
+                pass
 
-        raise
+            raise
 
-    try:
-        summaries = stop()
-    except BaseException:
         try:
-            stop()
+            summaries = stop()
         except BaseException:
-            pass
+            try:
+                stop()
+            except BaseException:
+                pass
 
-        raise
+            raise
 
-    return result, summaries
+        return result, summaries
+    finally:
+        if synchronize is not None:
+            synchronize()
 
 
-def collect_replayed_ranges(start, stop, callback, measurement):
+def collect_replayed_ranges(start, stop, callback, measurement, synchronize=None):
     call_count = len(measurement.raw_times) * measurement.number_per_run
 
     def replay_calls():
         for _ in range(call_count):
             callback()
 
-    _, summaries = collect_ranges(start, stop, replay_calls)
+    _, summaries = collect_ranges(start, stop, replay_calls, synchronize=synchronize)
 
     return summaries
+
+
+def synchronize_torch_device(torch_module, torch_device):
+    if torch_device is None:
+        return
+
+    object_device_type = getattr(torch_device, "type", None)
+    device_type = object_device_type
+    if device_type is None:
+        device_type = str(torch_device).split(":", maxsplit=1)[0]
+
+    device_type = _PLATFORM_TO_TORCH_DEVICE.get(device_type, device_type)
+    if device_type == "cpu":
+        return
+
+    runtime = getattr(torch_module, device_type, None)
+    synchronize = getattr(runtime, "synchronize", None)
+    if not callable(synchronize):
+        raise RuntimeError(f"cannot synchronize PyTorch device type {device_type!r}")
+
+    device_name = str(torch_device)
+    has_explicit_index = ":" in device_name
+    if object_device_type is not None:
+        synchronize(torch_device)
+    elif has_explicit_index:
+        _, device_index = device_name.split(":", maxsplit=1)
+        synchronize(f"{device_type}:{device_index}")
+    else:
+        synchronize()
 
 
 def operator_from_module(module):

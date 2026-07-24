@@ -143,13 +143,13 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
           c_layout, &heuristic.algo, workspace_, workspace_size_in_bytes_,
           static_cast<Runtime<Device::Type::kNvidia>::Stream>(stream_));
       assert(status == CUBLAS_STATUS_SUCCESS && "cuBLASLt GEMM launch failed");
-    }
 
-    cublasLtMatmulPreferenceDestroy(preference);
-    cublasLtMatrixLayoutDestroy(c_layout);
-    cublasLtMatrixLayoutDestroy(b_layout);
-    cublasLtMatrixLayoutDestroy(a_layout);
-    cublasLtMatmulDescDestroy(op_desc);
+      cublasLtMatmulPreferenceDestroy(preference);
+      cublasLtMatrixLayoutDestroy(c_layout);
+      cublasLtMatrixLayoutDestroy(b_layout);
+      cublasLtMatrixLayoutDestroy(a_layout);
+      cublasLtMatmulDescDestroy(op_desc);
+    }
   }
 
  private:

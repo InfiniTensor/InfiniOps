@@ -9,6 +9,7 @@ namespace infini::ops {
 enum class HostRangeLayer {
   kBindingBody,
   kTensorConversion,
+  kDeviceConversion,
   kDispatchCall,
   kOperatorCall,
   kCacheKey,

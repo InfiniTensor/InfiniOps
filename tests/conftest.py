@@ -658,10 +658,16 @@ def pytest_pyfunc_call(pyfuncitem):
                     ),
                 }
 
+                def synchronize():
+                    host_range_profile.synchronize_torch_device(
+                        torch, params.get("device")
+                    )
+
                 _, cold_summaries = host_range_profile.collect_ranges(
                     ops._host_range_profile_start,
                     ops._host_range_profile_stop,
                     lambda: func(*args, **kwargs),
+                    synchronize=synchronize,
                 )
                 host_range_profile.append_rows(
                     profile_output,
@@ -676,6 +682,7 @@ def pytest_pyfunc_call(pyfuncitem):
                     ops._host_range_profile_stop,
                     lambda: func(*args, **kwargs),
                     func_measurement,
+                    synchronize=synchronize,
                 )
                 warm_rows = host_range_profile.expand_summary_rows(
                     warm_summaries, phase="warm", **context

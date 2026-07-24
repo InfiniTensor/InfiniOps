@@ -15,8 +15,8 @@ The experiment covers two NVIDIA cases:
 
 It adds an opt-in host range collector and instruments only the common path plus
 the two selected backend submission paths. It does not add CI, performance
-gates, a new C++ test framework, device synchronization, kernel timing, or
-all-operator/backend coverage.
+gates, a new C++ test framework, synchronization inside measured windows,
+kernel timing, or all-operator/backend coverage.
 
 ## Architecture
 
@@ -48,6 +48,7 @@ record per `(pytest case, phase, range, metric)`.
 ```text
 binding.body
 |-- binding.tensor_conversion
+|-- binding.device_conversion
 `-- dispatch.call
     `-- operator.call
         |-- cache.key
@@ -57,16 +58,20 @@ binding.body
             `-- backend.submit    # host API return is the range end
 ```
 
-`backend.submit` includes CPU-side CUDA/cuBLASLt API submission overhead but
-does not synchronize the stream, so it excludes device execution.
+`backend.submit` includes CPU-side CUDA/cuBLASLt setup, submission, and
+mandatory cleanup through host API return. It does not synchronize the stream
+or directly time kernel execution. A host API may still block because of queue
+backpressure or device progress, so the range is host-side API latency rather
+than a device-independent CPU-only quantity.
 
 The generated pybind lambda begins after part of pybind11's own function-dispatch
 machinery. Therefore `binding.body` is not labelled as total pybind overhead.
 The profiling path passes `time.perf_counter` to
 `torch.utils.benchmark.Timer`, avoiding its accelerator-synchronizing default
-timer. The resulting `end_to_end` row is therefore host call/submission time,
-not kernel execution time. Its difference from the C++ ranges remains
-unattributed Python/pybind boundary time rather than being assigned to a range.
+timer. The resulting `end_to_end` row is host call/submission time rather than
+direct kernel execution time. It and the replayed C++ ranges are collected from
+separate populations, so their difference remains unattributed and must not be
+assigned to Python, pybind11, or another layer by subtraction.
 
 ## Cold And Warm Measurements
 
@@ -76,9 +81,11 @@ profiling, pytest performs two separate windows:
 1. Clear the selected operator cache, start profiling, invoke once, and stop.
    This is the cold phase and includes one cache construction.
 2. Run `blocked_autorange()` with the host-only timer while the collector is
-   inactive, then replay exactly its formal call count inside one profiling
-   window. This keeps estimation calls out of the warm range population while
-   retaining many calls suitable for mean/median statistics.
+   inactive, synchronize outside the measured window, then replay exactly its
+   formal call count inside one profiling window. Stop the collector before a
+   second outside-window synchronization. This keeps estimation calls and
+   pending device work out of the warm range population while retaining many
+   calls suitable for mean/median statistics.
 
 The reference timer uses the same host-only timer after the collector is stopped.
 Cache invalidation is lazy, so destruction of an old cached operator can affect
@@ -115,10 +122,14 @@ The experiment records three controls:
 - profiling enabled but inactive: the same host-only control script;
 - profiling enabled with fixed empty nested ranges.
 
-The final report states the empty-range cost and the change in host-only Add and
-GEMM measurements. A layer is not treated as a stable numeric baseline when the
-empty-range cost is at least 10% of that layer's median. Such a layer must be
-merged with its parent or treated only as diagnostic trace data.
+The final report distinguishes the duration recorded inside an empty leaf from
+the complete observer cost visible to its parent and from end-to-end active
+collector perturbation. A layer is not treated as a stable numeric baseline
+when the conservative complete-scope cost is at least 10% of that layer's
+median. Parent inclusive ranges additionally contain the observer cost of all
+children, so the end-to-end active control remains the primary perturbation
+bound. Observer-sensitive layers must be merged with their parent or treated
+only as diagnostic trace data.
 
 ## Error Handling
 
@@ -138,5 +149,6 @@ merged with its parent or treated only as diagnostic trace data.
 - The JSON-lines report contains cold and warm data with count, unit, mean, and
   median for the expected nested host layers.
 - `cache.construct` appears in cold data and not in warm data.
-- No device synchronization is added to the measured path.
+- Device synchronization is used only outside profiling/timing windows to
+  isolate pending work; none is added inside a measured path.
 - The report quantifies empty-range and end-to-end measurement perturbation.

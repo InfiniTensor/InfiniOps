@@ -34,7 +34,7 @@
 
 - [ ] Add `INFINI_OPS_ENABLE_HOST_RANGE_PROFILING`, default `OFF`, and publish
   the matching compile definition from the `infiniops` target.
-- [ ] Define fixed layers for binding body, tensor conversion, generated
+- [ ] Define fixed layers for binding body, tensor/device conversion, generated
   dispatch, operator call, cache key, cache lookup, cache construction,
   operator invocation, backend submission, and three calibration depths.
 - [ ] Implement `HostRangeScope` with a thread-local stack. On scope exit,

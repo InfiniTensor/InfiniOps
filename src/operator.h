@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_OPERATOR_H_
 #define INFINI_OPS_OPERATOR_H_
 
+#include <atomic>
 #include <cassert>
 #include <memory>
 #include <optional>
@@ -189,10 +190,12 @@ template <typename Key, Device::Type device_type = Device::Type::kCount,
           std::size_t implementation_index = 0>
 class Operator : public OperatorBase {
  public:
-  // Invalidate the operator cache.  Cached operators are destroyed on the
-  // next `call()` invocation.  Intended for test isolation — production
-  // code should never call this.
-  static void clear_cache() { ++cache_generation_; }
+  // Invalidate the operator cache. Cached operators are destroyed on the next
+  // `Call()` invocation. Intended for test isolation; production code should
+  // never call this.
+  static void clear_cache() {
+    cache_generation_.fetch_add(1, std::memory_order_relaxed);
+  }
 
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
@@ -232,9 +235,11 @@ class Operator : public OperatorBase {
         cache;
     static thread_local std::size_t generation{0};
 
-    if (generation != cache_generation_) {
+    const auto cache_generation =
+        cache_generation_.load(std::memory_order_relaxed);
+    if (generation != cache_generation) {
       cache.clear();
-      generation = cache_generation_;
+      generation = cache_generation;
     }
 
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
@@ -370,7 +375,7 @@ class Operator : public OperatorBase {
     return op_ptr;
   }
 
-  static inline std::size_t cache_generation_{0};
+  static inline std::atomic<std::size_t> cache_generation_{0};
 };
 
 // Maximum number of implementation slots per (operator, device) pair.

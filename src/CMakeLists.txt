@@ -811,6 +811,10 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
         set(_iluvatar_call_instantiation_defs
             -DWITH_ILUVATAR=1
             -DINFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
+        if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+            list(APPEND _iluvatar_call_instantiation_defs
+                -DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
+        endif()
         if(WITH_CPU)
             list(APPEND _iluvatar_call_instantiation_defs -DWITH_CPU=1)
         endif()
@@ -986,6 +990,10 @@ if(GENERATE_PYTHON_BINDINGS)
         endforeach()
 
         set(_iluvatar_dispatch_defs -DWITH_ILUVATAR=1)
+        if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+            list(APPEND _iluvatar_dispatch_defs
+                -DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
+        endif()
         if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             list(APPEND _iluvatar_dispatch_defs
                 -DINFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)

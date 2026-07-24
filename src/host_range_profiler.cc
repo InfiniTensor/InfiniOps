@@ -14,12 +14,19 @@ namespace {
 constexpr std::array<const char*,
                      static_cast<std::size_t>(HostRangeLayer::kCount)>
     kLayerNames{
-        "binding.body",       "binding.tensor_conversion",
-        "dispatch.call",      "operator.call",
-        "cache.key",          "cache.lookup",
-        "cache.construct",    "operator.invoke",
-        "backend.submit",     "calibration.depth1",
-        "calibration.depth2", "calibration.depth3",
+        "binding.body",
+        "binding.tensor_conversion",
+        "binding.device_conversion",
+        "dispatch.call",
+        "operator.call",
+        "cache.key",
+        "cache.lookup",
+        "cache.construct",
+        "operator.invoke",
+        "backend.submit",
+        "calibration.depth1",
+        "calibration.depth2",
+        "calibration.depth3",
     };
 
 std::size_t LayerIndex(HostRangeLayer layer) {

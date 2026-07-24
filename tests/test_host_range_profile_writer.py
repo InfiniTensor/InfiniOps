@@ -156,6 +156,40 @@ def test_collect_ranges_stops_after_profiled_call_raises():
     assert state.active is False
 
 
+def test_collect_ranges_synchronizes_only_outside_profile_window():
+    state = SimpleNamespace(active=False)
+    events = []
+
+    def synchronize():
+        assert state.active is False
+        events.append("synchronize")
+
+    def start():
+        state.active = True
+        events.append("start")
+
+    def callback():
+        assert state.active is True
+        events.append("callback")
+
+        return "result"
+
+    def stop():
+        assert state.active is True
+        state.active = False
+        events.append("stop")
+
+        return ["summary"]
+
+    result, summaries = host_range_profile.collect_ranges(
+        start, stop, callback, synchronize=synchronize
+    )
+
+    assert result == "result"
+    assert summaries == ["summary"]
+    assert events == ["synchronize", "start", "callback", "stop", "synchronize"]
+
+
 def test_collect_replayed_ranges_profiles_exact_measurement_call_count():
     state = SimpleNamespace(active=False, calls=0)
     measurement = SimpleNamespace(raw_times=[0.1, 0.2, 0.3], number_per_run=4)
@@ -179,3 +213,39 @@ def test_collect_replayed_ranges_profiles_exact_measurement_call_count():
     assert state.active is False
     assert state.calls == 12
     assert summaries == [{"range": "binding.body", "count": 12}]
+
+
+@pytest.mark.parametrize(
+    ("torch_device", "expected_args"),
+    [
+        ("cuda", ()),
+        ("cuda:1", ("cuda:1",)),
+        ("nvidia", ()),
+        ("nvidia:1", ("cuda:1",)),
+    ],
+)
+def test_synchronize_torch_device_uses_platform_runtime(torch_device, expected_args):
+    calls = []
+    torch_module = SimpleNamespace(
+        cuda=SimpleNamespace(synchronize=lambda *args: calls.append(args))
+    )
+
+    host_range_profile.synchronize_torch_device(torch_module, torch_device)
+
+    assert calls == [expected_args]
+
+
+def test_synchronize_torch_device_preserves_device_object():
+    calls = []
+    torch_device = SimpleNamespace(type="cuda", index=1)
+    torch_module = SimpleNamespace(
+        cuda=SimpleNamespace(synchronize=lambda *args: calls.append(args))
+    )
+
+    host_range_profile.synchronize_torch_device(torch_module, torch_device)
+
+    assert calls == [(torch_device,)]
+
+
+def test_synchronize_torch_device_skips_cpu():
+    host_range_profile.synchronize_torch_device(SimpleNamespace(), "cpu")

@@ -156,7 +156,7 @@ inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
 }  // namespace detail
 
 inline Device DeviceFromPybind11Handle(py::handle obj) {
-  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kTensorConversion);
+  INFINI_OPS_HOST_RANGE_SCOPE(HostRangeLayer::kDeviceConversion);
   return detail::DeviceFromPybind11HandleImpl(obj);
 }
 

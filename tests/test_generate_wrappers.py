@@ -344,6 +344,21 @@ def test_generated_ops_module_exposes_host_range_profile_controls_once():
         assert target in binding
 
 
+def test_iluvatar_custom_compilers_receive_host_range_profile_definition():
+    cmake = (pathlib.Path(__file__).parents[1] / "src" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+
+    for definitions in (
+        "_iluvatar_call_instantiation_defs",
+        "_iluvatar_dispatch_defs",
+    ):
+        assert (
+            f"list(APPEND {definitions}\n"
+            "                -DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)"
+        ) in cmake
+
+
 def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
     tmp_path, monkeypatch
 ):

@@ -196,6 +196,10 @@ def test_host_range_profile_clear_cache_forces_next_call_to_construct():
     assert len(construct) == 1
     assert construct[0]["count"] == 1
 
+    by_range = {row["range"]: row for row in rows}
+    assert by_range["binding.tensor_conversion"]["count"] == 3
+    assert by_range["binding.device_conversion"]["count"] == 1
+
     ops._host_range_profile_start()
     try:
         ops.add(input, other, out, **kwargs)
