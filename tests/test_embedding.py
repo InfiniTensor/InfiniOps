@@ -106,7 +106,7 @@ def test_embedding(
             sparse=sparse,
             **kwargs,
         ),
-        (weight, input),
+        (input, weight),
         {"out": out},
         rtol=rtol,
         atol=atol,
@@ -114,8 +114,8 @@ def test_embedding(
 
 
 def _embedding(
+    input,
     weight,
-    indices,
     *,
     out,
     padding_idx,
@@ -125,15 +125,15 @@ def _embedding(
 ):
     kwargs = {
         "implementation_index": implementation_index,
-        "stream": get_stream(indices.device),
+        "stream": get_stream(input.device),
     }
 
     if padding_idx is None:
-        infini.ops.embedding(weight, indices, out, **kwargs)
+        infini.ops.embedding(input, weight, out, **kwargs)
     else:
         infini.ops.embedding(
+            input,
             weight,
-            indices,
             padding_idx,
             scale_grad_by_freq,
             sparse,
@@ -145,8 +145,8 @@ def _embedding(
 
 
 def _torch_embedding(
+    input,
     weight,
-    indices,
     *,
     out,
     padding_idx,
@@ -154,7 +154,7 @@ def _torch_embedding(
     sparse,
 ):
     result = torch.nn.functional.embedding(
-        indices,
+        input,
         weight,
         padding_idx=padding_idx,
         scale_grad_by_freq=scale_grad_by_freq,
