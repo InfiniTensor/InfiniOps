@@ -263,6 +263,30 @@ if(WITH_TORCH)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
+    if(WITH_MOORE)
+        execute_process(
+            COMMAND ${_TORCH_PYTHON} -c
+                "import pathlib, torch_musa; print(pathlib.Path(torch_musa.__file__).resolve().parent / 'share' / 'cmake' / 'TorchMusa')"
+            OUTPUT_VARIABLE TorchMusa_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _torch_musa_result
+        )
+        if(NOT _torch_musa_result EQUAL 0 OR NOT TorchMusa_DIR)
+            message(FATAL_ERROR "`WITH_MOORE` and `WITH_TORCH` require `torch_musa`.")
+        endif()
+        set(_infini_ops_torch_libraries "${TORCH_LIBRARIES}")
+        find_package(TorchMusa CONFIG REQUIRED)
+        set(TORCH_LIBRARIES "${_infini_ops_torch_libraries}")
+        unset(_infini_ops_torch_libraries)
+        get_filename_component(_torch_musa_lib_dir
+            "${TorchMusa_LIBRARY}" DIRECTORY)
+        list(APPEND TORCH_RUNTIME_DIRS "${_torch_musa_lib_dir}")
+        # Retain TorchMusa's dispatcher registrations. The active Moore block
+        # links the MUSA toolkit/runtime selected by InfiniOps.
+        list(APPEND TORCH_LIBRARIES
+            -Wl,--no-as-needed ${TorchMusa_LIBRARY} -Wl,--as-needed)
+    endif()
+
     if(WITH_NVIDIA)
         find_library(TORCH_CUDA_LIB torch_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)

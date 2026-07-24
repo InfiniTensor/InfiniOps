@@ -58,6 +58,12 @@ toolchain. Operator-pruned builds require it only when
 `flash_attn_with_kvcache` is selected; the default smoke subset does not select
 this operator.
 
+Builds with both `WITH_MOORE=ON` and `WITH_TORCH=ON` require an installed
+TorchMusa package that provides `TorchMusaConfig.cmake`. The Moore
+`flash_attn_varlen_func` backend uses TorchMusa's ATen FlashAttention kernel.
+That provider currently supports global attention only; causal attention also
+requires matching query and key sequence lengths.
+
 The built wheel installs the InfiniOps Python extension and the InfiniRT shared
 library needed by the extension.
 

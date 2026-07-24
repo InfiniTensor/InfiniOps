@@ -5,9 +5,8 @@
 
 namespace infini::ops {
 
-template <>
-class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>
-    : public FlashAttnVarlenFunc {
+template <Device::Type kDev>
+class AtenFlashAttnVarlenFunc : public FlashAttnVarlenFunc {
  public:
   using FlashAttnVarlenFunc::FlashAttnVarlenFunc;
   using FlashAttnVarlenFunc::operator();
@@ -22,6 +21,22 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>
                   const bool deterministic, const bool return_attn_probs,
                   const std::optional<Tensor> block_table,
                   Tensor out) const override;
+};
+
+template <>
+class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>
+    : public AtenFlashAttnVarlenFunc<Device::Type::kNvidia> {
+ public:
+  using AtenFlashAttnVarlenFunc::AtenFlashAttnVarlenFunc;
+  using AtenFlashAttnVarlenFunc::operator();
+};
+
+template <>
+class Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 8>
+    : public AtenFlashAttnVarlenFunc<Device::Type::kMoore> {
+ public:
+  using AtenFlashAttnVarlenFunc::AtenFlashAttnVarlenFunc;
+  using AtenFlashAttnVarlenFunc::operator();
 };
 
 }  // namespace infini::ops

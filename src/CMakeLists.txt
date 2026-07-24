@@ -480,7 +480,7 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
-if(WITH_NVIDIA AND WITH_TORCH)
+if((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH)
     list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
 endif()
 
@@ -618,7 +618,7 @@ if(WITH_TORCH)
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
 
-    if(NOT WITH_NVIDIA)
+    if(NOT WITH_NVIDIA AND NOT WITH_MOORE)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_varlen_func/flash_attn_varlen_func\\.cc$")
     endif()
@@ -715,6 +715,9 @@ if(WITH_TORCH)
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
+            foreach(_dir ${TorchMusa_INCLUDE_DIRS} ${Python_INCLUDE_DIRS})
+                list(APPEND _torch_vendor_include_flags "-I${_dir}")
+            endforeach()
         endif()
 
         # Vendor-specific defines required by forked `torch` headers.

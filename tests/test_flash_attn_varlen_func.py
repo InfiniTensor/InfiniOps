@@ -19,6 +19,8 @@ if not hasattr(infini.ops, "FlashAttnVarlenFunc"):
     (
         ((3, 5), (4, 5), 4, 4, False, (-1, -1), None),
         ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125),
+        ((3, 5), (4, 5), 4, 2, False, (-1, -1), None),
+        ((3, 5), (3, 5), 4, 2, True, (-1, -1), 0.125),
         ((4, 3), (6, 2), 4, 2, False, (2, 1), None),
         ((4, 3), (6, 2), 4, 2, True, (2, 1), None),
     ),
@@ -46,8 +48,12 @@ def test_flash_attn_varlen_func(
     rtol,
     atol,
 ):
-    if device != "cuda":
-        pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention FA2 requires the NVIDIA or Moore backend")
+    if device == "musa" and window_size != (-1, -1):
+        pytest.skip("TorchMusa FlashAttention does not support local windows")
+    if device == "musa" and causal and q_lens != k_lens:
+        pytest.skip("TorchMusa causal FlashAttention requires matching Q/K lengths")
 
     q = torch.randn((sum(q_lens), num_heads, head_dim), dtype=dtype, device=device)
     k = torch.randn((sum(k_lens), num_kv_heads, head_dim), dtype=dtype, device=device)
@@ -186,8 +192,8 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
 
 
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention FA2 requires the NVIDIA or Moore backend")
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
