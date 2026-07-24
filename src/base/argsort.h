@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class Argsort : public Operator<Argsort> {
  public:
-  Argsort(const Tensor input, const bool stable, const int64_t dim,
-          const bool descending, Tensor out)
+  Argsort(const Tensor input, const int64_t dim, const bool descending,
+          const bool stable, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -20,6 +20,44 @@ class Argsort : public Operator<Argsort> {
         descending_{descending},
         device_index_{out.device().index()} {}
 
+  Argsort(const Tensor input, Tensor out)
+      : Argsort{input, int64_t{-1}, false, false, out} {}
+
+  Argsort(const Tensor input, const int64_t dim, Tensor out)
+      : Argsort{input, dim, false, false, out} {}
+
+  Argsort(const Tensor input, const int64_t dim, const bool descending,
+          Tensor out)
+      : Argsort{input, dim, descending, false, out} {}
+
+  /// \deprecated Use `(input, dim, descending, stable, out)`. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use the PyTorch-compatible parameter order instead.")]]
+  Argsort(const Tensor input, const bool stable, const int64_t dim,
+          const bool descending, Tensor out)
+      : Argsort{input, dim, descending, stable, out} {}
+
+  void operator()(const Tensor input, const int64_t dim, const bool descending,
+                  const bool stable, Tensor out) const {
+    (*this)(input, stable, dim, descending, out);
+  }
+
+  void operator()(const Tensor input, Tensor out) const {
+    (*this)(input, int64_t{-1}, false, false, out);
+  }
+
+  void operator()(const Tensor input, const int64_t dim, Tensor out) const {
+    (*this)(input, dim, false, false, out);
+  }
+
+  void operator()(const Tensor input, const int64_t dim, const bool descending,
+                  Tensor out) const {
+    (*this)(input, dim, descending, false, out);
+  }
+
+  /// \deprecated Use `(input, dim, descending, stable, out)`. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use the PyTorch-compatible parameter order instead.")]]
   virtual void operator()(const Tensor input, const bool stable,
                           const int64_t dim, const bool descending,
                           Tensor out) const = 0;
