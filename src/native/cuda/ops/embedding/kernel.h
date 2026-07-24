@@ -19,9 +19,12 @@ template <typename Backend>
 class CudaEmbedding : public Embedding {
  public:
   CudaEmbedding(const Tensor input, const Tensor weight,
-                const int64_t padding_idx, const bool scale_grad_by_freq,
-                const bool sparse, Tensor out)
-      : Embedding{input, weight, padding_idx, scale_grad_by_freq, sparse, out},
+                const std::optional<int64_t> padding_idx,
+                const std::optional<double> max_norm, const double norm_type,
+                const bool scale_grad_by_freq, const bool sparse, Tensor out)
+      : Embedding{input,    weight,    padding_idx,
+                  max_norm, norm_type, scale_grad_by_freq,
+                  sparse,   out},
         input_ndim_{input.ndim()},
         out_ndim_{out.ndim()},
         is_input_contiguous_{input.IsContiguous()},
@@ -60,15 +63,37 @@ class CudaEmbedding : public Embedding {
 
     Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
                     Backend::kMemcpyHostToDevice);
+
+    if (max_norm.has_value() && vocab_size_ > 0) {
+      Backend::Malloc(reinterpret_cast<void**>(&d_visited_),
+                      vocab_size_ * sizeof(*d_visited_));
+    }
   }
 
   CudaEmbedding(const Tensor input, const Tensor weight, Tensor out)
-      : CudaEmbedding(input, weight, -1, false, false, out) {}
+      : CudaEmbedding(input, weight, std::nullopt, std::nullopt, 2.0, false,
+                      false, out) {}
 
-  ~CudaEmbedding() { Backend::Free(d_metadata_); }
+  /// \deprecated Use the overload that also accepts `max_norm` and
+  /// `norm_type` instead.
+  [[deprecated("Use the PyTorch-compatible overload instead.")]]
+  CudaEmbedding(const Tensor input, const Tensor weight,
+                const int64_t padding_idx, const bool scale_grad_by_freq,
+                const bool sparse, Tensor out)
+      : CudaEmbedding(input, weight, padding_idx, std::nullopt, 2.0,
+                      scale_grad_by_freq, sparse, out) {}
+
+  ~CudaEmbedding() {
+    Backend::Free(d_metadata_);
+
+    if (d_visited_) {
+      Backend::Free(d_visited_);
+    }
+  }
 
   void operator()(const Tensor input, const Tensor weight,
-                  const int64_t /*padding_idx*/,
+                  const std::optional<int64_t> /*padding_idx*/,
+                  const std::optional<double> max_norm, const double norm_type,
                   const bool /*scale_grad_by_freq*/, const bool /*sparse*/,
                   Tensor out) const override {
     if (num_indices_ == 0) {
@@ -77,6 +102,16 @@ class CudaEmbedding : public Embedding {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
+
+    constexpr size_t kRenormBlockSize = 256;
+    if (max_norm.has_value()) {
+      assert(d_visited_ && "`CudaEmbedding` renorm state is not initialized");
+      const size_t clear_grid_size =
+          utils::CeilDiv(vocab_size_, kRenormBlockSize);
+      ClearEmbeddingVisitedKernel<kRenormBlockSize>
+          <<<clear_grid_size, kRenormBlockSize, 0, cuda_stream>>>(d_visited_,
+                                                                  vocab_size_);
+    }
 
     size_t block_size = 256;
     if (embedding_dim_ <= 64) {
@@ -95,6 +130,17 @@ class CudaEmbedding : public Embedding {
           using IndexT =
               TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           using T = TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
+
+          if (max_norm.has_value()) {
+            EmbeddingRenormKernel<kRenormBlockSize, Backend::kDeviceType, T,
+                                  IndexT>
+                <<<num_indices_, kRenormBlockSize, 0, cuda_stream>>>(
+                    reinterpret_cast<T*>(const_cast<void*>(weight.data())),
+                    reinterpret_cast<const IndexT*>(input.data()), d_visited_,
+                    num_indices_, input_ndim_, d_input_shape_, d_input_strides_,
+                    weight_row_stride_, weight_col_stride_, embedding_dim_,
+                    vocab_size_, is_input_contiguous_, *max_norm, norm_type);
+          }
 
           EmbeddingKernel<Backend::kDeviceType, T, IndexT>
               <<<grid_size, block_size, 0, cuda_stream>>>(
@@ -121,6 +167,8 @@ class CudaEmbedding : public Embedding {
   Tensor::Stride weight_row_stride_{0};
 
   Tensor::Stride weight_col_stride_{0};
+
+  int* d_visited_{nullptr};
 
   std::byte* d_metadata_{nullptr};
 

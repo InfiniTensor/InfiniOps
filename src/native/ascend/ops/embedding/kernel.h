@@ -1,11 +1,13 @@
 #ifndef INFINI_OPS_ASCEND_EMBEDDING_KERNEL_H_
 #define INFINI_OPS_ASCEND_EMBEDDING_KERNEL_H_
 
+#include <algorithm>
 #include <cassert>
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_embedding.h"
+#include "aclnnop/aclnn_embedding_renorm.h"
 #include "base/embedding.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -16,9 +18,12 @@ namespace infini::ops {
 template <>
 class Operator<Embedding, Device::Type::kAscend> : public Embedding {
  public:
-  Operator(const Tensor input, const Tensor weight, const int64_t padding_idx,
+  Operator(const Tensor input, const Tensor weight,
+           const std::optional<int64_t> padding_idx,
+           const std::optional<double> max_norm, const double norm_type,
            const bool scale_grad_by_freq, const bool sparse, Tensor out)
-      : Embedding(input, weight, padding_idx, scale_grad_by_freq, sparse, out),
+      : Embedding(input, weight, padding_idx, max_norm, norm_type,
+                  scale_grad_by_freq, sparse, out),
         input_cache_(input),
         weight_cache_(weight),
         out_cache_(out) {
@@ -30,7 +35,16 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
   }
 
   Operator(const Tensor input, const Tensor weight, Tensor out)
-      : Operator(input, weight, -1, false, false, out) {}
+      : Operator(input, weight, std::nullopt, std::nullopt, 2.0, false, false,
+                 out) {}
+
+  /// \deprecated Use the overload that also accepts `max_norm` and
+  /// `norm_type` instead.
+  [[deprecated("Use the PyTorch-compatible overload instead.")]]
+  Operator(const Tensor input, const Tensor weight, const int64_t padding_idx,
+           const bool scale_grad_by_freq, const bool sparse, Tensor out)
+      : Operator(input, weight, padding_idx, std::nullopt, 2.0,
+                 scale_grad_by_freq, sparse, out) {}
 
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
@@ -41,7 +55,8 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
   }
 
   void operator()(const Tensor input, const Tensor weight,
-                  const int64_t /*padding_idx*/,
+                  const std::optional<int64_t> /*padding_idx*/,
+                  const std::optional<double> max_norm, const double norm_type,
                   const bool /*scale_grad_by_freq*/, const bool /*sparse*/,
                   Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
@@ -50,21 +65,44 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_out = out_cache_.get(out.data());
 
-    if (!executor_) {
-      auto ret = aclnnEmbeddingGetWorkspaceSize(t_weight, t_input, t_out,
-                                                &ws_size_, &executor_);
-      assert(ret == ACL_SUCCESS && "`aclnnEmbeddingGetWorkspaceSize` failed");
-      aclSetAclOpExecutorRepeatable(executor_);
-    } else {
-      aclSetInputTensorAddr(executor_, 0, t_weight,
+    if (max_norm.has_value() && !renorm_executor_) {
+      auto ret = aclnnEmbeddingRenormGetWorkspaceSize(
+          t_weight, t_input, *max_norm, norm_type, &renorm_ws_size_,
+          &renorm_executor_);
+      assert(ret == ACL_SUCCESS &&
+             "`aclnnEmbeddingRenormGetWorkspaceSize` failed");
+      aclSetAclOpExecutorRepeatable(renorm_executor_);
+    } else if (max_norm.has_value()) {
+      aclSetInputTensorAddr(renorm_executor_, 0, t_weight,
                             const_cast<void*>(weight.data()));
-      aclSetInputTensorAddr(executor_, 1, t_input,
+      aclSetInputTensorAddr(renorm_executor_, 1, t_input,
                             const_cast<void*>(input.data()));
-      aclSetOutputTensorAddr(executor_, 0, t_out, out.data());
     }
 
-    auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
-    auto ret = aclnnEmbedding(arena.buf, ws_size_, executor_, stream);
+    if (!embedding_executor_) {
+      auto ret = aclnnEmbeddingGetWorkspaceSize(
+          t_weight, t_input, t_out, &embedding_ws_size_, &embedding_executor_);
+      assert(ret == ACL_SUCCESS && "`aclnnEmbeddingGetWorkspaceSize` failed");
+      aclSetAclOpExecutorRepeatable(embedding_executor_);
+    } else {
+      aclSetInputTensorAddr(embedding_executor_, 0, t_weight,
+                            const_cast<void*>(weight.data()));
+      aclSetInputTensorAddr(embedding_executor_, 1, t_input,
+                            const_cast<void*>(input.data()));
+      aclSetOutputTensorAddr(embedding_executor_, 0, t_out, out.data());
+    }
+
+    const auto workspace_size = std::max(renorm_ws_size_, embedding_ws_size_);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
+
+    if (max_norm.has_value()) {
+      auto ret = aclnnEmbeddingRenorm(arena.buf, renorm_ws_size_,
+                                      renorm_executor_, stream);
+      assert(ret == ACL_SUCCESS && "`aclnnEmbeddingRenorm` failed");
+    }
+
+    auto ret = aclnnEmbedding(arena.buf, embedding_ws_size_,
+                              embedding_executor_, stream);
     assert(ret == ACL_SUCCESS && "`aclnnEmbedding` failed");
   }
 
@@ -75,9 +113,13 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
 
   mutable ascend::AclTensorCache out_cache_;
 
-  mutable aclOpExecutor* executor_ = nullptr;
+  mutable aclOpExecutor* renorm_executor_ = nullptr;
 
-  mutable uint64_t ws_size_ = 0;
+  mutable aclOpExecutor* embedding_executor_ = nullptr;
+
+  mutable uint64_t renorm_ws_size_ = 0;
+
+  mutable uint64_t embedding_ws_size_ = 0;
 };
 
 }  // namespace infini::ops
