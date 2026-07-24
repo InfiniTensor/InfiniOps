@@ -133,6 +133,7 @@ def _hide_operator_call_definition(text: str) -> str:
 
 def generate_public_operator_header(source: Path, output: Path) -> None:
     public_text = _hide_operator_call_definition(source.read_text())
+    public_text = public_text.replace('#include "host_range_profiler.h"\n', "")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(public_text)
 

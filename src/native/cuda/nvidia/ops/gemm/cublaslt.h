@@ -9,6 +9,7 @@
 // clang-format on
 
 #include "base/gemm.h"
+#include "host_range_profiler.h"
 #include "native/cuda/nvidia/blas_utils.h"
 #include "native/cuda/nvidia/runtime_.h"
 
@@ -41,6 +42,9 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
   void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
                   std::optional<float> beta, std::optional<int> trans_a,
                   std::optional<int> trans_b, Tensor c) const override {
+    [[maybe_unused]] HostRangeScope host_range_backend_submit{
+        HostRangeLayer::kBackendSubmit};
+
     const auto alpha_value{alpha.value_or(alpha_)};
     const auto beta_value{beta.value_or(beta_)};
     const auto trans_a_value{trans_a.value_or(trans_a_)};

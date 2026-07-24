@@ -6,6 +6,16 @@ target_compile_options(infiniops PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX,CUDA>:-Wno-deprecated-declarations>"
 )
 
+if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+    target_compile_definitions(infiniops PUBLIC
+        INFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
+endif()
+
+if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    target_compile_definitions(infiniops PRIVATE
+        INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
+endif()
+
 function(_infini_ops_write_if_different path content)
     set(_should_write TRUE)
     if(EXISTS "${path}")
@@ -657,6 +667,10 @@ if(WITH_TORCH)
         if(WITH_CPU)
             list(APPEND _torch_extra_flags "-DWITH_CPU=1")
         endif()
+        if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+            list(APPEND _torch_extra_flags
+                "-DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1")
+        endif()
         if(DEFINED TORCH_CXX11_ABI)
             list(APPEND _torch_extra_flags "-D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI}")
         endif()
@@ -731,6 +745,12 @@ target_include_directories(infiniops
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/operator.h"
+    "${PROJECT_SOURCE_DIR}/scripts/generate_public_operator_header.py"
+    "${PROJECT_SOURCE_DIR}/scripts/generate_wrappers.py"
+)
+
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     find_package(Python COMPONENTS Interpreter REQUIRED)
     # Always regenerate wrappers so emitted call instantiations and bindings
@@ -785,6 +805,9 @@ configure_file(
 )
 
 if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+    target_sources(infiniops PRIVATE
+        "${PROJECT_SOURCE_DIR}/generated/src/cache_clear_dispatch.cc")
+
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
 
@@ -803,7 +826,13 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             list(APPEND _iluvatar_call_instantiation_include_flags "-I${_dir}")
         endforeach()
 
-        set(_iluvatar_call_instantiation_defs -DWITH_ILUVATAR=1)
+        set(_iluvatar_call_instantiation_defs
+            -DWITH_ILUVATAR=1
+            -DINFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
+        if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+            list(APPEND _iluvatar_call_instantiation_defs
+                -DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
+        endif()
         if(WITH_CPU)
             list(APPEND _iluvatar_call_instantiation_defs -DWITH_CPU=1)
         endif()
@@ -979,6 +1008,14 @@ if(GENERATE_PYTHON_BINDINGS)
         endforeach()
 
         set(_iluvatar_dispatch_defs -DWITH_ILUVATAR=1)
+        if(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+            list(APPEND _iluvatar_dispatch_defs
+                -DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)
+        endif()
+        if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+            list(APPEND _iluvatar_dispatch_defs
+                -DINFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
+        endif()
         if(WITH_TORCH)
             list(APPEND _iluvatar_dispatch_defs -DWITH_TORCH=1)
         endif()
@@ -1045,6 +1082,11 @@ if(GENERATE_PYTHON_BINDINGS)
     target_compile_options(ops PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX,CUDA>:-Wno-deprecated-declarations>"
     )
+
+    if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
+        target_compile_definitions(ops PRIVATE
+            INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS=1)
+    endif()
 
     if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")
         set(INFINI_OPS_BINDING_COMPILE_JOBS "2" CACHE STRING
@@ -1153,7 +1195,8 @@ endif()
 file(GLOB INFINI_OPS_PUBLIC_CORE_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
 list(REMOVE_ITEM INFINI_OPS_PUBLIC_CORE_HEADERS
-    "${CMAKE_CURRENT_SOURCE_DIR}/operator.h")
+    "${CMAKE_CURRENT_SOURCE_DIR}/operator.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/host_range_profiler.h")
 
 install(FILES
     ${PROJECT_SOURCE_DIR}/generated/include/operator.h

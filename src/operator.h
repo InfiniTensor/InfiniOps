@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_OPERATOR_H_
 #define INFINI_OPS_OPERATOR_H_
 
+#include <atomic>
 #include <cassert>
 #include <memory>
 #include <optional>
@@ -13,6 +14,7 @@
 #include "config.h"
 #include "dispatcher.h"
 #include "handle.h"
+#include "host_range_profiler.h"
 #include "tensor.h"
 
 namespace infini::ops::detail {
@@ -188,10 +190,12 @@ template <typename Key, Device::Type device_type = Device::Type::kCount,
           std::size_t implementation_index = 0>
 class Operator : public OperatorBase {
  public:
-  // Invalidate the operator cache.  Cached operators are destroyed on the
-  // next `call()` invocation.  Intended for test isolation — production
-  // code should never call this.
-  static void clear_cache() { ++cache_generation_; }
+  // Invalidate the operator cache. Cached operators are destroyed on the next
+  // `Call()` invocation. Intended for test isolation; production code should
+  // never call this.
+  static void clear_cache() {
+    cache_generation_.fetch_add(1, std::memory_order_relaxed);
+  }
 
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
@@ -224,16 +228,39 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
+    [[maybe_unused]] HostRangeScope host_range_operator_call{
+        HostRangeLayer::kOperatorCall};
+
     static thread_local std::unordered_map<detail::CacheKey,
                                            std::unique_ptr<Operator>>
         cache;
     static thread_local std::size_t generation{0};
 
-    if (generation != cache_generation_) {
+    const auto cache_generation =
+        cache_generation_.load(std::memory_order_relaxed);
+    if (generation != cache_generation) {
       cache.clear();
-      generation = cache_generation_;
+      generation = cache_generation;
     }
 
+#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+    auto key = [&]() {
+      HostRangeScope host_range_cache_key{HostRangeLayer::kCacheKey};
+      return CacheKeyBuilder<Key>{}(config, args...);
+    }();
+
+    auto it = [&]() {
+      HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
+      return cache.find(key);
+    }();
+
+    if (it == cache.end()) {
+      HostRangeScope host_range_cache_construct{
+          HostRangeLayer::kCacheConstruct};
+      auto new_op = Make(config, args...);
+      it = cache.emplace(std::move(key), std::move(new_op)).first;
+    }
+#else
     auto key = CacheKeyBuilder<Key>{}(config, args...);
 
     auto it{cache.find(key)};
@@ -241,9 +268,12 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       it = cache.emplace(std::move(key), Make(config, args...)).first;
     }
+#endif
 
     auto& op{it->second};
 
+    [[maybe_unused]] HostRangeScope host_range_operator_invoke{
+        HostRangeLayer::kOperatorInvoke};
     return (*op)(handle, args...);
   }
 
@@ -348,10 +378,7 @@ class Operator : public OperatorBase {
     return op_ptr;
   }
 
-  // Generation counter for lazy cache invalidation.  Bumped by
-  // `clear_cache()`; the next `call()` detects the mismatch and
-  // destroys all cached operator instances.
-  static inline std::size_t cache_generation_{0};
+  static inline std::atomic<std::size_t> cache_generation_{0};
 };
 
 // Maximum number of implementation slots per (operator, device) pair.
