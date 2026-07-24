@@ -96,8 +96,8 @@ _SCALAR_VALUES = {
     ("softplus", "beta"): 1.0,
     ("softplus", "threshold"): 20.0,
     ("elu", "alpha"): 1.0,
-    ("elu", "scale"): 1.0,
-    ("elu", "input_scale"): 1.0,
+    ("elu", "scale"): 1.25,
+    ("elu", "input_scale"): 0.75,
     ("sub", "alpha"): 1.0,
     ("addcmul", "value"): 1.0,
     ("addcdiv", "value"): 1.0,
@@ -530,8 +530,13 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
         clone_strided(x) if isinstance(x, torch.Tensor) else x for x in inputs
     ]
 
+    if aten_name == "elu":
+        ref_func = torch.ops.aten.elu.default
+    else:
+        ref_func = _torch_func(aten_name)
+
     try:
-        ref = _torch_func(aten_name)(*ref_inputs)
+        ref = ref_func(*ref_inputs)
     except (
         RuntimeError,
         TypeError,
@@ -595,3 +600,14 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
 
     for actual, expected in zip(outs, ref_outs):
         _assert_close(actual, expected, rtol, atol)
+
+    if aten_name == "elu":
+        input, alpha = inputs[:2]
+        alpha_out = torch.empty_like(ref_outs[0])
+        default_out = torch.empty_like(ref_outs[0])
+        _call_infini(op_name, input, alpha, alpha_out)
+        _call_infini(op_name, input, default_out)
+        _assert_close(
+            alpha_out, torch.nn.functional.elu(input, alpha=alpha), rtol, atol
+        )
+        _assert_close(default_out, torch.nn.functional.elu(input), rtol, atol)

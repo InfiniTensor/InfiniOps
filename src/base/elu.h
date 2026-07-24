@@ -7,6 +7,23 @@ namespace infini::ops {
 
 class Elu : public Operator<Elu> {
  public:
+  Elu(const Tensor input, const double alpha, Tensor out)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        alpha_{alpha},
+        scale_{1.0},
+        input_scale_{1.0},
+        device_index_{out.device().index()} {}
+
+  Elu(const Tensor input, Tensor out) : Elu{input, 1.0, out} {}
+
+  /// \deprecated Use `Elu(input, alpha, out)`. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the `(input, alpha, out)` overload instead.")]]
   Elu(const Tensor input, const double alpha, const double scale,
       const double input_scale, Tensor out)
       : input_shape_{input.shape()},
@@ -20,6 +37,17 @@ class Elu : public Operator<Elu> {
         input_scale_{input_scale},
         device_index_{out.device().index()} {}
 
+  void operator()(const Tensor input, const double alpha, Tensor out) const {
+    return operator()(input, alpha, 1.0, 1.0, out);
+  }
+
+  void operator()(const Tensor input, Tensor out) const {
+    return operator()(input, 1.0, 1.0, 1.0, out);
+  }
+
+  /// \deprecated Use `operator()(input, alpha, out)`. This overload will be
+  /// removed in a future release.
+  [[deprecated("Use `operator()(input, alpha, out)` instead.")]]
   virtual void operator()(const Tensor input, const double alpha,
                           const double scale, const double input_scale,
                           Tensor out) const = 0;
