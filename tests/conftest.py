@@ -167,6 +167,7 @@ _SMOKE_STATIC_TEST_MODULES = {
     "tests/test_generate_ninetoothed_ops.py",
     "tests/test_generate_torch_ops.py",
     "tests/test_generate_wrappers.py",
+    "tests/test_target_tensor_pool.py",
 }
 
 _SMOKE_TORCH_OPS = {"abs", "clamp", "exp"}

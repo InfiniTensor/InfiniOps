@@ -1168,6 +1168,38 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
     op_calls = "\n\n".join(
         f"  void operator()({_format_signature(op)}) const override;" for op in ops
     )
+    pool_members = []
+    seen_pool_members = set()
+
+    for op in ops:
+        for param in op.visible_params:
+            api_name = param.api_name
+
+            if param.is_tensor or param.is_optional_tensor:
+                pool_kind = "single"
+            elif param.is_tensor_list:
+                pool_kind = "list"
+            else:
+                continue
+
+            pool_key = (api_name, pool_kind)
+
+            if pool_key in seen_pool_members:
+                continue
+
+            seen_pool_members.add(pool_key)
+
+            if pool_kind == "single":
+                pool_members.append(
+                    "  mutable TargetTensorPool<AtenTensorAdapter<kDev>> "
+                    f"{api_name}_pool_;"
+                )
+            else:
+                pool_members.append(
+                    "  mutable std::vector<"
+                    "TargetTensorPool<AtenTensorAdapter<kDev>>> "
+                    f"{api_name}_pools_;"
+                )
 
     return _TORCH_HEADER_TEMPLATE.format(
         name_uc=name.upper(),
@@ -1175,6 +1207,7 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
         pascal=pascal,
         op_type=op_type,
         op_calls=op_calls,
+        pool_members="\n\n".join(pool_members),
         slot=_PYTORCH_SLOT,
     )
 
@@ -1182,23 +1215,12 @@ def _generate_torch_header(name: str, ops: list[Op]) -> str:
 def _generate_torch_method_source(name: str, op: Op) -> str:
     op_type = _op_cpp_type(name)
     conversion_lines = []
-    out_device_index = f"{op.out_params[0].api_name}.device().index()"
-    conversion_lines.append(f"  const auto device_index = {out_device_index};")
 
     def _optional_aten_type(param: Param) -> str:
         return _NULLOPT_BY_TYPE[param.aten_type].removesuffix("{}")
 
     def _optional_aten_value(schema_param: Param, api_param: Param) -> str:
         api_name = api_param.api_name
-
-        if schema_param.aten_type == "Tensor?":
-            data_expr = f"const_cast<void*>({api_name}->data())"
-
-            return (
-                f"ToAtenTensor<kDev>({data_expr}, {api_name}->shape(), "
-                f"{api_name}->strides(), {api_name}->dtype(), "
-                f"device_index)"
-            )
 
         if schema_param.aten_type == "Scalar?":
             return f"at::Scalar(*{api_name})"
@@ -1225,6 +1247,25 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
     def _append_optional_conversion(schema_param: Param, api_param: Param) -> None:
         api_name = api_param.api_name
         optional_type = _optional_aten_type(schema_param)
+
+        if schema_param.aten_type == "Tensor?":
+            conversion_lines.append(
+                "  std::optional<typename "
+                "TargetTensorPool<AtenTensorAdapter<kDev>>::Lease> "
+                f"{schema_param.name}_lease;"
+            )
+            conversion_lines.append(f"  {optional_type} at_{schema_param.name};")
+            conversion_lines.append(f"  if ({api_name}.has_value()) {{")
+            conversion_lines.append(
+                f"    {schema_param.name}_lease.emplace("
+                f"{api_name}_pool_.Acquire(*{api_name}));"
+            )
+            conversion_lines.append(
+                f"    at_{schema_param.name} = {schema_param.name}_lease->Native();"
+            )
+            conversion_lines.append("  }")
+            return
+
         conversion_lines.append(f"  {optional_type} at_{schema_param.name};")
         conversion_lines.append(f"  if ({api_name}.has_value()) {{")
         conversion_lines.append(
@@ -1245,27 +1286,39 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         api_name = api_param.api_name
 
         if param.is_tensor_list:
+            conversion_lines.append(
+                f"  if ({api_name}_pools_.size() < {api_name}.size()) {{"
+            )
+            conversion_lines.append(f"    {api_name}_pools_.resize({api_name}.size());")
+            conversion_lines.append("  }")
+            conversion_lines.append(
+                "  std::vector<typename "
+                "TargetTensorPool<AtenTensorAdapter<kDev>>::Lease> "
+                f"{param.name}_leases;"
+            )
+            conversion_lines.append(
+                f"  {param.name}_leases.reserve({api_name}.size());"
+            )
             conversion_lines.append(f"  std::vector<at::Tensor> at_{param.name};")
             conversion_lines.append(f"  at_{param.name}.reserve({api_name}.size());")
-            conversion_lines.append(f"  for (const auto& tensor : {api_name}) {{")
             conversion_lines.append(
-                "    at_"
-                f"{param.name}.push_back(ToAtenTensor<kDev>("
-                "const_cast<void*>(tensor.data()), tensor.shape(), tensor.strides(), "
-                "tensor.dtype(), device_index));"
+                f"  for (std::size_t i = 0; i < {api_name}.size(); ++i) {{"
+            )
+            conversion_lines.append(
+                f"    {param.name}_leases.push_back("
+                f"{api_name}_pools_[i].Acquire({api_name}[i]));"
+            )
+            conversion_lines.append(
+                f"    at_{param.name}.push_back({param.name}_leases.back().Native());"
             )
             conversion_lines.append("  }")
             continue
 
-        data_expr = (
-            f"{api_name}.data()"
-            if param.is_mutable_tensor
-            else f"const_cast<void*>({api_name}.data())"
+        conversion_lines.append(
+            f"  auto {param.name}_lease = {api_name}_pool_.Acquire({api_name});"
         )
         conversion_lines.append(
-            f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
-            f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
-            f"      {api_name}_type_, device_index);"
+            f"  auto& at_{param.name} = {param.name}_lease.Native();"
         )
 
     for schema_index, param in enumerate(op.params):
@@ -1325,7 +1378,6 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     op_type = _op_cpp_type(name)
-    methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
     # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
     # so a build that only enables a subset of devices does not pay the
     # ATen template-instantiation cost (and memory pressure) for the
@@ -1337,6 +1389,8 @@ def _generate_torch_source(name: str, ops: list[Op]) -> str:
         f"#endif"
         for dev in _DEVICE_TYPES
     )
+
+    methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
 
     return _TORCH_SOURCE_TEMPLATE.format(
         name=name,
@@ -1374,6 +1428,8 @@ _TORCH_HEADER_TEMPLATE = """\
 #define INFINI_OPS_TORCH_{name_uc}_H_
 
 #include "base/{name}.h"
+#include "target_tensor_pool.h"
+#include "torch/tensor_.h"
 
 namespace infini::ops {{
 
@@ -1383,6 +1439,9 @@ class Operator<{op_type}, kDev, {slot}> : public {op_type} {{
   using {op_type}::{pascal};
 
 {op_calls}
+
+ private:
+{pool_members}
 }};
 
 }}  // namespace infini::ops

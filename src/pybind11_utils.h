@@ -8,6 +8,9 @@
 
 #include "tensor.h"
 #include "torch/device_.h"
+#ifdef WITH_TORCH
+#include "torch/pybind11_.h"
+#endif
 
 namespace py = pybind11;
 
@@ -131,6 +134,18 @@ inline Device DeviceFromPybind11Handle(py::handle obj) {
 }
 
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
+#ifdef WITH_TORCH
+  auto metadata{TryAtenTensorMetadataFromPyObject(obj.ptr())};
+
+  if (metadata.has_value()) {
+    Device device{DeviceTypeFromString(metadata->device_type),
+                  metadata->device_index};
+
+    return Tensor{metadata->data, std::move(metadata->shape), metadata->dtype,
+                  device, std::move(metadata->strides)};
+  }
+#endif
+
   auto data{
       reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
 

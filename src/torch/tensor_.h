@@ -4,7 +4,9 @@
 #include <torch/torch.h>
 #include <torch/version.h>
 
+#include <memory>
 #include <optional>
+#include <utility>
 
 #include "tensor.h"
 #include "torch/device_.h"
@@ -107,6 +109,34 @@ inline at::Tensor ToAtenTensor(
 
   return at::from_blob(data, at_shape, at_strides, options);
 }
+
+template <Device::Type kDev>
+struct AtenTensorAdapter {
+  struct State {
+    at::Tensor tensor;
+
+    c10::Device device;
+  };
+
+  using NativeHandle = at::Tensor&;
+
+  static std::unique_ptr<State> Create(const Tensor& tensor) {
+    auto at_tensor = ToAtenTensor<kDev>(
+        const_cast<void*>(tensor.data()), tensor.shape(), tensor.strides(),
+        tensor.dtype(), tensor.device().index());
+    auto device = at_tensor.device();
+
+    return std::make_unique<State>(
+        State{std::move(at_tensor), std::move(device)});
+  }
+
+  static void Rebind(State& state, const Tensor& tensor) noexcept {
+    state.tensor.storage().set_data_ptr_noswap(
+        c10::DataPtr(const_cast<void*>(tensor.data()), state.device));
+  }
+
+  static NativeHandle Native(State& state) { return state.tensor; }
+};
 
 }  // namespace infini::ops
 
