@@ -48,8 +48,7 @@ def test_flash_attn_varlen_func(
     rtol,
     atol,
 ):
-    if device not in ("cuda", "musa"):
-        pytest.skip("FlashAttention FA2 requires the NVIDIA or Moore backend")
+    _require_flash_attention_backend(device)
     if device == "musa" and window_size != (-1, -1):
         pytest.skip("TorchMusa FlashAttention does not support local windows")
     if device == "musa" and causal and q_lens != k_lens:
@@ -192,8 +191,7 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
 
 
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
-    if device not in ("cuda", "musa"):
-        pytest.skip("FlashAttention FA2 requires the NVIDIA or Moore backend")
+    _require_flash_attention_backend(device)
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
@@ -273,6 +271,15 @@ def _cumulative_lengths(lengths, device):
         values.append(values[-1] + length)
 
     return torch.tensor(values, dtype=torch.int32, device=device)
+
+
+def _require_flash_attention_backend(device):
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention FA2 requires the NVIDIA or Moore backend")
+    if device == "musa" and not torch._C._dispatch_has_kernel_for_dispatch_key(
+        "aten::_flash_attention_forward", "PrivateUse1"
+    ):
+        pytest.skip("TorchMusa does not provide aten::_flash_attention_forward")
 
 
 def _reference_varlen_attention(
