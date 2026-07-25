@@ -50,6 +50,14 @@ python -m pip install .[dev] \
   --config-settings=cmake.define.WITH_NVIDIA=ON
 ```
 
+Full builds with both `WITH_NVIDIA=ON` and `WITH_TORCH=ON` include
+`flash_attn_with_kvcache` and require a compatible FlashAttention 2.7 Python
+distribution to be installed in the build environment. The distribution must
+provide the `flash_attn_2_cuda` shared library for the active PyTorch and CUDA
+toolchain. Operator-pruned builds require it only when
+`flash_attn_with_kvcache` is selected; the default smoke subset does not select
+this operator.
+
 The built wheel installs the InfiniOps Python extension and the InfiniRT shared
 library needed by the extension.
 
