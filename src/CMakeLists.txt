@@ -720,10 +720,14 @@ if(WITH_TORCH)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
         endif()
 
-        # Vendor-specific defines required by forked `torch` headers.
+        # Select vendor-specific generated implementations and any definitions
+        # required by forked `torch` headers.
         set(_torch_extra_flags "")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
+        endif()
+        if(WITH_MOORE)
+            list(APPEND _torch_extra_flags "-DWITH_MOORE=1")
         endif()
         if(WITH_CPU)
             list(APPEND _torch_extra_flags "-DWITH_CPU=1")
