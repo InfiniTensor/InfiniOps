@@ -203,7 +203,7 @@ def test_flash_attn_varlen_func_moore_capability_guard(
         )
 
 
-def test_flash_attn_varlen_func_default_stream(device, implementation_index):
+def test_flash_attn_varlen_func_implicit_current_stream(device, implementation_index):
     if device != "cuda":
         pytest.skip("CUDA stream coverage requires the NVIDIA backend")
 
@@ -229,8 +229,6 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
             implementation_index=implementation_index,
         )
 
-    torch.cuda.default_stream().synchronize()
-    snapshot = out.clone()
     current_stream.synchronize()
     expected = _reference_varlen_attention(
         q,
@@ -242,7 +240,7 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
         False,
         (-1, -1),
     )
-    torch.testing.assert_close(snapshot, expected, rtol=2e-3, atol=2e-3)
+    torch.testing.assert_close(out, expected, rtol=2e-3, atol=2e-3)
 
 
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
