@@ -96,9 +96,10 @@ def test_flash_attn_varlen_func(
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
 
 
-def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("non-default CUDA streams require the NVIDIA backend")
+def test_flash_attn_varlen_func_current_stream(device, implementation_index):
+    if device not in ("cuda", "musa"):
+        pytest.skip("non-default streams require a GPU ATen backend")
+    _require_flash_attention_backend(device)
 
     dtype = torch.float16
     q_lens = (3, 5)
@@ -109,30 +110,33 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
     cu_seqlens_q = _cumulative_lengths(q_lens, device)
     cu_seqlens_k = _cumulative_lengths(k_lens, device)
     out = torch.empty_like(q)
-    stream = torch.cuda.Stream()
-    stream.wait_stream(torch.cuda.current_stream())
+    device_module = getattr(torch, device)
+    stream = device_module.Stream()
+    stream.wait_stream(device_module.current_stream())
+    stream_handle = getattr(stream, f"{device}_stream")
 
-    infini.ops.flash_attn_varlen_func(
-        q,
-        k,
-        v,
-        cu_seqlens_q,
-        cu_seqlens_k,
-        max(q_lens),
-        max(k_lens),
-        0.0,
-        None,
-        True,
-        (-1, -1),
-        0.0,
-        None,
-        False,
-        False,
-        None,
-        out,
-        stream=stream.cuda_stream,
-        implementation_index=implementation_index,
-    )
+    with device_module.stream(stream):
+        infini.ops.flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max(q_lens),
+            max(k_lens),
+            0.0,
+            None,
+            True,
+            (-1, -1),
+            0.0,
+            None,
+            False,
+            False,
+            None,
+            out,
+            stream=stream_handle,
+            implementation_index=implementation_index,
+        )
 
     stream.synchronize()
     expected = _reference_varlen_attention(
@@ -146,6 +150,57 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
         (-1, -1),
     )
     torch.testing.assert_close(out, expected, rtol=2e-3, atol=2e-3)
+
+
+@pytest.mark.parametrize(
+    "q_lens, k_lens, causal, window_size, error",
+    (
+        ((3, 5), (4, 5), True, (-1, -1), "matching query and key"),
+        ((3, 5), (4, 5), False, (2, 1), "does not support local windows"),
+    ),
+)
+def test_flash_attn_varlen_func_moore_capability_guard(
+    q_lens,
+    k_lens,
+    causal,
+    window_size,
+    error,
+    device,
+    implementation_index,
+):
+    if device != "musa":
+        pytest.skip("TorchMusa capability guard requires the Moore backend")
+    _require_flash_attention_backend(device)
+
+    q = torch.randn((sum(q_lens), 4, 64), dtype=torch.float16, device=device)
+    k = torch.randn((sum(k_lens), 2, 64), dtype=torch.float16, device=device)
+    v = torch.randn_like(k)
+    cu_seqlens_q = _cumulative_lengths(q_lens, device)
+    cu_seqlens_k = _cumulative_lengths(k_lens, device)
+    out = torch.empty_like(q)
+
+    with pytest.raises(RuntimeError, match=error):
+        infini.ops.flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max(q_lens),
+            max(k_lens),
+            0.0,
+            None,
+            causal,
+            window_size,
+            0.0,
+            None,
+            False,
+            False,
+            None,
+            out,
+            stream=get_stream(q.device),
+            implementation_index=implementation_index,
+        )
 
 
 def test_flash_attn_varlen_func_default_stream(device, implementation_index):

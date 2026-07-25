@@ -1,15 +1,16 @@
-#ifndef INFINI_OPS_TORCH_FLASH_ATTN_VARLEN_FUNC_H_
-#define INFINI_OPS_TORCH_FLASH_ATTN_VARLEN_FUNC_H_
+#ifndef INFINI_OPS_TORCH_MOORE_FLASH_ATTN_VARLEN_FUNC_H_
+#define INFINI_OPS_TORCH_MOORE_FLASH_ATTN_VARLEN_FUNC_H_
 
-#include "base/flash_attn_varlen_func.h"
+#include "torch/ops/flash_attn_varlen_func/flash_attn_varlen_func.h"
 
 namespace infini::ops {
 
-template <Device::Type kDev>
-class AtenFlashAttnVarlenFunc : public FlashAttnVarlenFunc {
+template <>
+class Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 8>
+    : public AtenFlashAttnVarlenFunc<Device::Type::kMoore> {
  public:
-  using FlashAttnVarlenFunc::FlashAttnVarlenFunc;
-  using FlashAttnVarlenFunc::operator();
+  using AtenFlashAttnVarlenFunc::AtenFlashAttnVarlenFunc;
+  using AtenFlashAttnVarlenFunc::operator();
 
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
@@ -23,14 +24,6 @@ class AtenFlashAttnVarlenFunc : public FlashAttnVarlenFunc {
                   Tensor out) const override;
 };
 
-template <>
-class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>
-    : public AtenFlashAttnVarlenFunc<Device::Type::kNvidia> {
- public:
-  using AtenFlashAttnVarlenFunc::AtenFlashAttnVarlenFunc;
-  using AtenFlashAttnVarlenFunc::operator();
-};
-
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_TORCH_FLASH_ATTN_VARLEN_FUNC_H_
+#endif  // INFINI_OPS_TORCH_MOORE_FLASH_ATTN_VARLEN_FUNC_H_

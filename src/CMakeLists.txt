@@ -626,6 +626,9 @@ if(WITH_TORCH)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_with_kvcache/flash_attn\\.cc$")
     endif()
+    if(NOT WITH_MOORE)
+        list(FILTER TORCH_SOURCES EXCLUDE REGEX ".*/torch/moore/.*")
+    endif()
 
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
@@ -715,18 +718,12 @@ if(WITH_TORCH)
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
-            foreach(_dir ${TorchMusa_INCLUDE_DIRS} ${Python_INCLUDE_DIRS})
-                list(APPEND _torch_vendor_include_flags "-I${_dir}")
-            endforeach()
         endif()
 
         # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
-        endif()
-        if(WITH_MOORE)
-            list(APPEND _torch_extra_flags "-DWITH_MOORE=1")
         endif()
         if(WITH_CPU)
             list(APPEND _torch_extra_flags "-DWITH_CPU=1")
