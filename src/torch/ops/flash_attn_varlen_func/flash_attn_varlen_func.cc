@@ -44,10 +44,12 @@ void AtenFlashAttnVarlenFunc<kDev>::operator()(
   if (window_size[0] >= 0) {
     window_size_left = window_size[0];
   }
-  if (causal) {
-    window_size_right = 0;
-  } else if (window_size[1] >= 0) {
+  if (window_size[1] >= 0) {
     window_size_right = window_size[1];
+  }
+  if (causal &&
+      (window_size_left.has_value() || window_size_right.has_value())) {
+    window_size_right = 0;
   }
 
   auto result = at::_flash_attention_forward(

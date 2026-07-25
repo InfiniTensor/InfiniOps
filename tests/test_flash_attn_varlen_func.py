@@ -126,7 +126,7 @@ def test_flash_attn_varlen_func_current_stream(device, implementation_index):
             max(k_lens),
             0.0,
             None,
-            True,
+            False,
             (-1, -1),
             0.0,
             None,
@@ -146,7 +146,7 @@ def test_flash_attn_varlen_func_current_stream(device, implementation_index):
         q_lens,
         k_lens,
         None,
-        True,
+        False,
         (-1, -1),
     )
     torch.testing.assert_close(out, expected, rtol=2e-3, atol=2e-3)
