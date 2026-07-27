@@ -586,14 +586,21 @@ def _generate_pybind11(operator):
 
         return ", ".join(parts)
 
-    def _generate_arguments(node):
+    def _generate_arguments(
+        node, preconverted_tensor_arg=None, preconverted_tensor_name=None
+    ):
         args = []
 
         for arg in node.get_arguments():
             if arg.spelling == "stream":
                 continue
 
-            if _is_optional_tensor(arg):
+            if (
+                preconverted_tensor_arg is not None
+                and arg.spelling == preconverted_tensor_arg.spelling
+            ):
+                args.append(f"std::move({preconverted_tensor_name})")
+            elif _is_optional_tensor(arg):
                 args.append(f"OptionalTensorFromPybind11Handle({arg.spelling})")
             elif _is_vector_tensor(arg):
                 args.append(f"VectorTensorFromPybind11Handle({arg.spelling})")
@@ -617,19 +624,40 @@ def _generate_pybind11(operator):
             if _is_optional_tensor(arg):
                 continue
             if _is_vector_tensor(arg):
-                return f"{arg.spelling}.at(0)"
+                return arg
             if "Tensor" in arg.type.spelling:
-                return arg.spelling
+                return arg
         return None
 
-    def _default_impl_index_expr(node):
-        first_tensor = _first_tensor_arg(node)
-        if first_tensor is None:
+    def _unique_local_name(node, base):
+        argument_names = {arg.spelling for arg in node.get_arguments()}
+        name = base
+        while name in argument_names:
+            name += "_"
+        return name
+
+    def _tensor_conversion_expr(arg):
+        if _is_vector_tensor(arg):
+            return f"VectorTensorFromPybind11Handle({arg.spelling})"
+        return f"TensorFromPybind11Handle({arg.spelling})"
+
+    def _default_impl_index_expr(node, converted_first_tensor_name=None):
+        first_tensor_arg = _first_tensor_arg(node)
+        if first_tensor_arg is None:
             return "0"
-        return (
-            f"DefaultImplementationIndexFor{symbol_name}("
-            f"DeviceFromPybind11Handle({first_tensor}).type())"
-        )
+
+        if converted_first_tensor_name is not None:
+            first_tensor = converted_first_tensor_name
+            if _is_vector_tensor(first_tensor_arg):
+                first_tensor += ".at(0)"
+            device_type = f"{first_tensor}.device().type()"
+        else:
+            first_tensor = first_tensor_arg.spelling
+            if _is_vector_tensor(first_tensor_arg):
+                first_tensor += ".at(0)"
+            device_type = f"DeviceFromPybind11Handle({first_tensor}).type()"
+
+        return f"DefaultImplementationIndexFor{symbol_name}({device_type})"
 
     def _generate_init(constructor):
         constructor_params = _generate_params(constructor)
@@ -664,6 +692,20 @@ def _generate_pybind11(operator):
         call_args = _generate_arguments(call)
 
         if not method:
+            first_tensor_arg = _first_tensor_arg(call)
+            converted_first_tensor_name = None
+            first_tensor_conversion = ""
+            if first_tensor_arg is not None:
+                converted_first_tensor_name = _unique_local_name(
+                    call, "converted_first_tensor"
+                )
+                first_tensor_conversion = (
+                    f"    auto {converted_first_tensor_name}"
+                    f"{{{_tensor_conversion_expr(first_tensor_arg)}}};\n"
+                )
+                call_args = _generate_arguments(
+                    call, first_tensor_arg, converted_first_tensor_name
+                )
             params = (
                 f"{call_params}, std::uintptr_t stream, "
                 "std::optional<std::size_t> implementation_index"
@@ -673,7 +715,9 @@ def _generate_pybind11(operator):
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
-            default_impl_index = _default_impl_index_expr(call)
+            default_impl_index = _default_impl_index_expr(
+                call, converted_first_tensor_name
+            )
 
             return (
                 f'  m.def("{op_name}", []({params}) {{\n'
@@ -681,9 +725,14 @@ def _generate_pybind11(operator):
                 f"    if (stream) {{\n"
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
                 f"    }}\n"
+                f"{first_tensor_conversion}"
                 f"    Config config;\n"
-                f"    config.set_implementation_index(\n"
-                f"        implementation_index.value_or({default_impl_index}));\n"
+                f"    if (implementation_index.has_value()) {{\n"
+                f"      config.set_implementation_index(*implementation_index);\n"
+                f"    }} else {{\n"
+                f"      config.set_implementation_index(\n"
+                f"          {default_impl_index});\n"
+                f"    }}\n"
                 f"    return generated_dispatch::Call{symbol_name}(handle, config, {call_args});\n"
                 f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = py::none());'
             )
@@ -741,6 +790,7 @@ def _generate_pybind11(operator):
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <utility>
 
 #include "base/{op_name}.h"
 #include "config.h"

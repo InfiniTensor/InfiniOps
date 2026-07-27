@@ -234,11 +234,58 @@ class Mul {
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
     ) in text
     assert "std::optional<std::size_t> implementation_index" in text
+    assert "if (implementation_index.has_value())" in text
+    assert "config.set_implementation_index(*implementation_index)" in text
+    assert "auto converted_first_tensor{TensorFromPybind11Handle(input)};" in text
     assert (
-        "implementation_index.value_or("
+        "DefaultImplementationIndexForMul(converted_first_tensor.device().type()))"
+    ) in text
+    assert "std::move(converted_first_tensor)" in text
+    assert text.count("DeviceFromPybind11Handle(input)") == 1
+    assert (
+        "config.set_implementation_index("
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
     ) in text
+    assert "implementation_index.value_or(" not in text
     assert 'py::arg("implementation_index") = py::none()' in text
+
+
+def test_pybind_default_implementation_reuses_first_vector_tensor(
+    monkeypatch, tmp_path
+):
+    module = _load_generator_module()
+    base_header = tmp_path / "cat.h"
+    base_header.write_text(
+        """
+class Cat {
+ public:
+  virtual void operator()(const std::vector<Tensor> inputs, Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    operator = module._Operator(
+        "cat",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const std::vector<Tensor>", "inputs"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            )
+        ],
+    )
+
+    text = module._generate_pybind11(operator)
+
+    assert (
+        "auto converted_first_tensor{VectorTensorFromPybind11Handle(inputs)};" in text
+    )
+    assert "converted_first_tensor.at(0).device().type()" in text
+    assert "std::move(converted_first_tensor)" in text
+    assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
 
 
 _DTYPE_OP_SOURCE = """
