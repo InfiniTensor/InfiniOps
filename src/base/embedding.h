@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_EMBEDDING_H_
 
 #include <cstddef>
+#include <optional>
 
 #include "data_type.h"
 #include "operator.h"
@@ -11,7 +12,9 @@ namespace infini::ops {
 
 class Embedding : public Operator<Embedding> {
  public:
-  Embedding(const Tensor input, const Tensor weight, const int64_t padding_idx,
+  Embedding(const Tensor input, const Tensor weight,
+            const std::optional<int64_t> padding_idx,
+            const std::optional<double> max_norm, const double norm_type,
             const bool scale_grad_by_freq, const bool sparse, Tensor out)
       : input_shape_{input.shape()},
         weight_shape_{weight.shape()},
@@ -26,6 +29,8 @@ class Embedding : public Operator<Embedding> {
         vocab_size_{weight.size(0)},
         embedding_dim_{weight.size(1)},
         padding_idx_{padding_idx},
+        max_norm_{max_norm},
+        norm_type_{norm_type},
         scale_grad_by_freq_{scale_grad_by_freq},
         sparse_{sparse} {
     assert(weight.ndim() == 2 && "`Embedding` requires 2D `weight`");
@@ -49,28 +54,53 @@ class Embedding : public Operator<Embedding> {
            "`Embedding` supports float32, float16, and bfloat16 weights only");
     assert(out_dtype_ == weight_dtype_ &&
            "`Embedding` output dtype must match `weight` dtype");
-    assert(padding_idx_ >= -static_cast<int64_t>(vocab_size_) &&
-           padding_idx_ < static_cast<int64_t>(vocab_size_) &&
+    assert((!padding_idx_.has_value() ||
+            (*padding_idx_ >= -static_cast<int64_t>(vocab_size_) &&
+             *padding_idx_ < static_cast<int64_t>(vocab_size_))) &&
            "`Embedding` padding_idx must be within the weight rows");
   }
 
   Embedding(const Tensor input, const Tensor weight, Tensor out)
-      : Embedding{input, weight, -1, false, false, out} {}
+      : Embedding{input, weight, std::nullopt, std::nullopt,
+                  2.0,   false,  false,        out} {}
+
+  /// \deprecated Use the overload that also accepts `max_norm` and
+  /// `norm_type` instead.
+  [[deprecated("Use the PyTorch-compatible overload instead.")]]
+  Embedding(const Tensor input, const Tensor weight, const int64_t padding_idx,
+            const bool scale_grad_by_freq, const bool sparse, Tensor out)
+      : Embedding{input,        weight, padding_idx,
+                  std::nullopt, 2.0,    scale_grad_by_freq,
+                  sparse,       out} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          const int64_t padding_idx,
-                          const bool scale_grad_by_freq, const bool sparse,
-                          Tensor out) const = 0;
+                          const std::optional<int64_t> padding_idx,
+                          const std::optional<double> max_norm,
+                          const double norm_type, const bool scale_grad_by_freq,
+                          const bool sparse, Tensor out) const = 0;
 
   void operator()(const Tensor input, const Tensor weight, Tensor out) const {
-    (*this)(input, weight, -1, false, false, out);
+    (*this)(input, weight, std::nullopt, std::nullopt, 2.0, false, false, out);
+  }
+
+  /// \deprecated Use the overload that also accepts `max_norm` and
+  /// `norm_type` instead.
+  [[deprecated("Use the PyTorch-compatible overload instead.")]]
+  void operator()(const Tensor input, const Tensor weight,
+                  const int64_t padding_idx, const bool scale_grad_by_freq,
+                  const bool sparse, Tensor out) const {
+    (*this)(input, weight, std::optional<int64_t>{padding_idx}, std::nullopt,
+            2.0, scale_grad_by_freq, sparse, out);
   }
 
   template <typename TensorLike>
-  static auto MakeReturnValue(const TensorLike& input, const TensorLike& weight,
-                              const int64_t /*padding_idx*/ = -1,
-                              const bool /*scale_grad_by_freq*/ = false,
-                              const bool /*sparse*/ = false) {
+  static auto MakeReturnValue(
+      const TensorLike& input, const TensorLike& weight,
+      const std::optional<int64_t> /*padding_idx*/ = std::nullopt,
+      const std::optional<double> /*max_norm*/ = std::nullopt,
+      const double /*norm_type*/ = 2.0,
+      const bool /*scale_grad_by_freq*/ = false,
+      const bool /*sparse*/ = false) {
     auto out_shape = input.shape();
     out_shape.push_back(weight.size(1));
 
@@ -112,7 +142,11 @@ class Embedding : public Operator<Embedding> {
 
   Tensor::Size embedding_dim_{0};
 
-  int64_t padding_idx_{0};
+  std::optional<int64_t> padding_idx_{};
+
+  std::optional<double> max_norm_{};
+
+  double norm_type_{2.0};
 
   bool scale_grad_by_freq_{false};
 
