@@ -1442,18 +1442,29 @@ def _generate_operator_call_instantiation_entries(operator):
         args = [arg for arg in call.get_arguments() if arg.spelling != "stream"]
         first_arg = args[0]
         rest_args = args[1:]
+        first_type = _normalized_type(first_arg)
         instantiation = (
             f"Operator<{op_type}>::Call<{template_arguments}>({function_params})"
         )
 
+        make_args = list(rest_args)
+        forwarding_first = first_type not in {"Tensor", "std::vector<Tensor>"}
+        if forwarding_first:
+            make_args.insert(0, first_arg)
+
         make_template_arguments = ", ".join(
-            f"const {_normalized_type(arg)}&" for arg in rest_args
+            f"const {_normalized_type(arg)}&" for arg in make_args
         )
         make_params = ", ".join(
             f"const {_normalized_type(arg)}& {arg.spelling}" for arg in rest_args
         )
+        first_param = (
+            f"const {first_type}& {first_arg.spelling}"
+            if forwarding_first
+            else f"const {first_type} {first_arg.spelling}"
+        )
         make_function_params = _append_optional_params(
-            f"const Config& config, const {_normalized_type(first_arg)} {first_arg.spelling}",
+            f"const Config& config, {first_param}",
             make_params,
         )
         make_instantiation = f"Operator<{op_type}>::Make<{make_template_arguments}>({make_function_params})"

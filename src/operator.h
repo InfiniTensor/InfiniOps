@@ -101,6 +101,22 @@ const T& AsCallArg(const T& value) {
   return value;
 }
 
+inline Device::Type DispatchDeviceFromArgs(const Tensor tensor) {
+  return tensor.device().type();
+}
+
+inline Device::Type DispatchDeviceFromArgs(const std::vector<Tensor>& tensors) {
+  assert(!tensors.empty() && "operator tensor list input cannot be empty");
+  return tensors.front().device().type();
+}
+
+template <typename Arg, typename... Args>
+Device::Type DispatchDeviceFromArgs(const Arg&, const Args&... args) {
+  static_assert(sizeof...(args) > 0,
+                "operator arguments must include a tensor");
+  return DispatchDeviceFromArgs(args...);
+}
+
 template <typename Key, typename TensorLike, typename Args, typename = void>
 class HasMakeReturnValueImpl : public std::false_type {};
 
@@ -225,6 +241,28 @@ class Operator : public OperatorBase {
     return Make({}, tensors, std::forward<Args>(args)...);
   }
 
+  template <typename First, typename... Args,
+            typename std::enable_if_t<
+                !std::is_same_v<std::decay_t<First>, Tensor> &&
+                    !std::is_same_v<std::decay_t<First>, std::vector<Tensor>>,
+                int> = 0>
+  static std::unique_ptr<Operator> Make(const Config& config, First&& first,
+                                        Args&&... args) {
+    return MakeWithDevice(
+        config, detail::DispatchDeviceFromArgs(first, args...),
+        std::forward<First>(first), std::forward<Args>(args)...);
+  }
+
+  template <typename First, typename... Args,
+            typename std::enable_if_t<
+                !std::is_same_v<std::decay_t<First>, Config> &&
+                    !std::is_same_v<std::decay_t<First>, Tensor> &&
+                    !std::is_same_v<std::decay_t<First>, std::vector<Tensor>>,
+                int> = 0>
+  static std::unique_ptr<Operator> Make(First&& first, Args&&... args) {
+    return Make({}, std::forward<First>(first), std::forward<Args>(args)...);
+  }
+
   template <typename... Args>
   static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
@@ -280,6 +318,16 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static void Call(const Tensor tensor, const Args&... args) {
     return Call({}, {}, tensor, args...);
+  }
+
+  template <typename First, typename... Args,
+            typename std::enable_if_t<
+                !std::is_same_v<std::decay_t<First>, Tensor> &&
+                    !std::is_same_v<std::decay_t<First>, std::vector<Tensor>> &&
+                    !detail::HasMakeReturnValue<Key, First, Args...>::value,
+                int> = 0>
+  static void Call(const First& first, const Args&... args) {
+    return Call({}, {}, first, args...);
   }
 
   template <

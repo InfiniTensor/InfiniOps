@@ -448,13 +448,12 @@ class Op:
 
     @property
     def is_testable(self) -> bool:
-        """Cheap structural check: at least one out tensor, and the first
-        constructor parameter is a tensor.  The latter is needed because
-        `Operator::Make(Tensor tensor, Args... args)` dispatches on
-        `tensor.device()`, so an op like `pow.Scalar_out(Scalar self,
-        Tensor exponent, *, Tensor(a!) out)` cannot be wired up without
-        a separate dispatch path.  Generators like `arange` / `linspace`
-        also fall under this rule (no input tensors at all)."""
+        """Return whether codegen can select a device from this schema.
+
+        Generated bases still require the first non-output argument to be a
+        tensor. A hand-written base explicitly opts into its parameter order,
+        so dispatch may instead use any later tensor, including an output.
+        """
 
         if not self.out_params:
             return False
@@ -470,7 +469,12 @@ class Op:
         if not non_out:
             return False
 
-        return non_out[0].is_tensor or non_out[0].is_tensor_list
+        if non_out[0].is_tensor or non_out[0].is_tensor_list:
+            return True
+
+        return _base_path(self.infini_name).exists() and any(
+            param.is_tensor or param.is_tensor_list for param in self.params
+        )
 
 
 _FUNC_RE = re.compile(

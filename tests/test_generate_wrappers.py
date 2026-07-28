@@ -73,9 +73,7 @@ class Clamp {
     ) in text
 
 
-def test_operator_call_instantiations_keep_optional_scalar_and_tensor_overloads_distinct(
-    monkeypatch, tmp_path
-):
+def test_operator_call_instantiations_preserve_overload_types(monkeypatch, tmp_path):
     module = _load_generator_module()
     base_header = tmp_path / "clamp.h"
     base_header.write_text(
@@ -86,6 +84,8 @@ class Clamp {
                           const std::optional<double> max, Tensor out) const = 0;
   virtual void operator()(const Tensor input, const std::optional<Tensor> min,
                           const std::optional<Tensor> max, Tensor out) const = 0;
+  virtual void operator()(const double mean, const Tensor std,
+                          Tensor out) const = 0;
 };
 """
     )
@@ -111,6 +111,13 @@ class Clamp {
                     module._ParsedArgument("Tensor", "out"),
                 ]
             ),
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const double", "mean"),
+                    module._ParsedArgument("const Tensor", "std"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            ),
         ],
     )
 
@@ -123,6 +130,11 @@ class Clamp {
     ) in text
     assert (
         "Call<Tensor, std::optional<Tensor>, std::optional<Tensor>, Tensor>"
+    ) in text
+    assert (
+        "Make<const double&, const Tensor&, const Tensor&>("
+        "const Config& config, const double& mean, const Tensor& std, "
+        "const Tensor& out)"
     ) in text
 
 

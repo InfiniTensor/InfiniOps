@@ -164,6 +164,24 @@ def test_existing_base_can_expose_optional_generator():
     assert "replacement, at_generator" in source
 
 
+def test_existing_base_can_dispatch_from_later_tensor():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "normal.float_float_out(float mean, float std, SymInt[] size, *, "
+        "Generator? generator=None, Tensor(a!) out) -> Tensor(a!)"
+    )
+    signature = [
+        ("double", "mean"),
+        ("double", "std"),
+        ("std::vector<int64_t>", "size"),
+        ("std::optional<Generator>", "generator"),
+        ("Tensor", "out"),
+    ]
+
+    assert op.is_testable
+    assert module._bind_base_signature(op, signature) is not None
+
+
 def test_tensor_list_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     op = module._parse_func(

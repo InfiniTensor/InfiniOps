@@ -130,6 +130,11 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
 
       infini::ops::Add::Call(input, other, output);
 
+      if (infini::ops::detail::DispatchDeviceFromArgs(1.0, input) !=
+          infini::ops::Device::Type::kCpu) {
+        return 1;
+      }
+
       if (std::fabs(output_data[0] - 5.0f) > 1e-6f ||
           std::fabs(output_data[1] - 7.0f) > 1e-6f ||
           std::fabs(output_data[2] - 9.0f) > 1e-6f) {
