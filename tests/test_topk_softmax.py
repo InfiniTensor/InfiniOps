@@ -38,13 +38,12 @@ def test_topk_softmax(dtype, index_dtype, has_bias, renormalize, rtol, atol):
         )
     outputs = _make_outputs(gating_output, topk=2, index_dtype=index_dtype)
 
+    args = (gating_output, bias, None)
+    if renormalize:
+        args += (renormalize,)
+
     result = infini.ops.topk_softmax(
-        gating_output,
-        bias,
-        None,
-        renormalize,
-        *outputs,
-        stream=get_stream(gating_output.device),
+        *args, *outputs, stream=get_stream(gating_output.device)
     )
 
     assert result is None

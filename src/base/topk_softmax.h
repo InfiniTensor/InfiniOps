@@ -15,6 +15,12 @@ namespace infini::ops {
 class TopkSoftmax : public Operator<TopkSoftmax> {
  public:
   TopkSoftmax(const Tensor gating_output, std::optional<Tensor> bias,
+              std::optional<Tensor> is_padding, Tensor topk_weights,
+              Tensor topk_indices, Tensor token_expert_indices)
+      : TopkSoftmax{gating_output, bias,         is_padding,          false,
+                    topk_weights,  topk_indices, token_expert_indices} {}
+
+  TopkSoftmax(const Tensor gating_output, std::optional<Tensor> bias,
               std::optional<Tensor> is_padding, const bool renormalize,
               Tensor topk_weights, Tensor topk_indices,
               Tensor token_expert_indices)
@@ -33,6 +39,13 @@ class TopkSoftmax : public Operator<TopkSoftmax> {
         token_expert_indices_metadata_{token_expert_indices} {
     Validate(gating_output, bias, is_padding, topk_weights, topk_indices,
              token_expert_indices);
+  }
+
+  void operator()(const Tensor gating_output, std::optional<Tensor> bias,
+                  std::optional<Tensor> is_padding, Tensor topk_weights,
+                  Tensor topk_indices, Tensor token_expert_indices) const {
+    (*this)(gating_output, bias, is_padding, false, topk_weights, topk_indices,
+            token_expert_indices);
   }
 
   virtual void operator()(const Tensor gating_output,

@@ -12,6 +12,8 @@ class Operator<TopkSoftmax, Device::Type::kNvidia, 0> : public TopkSoftmax {
  public:
   using TopkSoftmax::TopkSoftmax;
 
+  using TopkSoftmax::operator();
+
   void operator()(const Tensor gating_output, std::optional<Tensor> bias,
                   std::optional<Tensor> is_padding, const bool renormalize,
                   Tensor topk_weights, Tensor topk_indices,
