@@ -8,10 +8,12 @@
 
 #ifdef WITH_TORCH
 #include <torch/csrc/Generator.h>
+#include <torch/csrc/Storage.h>
 #endif
 
 #include "generator.h"
 #include "host_range_profiler.h"
+#include "storage.h"
 #include "tensor.h"
 #include "torch/device_.h"
 
@@ -227,6 +229,40 @@ struct type_caster<infini::ops::Generator> {
     }
 
     return handle{THPGenerator_Wrap(*generator)};
+  }
+};
+
+template <>
+struct type_caster<infini::ops::Storage> {
+ public:
+  PYBIND11_TYPE_CASTER(infini::ops::Storage,
+                       const_name("torch.UntypedStorage"));
+
+  bool load(handle source, bool) {
+    object untyped_storage;
+    handle storage = source;
+
+    if (!THPStorage_Check(storage.ptr())) {
+      if (!hasattr(source, "_untyped_storage")) {
+        return false;
+      }
+
+      untyped_storage =
+          reinterpret_borrow<object>(source).attr("_untyped_storage");
+      storage = untyped_storage;
+    }
+
+    if (!THPStorage_Check(storage.ptr())) {
+      return false;
+    }
+
+    value = infini::ops::Storage::From(THPStorage_Unpack(storage.ptr()));
+
+    return true;
+  }
+
+  static handle cast(const infini::ops::Storage&, return_value_policy, handle) {
+    return none().release();
   }
 };
 

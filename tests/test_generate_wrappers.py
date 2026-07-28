@@ -17,6 +17,12 @@ def _load_generator_module():
     return module
 
 
+def test_storage_is_a_known_non_tensor_type():
+    module = _load_generator_module()
+
+    assert module._is_known_non_tensor_type("Storage")
+
+
 def test_generated_dispatch_keeps_optional_scalar_and_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):

@@ -1319,6 +1319,7 @@ def _is_known_non_tensor_type(type_spelling):
         "double",
         "float",
         "int64_t",
+        "Storage",
         "std::size_t",
         "std::string",
     }:

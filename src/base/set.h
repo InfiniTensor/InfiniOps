@@ -4,11 +4,28 @@
 #include <vector>
 
 #include "operator.h"
+#include "storage.h"
 
 namespace infini::ops {
 
 class Set : public Operator<Set> {
  public:
+  Set(Tensor input, const Storage source, const int64_t storage_offset,
+      const std::vector<int64_t> size, const std::vector<int64_t> stride)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        storage_offset_{storage_offset},
+        size_{size},
+        stride_{stride},
+        device_index_{input.device().index()} {}
+
+  Set(Tensor input, const Storage source)
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        device_index_{input.device().index()} {}
+
   Set(Tensor input, const Tensor source, const int64_t storage_offset,
       const std::vector<int64_t> size, const std::vector<int64_t> stride)
       : input_shape_{input.shape()},
@@ -30,6 +47,13 @@ class Set : public Operator<Set> {
         source_strides_{source.strides()},
         source_type_{source.dtype()},
         device_index_{input.device().index()} {}
+
+  virtual void operator()(Tensor input, const Storage source,
+                          const int64_t storage_offset,
+                          const std::vector<int64_t> size,
+                          const std::vector<int64_t> stride) const = 0;
+
+  virtual void operator()(Tensor input, const Storage source) const = 0;
 
   virtual void operator()(Tensor input, const Tensor source,
                           const int64_t storage_offset,

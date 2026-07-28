@@ -164,6 +164,27 @@ def test_existing_base_can_expose_optional_generator():
     assert "replacement, at_generator" in source
 
 
+def test_existing_base_can_expose_storage():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "set_.source_Storage(Tensor(a!) self, Storage source) -> Tensor(a!)"
+    )
+    signature = [("Tensor", "input"), ("Storage", "source")]
+
+    assert op.params[1].cpp_type == "Storage"
+
+    bound = module._bind_base_signature(op, signature)
+
+    assert bound is not None
+    assert [param.cpp_type for param in bound.visible_params] == ["Tensor", "Storage"]
+
+    source = module._generate_torch_method_source("set", bound)
+
+    assert "source.GetIf<c10::Storage>()" in source
+    assert '"`source` does not contain a PyTorch storage"' in source
+    assert "at_self.set_(*at_source)" in source
+
+
 def test_tensor_list_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     op = module._parse_func(

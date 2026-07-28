@@ -339,6 +339,9 @@ class Param:
         if self.is_tensor_list:
             return "std::vector<Tensor>"
 
+        if self.aten_type == "Storage":
+            return "Storage"
+
         if self.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
             return _EXPOSED_OPTIONAL_CPP_TYPES[self.aten_type]
 
@@ -652,6 +655,9 @@ def _cpp_param_compatible(
 
     if schema_param.aten_type == "Generator?":
         return _normalize_cpp_type(base_cpp_type) == "std::optional<Generator>"
+
+    if schema_param.aten_type == "Storage":
+        return _normalize_cpp_type(base_cpp_type) == "Storage"
 
     return _cpp_types_compatible(schema_param.cpp_type, base_cpp_type)
 
@@ -1354,6 +1360,20 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         if api_param is not None and _is_exposed_optional(param, api_param):
             _append_optional_conversion(param, api_param)
 
+        if (
+            api_param is not None
+            and param.aten_type == "Storage"
+            and _normalize_cpp_type(api_param.cpp_type) == "Storage"
+        ):
+            api_name = api_param.api_name
+            conversion_lines.append(
+                f"  const auto* at_{param.name} = {api_name}.GetIf<c10::Storage>();"
+            )
+            conversion_lines.append(
+                f"  assert(at_{param.name} != nullptr && "
+                f'"`{api_name}` does not contain a PyTorch storage");'
+            )
+
     def _render_arg(schema_index, p):
         api_param = op.api_param_for(schema_index)
 
@@ -1362,6 +1382,9 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 
         if _is_exposed_optional(p, api_param):
             return f"at_{p.name}"
+
+        if p.aten_type == "Storage":
+            return f"*at_{p.name}"
 
         if p.is_tensor or p.is_tensor_list:
             return f"at_{p.name}"
