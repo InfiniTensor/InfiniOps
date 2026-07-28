@@ -11,11 +11,7 @@ template <>
 class Operator<MoeAlignBlockSize, Device::Type::kNvidia, 0>
     : public MoeAlignBlockSize {
  public:
-  Operator(const Tensor topk_ids, const int64_t num_experts,
-           const int64_t block_size, Tensor sorted_token_ids,
-           Tensor experts_ids, Tensor num_tokens_post_pad);
-
-  Operator(const Tensor topk_ids, const Tensor expert_map,
+  Operator(const Tensor topk_ids, const std::optional<Tensor> expert_map,
            const int64_t num_experts, const int64_t block_size,
            Tensor sorted_token_ids, Tensor experts_ids,
            Tensor num_tokens_post_pad);

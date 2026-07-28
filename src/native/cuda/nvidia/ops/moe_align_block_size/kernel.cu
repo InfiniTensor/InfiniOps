@@ -42,17 +42,10 @@ class DeviceGuard {
 }  // namespace
 
 Operator<MoeAlignBlockSize, Device::Type::kNvidia, 0>::Operator(
-    const Tensor topk_ids, const int64_t num_experts, const int64_t block_size,
+    const Tensor topk_ids, const std::optional<Tensor> expert_map,
+    const int64_t num_experts, const int64_t block_size,
     Tensor sorted_token_ids, Tensor experts_ids, Tensor num_tokens_post_pad)
-    : MoeAlignBlockSize{topk_ids,         num_experts, block_size,
-                        sorted_token_ids, experts_ids, num_tokens_post_pad},
-      device_index_{topk_ids.device().index()} {}
-
-Operator<MoeAlignBlockSize, Device::Type::kNvidia, 0>::Operator(
-    const Tensor topk_ids, const Tensor expert_map, const int64_t num_experts,
-    const int64_t block_size, Tensor sorted_token_ids, Tensor experts_ids,
-    Tensor num_tokens_post_pad)
-    : MoeAlignBlockSize{topk_ids,           expert_map,       num_experts,
+    : MoeAlignBlockSize{topk_ids,           expert_map,      num_experts,
                         block_size,         sorted_token_ids, experts_ids,
                         num_tokens_post_pad},
       device_index_{topk_ids.device().index()} {}

@@ -15,24 +15,8 @@ namespace infini::ops {
 // low-level `moe_align_block_size` operator.
 class MoeAlignBlockSize : public Operator<MoeAlignBlockSize> {
  public:
-  MoeAlignBlockSize(const Tensor topk_ids, const int64_t num_experts,
-                    const int64_t block_size, Tensor sorted_token_ids,
-                    Tensor experts_ids, Tensor num_tokens_post_pad)
-      : topk_ids_metadata_{topk_ids},
-        expert_map_metadata_{std::nullopt},
-        sorted_token_ids_metadata_{sorted_token_ids},
-        experts_ids_metadata_{experts_ids},
-        num_tokens_post_pad_metadata_{num_tokens_post_pad},
-        numel_{topk_ids.numel()},
-        num_experts_{num_experts},
-        block_size_{block_size},
-        sorted_token_ids_size_{sorted_token_ids.numel()},
-        experts_ids_size_{experts_ids.numel()} {
-    Validate(topk_ids, std::nullopt, sorted_token_ids, experts_ids,
-             num_tokens_post_pad);
-  }
-
-  MoeAlignBlockSize(const Tensor topk_ids, const Tensor expert_map,
+  MoeAlignBlockSize(const Tensor topk_ids,
+                    const std::optional<Tensor> expert_map,
                     const int64_t num_experts, const int64_t block_size,
                     Tensor sorted_token_ids, Tensor experts_ids,
                     Tensor num_tokens_post_pad)
@@ -46,28 +30,18 @@ class MoeAlignBlockSize : public Operator<MoeAlignBlockSize> {
         block_size_{block_size},
         sorted_token_ids_size_{sorted_token_ids.numel()},
         experts_ids_size_{experts_ids.numel()} {
-    Validate(topk_ids, std::optional<Tensor>{expert_map}, sorted_token_ids,
-             experts_ids, num_tokens_post_pad);
+    Validate(topk_ids, expert_map, sorted_token_ids, experts_ids,
+             num_tokens_post_pad);
   }
 
-  void operator()(const Tensor topk_ids, const int64_t num_experts,
-                  const int64_t block_size, Tensor sorted_token_ids,
-                  Tensor experts_ids, Tensor num_tokens_post_pad) const {
-    ValidateInvocation(topk_ids, std::nullopt, num_experts, block_size,
-                       sorted_token_ids, experts_ids, num_tokens_post_pad);
-    Run(topk_ids, std::nullopt, num_experts, block_size, sorted_token_ids,
-        experts_ids, num_tokens_post_pad);
-  }
-
-  void operator()(const Tensor topk_ids, const Tensor expert_map,
+  void operator()(const Tensor topk_ids, const std::optional<Tensor> expert_map,
                   const int64_t num_experts, const int64_t block_size,
                   Tensor sorted_token_ids, Tensor experts_ids,
                   Tensor num_tokens_post_pad) const {
-    ValidateInvocation(topk_ids, std::optional<Tensor>{expert_map}, num_experts,
-                       block_size, sorted_token_ids, experts_ids,
-                       num_tokens_post_pad);
-    Run(topk_ids, std::optional<Tensor>{expert_map}, num_experts, block_size,
-        sorted_token_ids, experts_ids, num_tokens_post_pad);
+    ValidateInvocation(topk_ids, expert_map, num_experts, block_size,
+                       sorted_token_ids, experts_ids, num_tokens_post_pad);
+    Run(topk_ids, expert_map, num_experts, block_size, sorted_token_ids,
+        experts_ids, num_tokens_post_pad);
   }
 
  protected:

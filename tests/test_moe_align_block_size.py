@@ -50,27 +50,6 @@ def test_moe_align_block_size(
     _assert_matches_reference(topk_ids, None, num_experts, block_size, *outputs)
 
 
-def test_moe_align_block_size_default_expert_map(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("`moe_align_block_size` requires the NVIDIA backend")
-
-    topk_ids = torch.tensor(((0, 2), (1, 2), (0, 1)), dtype=torch.int32, device=device)
-    num_experts = 4
-    block_size = 4
-    outputs = _make_outputs(topk_ids, num_experts, block_size)
-
-    infini.ops.moe_align_block_size(
-        topk_ids,
-        num_experts,
-        block_size,
-        *outputs,
-        stream=get_stream(topk_ids.device),
-        implementation_index=implementation_index,
-    )
-
-    _assert_matches_reference(topk_ids, None, num_experts, block_size, *outputs)
-
-
 @pytest.mark.parametrize(
     "topk_ids_values, expert_map_values, num_experts, block_size",
     (
@@ -264,6 +243,7 @@ def test_moe_align_block_size_non_default_stream(device, implementation_index):
 
     infini.ops.moe_align_block_size(
         topk_ids,
+        None,
         num_experts,
         block_size,
         *outputs,
@@ -300,6 +280,7 @@ def test_moe_align_block_size_device_guard():
 
         infini.ops.moe_align_block_size(
             topk_ids,
+            None,
             num_experts,
             block_size,
             *outputs,
@@ -345,18 +326,14 @@ def _moe_align_block_size(
     *,
     implementation_index,
 ):
-    args = (topk_ids,)
-    if expert_map is not None:
-        args += (expert_map,)
-    args += (
+    infini.ops.moe_align_block_size(
+        topk_ids,
+        expert_map,
         num_experts,
         block_size,
         sorted_token_ids,
         expert_ids,
         num_tokens_post_pad,
-    )
-    infini.ops.moe_align_block_size(
-        *args,
         stream=get_stream(topk_ids.device),
         implementation_index=implementation_index,
     )
@@ -454,6 +431,7 @@ _DESCRIPTOR_REUSE_SCRIPT = textwrap.dedent(
     if metadata_change == "expert_map_presence":
         operator(
             topk_ids,
+            None,
             num_experts,
             block_size,
             sorted_token_ids,
