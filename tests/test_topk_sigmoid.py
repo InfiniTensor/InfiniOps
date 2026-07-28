@@ -5,9 +5,14 @@ import torch
 from tests.utils import get_stream
 
 
+_INDEX_DTYPES = (torch.int32, torch.int64)
+if hasattr(torch, "uint32"):
+    _INDEX_DTYPES += (torch.uint32,)
+
+
 @pytest.mark.parametrize("renormalize", (False, True))
 @pytest.mark.parametrize("has_bias", (False, True))
-@pytest.mark.parametrize("index_dtype", (torch.int32, torch.int64, torch.uint32))
+@pytest.mark.parametrize("index_dtype", _INDEX_DTYPES)
 @pytest.mark.parametrize(
     "dtype, rtol, atol",
     (
@@ -108,7 +113,7 @@ def test_topk_sigmoid_nan_tie_uses_lower_expert_ids():
     )
 
 
-@pytest.mark.parametrize("index_dtype", (torch.int32, torch.int64, torch.uint32))
+@pytest.mark.parametrize("index_dtype", _INDEX_DTYPES)
 def test_topk_sigmoid_padding_and_token_expert_indices(index_dtype):
     if not torch.cuda.is_available():
         pytest.skip("`topk_sigmoid` requires the NVIDIA backend")
