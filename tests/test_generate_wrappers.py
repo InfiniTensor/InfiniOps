@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import re
 import sys
 
 
@@ -382,6 +383,163 @@ class DtypeOp : public Operator<DtypeOp> {
 
 }  // namespace infini::ops
 """
+
+
+def _make_profile_operator(module, tmp_path, monkeypatch):
+    base_header = tmp_path / "profile_op.h"
+    base_header.write_text(
+        """
+class ProfileOp {
+ public:
+  ProfileOp(const Tensor input, Tensor out);
+  virtual void operator()(const Tensor input, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const double alpha,
+                          Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    arguments = [
+        module._ParsedArgument("const Tensor", "input"),
+        module._ParsedArgument("Tensor", "out"),
+    ]
+    scaled_arguments = [
+        module._ParsedArgument("const Tensor", "input"),
+        module._ParsedArgument("const double", "alpha"),
+        module._ParsedArgument("Tensor", "out"),
+    ]
+
+    return module._Operator(
+        "profile_op",
+        constructors=[module._ParsedFunction(arguments)],
+        calls=[
+            module._ParsedFunction(arguments),
+            module._ParsedFunction(scaled_arguments),
+        ],
+    )
+
+
+def test_generated_free_calls_start_with_binding_body_profile_scope(
+    tmp_path, monkeypatch
+):
+    module = _load_generator_module()
+    operator = _make_profile_operator(module, tmp_path, monkeypatch)
+
+    text = module._generate_pybind11(operator)
+
+    scope = (
+        "[[maybe_unused]] HostRangeScope host_range_binding_body{\n"
+        "        HostRangeLayer::kBindingBody};"
+    )
+    assert '#include "host_range_profiler.h"' in text
+    free_call_bodies = re.findall(
+        r'm\.def\("profile_op", \[\]\([^)]*\) \{\n(.*?)\n  \},',
+        text,
+        flags=re.DOTALL,
+    )
+    assert len(free_call_bodies) == 2
+
+    for body in free_call_bodies:
+        assert body.lstrip().startswith(scope)
+        assert body.count(scope) == 1
+        assert body.index(scope) < body.index("Handle handle;")
+        assert body.index(scope) < body.index("Config config;")
+
+
+def test_generated_ops_module_exposes_host_range_profile_controls_once():
+    module = _load_generator_module()
+
+    text = module._generate_ops_module_source(["BindProfileOp"])
+
+    assert '#include "host_range_profiler.h"' in text
+    expected_targets = {
+        "_host_range_profile_compiled": "HostRangeProfiler::IsCompiled",
+        "_host_range_profile_start": "HostRangeProfiler::Start",
+        "_host_range_profile_stop": "HostRangeProfiler::Stop",
+        "_host_range_profile_calibrate": "HostRangeProfiler::Calibrate",
+    }
+
+    for name, target in expected_targets.items():
+        marker = f'm.def("{name}"'
+        assert text.count(marker) == 1
+        binding = text.split(marker, maxsplit=1)[1].split("\n  m.def(", maxsplit=1)[0]
+        assert target in binding
+
+
+def test_iluvatar_custom_compilers_receive_host_range_profile_definition():
+    cmake = (pathlib.Path(__file__).parents[1] / "src" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+
+    for definitions in (
+        "_iluvatar_call_instantiation_defs",
+        "_iluvatar_dispatch_defs",
+    ):
+        assert (
+            f"list(APPEND {definitions}\n"
+            "                -DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1)"
+        ) in cmake
+
+
+def test_torch_system_compiler_receives_host_range_profile_definition():
+    cmake = (pathlib.Path(__file__).parents[1] / "src" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "list(APPEND _torch_extra_flags\n"
+        '                "-DINFINI_OPS_ENABLE_HOST_RANGE_PROFILING=1")'
+    ) in cmake
+
+
+def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
+    tmp_path, monkeypatch
+):
+    module = _load_generator_module()
+    operator = _make_profile_operator(module, tmp_path, monkeypatch)
+    _, definitions = module._generate_generated_dispatch_entries(operator)
+
+    text = module._generate_generated_dispatch_source([], definitions)
+
+    scope = (
+        "[[maybe_unused]] HostRangeScope host_range_dispatch_call{\n"
+        "      HostRangeLayer::kDispatchCall};"
+    )
+    assert '#include "host_range_profiler.h"' in text
+    dispatch_call_bodies = re.findall(
+        r"void CallProfileOp\([^)]*\) \{\n(.*?)\n\}",
+        text,
+        flags=re.DOTALL,
+    )
+    assert len(dispatch_call_bodies) == 2
+
+    for body in dispatch_call_bodies:
+        assert body.lstrip().startswith(scope)
+        assert body.count(scope) == 1
+        assert body.index(scope) < body.index(
+            "Operator<::infini::ops::ProfileOp>::Call"
+        )
+
+
+def test_generated_cache_clear_has_a_backend_independent_core_source(
+    tmp_path, monkeypatch
+):
+    module = _load_generator_module()
+    operator = _make_profile_operator(module, tmp_path, monkeypatch)
+
+    _, definitions = module._generate_generated_dispatch_entries(operator)
+    dispatch_text = "\n".join(definitions)
+    core_text = module._generate_cache_clear_dispatch_source(["profile_op"])
+
+    assert (
+        "#if !defined(INFINI_OPS_USE_OPERATOR_CALL_INSTANTIATIONS)\n"
+        "void ClearCacheForProfileOp()"
+    ) in dispatch_text
+    assert "INFINI_OPS_BUILD_CORE_DISPATCH" not in dispatch_text
+    assert core_text.count("void ClearCacheForProfileOp()") == 1
+    assert '#include "base/profile_op.h"' in core_text
+    assert "Operator<::infini::ops::ProfileOp>::clear_cache();" in core_text
 
 
 def test_pybind_converts_data_type_arguments_from_torch_dtype(tmp_path, monkeypatch):

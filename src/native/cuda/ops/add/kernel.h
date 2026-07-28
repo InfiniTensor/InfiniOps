@@ -8,6 +8,7 @@
 
 #include "base/add.h"
 #include "common/generic_utils.h"
+#include "host_range_profiler.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/add/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
@@ -62,6 +63,9 @@ class CudaAdd : public Add {
 
   void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
+    [[maybe_unused]] HostRangeScope host_range_backend_submit{
+        HostRangeLayer::kBackendSubmit};
+
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size},
