@@ -227,6 +227,13 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
         }
       }
 
+      Shape::value_type size(std::ptrdiff_t dim) const {
+        const auto index = dim < 0
+                               ? static_cast<std::ptrdiff_t>(shape_.size()) + dim
+                               : dim;
+        return shape_[static_cast<std::size_t>(index)];
+      }
+
       infini::ops::DataType dtype() const { return dtype_; }
 
       infini::ops::Device device() const { return device_; }
