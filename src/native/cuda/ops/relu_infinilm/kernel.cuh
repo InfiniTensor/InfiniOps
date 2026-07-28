@@ -13,12 +13,12 @@ namespace {
 template <Device::Type kDev, typename T>
 __device__ __forceinline__ T ReluInfinilmValue(T x) {
   const float v = Caster<kDev>::template Cast<float>(x);
-  return Caster<kDev>::template Cast<T>(v > 0.0f ? v : 0.0f);
+  return v <= 0.0f ? Caster<kDev>::template Cast<T>(0.0f) : x;
 }
 
 template <Device::Type kDev>
 __device__ __forceinline__ double ReluInfinilmValue(double x) {
-  return x > 0.0 ? x : 0.0;
+  return x <= 0.0 ? 0.0 : x;
 }
 
 }  // namespace

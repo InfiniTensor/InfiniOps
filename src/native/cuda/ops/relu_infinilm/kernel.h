@@ -23,6 +23,11 @@ class CudaReluInfinilm : public ReluInfinilm {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 2 * (shape_size + strides_size);
+
+    if (metadata_size == 0) {
+      return;
+    }
+
     std::vector<std::byte> metadata(metadata_size);
 
     Backend::Malloc((void**)&d_metadata_, metadata_size);
@@ -47,9 +52,17 @@ class CudaReluInfinilm : public ReluInfinilm {
                     Backend::kMemcpyHostToDevice);
   }
 
-  ~CudaReluInfinilm() { Backend::Free(d_metadata_); }
+  ~CudaReluInfinilm() {
+    if (d_metadata_ != nullptr) {
+      Backend::Free(d_metadata_);
+    }
+  }
 
   void operator()(const Tensor input, Tensor out) const override {
+    if (output_size_ == 0) {
+      return;
+    }
+
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
     int block_size = std::min(
