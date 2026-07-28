@@ -1,8 +1,8 @@
 """Generate InfiniOps PyTorch wrappers from ATen `native_functions.yaml`.
 
 For each op listed in `scripts/torch_ops.yaml`, this script finds the `.out`
-variant in PyTorch's locally installed `native_functions.yaml`, parses its schema,
-and emits:
+variant in PyTorch's locally installed ATen schemas, including variants declared
+through `autogen`, and emits:
   - `generated/base/<op>.h` — the InfiniOps base class
     `class <Op> : public Operator<<Op>>`, with constructors and pure-virtual
     `operator()` overloads mirroring the selected ATen schemas.
@@ -822,34 +822,33 @@ def _default_call_value(param: Param) -> str:
     return param.hidden_value()
 
 
-def _load_aten_yaml(version: str) -> str:
-    """Return the `native_functions.yaml` bundled with installed `torchgen`.
+def _load_aten_entries(version: str) -> list[dict]:
+    """Return parsed ATen schemas bundled with installed `torchgen`.
 
     `WITH_TORCH=ON` already requires a local PyTorch installation. PyTorch
     wheels ship the matching ATen schema under `torchgen/packaged`, including
     vendor forks, so codegen should not depend on fetching PyTorch sources from
-    GitHub during CI builds.
+    GitHub during CI builds. The official parser expands schemas declared via
+    `autogen`, such as `relu.out`, before InfiniOps filters for out variants.
     """
 
-    packaged = _load_packaged_aten_yaml()
-
-    if packaged is None:
-        raise RuntimeError(
-            "could not find installed `torchgen` packaged "
-            f"`native_functions.yaml` for PyTorch schema {version!r}"
-        )
+    try:
+        packaged, expanded_autogen = _load_packaged_aten_entries()
+    except RuntimeError as error:
+        raise RuntimeError(f"{error} for PyTorch schema {version!r}") from error
 
     print(
-        "using installed `torchgen` packaged `native_functions.yaml` "
-        f"for PyTorch schema {version}.",
+        "using installed `torchgen` ATen schemas "
+        f"for PyTorch schema {version} "
+        f"({'with' if expanded_autogen else 'without'} `autogen` expansion).",
         file=sys.stderr,
     )
 
     return packaged
 
 
-def _load_packaged_aten_yaml() -> str | None:
-    """Return the `native_functions.yaml` bundled with installed `torchgen`.
+def _load_packaged_aten_entries() -> tuple[list[dict], bool]:
+    """Parse the ATen schemas bundled with installed `torchgen`.
 
     PyTorch wheels install `torchgen/packaged/ATen/native/native_functions.yaml`;
     using it lets offline CI images generate wrappers against the exact schema
@@ -858,22 +857,73 @@ def _load_packaged_aten_yaml() -> str | None:
 
     spec = importlib.util.find_spec("torchgen")
 
-    if spec is None or spec.submodule_search_locations is None:
-        return None
+    if spec is None:
+        raise RuntimeError("could not find the installed `torchgen` package")
+
+    if spec.submodule_search_locations is None:
+        raise RuntimeError("installed `torchgen` is not a package")
 
     for root in spec.submodule_search_locations:
-        path = (
-            pathlib.Path(root)
-            / "packaged"
-            / "ATen"
-            / "native"
-            / "native_functions.yaml"
+        native_dir = pathlib.Path(root) / "packaged" / "ATen" / "native"
+        native_path = native_dir / "native_functions.yaml"
+        tags_path = native_dir / "tags.yaml"
+
+        if not native_path.is_file():
+            continue
+
+        if not tags_path.is_file():
+            print(
+                "warning: could not expand ATen `autogen` schemas because "
+                f"`{tags_path}` is missing; using explicit schemas only.",
+                file=sys.stderr,
+            )
+
+            return _load_explicit_aten_entries(native_path), False
+
+        try:
+            from torchgen.gen import parse_native_yaml
+        except (ImportError, AttributeError) as error:
+            print(
+                "warning: could not expand ATen `autogen` schemas because "
+                f"`torchgen.gen.parse_native_yaml` is unavailable ({error}); "
+                "using explicit schemas only.",
+                file=sys.stderr,
+            )
+
+            return _load_explicit_aten_entries(native_path), False
+
+        try:
+            parsed = parse_native_yaml(str(native_path), str(tags_path))
+        except Exception as error:
+            print(
+                "warning: could not expand ATen `autogen` schemas from "
+                f"`{native_path}` ({type(error).__name__}: {error}); "
+                "using explicit schemas only.",
+                file=sys.stderr,
+            )
+
+            return _load_explicit_aten_entries(native_path), False
+
+        return (
+            [{"func": str(function.func)} for function in parsed.native_functions],
+            True,
         )
 
-        if path.is_file():
-            return path.read_text()
+    raise RuntimeError(
+        "could not find installed `torchgen` packaged `native_functions.yaml`"
+    )
 
-    return None
+
+def _load_explicit_aten_entries(native_path: pathlib.Path) -> list[dict]:
+    entries = yaml.safe_load(native_path.read_text())
+
+    if not isinstance(entries, list):
+        raise RuntimeError(
+            f"expected a list of ATen schemas in `{native_path}`, "
+            f"got {type(entries).__name__}"
+        )
+
+    return entries
 
 
 def _find_out_entries(entries: list[dict], op_name: str) -> list[dict]:
@@ -1506,7 +1556,7 @@ def main() -> int:
     _CLANG_FORMAT = _find_clang_format()
 
     op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
-    aten_entries = yaml.safe_load(_load_aten_yaml(args.pytorch_version))
+    aten_entries = _load_aten_entries(args.pytorch_version)
 
     skipped: list[tuple[str, str]] = []
     metadata: list[dict] = []
