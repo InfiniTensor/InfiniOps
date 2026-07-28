@@ -211,6 +211,11 @@ class MaxUnpool3d {
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           Tensor out) const = 0;
+  virtual void operator()(const Tensor input,
+                          const std::optional<Tensor> cache_seqlens,
+                          Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const int64_t cache_seqlens,
+                          Tensor out) const = 0;
 };
 """
     )
@@ -249,8 +254,24 @@ class MaxUnpool3d {
             module._ParsedArgument("Tensor", "out"),
         ]
     )
+    optional_tensor = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "input"),
+            module._ParsedArgument("const std::optional<Tensor>", "cache_seqlens"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    scalar = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "input"),
+            module._ParsedArgument("const int64_t", "cache_seqlens"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
     operator = module._Operator(
-        "max_unpool3d", constructors=[], calls=[canonical, legacy, nested]
+        "max_unpool3d",
+        constructors=[],
+        calls=[canonical, legacy, nested, optional_tensor, scalar],
     )
 
     binding = module._generate_pybind11(operator)
@@ -263,6 +284,8 @@ class MaxUnpool3d {
     assert "const std::vector<int64_t> stride" in generated
     assert "const std::vector<int64_t> output_size" in generated
     assert "const std::vector<std::vector<int64_t>> dims" in generated
+    assert "std::optional<py::object> cache_seqlens" in generated
+    assert "const int64_t cache_seqlens" in generated
 
 
 def test_pybind_default_implementation_uses_first_active_index(monkeypatch, tmp_path):
