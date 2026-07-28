@@ -173,6 +173,10 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
     r"""
     #include <infini/ops.h>
 
+    #include <base/embedding.h>
+    #include <base/scaled_dot_product_attention.h>
+    #include <base/silu_and_mul.h>
+
     #include <cmath>
     #include <functional>
     #include <numeric>
