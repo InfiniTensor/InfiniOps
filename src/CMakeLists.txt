@@ -627,6 +627,13 @@ if(WITH_TORCH)
             ".*/flash_attn_with_kvcache/flash_attn\\.cc$")
     endif()
 
+    # This source belongs to the Python module, not the core ATen backend.
+    set(TORCH_PYBIND_BRIDGE_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/torch/pybind11_.cc")
+    set(TORCH_PYBIND_BRIDGE_HEADER
+        "${CMAKE_CURRENT_SOURCE_DIR}/torch/pybind11_.h")
+    list(REMOVE_ITEM TORCH_SOURCES "${TORCH_PYBIND_BRIDGE_SOURCE}")
+
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
     set(TORCH_COMPILE_SOURCES ${TORCH_SOURCES})
@@ -1090,7 +1097,11 @@ if(GENERATE_PYTHON_BINDINGS)
         list(APPEND PYBIND11_COMPILE_SOURCES ${ILUVATAR_DISPATCH_OBJECTS})
     endif()
 
-    find_package(Python COMPONENTS Interpreter Development)
+    if(WITH_TORCH)
+        find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    else()
+        find_package(Python COMPONENTS Interpreter Development)
+    endif()
 
     if(NOT pybind11_DIR)
         execute_process(
@@ -1116,6 +1127,70 @@ if(GENERATE_PYTHON_BINDINGS)
     target_compile_options(ops PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX,CUDA>:-Wno-deprecated-declarations>"
     )
+
+    if(WITH_TORCH)
+        find_library(TORCH_PYTHON_LIB torch_python
+            HINTS ${_torch_lib_dirs} REQUIRED)
+
+        if(WITH_METAX OR WITH_MOORE)
+            set(_torch_bridge_include_flags "")
+            foreach(_dir ${TORCH_INCLUDE_DIRS} ${Python_INCLUDE_DIRS})
+                list(APPEND _torch_bridge_include_flags "-isystem" "${_dir}")
+            endforeach()
+
+            set(_torch_bridge_object_dir
+                "${CMAKE_CURRENT_BINARY_DIR}/binding_objs")
+            file(MAKE_DIRECTORY "${_torch_bridge_object_dir}")
+            set(_torch_bridge_obj
+                "${_torch_bridge_object_dir}/torch_pybind11_.o")
+            set(_torch_bridge_dep "${_torch_bridge_obj}.d")
+            set(_torch_bridge_depfile_arg)
+            if(CMAKE_GENERATOR MATCHES "Ninja")
+                set(_torch_bridge_depfile_arg DEPFILE "${_torch_bridge_dep}")
+            endif()
+            add_custom_command(
+                OUTPUT "${_torch_bridge_obj}"
+                COMMAND ${SYSTEM_CXX}
+                    -std=c++17 -fPIC -O2
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}"
+                    "-I${PROJECT_SOURCE_DIR}/generated"
+                    ${INFINI_RT_INCLUDE_FLAGS}
+                    ${_torch_vendor_include_flags}
+                    ${_torch_bridge_include_flags}
+                    ${_torch_extra_flags}
+                    -MMD -MF "${_torch_bridge_dep}"
+                    -c "${TORCH_PYBIND_BRIDGE_SOURCE}"
+                    -o "${_torch_bridge_obj}"
+                DEPENDS
+                    "${TORCH_PYBIND_BRIDGE_SOURCE}"
+                    "${TORCH_PYBIND_BRIDGE_HEADER}"
+                ${_torch_bridge_depfile_arg}
+                COMMENT "Compiling torch/pybind11_.cc with system C++ compiler"
+                VERBATIM
+            )
+            set_source_files_properties("${_torch_bridge_obj}"
+                PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+            target_sources(ops PRIVATE "${_torch_bridge_obj}")
+        else()
+            add_library(infini_ops_torch_bridge_obj OBJECT
+                ${TORCH_PYBIND_BRIDGE_SOURCE})
+            set_target_properties(infini_ops_torch_bridge_obj
+                PROPERTIES POSITION_INDEPENDENT_CODE ON)
+            target_include_directories(infini_ops_torch_bridge_obj PRIVATE
+                $<TARGET_PROPERTY:infiniops,INCLUDE_DIRECTORIES>
+                ${INFINI_RT_INCLUDE_DIRS}
+                ${TORCH_INCLUDE_DIRS}
+                ${Python_INCLUDE_DIRS}
+                ${PROJECT_SOURCE_DIR}/generated)
+            target_compile_definitions(infini_ops_torch_bridge_obj PRIVATE
+                $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
+            target_compile_options(infini_ops_torch_bridge_obj PRIVATE
+                $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS>
+                -O2)
+            target_sources(ops PRIVATE
+                $<TARGET_OBJECTS:infini_ops_torch_bridge_obj>)
+        endif()
+    endif()
 
     if(WITH_TORCH AND CMAKE_GENERATOR MATCHES "Ninja")
         set(INFINI_OPS_BINDING_COMPILE_JOBS "2" CACHE STRING
@@ -1149,6 +1224,9 @@ if(GENERATE_PYTHON_BINDINGS)
             ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
     target_link_libraries(ops PRIVATE infiniops)
+    if(WITH_TORCH)
+        target_link_libraries(ops PRIVATE ${TORCH_PYTHON_LIB})
+    endif()
 
     # Cambricon generated dispatch is compiled into the Python extension and
     # directly references host launch stubs emitted from `.mlu` sources. Link

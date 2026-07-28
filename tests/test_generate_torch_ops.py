@@ -49,9 +49,119 @@ def test_schema_self_param_renders_as_input_in_public_cpp_api():
     assert "Softmax(const Tensor input, const int64_t dim" in base
     assert "self_shape_" not in base
     assert "input_shape_" in base
-    assert "auto at_self = ToAtenTensor<kDev>" in source
-    assert "input_shape_" in source
+    assert "auto self_lease = input_pool_.Acquire(input);" in source
+    assert "auto& at_self = self_lease.Native();" in source
+    assert "self_pool_" not in source
     assert "at::_softmax_out(at_out, at_self" in source
+
+
+def test_abs_torch_backend_uses_generic_target_tensor_pools():
+    module = _load_generator_module()
+    op = module._parse_func("abs(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+
+    header = module._generate_torch_header("abs", [op])
+    source = module._generate_torch_source("abs", [op])
+
+    assert "using Abs::Abs;" in header
+    assert "TargetTensorPool<AtenTensorAdapter<kDev>> input_pool_;" in header
+    assert "TargetTensorPool<AtenTensorAdapter<kDev>> out_pool_;" in header
+    assert "auto self_lease = input_pool_.Acquire(input);" in source
+    assert "auto& at_self = self_lease.Native();" in source
+    assert "auto out_lease = out_pool_.Acquire(out);" in source
+    assert "auto& at_out = out_lease.Native();" in source
+    assert "AtenTensorSlot" not in header
+    assert "AtenTensorSlot" not in source
+    assert "ToAtenTensor<kDev>" not in source
+
+
+def test_pybind_tensor_metadata_bridge_does_not_retain_source_handles():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    pybind_utils = (root / "src" / "pybind11_utils.h").read_text(encoding="utf-8")
+    bridge_header = (root / "src" / "torch" / "pybind11_.h").read_text(encoding="utf-8")
+    bridge_source = (root / "src" / "torch" / "pybind11_.cc").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"torch/pybind11_.h"' in pybind_utils
+    assert "TryAtenTensorMetadataFromPyObject" in pybind_utils
+    assert "if (metadata.has_value())" in pybind_utils
+    assert "#ifdef WITH_TORCH" in pybind_utils
+    assert 'obj.attr("data_ptr")' in pybind_utils
+    assert "torch/csrc/" not in pybind_utils
+    assert "torch/csrc/autograd/python_variable.h" not in bridge_header
+    assert "torch/csrc/autograd/python_variable.h" in bridge_source
+    assert "THPVariable_Check" in bridge_source
+    assert "THPVariable_Unpack" in bridge_source
+    assert "std::optional<AtenTensorMetadata>" in bridge_header
+    assert "TryAtenTensorMetadataFromPyObject" in bridge_header
+    assert "case at::kBool:" in bridge_source
+    assert "throw " not in bridge_source
+    assert "assert(" not in bridge_source
+    assert "return std::nullopt;" in bridge_source
+    assert "if (!THPVariable_Check(object))" in bridge_source
+    assert "if (!dtype.has_value())" in bridge_source
+    assert "device.has_index() ? device.index() : 0" in bridge_source
+    assert "source_handle" not in bridge_header
+    assert "source_handle" not in bridge_source
+    assert "make_shared<at::Tensor>" not in bridge_source
+
+
+def test_pybind_tensor_metadata_bridge_is_scoped_to_python_module():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    cmake = (root / "src" / "CMakeLists.txt").read_text(encoding="utf-8")
+
+    torch_section = cmake.split("if(WITH_TORCH)", maxsplit=1)[1]
+    torch_section = torch_section.split("\nendif()", maxsplit=1)[0]
+
+    assert "Development" not in torch_section
+    assert "find_package(Python COMPONENTS Interpreter Development REQUIRED)" in cmake
+    assert 'list(REMOVE_ITEM TORCH_SOURCES "${TORCH_PYBIND_BRIDGE_SOURCE}")' in cmake
+    assert "add_library(infini_ops_torch_bridge_obj OBJECT" in cmake
+    assert "-std=c++17 -fPIC -O2" in cmake
+    assert '-MMD -MF "${_torch_bridge_dep}"' in cmake
+    assert 'DEPFILE "${_torch_bridge_dep}"' in cmake
+    assert '"${TORCH_PYBIND_BRIDGE_HEADER}"' in cmake
+    assert "target_sources(ops PRIVATE" in cmake
+    core_bridge = (
+        "target_sources(infiniops PRIVATE\n"
+        "            $<TARGET_OBJECTS:infini_ops_torch_bridge_obj>)"
+    )
+    assert core_bridge not in cmake
+    assert "find_library(TORCH_PYTHON_LIB torch_python" in cmake
+    assert "target_link_libraries(ops PRIVATE ${TORCH_PYTHON_LIB})" in cmake
+
+
+def test_torch_header_orders_and_deduplicates_tensor_pools_across_overloads():
+    module = _load_generator_module()
+    tensor_overload = module._parse_func(
+        "blend.Tensor(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    optional_overload = module._parse_func(
+        "blend.optional(Tensor self, Tensor? weight=None, Tensor bias, *, "
+        "Tensor(a!) out) -> Tensor(a!)"
+    )
+    list_overload = module._parse_func(
+        "blend.list(Tensor self, Tensor[] other, Tensor[] tensors, *, "
+        "Tensor(a!) out) -> Tensor(a!)"
+    )
+
+    header = module._generate_torch_header(
+        "blend", [tensor_overload, optional_overload, list_overload]
+    )
+    members = [
+        "TargetTensorPool<AtenTensorAdapter<kDev>> input_pool_;",
+        "TargetTensorPool<AtenTensorAdapter<kDev>> other_pool_;",
+        "TargetTensorPool<AtenTensorAdapter<kDev>> out_pool_;",
+        "TargetTensorPool<AtenTensorAdapter<kDev>> weight_pool_;",
+        "TargetTensorPool<AtenTensorAdapter<kDev>> bias_pool_;",
+        "std::vector<TargetTensorPool<AtenTensorAdapter<kDev>>> other_pools_;",
+        "std::vector<TargetTensorPool<AtenTensorAdapter<kDev>>> tensors_pools_;",
+    ]
+
+    assert [header.count(member) for member in members] == [1] * len(members)
+    assert [header.index(member) for member in members] == sorted(
+        header.index(member) for member in members
+    )
 
 
 def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
@@ -73,6 +183,7 @@ def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     ]
 
     base = module._generate_base_header("batch_norm_elemt", [op])
+    header = module._generate_torch_header("batch_norm_elemt", [op])
     source = module._generate_torch_method_source("batch_norm_elemt", op)
 
     assert "#include <optional>" in base
@@ -82,7 +193,31 @@ def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     assert "bool has_bias_" in base
     assert "c10::optional<at::Tensor> at_weight" in source
     assert "c10::optional<at::Tensor> at_bias" in source
-    assert "weight->shape()" in source
+    assert (
+        "std::optional<typename "
+        "TargetTensorPool<AtenTensorAdapter<kDev>>::Lease> weight_lease;" in source
+    )
+    assert (
+        "std::optional<typename "
+        "TargetTensorPool<AtenTensorAdapter<kDev>>::Lease> bias_lease;" in source
+    )
+    assert "weight_lease.emplace(weight_pool_.Acquire(*weight));" in source
+    assert "at_weight = weight_lease->Native();" in source
+    assert "bias_lease.emplace(bias_pool_.Acquire(*bias));" in source
+    assert "at_bias = bias_lease->Native();" in source
+    assert source.index("weight_lease;") < source.index("at_weight;")
+    assert source.index("bias_lease;") < source.index("at_bias;")
+    assert source.index("at_weight;") < source.index("weight_lease.emplace")
+    assert source.index("at_bias;") < source.index("bias_lease.emplace")
+    assert source.index("at_weight = weight_lease->Native();") < source.index(
+        "at::batch_norm_elemt_out"
+    )
+    assert source.index("at_bias = bias_lease->Native();") < source.index(
+        "at::batch_norm_elemt_out"
+    )
+    assert "weight_pool_;" in header
+    assert "bias_pool_;" in header
+    assert "ToAtenTensor<kDev>" not in source
     assert "weight_shape_" not in source
     assert "at::batch_norm_elemt_out" in source
     assert "at_weight" in source
@@ -103,13 +238,40 @@ def test_tensor_list_params_are_exposed_and_forwarded_to_aten():
     assert op.is_testable
 
     base = module._generate_base_header("stack", [op])
+    header = module._generate_torch_header("stack", [op])
     source = module._generate_torch_method_source("stack", op)
 
     assert "#include <vector>" in base
     assert "std::vector<Tensor> tensors" in base
-    assert "std::vector<at::Tensor> at_tensors" in source
-    assert "at_tensors.reserve(tensors.size())" in source
-    assert "for (const auto& tensor : tensors)" in source
+    list_pool = "std::vector<TargetTensorPool<AtenTensorAdapter<kDev>>> tensors_pools_;"
+    lease_vector = (
+        "std::vector<typename "
+        "TargetTensorPool<AtenTensorAdapter<kDev>>::Lease> tensors_leases;"
+    )
+    assert list_pool in header
+    assert header.count(list_pool) == 1
+    assert "tensors_pool_;" not in header
+    assert "if (tensors_pools_.size() < tensors.size()) {" in source
+    assert "tensors_pools_.size() != tensors.size()" not in source
+    assert "tensors_pools_.resize(tensors.size());" in source
+    assert lease_vector in source
+    assert "tensors_leases.reserve(tensors.size());" in source
+    assert "std::vector<at::Tensor> at_tensors;" in source
+    assert "at_tensors.reserve(tensors.size());" in source
+    assert "for (std::size_t i = 0; i < tensors.size(); ++i)" in source
+    assert "tensors_leases.push_back(tensors_pools_[i].Acquire(tensors[i]));" in source
+    assert "at_tensors.push_back(tensors_leases.back().Native());" in source
+    assert source.index("tensors_pools_.resize") < source.index(lease_vector)
+    assert source.index("tensors_pools_.resize") < source.index(
+        "tensors_pools_[i].Acquire"
+    )
+    assert source.index(lease_vector) < source.index(
+        "std::vector<at::Tensor> at_tensors;"
+    )
+    assert source.index("std::vector<at::Tensor> at_tensors;") < source.index(
+        "at::stack_out"
+    )
+    assert "ToAtenTensor<kDev>" not in source
     assert "at::stack_out(at_out, at_tensors, dim)" in source
 
 
@@ -145,6 +307,8 @@ def test_optional_scalar_and_array_params_are_exposed_and_forwarded_to_aten():
     upsample_source = module._generate_torch_method_source(
         "upsample_bicubic2d", upsample
     )
+    quantile_header = module._generate_torch_header("quantile", [quantile])
+    upsample_header = module._generate_torch_header("upsample_bicubic2d", [upsample])
 
     assert "c10::optional<int64_t> at_dim" in quantile_source
     assert "at::quantile_out" in quantile_source
@@ -152,6 +316,8 @@ def test_optional_scalar_and_array_params_are_exposed_and_forwarded_to_aten():
     assert "c10::optional<at::ArrayRef<double>> at_scale_factors" in upsample_source
     assert "at::upsample_bicubic2d_out" in upsample_source
     assert "at_scale_factors" in upsample_source
+    assert "dim_pool_" not in quantile_header
+    assert "scale_factors_pool_" not in upsample_header
 
 
 def test_required_scalar_type_params_use_public_data_type():
@@ -204,9 +370,11 @@ def test_existing_base_overload_can_omit_optional_schema_params():
     ]
 
     source = module._generate_torch_method_source("slow_conv3d", bound)
+    header = module._generate_torch_header("slow_conv3d", [bound])
 
     assert "std::optional<Tensor> bias" not in source
     assert "c10::optional<at::Tensor>{}" in source
+    assert "bias_pool_" not in header
     assert "at::slow_conv3d_out" in source
 
 
@@ -229,7 +397,7 @@ def test_existing_base_overload_can_omit_defaulted_schema_params():
     source = module._generate_torch_method_source("add", bound)
 
     assert "double alpha" not in source
-    assert "const auto device_index = out.device().index();" in source
+    assert "const auto device_index" not in source
     assert "device_index_)" not in source
     assert "at::add_out(at_out, at_self, at_other, 1)" in source
 
