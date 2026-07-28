@@ -1118,11 +1118,11 @@ def _generate_base_header(name: str, ops: list[Op]) -> str:
             init_pieces.append(f"        has_{api_name}_{{{api_name}.has_value()}}")
             init_pieces.append(
                 f"        {api_name}_shape_{{{api_name} ? "
-                f"{api_name}->shape() : Tensor::Shape{{}}}}"
+                f"Tensor::Shape{{{api_name}->shape()}} : Tensor::Shape{{}}}}"
             )
             init_pieces.append(
                 f"        {api_name}_strides_{{{api_name} ? "
-                f"{api_name}->strides() : Tensor::Strides{{}}}}"
+                f"Tensor::Strides{{{api_name}->strides()}} : Tensor::Strides{{}}}}"
             )
             init_pieces.append(
                 f"        {api_name}_type_{{{api_name} ? "

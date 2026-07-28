@@ -143,17 +143,31 @@ inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
   return Device{DeviceTypeFromString(device_type_str), device_index};
 }
 
+template <typename Metadata>
+Metadata MetadataFromPybind11Sequence(py::handle obj) {
+  auto values{py::reinterpret_borrow<py::sequence>(obj)};
+  Metadata metadata;
+  metadata.reserve(values.size());
+
+  for (const auto& value : values) {
+    metadata.push_back(value.cast<typename Metadata::value_type>());
+  }
+
+  return metadata;
+}
+
 inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
   auto data{
       reinterpret_cast<void*>(obj.attr("data_ptr")().cast<std::uintptr_t>())};
 
-  auto shape{obj.attr("shape").cast<typename Tensor::Shape>()};
+  auto shape{MetadataFromPybind11Sequence<Tensor::Shape>(obj.attr("shape"))};
 
   auto dtype{DataTypeFromPybind11HandleImpl(obj.attr("dtype"))};
 
   auto device{DeviceFromPybind11HandleImpl(obj)};
 
-  auto strides{obj.attr("stride")().cast<typename Tensor::Strides>()};
+  auto strides{
+      MetadataFromPybind11Sequence<Tensor::Strides>(obj.attr("stride")())};
 
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }

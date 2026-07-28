@@ -90,46 +90,59 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
       : q_shape_{q.shape()},
         k_cache_shape_{k_cache.shape()},
         v_cache_shape_{v_cache.shape()},
-        k_shape_{k.has_value() ? k->shape() : Tensor::Shape{}},
-        v_shape_{v.has_value() ? v->shape() : Tensor::Shape{}},
-        rotary_cos_shape_{rotary_cos.has_value() ? rotary_cos->shape()
-                                                 : Tensor::Shape{}},
-        rotary_sin_shape_{rotary_sin.has_value() ? rotary_sin->shape()
-                                                 : Tensor::Shape{}},
-        cache_seqlens_shape_{cache_seqlens.has_value() ? cache_seqlens->shape()
-                                                       : Tensor::Shape{}},
+        k_shape_{k.has_value() ? Tensor::Shape{k->shape()} : Tensor::Shape{}},
+        v_shape_{v.has_value() ? Tensor::Shape{v->shape()} : Tensor::Shape{}},
+        rotary_cos_shape_{rotary_cos.has_value()
+                              ? Tensor::Shape{rotary_cos->shape()}
+                              : Tensor::Shape{}},
+        rotary_sin_shape_{rotary_sin.has_value()
+                              ? Tensor::Shape{rotary_sin->shape()}
+                              : Tensor::Shape{}},
+        cache_seqlens_shape_{cache_seqlens.has_value()
+                                 ? Tensor::Shape{cache_seqlens->shape()}
+                                 : Tensor::Shape{}},
         cache_batch_idx_shape_{cache_batch_idx.has_value()
-                                   ? cache_batch_idx->shape()
+                                   ? Tensor::Shape{cache_batch_idx->shape()}
                                    : Tensor::Shape{}},
-        cache_leftpad_shape_{cache_leftpad.has_value() ? cache_leftpad->shape()
-                                                       : Tensor::Shape{}},
-        block_table_shape_{block_table.has_value() ? block_table->shape()
-                                                   : Tensor::Shape{}},
-        alibi_slopes_shape_{alibi_slopes.has_value() ? alibi_slopes->shape()
-                                                     : Tensor::Shape{}},
+        cache_leftpad_shape_{cache_leftpad.has_value()
+                                 ? Tensor::Shape{cache_leftpad->shape()}
+                                 : Tensor::Shape{}},
+        block_table_shape_{block_table.has_value()
+                               ? Tensor::Shape{block_table->shape()}
+                               : Tensor::Shape{}},
+        alibi_slopes_shape_{alibi_slopes.has_value()
+                                ? Tensor::Shape{alibi_slopes->shape()}
+                                : Tensor::Shape{}},
         out_shape_{out.shape()},
         q_strides_{q.strides()},
         k_cache_strides_{k_cache.strides()},
         v_cache_strides_{v_cache.strides()},
-        k_strides_{k.has_value() ? k->strides() : Tensor::Strides{}},
-        v_strides_{v.has_value() ? v->strides() : Tensor::Strides{}},
-        rotary_cos_strides_{rotary_cos.has_value() ? rotary_cos->strides()
-                                                   : Tensor::Strides{}},
-        rotary_sin_strides_{rotary_sin.has_value() ? rotary_sin->strides()
-                                                   : Tensor::Strides{}},
+        k_strides_{k.has_value() ? Tensor::Strides{k->strides()}
+                                 : Tensor::Strides{}},
+        v_strides_{v.has_value() ? Tensor::Strides{v->strides()}
+                                 : Tensor::Strides{}},
+        rotary_cos_strides_{rotary_cos.has_value()
+                                ? Tensor::Strides{rotary_cos->strides()}
+                                : Tensor::Strides{}},
+        rotary_sin_strides_{rotary_sin.has_value()
+                                ? Tensor::Strides{rotary_sin->strides()}
+                                : Tensor::Strides{}},
         cache_seqlens_strides_{cache_seqlens.has_value()
-                                   ? cache_seqlens->strides()
+                                   ? Tensor::Strides{cache_seqlens->strides()}
                                    : Tensor::Strides{}},
-        cache_batch_idx_strides_{cache_batch_idx.has_value()
-                                     ? cache_batch_idx->strides()
-                                     : Tensor::Strides{}},
+        cache_batch_idx_strides_{
+            cache_batch_idx.has_value()
+                ? Tensor::Strides{cache_batch_idx->strides()}
+                : Tensor::Strides{}},
         cache_leftpad_strides_{cache_leftpad.has_value()
-                                   ? cache_leftpad->strides()
+                                   ? Tensor::Strides{cache_leftpad->strides()}
                                    : Tensor::Strides{}},
-        block_table_strides_{block_table.has_value() ? block_table->strides()
-                                                     : Tensor::Strides{}},
-        alibi_slopes_strides_{alibi_slopes.has_value() ? alibi_slopes->strides()
-                                                       : Tensor::Strides{}},
+        block_table_strides_{block_table.has_value()
+                                 ? Tensor::Strides{block_table->strides()}
+                                 : Tensor::Strides{}},
+        alibi_slopes_strides_{alibi_slopes.has_value()
+                                  ? Tensor::Strides{alibi_slopes->strides()}
+                                  : Tensor::Strides{}},
         out_strides_{out.strides()},
         q_dtype_{q.dtype()},
         k_cache_dtype_{k_cache.dtype()},

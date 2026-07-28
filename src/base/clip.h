@@ -30,12 +30,12 @@ class Clip : public Operator<Clip> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_min_{min.has_value()},
-        min_shape_{min ? min->shape() : Tensor::Shape{}},
-        min_strides_{min ? min->strides() : Tensor::Strides{}},
+        min_shape_{min ? Tensor::Shape{min->shape()} : Tensor::Shape{}},
+        min_strides_{min ? Tensor::Strides{min->strides()} : Tensor::Strides{}},
         min_type_{min ? min->dtype() : DataType::kFloat32},
         has_max_{max.has_value()},
-        max_shape_{max ? max->shape() : Tensor::Shape{}},
-        max_strides_{max ? max->strides() : Tensor::Strides{}},
+        max_shape_{max ? Tensor::Shape{max->shape()} : Tensor::Shape{}},
+        max_strides_{max ? Tensor::Strides{max->strides()} : Tensor::Strides{}},
         max_type_{max ? max->dtype() : DataType::kFloat32},
         device_index_{out.device().index()} {}
 

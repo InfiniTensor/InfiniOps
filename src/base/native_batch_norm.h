@@ -28,25 +28,30 @@ class NativeBatchNorm : public Operator<NativeBatchNorm> {
         save_invstd_strides_{save_invstd.strides()},
         save_invstd_type_{save_invstd.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         has_bias_{bias.has_value()},
-        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
-        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_shape_{bias ? Tensor::Shape{bias->shape()} : Tensor::Shape{}},
+        bias_strides_{bias ? Tensor::Strides{bias->strides()}
+                           : Tensor::Strides{}},
         bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         has_running_mean_{running_mean.has_value()},
-        running_mean_shape_{running_mean ? running_mean->shape()
+        running_mean_shape_{running_mean ? Tensor::Shape{running_mean->shape()}
                                          : Tensor::Shape{}},
-        running_mean_strides_{running_mean ? running_mean->strides()
-                                           : Tensor::Strides{}},
+        running_mean_strides_{running_mean
+                                  ? Tensor::Strides{running_mean->strides()}
+                                  : Tensor::Strides{}},
         running_mean_type_{running_mean ? running_mean->dtype()
                                         : DataType::kFloat32},
         has_running_var_{running_var.has_value()},
-        running_var_shape_{running_var ? running_var->shape()
+        running_var_shape_{running_var ? Tensor::Shape{running_var->shape()}
                                        : Tensor::Shape{}},
-        running_var_strides_{running_var ? running_var->strides()
-                                         : Tensor::Strides{}},
+        running_var_strides_{running_var
+                                 ? Tensor::Strides{running_var->strides()}
+                                 : Tensor::Strides{}},
         running_var_type_{running_var ? running_var->dtype()
                                       : DataType::kFloat32},
         training_{training},

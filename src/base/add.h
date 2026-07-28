@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 #include "operator.h"
 
@@ -68,7 +67,7 @@ class Add : public Operator<Add> {
     auto input_shape = input.shape();
     auto other_shape = other.shape();
     auto ndim = std::max(input_shape.size(), other_shape.size());
-    std::vector<std::size_t> out_shape(ndim, 1);
+    typename TensorLike::Shape out_shape(ndim, 1);
 
     for (std::size_t i = 0; i < ndim; ++i) {
       auto input_dim = i < ndim - input_shape.size()

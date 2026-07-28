@@ -25,8 +25,10 @@ class NllLossForward : public Operator<NllLossForward> {
         total_weight_strides_{total_weight.strides()},
         total_weight_type_{total_weight.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{reduction},
         ignore_index_{ignore_index},

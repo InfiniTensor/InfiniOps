@@ -25,8 +25,10 @@ class NllLoss : public Operator<NllLoss> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{
             ReductionFromPythonArguments(size_average, reduce, reduction)},
@@ -48,8 +50,10 @@ class NllLoss : public Operator<NllLoss> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{reduction},
         ignore_index_{ignore_index},

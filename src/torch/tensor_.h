@@ -5,6 +5,7 @@
 #include <torch/version.h>
 
 #include <optional>
+#include <vector>
 
 #include "tensor.h"
 #include "torch/device_.h"
@@ -83,9 +84,9 @@ inline at::ScalarType ToAtenDataType(DataType dtype) {
 // Build an ATen tensor from explicit metadata. Use this instead of reading
 // shape/strides from the `Tensor` parameter, which may have been moved-from
 // by the `Call()` dispatch path (see `operator.h`).
-template <Device::Type kDev>
+template <Device::Type kDev, typename ShapeRange, typename StridesRange>
 inline at::Tensor ToAtenTensor(
-    void* data, const Tensor::Shape& shape, const Tensor::Strides& strides,
+    void* data, const ShapeRange& shape, const StridesRange& strides,
     DataType dtype, int device_index = 0,
     std::optional<at::ScalarType> dtype_override = std::nullopt) {
   std::vector<int64_t> at_shape(shape.begin(), shape.end());

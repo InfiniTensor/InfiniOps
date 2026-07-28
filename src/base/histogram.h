@@ -26,8 +26,10 @@ class Histogram : public Operator<Histogram> {
         bin_edges_strides_{bin_edges.strides()},
         bin_edges_type_{bin_edges.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         density_{density},
         device_index_{hist.device().index()} {}
@@ -46,8 +48,10 @@ class Histogram : public Operator<Histogram> {
         bin_edges_strides_{bin_edges.strides()},
         bin_edges_type_{bin_edges.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         density_{density},
         bins_{bins},

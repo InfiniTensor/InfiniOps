@@ -29,12 +29,14 @@ class Pinv : public Operator<Pinv> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_atol_{atol.has_value()},
-        atol_shape_{atol ? atol->shape() : Tensor::Shape{}},
-        atol_strides_{atol ? atol->strides() : Tensor::Strides{}},
+        atol_shape_{atol ? Tensor::Shape{atol->shape()} : Tensor::Shape{}},
+        atol_strides_{atol ? Tensor::Strides{atol->strides()}
+                           : Tensor::Strides{}},
         atol_type_{atol ? atol->dtype() : DataType::kFloat32},
         has_rtol_{rtol.has_value()},
-        rtol_shape_{rtol ? rtol->shape() : Tensor::Shape{}},
-        rtol_strides_{rtol ? rtol->strides() : Tensor::Strides{}},
+        rtol_shape_{rtol ? Tensor::Shape{rtol->shape()} : Tensor::Shape{}},
+        rtol_strides_{rtol ? Tensor::Strides{rtol->strides()}
+                           : Tensor::Strides{}},
         rtol_type_{rtol ? rtol->dtype() : DataType::kFloat32},
         hermitian_{hermitian},
         device_index_{out.device().index()} {}
