@@ -1191,6 +1191,11 @@ if(GENERATE_PYTHON_BINDINGS)
             ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
     target_link_libraries(ops PRIVATE infiniops)
+    if(WITH_TORCH)
+        find_library(TORCH_PYTHON_LIB torch_python
+            HINTS ${_torch_lib_dirs} REQUIRED)
+        target_link_libraries(ops PRIVATE ${TORCH_PYTHON_LIB})
+    endif()
 
     # Cambricon generated dispatch is compiled into the Python extension and
     # directly references host launch stubs emitted from `.mlu` sources. Link

@@ -282,8 +282,9 @@ class Param:
         Optional ATen types with a stable InfiniOps representation
         (\\`Tensor?\\`, \\`Scalar?\\`, \\`int?\\`, …) are exposed as
         \\`std::optional\\`. ATen-internal types like
-        \\`Generator?\\`/\\`Layout?\\` still have no InfiniOps analogue, so
-        they remain hidden.
+        \\`Layout?\\` still has no InfiniOps analogue, so it remains hidden.
+        \\`Generator?\\` is exposed only when a hand-written base overload uses
+        \\`std::optional<Generator>\\`.
         """
 
         return self.is_hardcoded_nullopt
@@ -648,6 +649,9 @@ def _cpp_param_compatible(
 ) -> bool:
     if schema_param.api_name != base_name:
         return False
+
+    if schema_param.aten_type == "Generator?":
+        return _normalize_cpp_type(base_cpp_type) == "std::optional<Generator>"
 
     return _cpp_types_compatible(schema_param.cpp_type, base_cpp_type)
 
@@ -1272,11 +1276,37 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 
         return f"*{api_name}"
 
+    def _is_exposed_optional(schema_param: Param, api_param: Param) -> bool:
+        if schema_param.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+            return True
+
+        return (
+            schema_param.aten_type == "Generator?"
+            and _normalize_cpp_type(api_param.cpp_type) == "std::optional<Generator>"
+        )
+
     def _append_optional_conversion(schema_param: Param, api_param: Param) -> None:
         api_name = api_param.api_name
         optional_type = _optional_aten_type(schema_param)
         conversion_lines.append(f"  {optional_type} at_{schema_param.name};")
         conversion_lines.append(f"  if ({api_name}.has_value()) {{")
+        if schema_param.aten_type == "Generator?":
+            conversion_lines.append(
+                f"    const auto* at_{schema_param.name}_value = "
+                f"{api_name}->GetIf<at::Generator>();"
+            )
+            conversion_lines.append(
+                f"    assert(at_{schema_param.name}_value != nullptr && "
+                f'"`{api_name}` does not contain a PyTorch generator");'
+            )
+            conversion_lines.append(
+                f"    at_{schema_param.name} = "
+                f"{optional_type}{{*at_{schema_param.name}_value}};"
+            )
+            conversion_lines.append("  }")
+
+            return
+
         conversion_lines.append(
             f"    at_{schema_param.name} = "
             f"{optional_type}{{{_optional_aten_value(schema_param, api_param)}}};"
@@ -1321,7 +1351,7 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
     for schema_index, param in enumerate(op.params):
         api_param = op.api_param_for(schema_index)
 
-        if api_param is not None and param.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+        if api_param is not None and _is_exposed_optional(param, api_param):
             _append_optional_conversion(param, api_param)
 
     def _render_arg(schema_index, p):
@@ -1330,10 +1360,7 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         if api_param is None:
             return _default_call_value(p)
 
-        if p.is_hidden:
-            return _default_call_value(p)
-
-        if p.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+        if _is_exposed_optional(p, api_param):
             return f"at_{p.name}"
 
         if p.is_tensor or p.is_tensor_list:

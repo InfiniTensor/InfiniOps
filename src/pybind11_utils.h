@@ -6,6 +6,11 @@
 
 #include <algorithm>
 
+#ifdef WITH_TORCH
+#include <torch/csrc/Generator.h>
+#endif
+
+#include "generator.h"
 #include "host_range_profiler.h"
 #include "tensor.h"
 #include "torch/device_.h"
@@ -193,5 +198,40 @@ inline std::vector<Tensor> VectorTensorFromPybind11Handle(
 }
 
 }  // namespace infini::ops
+
+#ifdef WITH_TORCH
+
+namespace pybind11::detail {
+
+template <>
+struct type_caster<infini::ops::Generator> {
+ public:
+  PYBIND11_TYPE_CASTER(infini::ops::Generator, const_name("torch.Generator"));
+
+  bool load(handle source, bool) {
+    if (THPGenerator_Check(source.ptr()) != 1) {
+      return false;
+    }
+
+    value = infini::ops::Generator::From(THPGenerator_Unwrap(source.ptr()));
+
+    return true;
+  }
+
+  static handle cast(const infini::ops::Generator& source, return_value_policy,
+                     handle) {
+    const auto* generator = source.GetIf<at::Generator>();
+
+    if (generator == nullptr) {
+      return none().release();
+    }
+
+    return handle{THPGenerator_Wrap(*generator)};
+  }
+};
+
+}  // namespace pybind11::detail
+
+#endif
 
 #endif

@@ -131,6 +131,39 @@ def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     assert "at_bias" in source
 
 
+def test_existing_base_can_expose_optional_generator():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "multinomial(Tensor input, int num_samples, bool replacement=False, "
+        "*, Generator? generator=None, Tensor(a!) out) -> Tensor(a!)"
+    )
+    signature = [
+        ("Tensor", "input"),
+        ("int64_t", "num_samples"),
+        ("bool", "replacement"),
+        ("std::optional<Generator>", "generator"),
+        ("Tensor", "out"),
+    ]
+
+    bound = module._bind_base_signature(op, signature)
+
+    assert bound is not None
+    assert [param.cpp_type for param in bound.visible_params] == [
+        "Tensor",
+        "int64_t",
+        "bool",
+        "std::optional<Generator>",
+        "Tensor",
+    ]
+
+    source = module._generate_torch_method_source("multinomial", bound)
+
+    assert "generator->GetIf<at::Generator>()" in source
+    assert "c10::optional<at::Generator> at_generator" in source
+    assert "at::multinomial_out(at_out, at_input" in source
+    assert "replacement, at_generator" in source
+
+
 def test_tensor_list_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     op = module._parse_func(
