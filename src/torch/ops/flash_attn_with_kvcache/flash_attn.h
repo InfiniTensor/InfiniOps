@@ -25,7 +25,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>
                   const bool rotary_interleaved,
                   const std::optional<Tensor> alibi_slopes,
                   const int64_t num_splits, const bool return_softmax_lse,
-                  Tensor out) const override;
+                  Tensor out, std::optional<Tensor> softmax_lse) const override;
 
   void operator()(const Tensor q, Tensor k_cache, Tensor v_cache,
                   const std::optional<Tensor> k, const std::optional<Tensor> v,
@@ -40,7 +40,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>
                   const bool rotary_interleaved,
                   const std::optional<Tensor> alibi_slopes,
                   const int64_t num_splits, const bool return_softmax_lse,
-                  Tensor out) const override;
+                  Tensor out, std::optional<Tensor> softmax_lse) const override;
 
  private:
   void Run(const Tensor q, Tensor k_cache, Tensor v_cache,
@@ -56,7 +56,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>
            const std::vector<int64_t> window_size, const double softcap,
            const bool rotary_interleaved,
            const std::optional<Tensor> alibi_slopes, const int64_t num_splits,
-           Tensor out) const;
+           Tensor out, std::optional<Tensor> softmax_lse) const;
 };
 
 }  // namespace infini::ops
