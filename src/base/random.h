@@ -3,13 +3,15 @@
 
 #include <optional>
 
+#include "generator.h"
 #include "operator.h"
 
 namespace infini::ops {
 
 class Random : public Operator<Random> {
  public:
-  Random(Tensor input, const int64_t from, const std::optional<int64_t> to)
+  Random(Tensor input, const int64_t from, const std::optional<int64_t> to,
+         const std::optional<Generator> generator)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -17,16 +19,46 @@ class Random : public Operator<Random> {
         to_{to},
         device_index_{input.device().index()} {}
 
-  Random(Tensor input, const int64_t to)
+  Random(Tensor input, const int64_t to,
+         const std::optional<Generator> generator)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         device_index_{input.device().index()} {}
 
-  virtual void operator()(Tensor input, const int64_t from,
-                          const std::optional<int64_t> to) const = 0;
+  /// \deprecated Use the overload that accepts `generator`. This constructor
+  /// will be removed in a future release.
+  [[deprecated("Use the overload that accepts `generator` instead.")]]
+  Random(Tensor input, const int64_t from, const std::optional<int64_t> to)
+      : Random{input, from, to, std::nullopt} {}
 
-  virtual void operator()(Tensor input, const int64_t to) const = 0;
+  /// \deprecated Use the overload that accepts `generator`. This constructor
+  /// will be removed in a future release.
+  [[deprecated("Use the overload that accepts `generator` instead.")]]
+  Random(Tensor input, const int64_t to)
+      : Random{input, to, std::optional<Generator>{}} {}
+
+  virtual void operator()(Tensor input, const int64_t from,
+                          const std::optional<int64_t> to,
+                          const std::optional<Generator> generator) const = 0;
+
+  virtual void operator()(Tensor input, const int64_t to,
+                          const std::optional<Generator> generator) const = 0;
+
+  /// \deprecated Use the overload that accepts `generator`. This overload will
+  /// be removed in a future release.
+  [[deprecated("Use the overload that accepts `generator` instead.")]]
+  void operator()(Tensor input, const int64_t from,
+                  const std::optional<int64_t> to) const {
+    (*this)(input, from, to, std::nullopt);
+  }
+
+  /// \deprecated Use the overload that accepts `generator`. This overload will
+  /// be removed in a future release.
+  [[deprecated("Use the overload that accepts `generator` instead.")]]
+  void operator()(Tensor input, const int64_t to) const {
+    (*this)(input, to, std::optional<Generator>{});
+  }
 
  protected:
   Tensor::Shape input_shape_;
