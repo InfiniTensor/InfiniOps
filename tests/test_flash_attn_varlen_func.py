@@ -55,6 +55,12 @@ def test_flash_attn_varlen_func(
     cu_seqlens_q = _cumulative_lengths(q_lens, device)
     cu_seqlens_k = _cumulative_lengths(k_lens, device)
     out = torch.empty_like(q)
+    softmax_lse = torch.empty(
+        (q.size(1), q.size(0)),
+        dtype=torch.float32,
+        device=q.device,
+    )
+    s_dmask = torch.empty((0,), dtype=q.dtype, device=q.device)
 
     infini.ops.flash_attn_varlen_func(
         q,
@@ -71,9 +77,11 @@ def test_flash_attn_varlen_func(
         0.0,
         None,
         False,
-        False,
+        True,
         None,
         out,
+        softmax_lse,
+        s_dmask,
         stream=get_stream(q.device),
         implementation_index=implementation_index,
     )
@@ -89,6 +97,25 @@ def test_flash_attn_varlen_func(
         window_size,
     )
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
+    expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max(q_lens),
+        max(k_lens),
+        0.0,
+        causal,
+        False,
+        scale=scale,
+        window_size_left=None if window_size[0] < 0 else window_size[0],
+        window_size_right=(
+            0 if causal else None if window_size[1] < 0 else window_size[1]
+        ),
+    )
+    torch.testing.assert_close(softmax_lse, expected_auxiliary[1])
+    torch.testing.assert_close(s_dmask, expected_auxiliary[4])
 
 
 def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
@@ -125,6 +152,8 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
         False,
         None,
         out,
+        None,
+        None,
         stream=stream.cuda_stream,
         implementation_index=implementation_index,
     )

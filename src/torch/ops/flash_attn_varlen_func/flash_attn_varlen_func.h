@@ -20,8 +20,9 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>
                   const std::vector<int64_t> window_size, const double softcap,
                   const std::optional<Tensor> alibi_slopes,
                   const bool deterministic, const bool return_attn_probs,
-                  const std::optional<Tensor> block_table,
-                  Tensor out) const override;
+                  const std::optional<Tensor> block_table, Tensor out,
+                  std::optional<Tensor> softmax_lse,
+                  std::optional<Tensor> s_dmask) const override;
 };
 
 }  // namespace infini::ops

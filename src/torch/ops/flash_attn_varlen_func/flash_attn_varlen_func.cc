@@ -19,7 +19,8 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>::operator()(
     const std::vector<int64_t> window_size, const double softcap,
     const std::optional<Tensor> alibi_slopes, const bool deterministic,
     const bool return_attn_probs, const std::optional<Tensor> block_table,
-    Tensor out) const {
+    Tensor out, std::optional<Tensor> softmax_lse,
+    std::optional<Tensor> s_dmask) const {
   (void)softcap;
   (void)alibi_slopes;
   (void)deterministic;
@@ -47,6 +48,16 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>::operator()(
         cu_seqlens_k_strides_, cu_seqlens_k_dtype_, device_index_);
     auto at_out = ToAtenTensor<Device::Type::kNvidia>(
         out.data(), out_shape_, out_strides_, out_dtype_, device_index_);
+    std::optional<at::Tensor> at_softmax_lse;
+    std::optional<at::Tensor> at_s_dmask;
+    if (softmax_lse.has_value()) {
+      at_softmax_lse.emplace(ToAtenTensor<Device::Type::kNvidia>(
+          softmax_lse->data(), softmax_lse_shape_, softmax_lse_strides_,
+          softmax_lse_dtype_, device_index_));
+      at_s_dmask.emplace(ToAtenTensor<Device::Type::kNvidia>(
+          s_dmask->data(), s_dmask_shape_, s_dmask_strides_, s_dmask_dtype_,
+          device_index_));
+    }
 
     const std::optional<int64_t> window_size_left =
         window_size[0] < 0 ? std::nullopt
@@ -61,9 +72,13 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>::operator()(
         max_seqlen_k, dropout_p, causal, false, softmax_scale, window_size_left,
         window_size_right, std::nullopt, std::nullopt);
 
-    // ATen owns the returned tensor. Keep the InfiniOps trailing-output ABI by
-    // copying it into the caller-provided buffer on the selected CUDA stream.
+    // ATen owns the returned tensors. Keep the InfiniOps trailing-output ABI
+    // by copying them into caller-provided buffers on the selected CUDA stream.
     at_out.copy_(std::get<0>(result));
+    if (at_softmax_lse.has_value()) {
+      at_softmax_lse->copy_(std::get<1>(result));
+      at_s_dmask->copy_(std::get<4>(result));
+    }
   };
 
   const c10::cuda::CUDAStreamGuard stream_guard{
