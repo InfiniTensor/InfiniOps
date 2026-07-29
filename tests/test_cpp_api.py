@@ -85,6 +85,34 @@ def test_cpp_base_headers_compile_with_metadata_views(tmp_path, header):
     )
 
 
+def test_cpp_operator_cache_fast_path(tmp_path):
+    install_prefix = _install_prefix()
+    include_dir = install_prefix / "include"
+    library_dir = _library_dir(install_prefix)
+    source_include_dir = Path(__file__).resolve().parents[1] / "src"
+    source = tmp_path / "operator_cache_fast_path.cc"
+    binary = tmp_path / "operator_cache_fast_path"
+    source.write_text(_OPERATOR_CACHE_FAST_PATH_SOURCE)
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            f"-I{source_include_dir}",
+            f"-I{include_dir}",
+            str(source),
+            f"-L{library_dir}",
+            "-linfiniops",
+            "-linfinirt",
+            f"-Wl,-rpath,{library_dir}",
+            "-o",
+            str(binary),
+        ]
+    )
+    _run([str(binary)])
+
+
 def _install_prefix():
     prefix = os.environ.get("INFINI_OPS_INSTALL_PREFIX")
 
@@ -326,6 +354,171 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
                                                                   value);
       if (attention_output.shape() != OwningTensor::Shape{1, 2, 3, 6}) {
         return 1;
+      }
+
+      return 0;
+    }
+    """
+).lstrip()
+
+
+_OPERATOR_CACHE_FAST_PATH_SOURCE = textwrap.dedent(
+    r"""
+    #include <operator.h>
+
+    #include <cstddef>
+    #include <stdexcept>
+    #include <vector>
+
+    namespace infini::ops {
+
+    inline std::size_t key_build_count{0};
+    inline std::size_t construction_count{0};
+    inline std::size_t invocation_count{0};
+    inline bool fail_construction{false};
+    inline std::size_t legacy_key_build_count{0};
+    inline std::size_t legacy_construction_count{0};
+    inline std::size_t legacy_invocation_count{0};
+
+    class CacheProbe : public Operator<CacheProbe> {
+     public:
+      virtual void operator()(const Tensor tensor) const = 0;
+    };
+
+    class LegacyCacheProbe : public Operator<LegacyCacheProbe> {
+     public:
+      virtual void operator()(const Tensor tensor) const = 0;
+    };
+
+    template <>
+    struct CacheKeyBuilder<CacheProbe> {
+      detail::CacheKey operator()(const Config& config,
+                                  const Tensor tensor) const {
+        ++key_build_count;
+        return detail::CacheKey::Build(config.implementation_index(), tensor);
+      }
+
+      bool Matches(const detail::CacheKey& key, const Config& config,
+                   const Tensor tensor) const {
+        return key.Matches(config.implementation_index(), tensor);
+      }
+    };
+
+    template <>
+    struct CacheKeyBuilder<LegacyCacheProbe> {
+      detail::CacheKey operator()(const Config& config,
+                                  const Tensor tensor) const {
+        ++legacy_key_build_count;
+        return detail::CacheKey::Build(config.implementation_index(), tensor);
+      }
+    };
+
+    template <>
+    class Operator<CacheProbe, Device::Type::kCpu, 0> : public CacheProbe {
+     public:
+      explicit Operator(const Tensor /*tensor*/) {
+        if (fail_construction) {
+          throw std::runtime_error("requested constructor failure");
+        }
+        ++construction_count;
+      }
+
+      void operator()(const Tensor /*tensor*/) const override {
+        ++invocation_count;
+      }
+    };
+
+    template <>
+    class Operator<LegacyCacheProbe, Device::Type::kCpu, 0>
+        : public LegacyCacheProbe {
+     public:
+      explicit Operator(const Tensor /*tensor*/) {
+        ++legacy_construction_count;
+      }
+
+      void operator()(const Tensor /*tensor*/) const override {
+        ++legacy_invocation_count;
+      }
+    };
+
+    }  // namespace infini::ops
+
+    int main() {
+      using infini::ops::CacheProbe;
+      using infini::ops::Config;
+      using infini::ops::DataType;
+      using infini::ops::Device;
+      using infini::ops::Handle;
+      using infini::ops::LegacyCacheProbe;
+      using infini::ops::Tensor;
+
+      float data[11]{};
+      const Device device{Device::Type::kCpu};
+      const DataType dtype{DataType::kFloat32};
+      const Tensor first{data, Tensor::Shape{2}, dtype, device};
+      const Tensor same_metadata{data + 2, Tensor::Shape{2}, dtype, device};
+      const Tensor different_metadata{data + 4, Tensor::Shape{3}, dtype,
+                                      device};
+      const Tensor failing_metadata{data + 7, Tensor::Shape{4}, dtype,
+                                    device};
+      const Handle handle;
+      const Config config;
+
+      CacheProbe::Call(handle, config, first);
+      CacheProbe::Call(handle, config, same_metadata);
+      CacheProbe::Call(handle, config, different_metadata);
+      CacheProbe::Call(handle, config, same_metadata);
+      CacheProbe::Call(handle, config, first);
+
+      if (infini::ops::key_build_count != 2 ||
+          infini::ops::construction_count != 2 ||
+          infini::ops::invocation_count != 5) {
+        return 1;
+      }
+
+      CacheProbe::clear_cache();
+      CacheProbe::Call(handle, config, first);
+      if (infini::ops::key_build_count != 3 ||
+          infini::ops::construction_count != 3 ||
+          infini::ops::invocation_count != 6) {
+        return 2;
+      }
+
+      infini::ops::fail_construction = true;
+      try {
+        CacheProbe::Call(handle, config, failing_metadata);
+        return 3;
+      } catch (const std::runtime_error&) {
+      }
+
+      infini::ops::fail_construction = false;
+      CacheProbe::Call(handle, config, failing_metadata);
+      if (infini::ops::key_build_count != 5 ||
+          infini::ops::construction_count != 4 ||
+          infini::ops::invocation_count != 7) {
+        return 4;
+      }
+
+      const std::vector<Tensor> first_group{first};
+      const std::vector<Tensor> second_group{different_metadata};
+      const auto grouped_key = infini::ops::detail::CacheKey::Build(
+          first_group, second_group);
+      if (!grouped_key.Matches(first_group, second_group)) {
+        return 5;
+      }
+
+      const std::vector<Tensor> combined_group{first, different_metadata};
+      const std::vector<Tensor> empty_group;
+      if (grouped_key.Matches(combined_group, empty_group)) {
+        return 6;
+      }
+
+      LegacyCacheProbe::Call(handle, config, first);
+      LegacyCacheProbe::Call(handle, config, same_metadata);
+      if (infini::ops::legacy_key_build_count != 2 ||
+          infini::ops::legacy_construction_count != 1 ||
+          infini::ops::legacy_invocation_count != 2) {
+        return 7;
       }
 
       return 0;

@@ -12,6 +12,7 @@ enum class HostRangeLayer {
   kDeviceConversion,
   kDispatchCall,
   kOperatorCall,
+  kCacheMatch,
   kCacheKey,
   kCacheLookup,
   kCacheConstruct,

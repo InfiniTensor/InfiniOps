@@ -192,13 +192,13 @@ def test_host_range_profile_clear_cache_forces_next_call_to_construct():
     finally:
         rows = ops._host_range_profile_stop()
 
-    construct = [row for row in rows if row["range"] == "cache.construct"]
-    assert len(construct) == 1
-    assert construct[0]["count"] == 1
-
     by_range = {row["range"]: row for row in rows}
     assert by_range["binding.tensor_conversion"]["count"] == 3
-    assert by_range["binding.device_conversion"]["count"] == 1
+    assert "binding.device_conversion" not in by_range
+    assert by_range["cache.match"]["count"] == 1
+    assert by_range["cache.key"]["count"] == 1
+    assert by_range["cache.lookup"]["count"] == 1
+    assert by_range["cache.construct"]["count"] == 1
 
     ops._host_range_profile_start()
     try:
@@ -206,4 +206,8 @@ def test_host_range_profile_clear_cache_forces_next_call_to_construct():
     finally:
         rows = ops._host_range_profile_stop()
 
-    assert all(row["range"] != "cache.construct" for row in rows)
+    by_range = {row["range"]: row for row in rows}
+    assert by_range["cache.match"]["count"] == 1
+    assert "cache.key" not in by_range
+    assert "cache.lookup" not in by_range
+    assert "cache.construct" not in by_range
