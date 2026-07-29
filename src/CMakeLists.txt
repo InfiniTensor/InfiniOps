@@ -490,7 +490,7 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
-if(WITH_NVIDIA AND WITH_TORCH)
+if((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH)
     list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
 endif()
 
@@ -628,13 +628,16 @@ if(WITH_TORCH)
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
 
-    if(NOT WITH_NVIDIA)
+    if(NOT WITH_NVIDIA AND NOT WITH_MOORE)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_varlen_func/flash_attn_varlen_func\\.cc$")
     endif()
     if(NOT _build_flash_attn_with_kvcache)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_with_kvcache/flash_attn\\.cc$")
+    endif()
+    if(NOT WITH_MOORE)
+        list(FILTER TORCH_SOURCES EXCLUDE REGEX ".*/torch/moore/.*")
     endif()
 
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
@@ -727,7 +730,8 @@ if(WITH_TORCH)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
         endif()
 
-        # Vendor-specific defines required by forked `torch` headers.
+        # Select vendor-specific generated implementations and any definitions
+        # required by forked `torch` headers.
         set(_torch_extra_flags "")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
