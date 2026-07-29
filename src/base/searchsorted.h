@@ -11,9 +11,9 @@ namespace infini::ops {
 class Searchsorted : public Operator<Searchsorted> {
  public:
   Searchsorted(const Tensor sorted_sequence, const Tensor input,
-               const bool out_int32, const bool right,
-               const std::optional<std::string> side,
-               const std::optional<Tensor> sorter, Tensor out)
+               const std::optional<Tensor> sorter, const bool out_int32,
+               const bool right, const std::optional<std::string> side,
+               Tensor out)
       : sorted_sequence_shape_{sorted_sequence.shape()},
         sorted_sequence_strides_{sorted_sequence.strides()},
         sorted_sequence_type_{sorted_sequence.dtype()},
@@ -32,10 +32,20 @@ class Searchsorted : public Operator<Searchsorted> {
         side_{side},
         device_index_{out.device().index()} {}
 
-  Searchsorted(const Tensor sorted_sequence, const double input,
+  /// \deprecated Use `(sorted_sequence, input, sorter, out_int32, right,
+  /// side, out)`. This constructor will be removed in a future release.
+  [[deprecated("Place the optional `sorter` Tensor before attributes.")]]
+  Searchsorted(const Tensor sorted_sequence, const Tensor input,
                const bool out_int32, const bool right,
                const std::optional<std::string> side,
                const std::optional<Tensor> sorter, Tensor out)
+      : Searchsorted{sorted_sequence, input, sorter, out_int32,
+                     right,           side,  out} {}
+
+  Searchsorted(const Tensor sorted_sequence, const double input,
+               const std::optional<Tensor> sorter, const bool out_int32,
+               const bool right, const std::optional<std::string> side,
+               Tensor out)
       : sorted_sequence_shape_{sorted_sequence.shape()},
         sorted_sequence_strides_{sorted_sequence.strides()},
         sorted_sequence_type_{sorted_sequence.dtype()},
@@ -52,12 +62,42 @@ class Searchsorted : public Operator<Searchsorted> {
         input_{input},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use `(sorted_sequence, input, sorter, out_int32, right,
+  /// side, out)`. This constructor will be removed in a future release.
+  [[deprecated("Place the optional `sorter` Tensor before attributes.")]]
+  Searchsorted(const Tensor sorted_sequence, const double input,
+               const bool out_int32, const bool right,
+               const std::optional<std::string> side,
+               const std::optional<Tensor> sorter, Tensor out)
+      : Searchsorted{sorted_sequence, input, sorter, out_int32,
+                     right,           side,  out} {}
+
+  void operator()(const Tensor sorted_sequence, const Tensor input,
+                  const std::optional<Tensor> sorter, const bool out_int32,
+                  const bool right, const std::optional<std::string> side,
+                  Tensor out) const {
+    (*this)(sorted_sequence, input, out_int32, right, side, sorter, out);
+  }
+
+  void operator()(const Tensor sorted_sequence, const double input,
+                  const std::optional<Tensor> sorter, const bool out_int32,
+                  const bool right, const std::optional<std::string> side,
+                  Tensor out) const {
+    (*this)(sorted_sequence, input, out_int32, right, side, sorter, out);
+  }
+
+  /// \deprecated Place `sorter` before attributes. This overload will be
+  /// removed in a future release.
+  [[deprecated("Place the optional `sorter` Tensor before attributes.")]]
   virtual void operator()(const Tensor sorted_sequence, const Tensor input,
                           const bool out_int32, const bool right,
                           const std::optional<std::string> side,
                           const std::optional<Tensor> sorter,
                           Tensor out) const = 0;
 
+  /// \deprecated Place `sorter` before attributes. This overload will be
+  /// removed in a future release.
+  [[deprecated("Place the optional `sorter` Tensor before attributes.")]]
   virtual void operator()(const Tensor sorted_sequence, const double input,
                           const bool out_int32, const bool right,
                           const std::optional<std::string> side,
