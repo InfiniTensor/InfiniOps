@@ -419,6 +419,8 @@ class _Operator:
 
         self.calls = calls
 
+        self.impl_paths = []
+
 
 def _find_optional_tensor_params(op_name):
     """Return a set of parameter names declared as `std::optional<Tensor>` in
@@ -582,6 +584,53 @@ def _is_data_type_spelling(spelling):
     spelling = spelling.replace("const ", "").replace("&", "").strip()
 
     return spelling.rsplit("::", maxsplit=1)[-1] == "DataType"
+
+def _uses_config_extension(impl_paths):
+    pattern = re.compile(r"\bconfig_t\b")
+    for path in impl_paths:
+        try:
+            if pattern.search(path.read_text()):
+                return True
+        except (OSError, UnicodeDecodeError):
+            pass
+    return False
+
+
+def _generate_triton_jit_config_parser():
+    return textwrap.dedent("""\
+    inline std::shared_ptr<config_t> config_from_py_dict(const py::dict& d) {
+      namespace py = pybind11;
+      auto ext = std::make_shared<config_t>();
+      if (d.contains("autotune")) {
+        ext->autotune = true;
+        py::dict at = d["autotune"].cast<py::dict>();
+        if (at.contains("warmup")) ext->warmup = at["warmup"].cast<unsigned>();
+        if (at.contains("rep")) ext->rep = at["rep"].cast<unsigned>();
+        if (at.contains("configs")) {
+          for (auto cand : at["configs"].cast<py::list>()) {
+            config_t c;
+            py::dict cd = cand.cast<py::dict>();
+            if (cd.contains("num_warps")) c.num_warps = cd["num_warps"].cast<unsigned>();
+            if (cd.contains("num_stages")) c.num_stages = cd["num_stages"].cast<unsigned>();
+            for (auto item : cd) {
+              std::string key = item.first.cast<std::string>();
+              if (key != "num_warps" && key != "num_stages")
+                c.constexprs.emplace_back(key, item.second.cast<int>());
+            }
+            ext->configs.push_back(std::move(c));
+          }
+        }
+      } else {
+        if (d.contains("num_warps")) ext->num_warps = d["num_warps"].cast<unsigned>();
+        if (d.contains("num_stages")) ext->num_stages = d["num_stages"].cast<unsigned>();
+        for (auto item : d) {
+          std::string key = item.first.cast<std::string>();
+          if (key != "num_warps" && key != "num_stages")
+            ext->constexprs.emplace_back(key, item.second.cast<int>());
+        }
+      }
+      return ext;
+    }""")
 
 
 def _generate_pybind11(operator):
@@ -777,7 +826,7 @@ def _generate_pybind11(operator):
 
         return ", ".join(parts)
 
-    def _generate_call(op_name, call, method=True):
+    def _generate_call(op_name, call, method=True, uses_config=False):
         call_params = _generate_params(call)
         call_args = _generate_arguments(call)
 
@@ -796,18 +845,37 @@ def _generate_pybind11(operator):
                 call_args = _generate_arguments(
                     call, first_tensor_arg, converted_first_tensor_name
                 )
+            extra_params = ""
+            extra_config_init = ""
+            extra_pybind = ""
+            if uses_config:
+                extra_params = ", std::optional<py::dict> config_dict"
+                extra_config_init = (
+                    "    if (config_dict.has_value()) {\n"
+                    "      config.set_extension(config_from_py_dict(*config_dict));\n"
+                    "    }\n"
+                )
+                extra_pybind = ', py::arg("config") = py::none()'
+
             params = (
                 f"{call_params}, std::uintptr_t stream, "
-                "std::optional<std::size_t> implementation_index"
+                f"std::optional<std::size_t> implementation_index{extra_params}"
                 if call_params
-                else "std::uintptr_t stream, "
-                "std::optional<std::size_t> implementation_index"
+                else f"std::uintptr_t stream, std::optional<std::size_t> implementation_index{extra_params}"
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
             default_impl_index = _default_impl_index_expr(
                 call, converted_first_tensor_name
             )
+
+            if uses_config:
+                dispatch = (
+                    f"    auto op = generated_dispatch::Make{symbol_name}(config, {call_args});\n"
+                    f"    (*op)(handle, {call_args});"
+                )
+            else:
+                dispatch = f"    return generated_dispatch::Call{symbol_name}(handle, config, {call_args});"
 
             return (
                 f'  m.def("{op_name}", []({params}) {{\n'
@@ -825,8 +893,9 @@ def _generate_pybind11(operator):
                 f"      config.set_implementation_index(\n"
                 f"          {default_impl_index});\n"
                 f"    }}\n"
-                f"    return generated_dispatch::Call{symbol_name}(handle, config, {call_args});\n"
-                f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = py::none());'
+                f"{extra_config_init}"
+                f"{dispatch}\n"
+                f'  }}, {py_args_str}py::kw_only(), py::arg("stream") = 0, py::arg("implementation_index") = py::none(){extra_pybind});'
             )
 
         # The first lambda parameter is conventionally named `self`, but
@@ -873,9 +942,19 @@ def _generate_pybind11(operator):
 
     inits = "\n".join(_generate_init(constructor) for constructor in constructors)
     calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
+
+    supports_triton = _uses_config_extension(operator.impl_paths)
     callers = "\n".join(
-        _generate_call(operator.name, call, method=False) for call in operator_calls
+        _generate_call(operator.name, call, method=False, uses_config=supports_triton)
+        for call in operator_calls
     )
+    if supports_triton:
+        jit_include = (
+            '\n#include "triton/jit/jit.h"\n'
+            "namespace infini::ops {\n" + _generate_triton_jit_config_parser() + "\n}\n"
+        )
+    else:
+        jit_include = ""
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
@@ -889,7 +968,7 @@ def _generate_pybind11(operator):
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
 #include "host_range_profiler.h"
-#include "pybind11_utils.h"
+#include "pybind11_utils.h"{jit_include}
 
 namespace py = pybind11;
 
@@ -1255,9 +1334,12 @@ void ClearCacheFor{symbol_name}() {{
 
     emitted_make_params = set()
 
-    for constructor in operator.constructors:
-        params = _generate_params(constructor)
-        args = _generate_arguments(constructor)
+    make_nodes = list(operator.constructors)
+    if _uses_config_extension(operator.impl_paths):
+        make_nodes.extend(operator.calls)
+    for node in make_nodes:
+        params = _generate_params(node)
+        args = _generate_arguments(node)
         make_params = _append_optional_params("const Config& config", params)
 
         if make_params in emitted_make_params:
@@ -1758,7 +1840,13 @@ def _filter_ops(ops, op_allowlist, *, strict=False):
     return {op_name: ops[op_name] for op_name in op_allowlist if op_name in ops}
 
 
-def _get_all_ops(devices, with_torch=False, with_ninetoothed=False, with_linked=False):
+def _get_all_ops(
+    devices,
+    with_torch=False,
+    with_ninetoothed=False,
+    with_linked=False,
+    with_triton=False,
+):
     scan_dirs = set(devices)
 
     if with_torch:
@@ -1767,6 +1855,8 @@ def _get_all_ops(devices, with_torch=False, with_ninetoothed=False, with_linked=
         scan_dirs.add("ninetoothed")
     if with_linked:
         scan_dirs.add("linked")
+    if with_triton:
+        scan_dirs.add("triton")
 
     ops = {}
 
@@ -1815,6 +1905,7 @@ def _generate_op_artifacts(item):
     op_name, impl_paths = item
     extractor = _OperatorExtractor()
     operator = extractor(op_name)
+    operator.impl_paths = impl_paths
     header_name = f"{op_name}.h"
     legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
     dispatch_declarations, dispatch_definitions = _generate_generated_dispatch_entries(
@@ -1984,6 +2075,12 @@ if __name__ == "__main__":
         help="Fail if `--ops` contains operators unavailable for the active devices.",
     )
 
+    parser.add_argument(
+        "--with-triton",
+        action="store_true",
+        help="Include Triton backend implementations.",
+    )
+
     args = parser.parse_args()
 
     for directory in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
@@ -1999,6 +2096,7 @@ if __name__ == "__main__":
             with_torch=args.with_torch,
             with_ninetoothed=args.with_ninetoothed,
             with_linked=args.with_linked,
+            with_triton=args.with_triton,
         )
 
     ops = _filter_ops(

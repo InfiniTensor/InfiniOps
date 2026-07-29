@@ -26,6 +26,8 @@ option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
+option(WITH_TRITON "Enable Triton-generated kernels" OFF)
+
 # Custom `AscendC` kernels under `src/native/ascend/custom/`. `ON` by default
 # so CI and routine dev builds always exercise `implementation_index=1/2`
 # for `RmsNorm` / `AddRmsNorm`. Gated by `WITH_ASCEND` in
@@ -342,6 +344,10 @@ endif()
 
 if(WITH_NINETOOTHED)
     set(NINETOOTHED_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run NineToothed code generation")
+endif()
+
+if(WITH_TRITON AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "`WITH_TRITON` temporarily requires `WITH_NVIDIA=ON` because the Triton backend temporarily targets CUDA.")
 endif()
 
 if(WITH_NVIDIA)
