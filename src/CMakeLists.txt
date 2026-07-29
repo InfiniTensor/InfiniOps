@@ -189,6 +189,17 @@ if(WITH_NINETOOTHED)
     target_sources(infiniops PRIVATE ${INFINI_OPS_NINETOOTHED_SOURCES})
 endif()
 
+if(WITH_TRITON)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    find_package(pybind11 CONFIG REQUIRED)
+
+    target_compile_definitions(infiniops PUBLIC WITH_TRITON=1
+        TRITON_JIT_CACHE_DIR="/tmp/triton_jit_cache")
+    target_include_directories(infiniops PRIVATE ${pybind11_INCLUDE_DIRS})
+    target_link_libraries(infiniops PRIVATE pybind11::embed Python::Python)
+    target_sources(infiniops PRIVATE triton/jit/jit.cc triton/jit/compiler.cc)
+endif()
+
 if(WITH_ILUVATAR)
     set(ILUVATAR_PATTERNS
         "native/cuda/*.cc"
@@ -840,6 +851,10 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)
     endif()
 
+    if(WITH_TRITON)
+        list(APPEND GENERATOR_ARGS --with-triton)
+    endif()
+
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
                 INFINI_RT_INCLUDE_DIRS=${INFINI_RT_INCLUDE_DIRS_ENV}
@@ -1190,6 +1205,12 @@ if(GENERATE_PYTHON_BINDINGS)
         target_include_directories(ops PRIVATE
             ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
+
+    if(WITH_TRITON)
+        target_include_directories(ops PRIVATE
+            ${INFINIOPS_TRITON_INCLUDE_DIRS})
+    endif()
+
     target_link_libraries(ops PRIVATE infiniops)
 
     # Cambricon generated dispatch is compiled into the Python extension and
@@ -1243,6 +1264,19 @@ if(GENERATE_PYTHON_BINDINGS)
         # torch op test can discover what to exercise at runtime.
         install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
             DESTINATION .)
+    endif()
+
+    if(WITH_TRITON)
+        # Ship the JIT compiler and kernel sources so Triton JIT operators
+        # can compile kernels at runtime.  compile.py uses __file__ to
+        # locate ops/ relative to itself; both must live under triton/.
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/triton/jit/compile.py"
+                DESTINATION triton/jit)
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/triton/ops/"
+                DESTINATION triton/ops
+                FILES_MATCHING
+                PATTERN "*.py"
+                PATTERN "build.py" EXCLUDE)
     endif()
 endif()
 
