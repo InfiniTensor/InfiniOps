@@ -131,20 +131,6 @@ if(WITH_NVIDIA)
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
 
-    enable_language(CUDA)
-
-    # Marlin explicitly instantiates hundreds of CUDA kernels. Keep those
-    # translation units out of pruned builds unless the operator is selected.
-    file(GLOB_RECURSE MARLIN_GEMM_SOURCES CONFIGURE_DEPENDS
-        "native/cuda/nvidia/ops/marlin_gemm/*.cu")
-    list(REMOVE_ITEM NVIDIA_SOURCES ${MARLIN_GEMM_SOURCES})
-    set_source_files_properties(${MARLIN_GEMM_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "--expt-relaxed-constexpr")
-    if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 12.8)
-        set_property(SOURCE ${MARLIN_GEMM_SOURCES} APPEND PROPERTY
-            COMPILE_OPTIONS "-static-global-template-stub=false")
-    endif()
-
     # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
     # the extra code objects to this provider source so other CUDA operators
     # retain the caller/compiler architecture configuration unchanged.
@@ -153,6 +139,8 @@ if(WITH_NVIDIA)
     set_source_files_properties("${_cutlass_scaled_mm_source}" PROPERTIES
         COMPILE_OPTIONS
             "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
+
+    enable_language(CUDA)
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
@@ -520,11 +508,6 @@ endif()
 if(INFINI_OPS_OPS)
     string(REPLACE "," ";" _infini_ops_op_allowlist "${INFINI_OPS_OPS}")
     message(STATUS "Wrapper op allowlist: ${_infini_ops_op_allowlist}")
-endif()
-
-if(WITH_NVIDIA AND
-   (NOT INFINI_OPS_OPS OR "marlin_gemm" IN_LIST _infini_ops_op_allowlist))
-    target_sources(infiniops PRIVATE ${MARLIN_GEMM_SOURCES})
 endif()
 
 set(_build_flash_attn_with_kvcache FALSE)
