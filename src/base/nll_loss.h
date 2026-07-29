@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include "common/op_utils/reduction.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -28,8 +29,8 @@ class NllLoss : public Operator<NllLoss> {
         weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
         weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
-        reduction_{
-            ReductionFromPythonArguments(size_average, reduce, reduction)},
+        reduction_{reduction_detail::FromPythonArguments(size_average, reduce,
+                                                         reduction)},
         ignore_index_{ignore_index},
         device_index_{out.device().index()} {}
 
@@ -62,7 +63,7 @@ class NllLoss : public Operator<NllLoss> {
                   const std::string reduction, Tensor out) const {
     return operator()(
         input, target, weight,
-        ReductionFromPythonArguments(size_average, reduce, reduction),
+        reduction_detail::FromPythonArguments(size_average, reduce, reduction),
         ignore_index, out);
   }
 
@@ -105,40 +106,6 @@ class NllLoss : public Operator<NllLoss> {
   int64_t ignore_index_{};
 
   int device_index_{0};
-
- private:
-  static int64_t ReductionFromPythonArguments(
-      const std::optional<bool> size_average, const std::optional<bool> reduce,
-      const std::string& reduction) {
-    if (!size_average.has_value() && !reduce.has_value()) {
-      return ReductionFromString(reduction);
-    }
-
-    if (!reduce.value_or(true)) {
-      return 0;
-    }
-
-    if (!size_average.value_or(true)) {
-      return 2;
-    }
-
-    return 1;
-  }
-
-  static int64_t ReductionFromString(const std::string& reduction) {
-    if (reduction == "none") {
-      return 0;
-    }
-
-    if (reduction == "mean") {
-      return 1;
-    }
-
-    assert(reduction == "sum" &&
-           "`NllLoss` reduction must be `none`, `mean`, or `sum`");
-
-    return 2;
-  }
 };
 
 }  // namespace infini::ops
