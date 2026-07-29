@@ -335,6 +335,7 @@
 - reflection_pad2d_backward
 - reflection_pad3d
 - reflection_pad3d_backward
+- relu
 - remainder
 - renorm
 - replication_pad1d

@@ -207,7 +207,7 @@ _SMOKE_STATIC_TEST_MODULES = {
     "tests/test_generate_wrappers.py",
 }
 
-_SMOKE_TORCH_OPS = {"abs", "clamp", "exp"}
+_SMOKE_TORCH_OPS = {"abs", "clamp", "exp", "relu"}
 
 
 def pytest_itemcollected(item):
@@ -237,6 +237,7 @@ def _is_smoke_item(item):
         "tests/test_matmul.py": _is_smoke_matmul_case,
         "tests/test_moe_sum.py": _is_smoke_moe_sum_case,
         "tests/test_mul.py": _is_smoke_mul_case,
+        "tests/test_relu.py": _is_smoke_relu_case,
         "tests/test_rms_norm.py": _is_smoke_rms_norm_case,
         "tests/test_silu_and_mul.py": _is_smoke_silu_and_mul_case,
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
@@ -313,6 +314,25 @@ def _is_smoke_mul_case(params):
         )
         in cases
     )
+
+
+def _is_smoke_relu_case(params):
+    if not _is_float32(params):
+        return False
+
+    if params.get("size") == 33:
+        return True
+
+    return _shape_case(
+        params,
+        "shape",
+        "input_strides",
+        "out_strides",
+        "inplace",
+    ) in {
+        ((1, 3), None, None, False),
+        ((1, 3), None, None, True),
+    }
 
 
 def _is_smoke_cast_case(params):

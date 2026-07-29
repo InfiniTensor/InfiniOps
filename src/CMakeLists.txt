@@ -482,9 +482,9 @@ set(INFINI_OPS_OPS "" CACHE STRING
 set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infini_ops_smoke_ops
-    add mul cast cat gemm matmul linear rms_norm swiglu silu_and_mul
+    add mul relu cast cat gemm matmul linear rms_norm swiglu silu_and_mul
     causal_softmax causal_softmax_infinilm abs clamp exp)
-set(_infini_ops_smoke_torch_ops abs clamp exp)
+set(_infini_ops_smoke_torch_ops abs clamp exp relu)
 
 if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
