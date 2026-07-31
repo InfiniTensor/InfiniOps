@@ -34,7 +34,9 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
                             false,
                             false,
                             std::nullopt,
-                            out} {}
+                            out,
+                            std::nullopt,
+                            std::nullopt} {}
 
   FlashAttnVarlenFunc(const Tensor q, const Tensor k, const Tensor v,
                       const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
@@ -45,25 +47,39 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
                       const double softcap,
                       const std::optional<Tensor> alibi_slopes,
                       const bool deterministic, const bool return_attn_probs,
-                      const std::optional<Tensor> block_table, Tensor out)
+                      const std::optional<Tensor> block_table, Tensor out,
+                      std::optional<Tensor> softmax_lse,
+                      std::optional<Tensor> s_dmask)
       : q_shape_{q.shape()},
         k_shape_{k.shape()},
         v_shape_{v.shape()},
         cu_seqlens_q_shape_{cu_seqlens_q.shape()},
         cu_seqlens_k_shape_{cu_seqlens_k.shape()},
         out_shape_{out.shape()},
+        softmax_lse_shape_{softmax_lse.has_value() ? softmax_lse->shape()
+                                                   : Tensor::Shape{}},
+        s_dmask_shape_{s_dmask.has_value() ? s_dmask->shape()
+                                           : Tensor::Shape{}},
         q_strides_{q.strides()},
         k_strides_{k.strides()},
         v_strides_{v.strides()},
         cu_seqlens_q_strides_{cu_seqlens_q.strides()},
         cu_seqlens_k_strides_{cu_seqlens_k.strides()},
         out_strides_{out.strides()},
+        softmax_lse_strides_{softmax_lse.has_value() ? softmax_lse->strides()
+                                                     : Tensor::Strides{}},
+        s_dmask_strides_{s_dmask.has_value() ? s_dmask->strides()
+                                             : Tensor::Strides{}},
         q_dtype_{q.dtype()},
         k_dtype_{k.dtype()},
         v_dtype_{v.dtype()},
         cu_seqlens_q_dtype_{cu_seqlens_q.dtype()},
         cu_seqlens_k_dtype_{cu_seqlens_k.dtype()},
         out_dtype_{out.dtype()},
+        softmax_lse_dtype_{softmax_lse.has_value() ? softmax_lse->dtype()
+                                                   : DataType::kFloat32},
+        s_dmask_dtype_{s_dmask.has_value() ? s_dmask->dtype() : q.dtype()},
+        has_auxiliary_outputs_{softmax_lse.has_value() && s_dmask.has_value()},
         device_index_{q.device().index()} {
     assert(q.ndim() == 3 && k.ndim() == 3 && v.ndim() == 3 &&
            "`FlashAttnVarlenFunc` requires packed 3D Q, K, and V tensors");
@@ -77,6 +93,22 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
            "and no greater than 256");
     assert(out.shape() == q.shape() &&
            "`FlashAttnVarlenFunc` output must have the same shape as Q");
+    assert(softmax_lse.has_value() == s_dmask.has_value() &&
+           "`FlashAttnVarlenFunc` auxiliary outputs must be provided "
+           "together");
+    assert(return_attn_probs == has_auxiliary_outputs_ &&
+           "`FlashAttnVarlenFunc` requires auxiliary outputs exactly when "
+           "`return_attn_probs` is true");
+    if (has_auxiliary_outputs_) {
+      assert((softmax_lse->shape() == Tensor::Shape{q.size(1), q.size(0)} &&
+              softmax_lse_dtype_ == DataType::kFloat32 &&
+              "`FlashAttnVarlenFunc` softmax LSE output must have shape "
+              "(num_heads, total_q) and dtype float32"));
+      assert(s_dmask->shape() == Tensor::Shape{0} &&
+             s_dmask_dtype_ == q_dtype_ &&
+             "`FlashAttnVarlenFunc` inference attention mask output must be "
+             "empty and match the Q dtype");
+    }
     assert(
         (q_dtype_ == DataType::kFloat16 || q_dtype_ == DataType::kBFloat16) &&
         q_dtype_ == k_dtype_ && q_dtype_ == v_dtype_ &&
@@ -108,8 +140,6 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
            "`FlashAttnVarlenFunc` does not yet support softcap");
     assert(!deterministic &&
            "`FlashAttnVarlenFunc` does not yet support deterministic mode");
-    assert(!return_attn_probs &&
-           "`FlashAttnVarlenFunc` does not yet return attention probabilities");
     assert(!block_table.has_value() &&
            "`FlashAttnVarlenFunc` does not yet support paged KV cache");
     assert(!alibi_slopes.has_value() &&
@@ -122,6 +152,8 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
     assert(same_device_as_q(k) && same_device_as_q(v) &&
            same_device_as_q(cu_seqlens_q) && same_device_as_q(cu_seqlens_k) &&
            same_device_as_q(out) &&
+           (!softmax_lse.has_value() || same_device_as_q(*softmax_lse)) &&
+           (!s_dmask.has_value() || same_device_as_q(*s_dmask)) &&
            "`FlashAttnVarlenFunc` tensors must be on the same device");
 
     (void)softmax_scale;
@@ -134,7 +166,7 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
                   Tensor out) const {
     (*this)(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k,
             0.0, std::nullopt, false, {-1, -1}, 0.0, std::nullopt, false, false,
-            std::nullopt, out);
+            std::nullopt, out, std::nullopt, std::nullopt);
   }
 
   virtual void operator()(
@@ -145,7 +177,8 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
       const std::vector<int64_t> window_size, const double softcap,
       const std::optional<Tensor> alibi_slopes, const bool deterministic,
       const bool return_attn_probs, const std::optional<Tensor> block_table,
-      Tensor out) const = 0;
+      Tensor out, std::optional<Tensor> softmax_lse,
+      std::optional<Tensor> s_dmask) const = 0;
 
  protected:
   Tensor::Shape q_shape_;
@@ -160,6 +193,10 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
 
   Tensor::Shape out_shape_;
 
+  Tensor::Shape softmax_lse_shape_;
+
+  Tensor::Shape s_dmask_shape_;
+
   Tensor::Strides q_strides_;
 
   Tensor::Strides k_strides_;
@@ -172,6 +209,10 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
 
   Tensor::Strides out_strides_;
 
+  Tensor::Strides softmax_lse_strides_;
+
+  Tensor::Strides s_dmask_strides_;
+
   DataType q_dtype_;
 
   DataType k_dtype_;
@@ -183,6 +224,12 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
   DataType cu_seqlens_k_dtype_;
 
   DataType out_dtype_;
+
+  DataType softmax_lse_dtype_;
+
+  DataType s_dmask_dtype_;
+
+  bool has_auxiliary_outputs_{false};
 
   int device_index_{0};
 };
