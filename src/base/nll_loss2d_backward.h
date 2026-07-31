@@ -29,8 +29,10 @@ class NllLoss2dBackward : public Operator<NllLoss2dBackward> {
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         reduction_{reduction},
         ignore_index_{ignore_index},

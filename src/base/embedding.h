@@ -101,7 +101,7 @@ class Embedding : public Operator<Embedding> {
       const double /*norm_type*/ = 2.0,
       const bool /*scale_grad_by_freq*/ = false,
       const bool /*sparse*/ = false) {
-    auto out_shape = input.shape();
+    typename TensorLike::Shape out_shape{input.shape()};
     out_shape.push_back(weight.size(1));
 
     return TensorLike::Empty(out_shape, weight.dtype(), weight.device());

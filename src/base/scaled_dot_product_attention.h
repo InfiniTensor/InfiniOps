@@ -18,14 +18,16 @@ class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
       : query_shape_{query.shape()},
         key_shape_{key.shape()},
         value_shape_{value.shape()},
-        attn_mask_shape_{attn_mask.has_value() ? attn_mask->shape()
-                                               : Tensor::Shape{}},
+        attn_mask_shape_{attn_mask.has_value()
+                             ? Tensor::Shape{attn_mask->shape()}
+                             : Tensor::Shape{}},
         out_shape_{out.shape()},
         query_strides_{query.strides()},
         key_strides_{key.strides()},
         value_strides_{value.strides()},
-        attn_mask_strides_{attn_mask.has_value() ? attn_mask->strides()
-                                                 : Tensor::Strides{}},
+        attn_mask_strides_{attn_mask.has_value()
+                               ? Tensor::Strides{attn_mask->strides()}
+                               : Tensor::Strides{}},
         out_strides_{out.strides()},
         query_type_{query.dtype()},
         attn_mask_type_{attn_mask.has_value() ? attn_mask->dtype()
@@ -43,7 +45,7 @@ class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
            "dtypes");
     assert(query.size(-1) == key.size(-1) && key.size(-2) == value.size(-2) &&
            "`ScaledDotProductAttention` input dimensions are incompatible");
-    auto expected_out_shape = query.shape();
+    Tensor::Shape expected_out_shape{query.shape()};
     expected_out_shape.back() = value.size(-1);
     assert(out.shape() == expected_out_shape &&
            "`ScaledDotProductAttention` output shape is incorrect");
@@ -83,7 +85,7 @@ class ScaledDotProductAttention : public Operator<ScaledDotProductAttention> {
     (void)scale;
     (void)enable_gqa;
 
-    auto out_shape = query.shape();
+    typename TensorLike::Shape out_shape{query.shape()};
     out_shape.back() = value.size(-1);
     return TensorLike::Empty(out_shape, query.dtype(), query.device());
   }

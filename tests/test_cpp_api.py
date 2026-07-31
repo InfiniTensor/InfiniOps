@@ -58,6 +58,33 @@ def test_cpp_returning_call_smoke(tmp_path):
     _run([str(binary)])
 
 
+@pytest.mark.parametrize(
+    "header",
+    (
+        "base/clamp.h",
+        "base/moe_sum.h",
+        "base/scaled_dot_product_attention.h",
+    ),
+)
+def test_cpp_base_headers_compile_with_metadata_views(tmp_path, header):
+    install_prefix = _install_prefix()
+    include_dir = install_prefix / "include"
+    source = tmp_path / f"{Path(header).stem}_metadata_view.cc"
+    source.write_text(f"#include <{header}>\n\nint main() {{ return 0; }}\n")
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            "-UNDEBUG",
+            "-fsyntax-only",
+            f"-I{include_dir}",
+            str(source),
+        ]
+    )
+
+
 def _install_prefix():
     prefix = os.environ.get("INFINI_OPS_INSTALL_PREFIX")
 
@@ -146,10 +173,15 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
     r"""
     #include <infini/ops.h>
 
+    #include <base/embedding.h>
+    #include <base/scaled_dot_product_attention.h>
+    #include <base/silu_and_mul.h>
+
     #include <cmath>
     #include <functional>
     #include <numeric>
     #include <stdexcept>
+    #include <type_traits>
     #include <utility>
     #include <vector>
 
@@ -179,9 +211,32 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
 
       const void* data() const { return data_.data(); }
 
-      const Shape& shape() const { return shape_; }
+      template <typename ShapeAccess = decltype(
+                    std::declval<const infini::ops::Tensor&>().shape())>
+      decltype(auto) shape() const {
+        if constexpr (std::is_reference_v<ShapeAccess>) {
+          return (shape_);
+        } else {
+          return ShapeAccess{shape_.data(), shape_.size()};
+        }
+      }
 
-      const Strides& strides() const { return strides_; }
+      template <typename StridesAccess = decltype(
+                    std::declval<const infini::ops::Tensor&>().strides())>
+      decltype(auto) strides() const {
+        if constexpr (std::is_reference_v<StridesAccess>) {
+          return (strides_);
+        } else {
+          return StridesAccess{strides_.data(), strides_.size()};
+        }
+      }
+
+      Shape::value_type size(std::ptrdiff_t dim) const {
+        const auto index = dim < 0
+                               ? static_cast<std::ptrdiff_t>(shape_.size()) + dim
+                               : dim;
+        return shape_[static_cast<std::size_t>(index)];
+      }
 
       infini::ops::DataType dtype() const { return dtype_; }
 
@@ -246,6 +301,30 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
           std::fabs(c_data[1] - 64.0f) > 1e-6f ||
           std::fabs(c_data[2] - 139.0f) > 1e-6f ||
           std::fabs(c_data[3] - 154.0f) > 1e-6f) {
+        return 1;
+      }
+
+      OwningTensor silu_input(std::vector<float>(8), {2, 4});
+      auto silu_output = infini::ops::SiluAndMul::MakeReturnValue(silu_input);
+      if (silu_output.shape() != OwningTensor::Shape{2, 2}) {
+        return 1;
+      }
+
+      OwningTensor embedding_input(std::vector<float>(6), {2, 3});
+      OwningTensor embedding_weight(std::vector<float>(40), {10, 4});
+      auto embedding_output = infini::ops::Embedding::MakeReturnValue(
+          embedding_input, embedding_weight);
+      if (embedding_output.shape() != OwningTensor::Shape{2, 3, 4}) {
+        return 1;
+      }
+
+      OwningTensor query(std::vector<float>(24), {1, 2, 3, 4});
+      OwningTensor key(std::vector<float>(40), {1, 2, 5, 4});
+      OwningTensor value(std::vector<float>(60), {1, 2, 5, 6});
+      auto attention_output =
+          infini::ops::ScaledDotProductAttention::MakeReturnValue(query, key,
+                                                                  value);
+      if (attention_output.shape() != OwningTensor::Shape{1, 2, 3, 6}) {
         return 1;
       }
 

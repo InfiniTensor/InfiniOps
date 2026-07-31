@@ -23,8 +23,10 @@ class ConvInfinilm : public Operator<ConvInfinilm> {
         weight_strides_{weight.strides()},
         out_shape_{out.shape()},
         out_strides_{out.strides()},
-        bias_shape_{bias.has_value() ? bias->shape() : Tensor::Shape{}},
-        bias_strides_{bias.has_value() ? bias->strides() : Tensor::Strides{}},
+        bias_shape_{bias.has_value() ? Tensor::Shape{bias->shape()}
+                                     : Tensor::Shape{}},
+        bias_strides_{bias.has_value() ? Tensor::Strides{bias->strides()}
+                                       : Tensor::Strides{}},
         input_type_{input.dtype()},
         weight_type_{weight.dtype()},
         out_type_{out.dtype()},

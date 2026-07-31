@@ -19,12 +19,16 @@ class Diff : public Operator<Diff> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_prepend_{prepend.has_value()},
-        prepend_shape_{prepend ? prepend->shape() : Tensor::Shape{}},
-        prepend_strides_{prepend ? prepend->strides() : Tensor::Strides{}},
+        prepend_shape_{prepend ? Tensor::Shape{prepend->shape()}
+                               : Tensor::Shape{}},
+        prepend_strides_{prepend ? Tensor::Strides{prepend->strides()}
+                                 : Tensor::Strides{}},
         prepend_type_{prepend ? prepend->dtype() : DataType::kFloat32},
         has_append_{append.has_value()},
-        append_shape_{append ? append->shape() : Tensor::Shape{}},
-        append_strides_{append ? append->strides() : Tensor::Strides{}},
+        append_shape_{append ? Tensor::Shape{append->shape()}
+                             : Tensor::Shape{}},
+        append_strides_{append ? Tensor::Strides{append->strides()}
+                               : Tensor::Strides{}},
         append_type_{append ? append->dtype() : DataType::kFloat32},
         n_{n},
         dim_{dim},

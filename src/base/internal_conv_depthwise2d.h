@@ -26,8 +26,9 @@ class ConvDepthwise2d : public Operator<ConvDepthwise2d> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_bias_{bias.has_value()},
-        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
-        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_shape_{bias ? Tensor::Shape{bias->shape()} : Tensor::Shape{}},
+        bias_strides_{bias ? Tensor::Strides{bias->strides()}
+                           : Tensor::Strides{}},
         bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         kernel_size_{kernel_size},
         stride_{stride},

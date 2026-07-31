@@ -60,8 +60,7 @@ class MoeSum : public Operator<MoeSum> {
         (hidden_size_ == 0 || num_tokens_ <= kMaxSignedIndex / hidden_size_) &&
         "`MoeSum` output size must fit signed index arithmetic");
 
-    const auto offsets_fit = [](const Tensor::Shape& shape,
-                                const Tensor::Strides& strides) {
+    const auto offsets_fit = [](const auto& shape, const auto& strides) {
       uint64_t max_offset = 0;
       constexpr auto kMaxOffset =
           static_cast<uint64_t>(std::numeric_limits<int64_t>::max());

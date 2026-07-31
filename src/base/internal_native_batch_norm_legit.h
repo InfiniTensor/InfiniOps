@@ -33,12 +33,15 @@ class NativeBatchNormLegit : public Operator<NativeBatchNormLegit> {
         save_invstd_strides_{save_invstd.strides()},
         save_invstd_type_{save_invstd.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         has_bias_{bias.has_value()},
-        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
-        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_shape_{bias ? Tensor::Shape{bias->shape()} : Tensor::Shape{}},
+        bias_strides_{bias ? Tensor::Strides{bias->strides()}
+                           : Tensor::Strides{}},
         bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         training_{training},
         momentum_{momentum},
@@ -62,12 +65,15 @@ class NativeBatchNormLegit : public Operator<NativeBatchNormLegit> {
         save_invstd_strides_{save_invstd.strides()},
         save_invstd_type_{save_invstd.dtype()},
         has_weight_{weight.has_value()},
-        weight_shape_{weight ? weight->shape() : Tensor::Shape{}},
-        weight_strides_{weight ? weight->strides() : Tensor::Strides{}},
+        weight_shape_{weight ? Tensor::Shape{weight->shape()}
+                             : Tensor::Shape{}},
+        weight_strides_{weight ? Tensor::Strides{weight->strides()}
+                               : Tensor::Strides{}},
         weight_type_{weight ? weight->dtype() : DataType::kFloat32},
         has_bias_{bias.has_value()},
-        bias_shape_{bias ? bias->shape() : Tensor::Shape{}},
-        bias_strides_{bias ? bias->strides() : Tensor::Strides{}},
+        bias_shape_{bias ? Tensor::Shape{bias->shape()} : Tensor::Shape{}},
+        bias_strides_{bias ? Tensor::Strides{bias->strides()}
+                           : Tensor::Strides{}},
         bias_type_{bias ? bias->dtype() : DataType::kFloat32},
         training_{training},
         momentum_{momentum},

@@ -24,8 +24,10 @@ class Searchsorted : public Operator<Searchsorted> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_sorter_{sorter.has_value()},
-        sorter_shape_{sorter ? sorter->shape() : Tensor::Shape{}},
-        sorter_strides_{sorter ? sorter->strides() : Tensor::Strides{}},
+        sorter_shape_{sorter ? Tensor::Shape{sorter->shape()}
+                             : Tensor::Shape{}},
+        sorter_strides_{sorter ? Tensor::Strides{sorter->strides()}
+                               : Tensor::Strides{}},
         sorter_type_{sorter ? sorter->dtype() : DataType::kFloat32},
         out_int32_{out_int32},
         right_{right},
@@ -53,8 +55,10 @@ class Searchsorted : public Operator<Searchsorted> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         has_sorter_{sorter.has_value()},
-        sorter_shape_{sorter ? sorter->shape() : Tensor::Shape{}},
-        sorter_strides_{sorter ? sorter->strides() : Tensor::Strides{}},
+        sorter_shape_{sorter ? Tensor::Shape{sorter->shape()}
+                             : Tensor::Shape{}},
+        sorter_strides_{sorter ? Tensor::Strides{sorter->strides()}
+                               : Tensor::Strides{}},
         sorter_type_{sorter ? sorter->dtype() : DataType::kFloat32},
         out_int32_{out_int32},
         right_{right},

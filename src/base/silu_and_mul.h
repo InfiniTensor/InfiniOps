@@ -37,7 +37,7 @@ class SiluAndMul : public Operator<SiluAndMul> {
 
   template <typename TensorLike>
   static auto MakeReturnValue(const TensorLike& input) {
-    auto out_shape = input.shape();
+    typename TensorLike::Shape out_shape{input.shape()};
     assert(!out_shape.empty() && out_shape.back() % 2 == 0 &&
            "`SiluAndMul` requires an even input last dimension");
     out_shape.back() /= 2;

@@ -122,6 +122,14 @@ def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     assert "std::optional<Tensor> bias" in base
     assert "bool has_weight_" in base
     assert "bool has_bias_" in base
+    assert (
+        "weight_shape_{weight ? Tensor::Shape{weight->shape()} : Tensor::Shape{}}"
+        in base
+    )
+    assert (
+        "weight_strides_{weight ? Tensor::Strides{weight->strides()} "
+        ": Tensor::Strides{}}" in base
+    )
     assert "c10::optional<at::Tensor> at_weight" in source
     assert "c10::optional<at::Tensor> at_bias" in source
     assert "weight->shape()" in source

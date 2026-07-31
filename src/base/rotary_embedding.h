@@ -16,11 +16,13 @@ class RotaryEmbedding : public Operator<RotaryEmbedding> {
                   int64_t rope_dim_offset = 0, bool inverse = false)
       : positions_shape_{positions.shape()},
         query_shape_{query.shape()},
-        key_shape_{key.has_value() ? key->shape() : Tensor::Shape{}},
+        key_shape_{key.has_value() ? Tensor::Shape{key->shape()}
+                                   : Tensor::Shape{}},
         cos_sin_cache_shape_{cos_sin_cache.shape()},
         positions_strides_{positions.strides()},
         query_strides_{query.strides()},
-        key_strides_{key.has_value() ? key->strides() : Tensor::Strides{}},
+        key_strides_{key.has_value() ? Tensor::Strides{key->strides()}
+                                     : Tensor::Strides{}},
         cos_sin_cache_strides_{cos_sin_cache.strides()},
         positions_type_{positions.dtype()},
         query_type_{query.dtype()},
