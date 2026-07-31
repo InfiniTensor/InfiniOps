@@ -64,7 +64,7 @@ def test_flash_attn_with_kvcache_dense(
     expected_v_cache = v_cache.clone()
     actual_k_cache = k_cache.clone()
     actual_v_cache = v_cache.clone()
-    expected = flash_attn.flash_attn_with_kvcache(
+    expected, expected_softmax_lse = flash_attn.flash_attn_with_kvcache(
         q,
         expected_k_cache,
         expected_v_cache,
@@ -75,8 +75,14 @@ def test_flash_attn_with_kvcache_dense(
         causal=True,
         window_size=(4, 0),
         num_splits=1,
+        return_softmax_lse=True,
     )
     actual = torch.empty_like(q)
+    actual_softmax_lse = torch.empty(
+        (q.size(0), q.size(2), q.size(1)),
+        dtype=torch.float32,
+        device=q.device,
+    )
 
     infini.ops.flash_attn_with_kvcache(
         q,
@@ -97,13 +103,20 @@ def test_flash_attn_with_kvcache_dense(
         True,
         None,
         1,
-        False,
+        True,
         actual,
+        actual_softmax_lse,
         stream=get_stream(q.device),
         implementation_index=implementation_index,
     )
 
     torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+    torch.testing.assert_close(
+        actual_softmax_lse,
+        expected_softmax_lse,
+        rtol=rtol,
+        atol=atol,
+    )
     torch.testing.assert_close(actual_k_cache, expected_k_cache, rtol=0, atol=0)
     torch.testing.assert_close(actual_v_cache, expected_v_cache, rtol=0, atol=0)
 
@@ -158,6 +171,7 @@ def test_flash_attn_with_kvcache_paged(device, implementation_index):
         0,
         False,
         actual,
+        None,
         stream=get_stream(q.device),
         implementation_index=implementation_index,
     )
@@ -207,6 +221,7 @@ def test_flash_attn_with_kvcache_scalar_seqlens_with_cache_batch_idx(
         0,
         False,
         actual,
+        None,
         stream=get_stream(q.device),
         implementation_index=implementation_index,
     )

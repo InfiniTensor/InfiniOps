@@ -43,13 +43,13 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::operator()(
     const std::optional<double> softmax_scale, const bool causal,
     const std::vector<int64_t> window_size, const double softcap,
     const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
-    const int64_t num_splits, const bool return_softmax_lse, Tensor out) const {
-  assert(!return_softmax_lse &&
-         "`FlashAttnWithKvcache` does not yet return softmax LSE");
+    const int64_t num_splits, const bool return_softmax_lse, Tensor out,
+    std::optional<Tensor> softmax_lse) const {
   Run(q, k_cache, v_cache, k, v, rotary_cos, rotary_sin, cache_seqlens,
       std::nullopt, cache_batch_idx, cache_leftpad, block_table, softmax_scale,
       causal, window_size, softcap, rotary_interleaved, alibi_slopes,
-      num_splits, out);
+      num_splits, out, softmax_lse);
+  (void)return_softmax_lse;
 }
 
 void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::operator()(
@@ -63,13 +63,13 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::operator()(
     const std::optional<double> softmax_scale, const bool causal,
     const std::vector<int64_t> window_size, const double softcap,
     const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
-    const int64_t num_splits, const bool return_softmax_lse, Tensor out) const {
-  assert(!return_softmax_lse &&
-         "`FlashAttnWithKvcache` does not yet return softmax LSE");
+    const int64_t num_splits, const bool return_softmax_lse, Tensor out,
+    std::optional<Tensor> softmax_lse) const {
   Run(q, k_cache, v_cache, k, v, rotary_cos, rotary_sin, std::nullopt,
       cache_seqlens, cache_batch_idx, cache_leftpad, block_table, softmax_scale,
       causal, window_size, softcap, rotary_interleaved, alibi_slopes,
-      num_splits, out);
+      num_splits, out, softmax_lse);
+  (void)return_softmax_lse;
 }
 
 void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::Run(
@@ -85,7 +85,8 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::Run(
     const std::optional<double> softmax_scale, const bool causal,
     const std::vector<int64_t> window_size, const double softcap,
     const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
-    const int64_t num_splits, Tensor out) const {
+    const int64_t num_splits, Tensor out,
+    std::optional<Tensor> softmax_lse) const {
   const auto device_index = static_cast<c10::DeviceIndex>(device_index_);
   const c10::cuda::CUDAGuard device_guard{device_index};
   const c10::cuda::CUDAStreamGuard stream_guard{
@@ -103,6 +104,12 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::Run(
       device_index_);
   auto at_out = ToAtenTensor<Device::Type::kNvidia>(
       out.data(), out_shape_, out_strides_, out_dtype_, device_index_);
+  std::optional<at::Tensor> at_softmax_lse;
+  if (softmax_lse.has_value()) {
+    at_softmax_lse.emplace(ToAtenTensor<Device::Type::kNvidia>(
+        softmax_lse->data(), softmax_lse_shape_, softmax_lse_strides_,
+        softmax_lse_dtype_, device_index_));
+  }
 
   std::optional<const at::Tensor> at_k;
   std::optional<const at::Tensor> at_v;
@@ -115,39 +122,39 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::Run(
   std::optional<at::Tensor> at_alibi_slopes;
 
   if (k.has_value()) {
-    at_k = ToAtenTensor<Device::Type::kNvidia>(const_cast<void*>(k->data()),
-                                               k_shape_, k_strides_, k_dtype_,
-                                               device_index_);
-    at_v = ToAtenTensor<Device::Type::kNvidia>(const_cast<void*>(v->data()),
-                                               v_shape_, v_strides_, v_dtype_,
-                                               device_index_);
+    at_k.emplace(ToAtenTensor<Device::Type::kNvidia>(
+        const_cast<void*>(k->data()), k_shape_, k_strides_, k_dtype_,
+        device_index_));
+    at_v.emplace(ToAtenTensor<Device::Type::kNvidia>(
+        const_cast<void*>(v->data()), v_shape_, v_strides_, v_dtype_,
+        device_index_));
   }
   if (rotary_cos.has_value()) {
-    at_rotary_cos = ToAtenTensor<Device::Type::kNvidia>(
+    at_rotary_cos.emplace(ToAtenTensor<Device::Type::kNvidia>(
         const_cast<void*>(rotary_cos->data()), rotary_cos_shape_,
-        rotary_cos_strides_, rotary_cos_dtype_, device_index_);
-    at_rotary_sin = ToAtenTensor<Device::Type::kNvidia>(
+        rotary_cos_strides_, rotary_cos_dtype_, device_index_));
+    at_rotary_sin.emplace(ToAtenTensor<Device::Type::kNvidia>(
         const_cast<void*>(rotary_sin->data()), rotary_sin_shape_,
-        rotary_sin_strides_, rotary_sin_dtype_, device_index_);
+        rotary_sin_strides_, rotary_sin_dtype_, device_index_));
   }
   if (cache_seqlens.has_value()) {
-    at_cache_seqlens = ToAtenTensor<Device::Type::kNvidia>(
+    at_cache_seqlens.emplace(ToAtenTensor<Device::Type::kNvidia>(
         const_cast<void*>(cache_seqlens->data()), cache_seqlens_shape_,
-        cache_seqlens_strides_, cache_seqlens_dtype_, device_index_);
+        cache_seqlens_strides_, cache_seqlens_dtype_, device_index_));
   } else if (scalar_cache_seqlens.has_value()) {
-    at_cache_seqlens =
+    at_cache_seqlens.emplace(
         at::full({static_cast<int64_t>(batch_size_)}, *scalar_cache_seqlens,
-                 at::TensorOptions().dtype(at::kInt).device(at_q.device()));
+                 at::TensorOptions().dtype(at::kInt).device(at_q.device())));
   }
   if (cache_batch_idx.has_value()) {
-    at_cache_batch_idx = ToAtenTensor<Device::Type::kNvidia>(
+    at_cache_batch_idx.emplace(ToAtenTensor<Device::Type::kNvidia>(
         const_cast<void*>(cache_batch_idx->data()), cache_batch_idx_shape_,
-        cache_batch_idx_strides_, cache_batch_idx_dtype_, device_index_);
+        cache_batch_idx_strides_, cache_batch_idx_dtype_, device_index_));
   }
   if (cache_leftpad.has_value()) {
-    at_cache_leftpad = ToAtenTensor<Device::Type::kNvidia>(
+    at_cache_leftpad.emplace(ToAtenTensor<Device::Type::kNvidia>(
         const_cast<void*>(cache_leftpad->data()), cache_leftpad_shape_,
-        cache_leftpad_strides_, cache_leftpad_dtype_, device_index_);
+        cache_leftpad_strides_, cache_leftpad_dtype_, device_index_));
   }
   if (block_table.has_value()) {
     at_block_table = ToAtenTensor<Device::Type::kNvidia>(
@@ -160,7 +167,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::Run(
         alibi_slopes_strides_, alibi_slopes_dtype_, device_index_);
   }
 
-  std::optional<at::Tensor> at_out_optional{at_out};
+  std::optional<at::Tensor> at_out_optional;
   auto result = flash::mha_fwd_kvcache(
       at_q, at_k_cache, at_v_cache, at_k, at_v, at_cache_seqlens, at_rotary_cos,
       at_rotary_sin, at_cache_batch_idx, at_cache_leftpad, at_block_table,
@@ -170,9 +177,13 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 8>::Run(
       causal, static_cast<int>(window_size[0]),
       static_cast<int>(window_size[1]), static_cast<float>(softcap),
       rotary_interleaved, static_cast<int>(num_splits));
-  assert(!result.empty() &&
-         "`flash::mha_fwd_kvcache` returned no output tensor");
+  assert(!result.empty() && "`flash::mha_fwd_kvcache` returned no output");
   at_out.copy_(result[0]);
+  if (at_softmax_lse.has_value()) {
+    assert(result.size() >= 2 &&
+           "`flash::mha_fwd_kvcache` did not return softmax LSE");
+    at_softmax_lse->copy_(result[1]);
+  }
 }
 
 }  // namespace infini::ops

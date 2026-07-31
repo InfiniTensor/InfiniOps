@@ -35,7 +35,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
                              std::nullopt,
                              0,
                              false,
-                             out} {}
+                             out,
+                             std::nullopt} {}
 
   FlashAttnWithKvcache(
       const Tensor q, Tensor k_cache, Tensor v_cache,
@@ -48,7 +49,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
       const std::optional<double> softmax_scale, const bool causal,
       const std::vector<int64_t> window_size, const double softcap,
       const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
-      const int64_t num_splits, const bool return_softmax_lse, Tensor out)
+      const int64_t num_splits, const bool return_softmax_lse, Tensor out,
+      std::optional<Tensor> softmax_lse)
       : FlashAttnWithKvcache{q,
                              k_cache,
                              v_cache,
@@ -68,25 +70,29 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
                              alibi_slopes,
                              num_splits,
                              return_softmax_lse,
-                             out} {
+                             out,
+                             softmax_lse} {
     assert(cache_seqlens >= 0 &&
            "`FlashAttnWithKvcache` requires non-negative scalar "
            "`cache_seqlens`");
   }
 
-  FlashAttnWithKvcache(
-      const Tensor q, Tensor k_cache, Tensor v_cache,
-      const std::optional<Tensor> k, const std::optional<Tensor> v,
-      const std::optional<Tensor> rotary_cos,
-      const std::optional<Tensor> rotary_sin,
-      const std::optional<Tensor> cache_seqlens,
-      const std::optional<Tensor> cache_batch_idx,
-      const std::optional<Tensor> cache_leftpad,
-      const std::optional<Tensor> block_table,
-      const std::optional<double> softmax_scale, const bool causal,
-      const std::vector<int64_t> window_size, const double softcap,
-      const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
-      const int64_t num_splits, const bool return_softmax_lse, Tensor out)
+  FlashAttnWithKvcache(const Tensor q, Tensor k_cache, Tensor v_cache,
+                       const std::optional<Tensor> k,
+                       const std::optional<Tensor> v,
+                       const std::optional<Tensor> rotary_cos,
+                       const std::optional<Tensor> rotary_sin,
+                       const std::optional<Tensor> cache_seqlens,
+                       const std::optional<Tensor> cache_batch_idx,
+                       const std::optional<Tensor> cache_leftpad,
+                       const std::optional<Tensor> block_table,
+                       const std::optional<double> softmax_scale,
+                       const bool causal,
+                       const std::vector<int64_t> window_size,
+                       const double softcap, const bool rotary_interleaved,
+                       const std::optional<Tensor> alibi_slopes,
+                       const int64_t num_splits, const bool return_softmax_lse,
+                       Tensor out, std::optional<Tensor> softmax_lse)
       : q_shape_{q.shape()},
         k_cache_shape_{k_cache.shape()},
         v_cache_shape_{v_cache.shape()},
@@ -114,6 +120,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
                                 ? Tensor::Shape{alibi_slopes->shape()}
                                 : Tensor::Shape{}},
         out_shape_{out.shape()},
+        softmax_lse_shape_{softmax_lse.has_value() ? softmax_lse->shape()
+                                                   : Tensor::Shape{}},
         q_strides_{q.strides()},
         k_cache_strides_{k_cache.strides()},
         v_cache_strides_{v_cache.strides()},
@@ -144,6 +152,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
                                   ? Tensor::Strides{alibi_slopes->strides()}
                                   : Tensor::Strides{}},
         out_strides_{out.strides()},
+        softmax_lse_strides_{softmax_lse.has_value() ? softmax_lse->strides()
+                                                     : Tensor::Strides{}},
         q_dtype_{q.dtype()},
         k_cache_dtype_{k_cache.dtype()},
         v_cache_dtype_{v_cache.dtype()},
@@ -165,6 +175,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
         alibi_slopes_dtype_{alibi_slopes.has_value() ? alibi_slopes->dtype()
                                                      : DataType::kFloat32},
         out_dtype_{out.dtype()},
+        softmax_lse_dtype_{softmax_lse.has_value() ? softmax_lse->dtype()
+                                                   : DataType::kFloat32},
         has_k_{k.has_value()},
         has_v_{v.has_value()},
         has_rotary_cos_{rotary_cos.has_value()},
@@ -172,6 +184,7 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
         has_cache_batch_idx_{cache_batch_idx.has_value()},
         has_block_table_{block_table.has_value()},
         has_alibi_slopes_{alibi_slopes.has_value()},
+        has_softmax_lse_{softmax_lse.has_value()},
         batch_size_{q.ndim() > 0 ? q.size(0) : 0},
         head_size_{q.ndim() == 4 ? q.size(3) : 0},
         device_index_{q.device().index()} {
@@ -197,6 +210,16 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
            "256");
     assert(out.shape() == q.shape() &&
            "`FlashAttnWithKvcache` output must have the same shape as Q");
+    assert(return_softmax_lse == has_softmax_lse_ &&
+           "`FlashAttnWithKvcache` requires `softmax_lse` exactly when "
+           "`return_softmax_lse` is true");
+    if (has_softmax_lse_) {
+      assert((softmax_lse->shape() ==
+              Tensor::Shape{q.size(0), q.size(2), q.size(1)}) &&
+             softmax_lse_dtype_ == DataType::kFloat32 &&
+             "`FlashAttnWithKvcache` softmax LSE output must have shape "
+             "(batch_size, num_heads, seqlen) and dtype float32");
+    }
     assert(q.stride(-1) == 1 && k_cache.stride(-1) == 1 &&
            v_cache.stride(-1) == 1 && out.stride(-1) == 1 &&
            "`FlashAttnWithKvcache` requires contiguous head dimensions");
@@ -256,16 +279,15 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
            "`FlashAttnWithKvcache` requires non-negative `softcap`");
     assert(num_splits >= 0 &&
            "`FlashAttnWithKvcache` requires non-negative `num_splits`");
-    assert(!return_softmax_lse &&
-           "`FlashAttnWithKvcache` does not yet return softmax LSE");
-
     const auto same_device_as_q = [&](const Tensor tensor) {
       return tensor.device().type() == q.device().type() &&
              tensor.device().index() == q.device().index();
     };
     assert(
         same_device_as_q(k_cache) && same_device_as_q(v_cache) &&
-        same_device_as_q(out) && (!k.has_value() || same_device_as_q(*k)) &&
+        same_device_as_q(out) &&
+        (!softmax_lse.has_value() || same_device_as_q(*softmax_lse)) &&
+        (!k.has_value() || same_device_as_q(*k)) &&
         (!v.has_value() || same_device_as_q(*v)) &&
         (!rotary_cos.has_value() || same_device_as_q(*rotary_cos)) &&
         (!rotary_sin.has_value() || same_device_as_q(*rotary_sin)) &&
@@ -286,7 +308,7 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
     (*this)(q, k_cache, v_cache, std::nullopt, std::nullopt, std::nullopt,
             std::nullopt, std::optional<Tensor>{}, std::nullopt, std::nullopt,
             std::nullopt, std::nullopt, false, {-1, -1}, 0.0, true,
-            std::nullopt, 0, false, out);
+            std::nullopt, 0, false, out, std::nullopt);
   }
 
   virtual void operator()(
@@ -300,25 +322,23 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
       const std::optional<double> softmax_scale, const bool causal,
       const std::vector<int64_t> window_size, const double softcap,
       const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
-      const int64_t num_splits, const bool return_softmax_lse,
-      Tensor out) const = 0;
+      const int64_t num_splits, const bool return_softmax_lse, Tensor out,
+      std::optional<Tensor> softmax_lse) const = 0;
 
-  virtual void operator()(const Tensor q, Tensor k_cache, Tensor v_cache,
-                          const std::optional<Tensor> k,
-                          const std::optional<Tensor> v,
-                          const std::optional<Tensor> rotary_cos,
-                          const std::optional<Tensor> rotary_sin,
-                          const std::optional<Tensor> cache_seqlens,
-                          const std::optional<Tensor> cache_batch_idx,
-                          const std::optional<Tensor> cache_leftpad,
-                          const std::optional<Tensor> block_table,
-                          const std::optional<double> softmax_scale,
-                          const bool causal,
-                          const std::vector<int64_t> window_size,
-                          const double softcap, const bool rotary_interleaved,
-                          const std::optional<Tensor> alibi_slopes,
-                          const int64_t num_splits,
-                          const bool return_softmax_lse, Tensor out) const = 0;
+  virtual void operator()(
+      const Tensor q, Tensor k_cache, Tensor v_cache,
+      const std::optional<Tensor> k, const std::optional<Tensor> v,
+      const std::optional<Tensor> rotary_cos,
+      const std::optional<Tensor> rotary_sin,
+      const std::optional<Tensor> cache_seqlens,
+      const std::optional<Tensor> cache_batch_idx,
+      const std::optional<Tensor> cache_leftpad,
+      const std::optional<Tensor> block_table,
+      const std::optional<double> softmax_scale, const bool causal,
+      const std::vector<int64_t> window_size, const double softcap,
+      const bool rotary_interleaved, const std::optional<Tensor> alibi_slopes,
+      const int64_t num_splits, const bool return_softmax_lse, Tensor out,
+      std::optional<Tensor> softmax_lse) const = 0;
 
  protected:
   void ValidateIndexVector(const std::optional<Tensor>& tensor) const {
@@ -357,6 +377,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
 
   Tensor::Shape out_shape_;
 
+  Tensor::Shape softmax_lse_shape_;
+
   Tensor::Strides q_strides_;
 
   Tensor::Strides k_cache_strides_;
@@ -382,6 +404,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
   Tensor::Strides alibi_slopes_strides_;
 
   Tensor::Strides out_strides_;
+
+  Tensor::Strides softmax_lse_strides_;
 
   DataType q_dtype_;
 
@@ -409,6 +433,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
 
   DataType out_dtype_;
 
+  DataType softmax_lse_dtype_;
+
   bool has_k_{false};
 
   bool has_v_{false};
@@ -422,6 +448,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
   bool has_block_table_{false};
 
   bool has_alibi_slopes_{false};
+
+  bool has_softmax_lse_{false};
 
   Tensor::Size batch_size_{0};
 
