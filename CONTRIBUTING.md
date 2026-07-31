@@ -113,6 +113,10 @@ The v1 timing target is NVIDIA smoke build plus smoke tests in under three minut
 
 ## Adding an Operator
 
+Before defining an operator's public interface, follow
+[Operator API Alignment](docs/operator-api-alignment.md) to select and document
+its upstream API target.
+
 1. **Base class** in `src/base/`: the class must inherit from `Operator<Op>` (e.g. `class Gemm : public Operator<Gemm>`). See `src/base/gemm.h`.
 2. **Platform implementation** in `src/native/<category>/<platform>/ops/<op>/` (or `src/torch/ops/<op>/` for the PyTorch backend): the class must inherit from the base (e.g. `class Blas : public Gemm`). See `src/native/cuda/ops/gemm/blas.h` and `src/native/cuda/nvidia/ops/gemm/cublas.h`.
 3. **Tests** in `tests/`:
