@@ -74,6 +74,11 @@ The standard path for a native operator is:
 4. Add focused tests under `tests/test_<op>.py`.
 5. Validate a smoke build plus the focused test on every affected backend.
 
+Before defining the public base interface, follow
+[Operator API Alignment](../operator-api-alignment.md) to select an upstream
+target and design the canonical name, parameter list, overloads, and return
+contract.
+
 For PyTorch ATen-backed operators, see
 [Adding ATen-backed operators](../aten-operators.md). That page explains the
 generated backend path and the hand-written ATen backend path.

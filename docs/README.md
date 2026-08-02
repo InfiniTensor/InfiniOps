@@ -29,6 +29,9 @@ Start with these pages:
   configuration objects.
 - [Operators](api/operators.md): the operator API model, dispatch, caching, and
   implementation layout.
+- [Operator API Alignment](operator-api-alignment.md): select an upstream API,
+  design canonical signatures, and review names, parameters, overloads, and
+  return contracts.
 - [API Reference](api/reference.md): generate the Doxygen C++ API reference.
 - [Adding ATen-backed operators](aten-operators.md): generated and hand-written
   PyTorch ATen backend guidance.
