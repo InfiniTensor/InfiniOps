@@ -197,6 +197,7 @@ _RANDOM_OPS = frozenset(
         "randn",
         "randint",
         "randperm",
+        "random_",
         "rrelu_with_noise",
     }
 )
@@ -573,6 +574,7 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     op_name = op_meta["name"]
     aten_name = op_meta.get("aten_name", op_name)
     is_inplace = _is_inplace_aten_name(aten_name)
+    is_implicit_inplace = is_inplace and not any(p["is_out"] for p in op_meta["params"])
     _skip_if_not_active(op_name, device)
     _skip_low_precision_reduction(aten_name, dtype, device)
 
@@ -606,7 +608,7 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
 
     in_params = (
         op_meta["params"]
-        if is_inplace
+        if is_implicit_inplace
         else [p for p in op_meta["params"] if not p["is_out"]]
     )
     out_params = [p for p in op_meta["params"] if p["is_out"]]
@@ -685,7 +687,7 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
             f"`{op_name}` produced 0-element output (unregistered data_ptr on cuda)"
         )
 
-    if is_inplace:
+    if is_implicit_inplace:
         _call_infini(op_name, *inputs)
         _assert_close(inputs[0], ref_outs[0], rtol, atol)
 

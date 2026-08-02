@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class IndexFill : public Operator<IndexFill> {
  public:
-  IndexFill(Tensor input, const int64_t dim, const Tensor index,
-            const double value)
+  IndexFill(const Tensor input, const int64_t dim, const Tensor index,
+            const double value, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -17,27 +17,35 @@ class IndexFill : public Operator<IndexFill> {
         index_type_{index.dtype()},
         dim_{dim},
         value_{value},
-        device_index_{input.device().index()} {}
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        device_index_{out.device().index()} {}
 
-  IndexFill(Tensor input, const int64_t dim, const Tensor index,
-            const Tensor value)
+  IndexFill(const Tensor input, const int64_t dim, const Tensor index,
+            const Tensor value, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         index_shape_{index.shape()},
         index_strides_{index.strides()},
         index_type_{index.dtype()},
+        dim_{dim},
         value_shape_{value.shape()},
         value_strides_{value.strides()},
         value_type_{value.dtype()},
-        dim_{dim},
-        device_index_{input.device().index()} {}
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        device_index_{out.device().index()} {}
 
-  virtual void operator()(Tensor input, const int64_t dim, const Tensor index,
-                          const double value) const = 0;
+  virtual void operator()(const Tensor input, const int64_t dim,
+                          const Tensor index, const double value,
+                          Tensor out) const = 0;
 
-  virtual void operator()(Tensor input, const int64_t dim, const Tensor index,
-                          const Tensor value) const = 0;
+  virtual void operator()(const Tensor input, const int64_t dim,
+                          const Tensor index, const Tensor value,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
@@ -61,6 +69,12 @@ class IndexFill : public Operator<IndexFill> {
   Tensor::Strides value_strides_;
 
   DataType value_type_;
+
+  Tensor::Shape out_shape_;
+
+  Tensor::Strides out_strides_;
+
+  DataType out_type_;
 
   int device_index_{0};
 };

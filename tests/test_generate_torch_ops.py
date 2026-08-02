@@ -343,3 +343,40 @@ def test_remove_stale_files_keeps_expected_outputs(tmp_path):
     assert not stale.exists()
     assert not nested_stale.exists()
     assert not (root / "base").exists()
+
+
+def test_inplace_schema_can_bind_to_explicit_output_signature():
+    module = _load_generator_module()
+    op = module._parse_func("fill_.Scalar(Tensor(a!) self, Scalar value) -> Tensor(a!)")
+    signature = [
+        ("Tensor", "input"),
+        ("double", "value"),
+        ("Tensor", "out"),
+    ]
+
+    bound = module._bind_base_signature(op, signature)
+
+    assert bound is not None
+    assert bound.explicit_inplace_out is not None
+    assert [param.api_name for param in bound.visible_params] == [
+        "input",
+        "value",
+        "out",
+    ]
+    assert bound.out_params[0].api_name == "out"
+
+    source = module._generate_torch_method_source("fill", bound)
+
+    assert "const auto device_index = out.device().index();" in source
+    assert "const_cast<void*>(input.data())" in source
+    assert "auto at_out = ToAtenTensor" in source
+    assert "at_out.copy_(at_self);" in source
+    assert "at_out.fill_(value);" in source
+
+    implicit_bound = module._bind_base_signature(op, signature[:-1])
+
+    assert implicit_bound is not None
+    assert implicit_bound.explicit_inplace_out is None
+
+    implicit_source = module._generate_torch_method_source("fill", implicit_bound)
+    assert "at_self.fill_(value);" in implicit_source
