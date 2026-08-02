@@ -363,6 +363,47 @@ class Cat {
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
 
 
+def test_optional_tensor_vector_is_preserved_across_generated_wrappers(
+    monkeypatch, tmp_path
+):
+    module = _load_generator_module()
+    base_header = tmp_path / "index.h"
+    base_header.write_text(
+        """
+class Index {
+ public:
+  Index(const Tensor input,
+        const std::vector<std::optional<Tensor>> indices, Tensor out) {}
+
+  virtual void operator()(
+      const Tensor input,
+      const std::vector<std::optional<Tensor>> indices, Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    operator = module._parse_operator_header("index")
+    binding = module._generate_pybind11(operator)
+    dispatch_declarations, _ = module._generate_generated_dispatch_entries(operator)
+    instantiation_declarations, _ = (
+        module._generate_operator_call_instantiation_entries(operator)
+    )
+
+    assert "std::vector<py::object> indices" in binding
+    assert "VectorOptionalTensorFromPybind11Handle(indices)" in binding
+    assert "std::optional<py::object> indices" not in binding
+    assert 'py::arg("indices") = py::none()' not in binding
+
+    dispatch_text = "\n".join(dispatch_declarations)
+    assert "std::vector<std::optional<Tensor>> indices" in dispatch_text
+
+    instantiation_text = "\n".join(instantiation_declarations)
+    assert (
+        "Call<Tensor, std::vector<std::optional<Tensor>>, Tensor>" in instantiation_text
+    )
+
+
 _DTYPE_OP_SOURCE = """
 namespace infini::ops {
 

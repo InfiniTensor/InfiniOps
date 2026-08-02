@@ -206,6 +206,22 @@ inline std::vector<Tensor> VectorTensorFromPybind11Handle(
   return result;
 }
 
+inline std::vector<std::optional<Tensor>>
+VectorOptionalTensorFromPybind11Handle(const std::vector<py::object>& objs) {
+  [[maybe_unused]] HostRangeScope host_range_tensor_conversion{
+      HostRangeLayer::kTensorConversion};
+  std::vector<std::optional<Tensor>> result;
+  result.reserve(objs.size());
+  for (const auto& obj : objs) {
+    if (obj.is_none()) {
+      result.push_back(std::nullopt);
+    } else {
+      result.push_back(detail::TensorFromPybind11HandleImpl(obj));
+    }
+  }
+  return result;
+}
+
 }  // namespace infini::ops
 
 #endif
