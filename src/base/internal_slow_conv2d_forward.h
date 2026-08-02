@@ -11,8 +11,8 @@ namespace infini::ops::internal {
 class SlowConv2dForward : public Operator<SlowConv2dForward> {
  public:
   SlowConv2dForward(const Tensor input, const Tensor weight,
-                    const std::vector<int64_t> kernel_size,
                     const std::optional<Tensor> bias,
+                    const std::vector<int64_t> kernel_size,
                     const std::vector<int64_t> stride,
                     const std::vector<int64_t> padding, Tensor output)
       : input_shape_{input.shape()},
@@ -35,8 +35,8 @@ class SlowConv2dForward : public Operator<SlowConv2dForward> {
         device_index_{output.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          const std::vector<int64_t> kernel_size,
                           const std::optional<Tensor> bias,
+                          const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           Tensor output) const = 0;

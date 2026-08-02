@@ -21,8 +21,8 @@ class Operator<ReshapeAndCache, Device::Type::kNvidia>
 
   void operator()(const Tensor key, const Tensor value, Tensor key_cache,
                   Tensor value_cache, const Tensor slot_mapping,
-                  const std::string kv_cache_dtype, const Tensor k_scale,
-                  const Tensor v_scale) const override {
+                  const Tensor k_scale, const Tensor v_scale,
+                  const std::string kv_cache_dtype) const override {
     if (num_tokens_ == 0) {
       return;
     }

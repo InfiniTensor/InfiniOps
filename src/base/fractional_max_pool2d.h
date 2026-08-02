@@ -9,10 +9,9 @@ namespace infini::ops {
 
 class FractionalMaxPool2d : public Operator<FractionalMaxPool2d> {
  public:
-  FractionalMaxPool2d(const Tensor input,
+  FractionalMaxPool2d(const Tensor input, const Tensor random_samples,
                       const std::vector<int64_t> kernel_size,
-                      const std::vector<int64_t> output_size,
-                      const Tensor random_samples, Tensor output,
+                      const std::vector<int64_t> output_size, Tensor output,
                       Tensor indices)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -30,10 +29,9 @@ class FractionalMaxPool2d : public Operator<FractionalMaxPool2d> {
         output_size_{output_size},
         device_index_{output.device().index()} {}
 
-  virtual void operator()(const Tensor input,
+  virtual void operator()(const Tensor input, const Tensor random_samples,
                           const std::vector<int64_t> kernel_size,
-                          const std::vector<int64_t> output_size,
-                          const Tensor random_samples, Tensor output,
+                          const std::vector<int64_t> output_size, Tensor output,
                           Tensor indices) const = 0;
 
  protected:

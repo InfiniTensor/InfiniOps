@@ -17,7 +17,7 @@ def _load_generator_module():
     return module
 
 
-def test_generated_dispatch_keeps_optional_scalar_and_tensor_overloads_distinct(
+def test_generated_dispatch_keeps_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):
     module = _load_generator_module()
@@ -26,8 +26,8 @@ def test_generated_dispatch_keeps_optional_scalar_and_tensor_overloads_distinct(
         """
 class Clamp {
  public:
-  virtual void operator()(const Tensor input, const std::optional<double> min,
-                          const std::optional<double> max, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const int64_t min,
+                          const int64_t max, Tensor out) const = 0;
   virtual void operator()(const Tensor input, const std::optional<Tensor> min,
                           const std::optional<Tensor> max, Tensor out) const = 0;
 };
@@ -41,8 +41,8 @@ class Clamp {
             module._ParsedFunction(
                 [
                     module._ParsedArgument("const Tensor", "input"),
-                    module._ParsedArgument("const std::optional<double>", "min"),
-                    module._ParsedArgument("const std::optional<double>", "max"),
+                    module._ParsedArgument("const int64_t", "min"),
+                    module._ParsedArgument("const int64_t", "max"),
                     module._ParsedArgument("Tensor", "out"),
                 ]
             ),
@@ -61,10 +61,15 @@ class Clamp {
     declarations, _ = module._generate_generated_dispatch_entries(operator)
 
     text = "\n".join(declarations)
+    binding = module._generate_pybind11(operator)
+
+    assert (
+        "py::init([](py::object input, const int64_t min, const int64_t max, py::object out)"
+    ) in binding
 
     assert (
         "MakeClamp(const Config& config, Tensor input, "
-        "const std::optional<double> min, const std::optional<double> max, "
+        "const int64_t min, const int64_t max, "
         "Tensor out)"
     ) in text
     assert (
@@ -73,7 +78,7 @@ class Clamp {
     ) in text
 
 
-def test_operator_call_instantiations_keep_optional_scalar_and_tensor_overloads_distinct(
+def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):
     module = _load_generator_module()
@@ -82,8 +87,8 @@ def test_operator_call_instantiations_keep_optional_scalar_and_tensor_overloads_
         """
 class Clamp {
  public:
-  virtual void operator()(const Tensor input, const std::optional<double> min,
-                          const std::optional<double> max, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const int64_t min,
+                          const int64_t max, Tensor out) const = 0;
   virtual void operator()(const Tensor input, const std::optional<Tensor> min,
                           const std::optional<Tensor> max, Tensor out) const = 0;
 };
@@ -98,8 +103,8 @@ class Clamp {
             module._ParsedFunction(
                 [
                     module._ParsedArgument("const Tensor", "input"),
-                    module._ParsedArgument("const std::optional<double>", "min"),
-                    module._ParsedArgument("const std::optional<double>", "max"),
+                    module._ParsedArgument("const int64_t", "min"),
+                    module._ParsedArgument("const int64_t", "max"),
                     module._ParsedArgument("Tensor", "out"),
                 ]
             ),
@@ -118,9 +123,7 @@ class Clamp {
 
     text = "\n".join(declarations)
 
-    assert (
-        "Call<Tensor, std::optional<double>, std::optional<double>, Tensor>"
-    ) in text
+    assert "Call<Tensor, int64_t, int64_t, Tensor>" in text
     assert (
         "Call<Tensor, std::optional<Tensor>, std::optional<Tensor>, Tensor>"
     ) in text

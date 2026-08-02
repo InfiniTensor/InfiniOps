@@ -9,8 +9,8 @@ namespace infini::ops {
 
 class Scatter : public Operator<Scatter> {
  public:
-  Scatter(const Tensor input, const int64_t dim, const Tensor index,
-          const Tensor src, Tensor out)
+  Scatter(const Tensor input, const Tensor index, const Tensor src,
+          const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -26,8 +26,8 @@ class Scatter : public Operator<Scatter> {
         dim_{dim},
         device_index_{out.device().index()} {}
 
-  Scatter(const Tensor input, const int64_t dim, const Tensor index,
-          const double value, Tensor out)
+  Scatter(const Tensor input, const Tensor index, const double value,
+          const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -41,8 +41,8 @@ class Scatter : public Operator<Scatter> {
         value_{value},
         device_index_{out.device().index()} {}
 
-  Scatter(const Tensor input, const int64_t dim, const Tensor index,
-          const Tensor src, const std::string reduce, Tensor out)
+  Scatter(const Tensor input, const Tensor index, const Tensor src,
+          const int64_t dim, const std::string reduce, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -59,8 +59,8 @@ class Scatter : public Operator<Scatter> {
         reduce_{reduce},
         device_index_{out.device().index()} {}
 
-  Scatter(const Tensor input, const int64_t dim, const Tensor index,
-          const double value, const std::string reduce, Tensor out)
+  Scatter(const Tensor input, const Tensor index, const double value,
+          const int64_t dim, const std::string reduce, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -75,20 +75,20 @@ class Scatter : public Operator<Scatter> {
         reduce_{reduce},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor src,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor src, const int64_t dim,
                           Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const double value,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const double value, const int64_t dim,
                           Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor src,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor src, const int64_t dim,
                           const std::string reduce, Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const double value,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const double value, const int64_t dim,
                           const std::string reduce, Tensor out) const = 0;
 
  protected:

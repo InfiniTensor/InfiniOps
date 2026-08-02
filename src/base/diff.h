@@ -9,8 +9,8 @@ namespace infini::ops {
 
 class Diff : public Operator<Diff> {
  public:
-  Diff(const Tensor input, const int64_t n, const int64_t dim,
-       const std::optional<Tensor> prepend, const std::optional<Tensor> append,
+  Diff(const Tensor input, const std::optional<Tensor> prepend,
+       const std::optional<Tensor> append, const int64_t n, const int64_t dim,
        Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -34,11 +34,10 @@ class Diff : public Operator<Diff> {
         dim_{dim},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t n,
-                          const int64_t dim,
+  virtual void operator()(const Tensor input,
                           const std::optional<Tensor> prepend,
-                          const std::optional<Tensor> append,
-                          Tensor out) const = 0;
+                          const std::optional<Tensor> append, const int64_t n,
+                          const int64_t dim, Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

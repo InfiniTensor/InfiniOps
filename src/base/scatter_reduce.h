@@ -9,8 +9,8 @@ namespace infini::ops {
 
 class ScatterReduce : public Operator<ScatterReduce> {
  public:
-  ScatterReduce(const Tensor input, const int64_t dim, const Tensor index,
-                const Tensor src, const std::string reduce,
+  ScatterReduce(const Tensor input, const Tensor index, const Tensor src,
+                const int64_t dim, const std::string reduce,
                 const bool include_self, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -29,8 +29,8 @@ class ScatterReduce : public Operator<ScatterReduce> {
         include_self_{include_self},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor src,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor src, const int64_t dim,
                           const std::string reduce, const bool include_self,
                           Tensor out) const = 0;
 

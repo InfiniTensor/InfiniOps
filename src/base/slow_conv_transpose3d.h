@@ -11,8 +11,8 @@ namespace infini::ops {
 class SlowConvTranspose3d : public Operator<SlowConvTranspose3d> {
  public:
   SlowConvTranspose3d(const Tensor input, const Tensor weight,
-                      const std::vector<int64_t> kernel_size,
                       const std::optional<Tensor> bias,
+                      const std::vector<int64_t> kernel_size,
                       const std::vector<int64_t> stride,
                       const std::vector<int64_t> padding,
                       const std::vector<int64_t> output_padding,
@@ -39,8 +39,8 @@ class SlowConvTranspose3d : public Operator<SlowConvTranspose3d> {
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          const std::vector<int64_t> kernel_size,
                           const std::optional<Tensor> bias,
+                          const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           const std::vector<int64_t> output_padding,

@@ -7,7 +7,7 @@ namespace infini::ops {
 
 class Gather : public Operator<Gather> {
  public:
-  Gather(const Tensor input, const int64_t dim, const Tensor index,
+  Gather(const Tensor input, const Tensor index, const int64_t dim,
          const bool sparse_grad, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -22,8 +22,8 @@ class Gather : public Operator<Gather> {
         sparse_grad_{sparse_grad},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const bool sparse_grad,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const int64_t dim, const bool sparse_grad,
                           Tensor out) const = 0;
 
  protected:

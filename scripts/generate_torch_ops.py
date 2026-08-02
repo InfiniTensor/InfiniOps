@@ -670,7 +670,6 @@ def _cpp_param_compatible(
 def _bind_base_signature(op: Op, signature: list[tuple[str, str]]) -> Op | None:
     bindings: list[Param | None] = [None] * len(op.params)
     signature_params = []
-    schema_index = 0
     explicit_inplace_out = None
 
     if (
@@ -692,15 +691,13 @@ def _bind_base_signature(op: Op, signature: list[tuple[str, str]]) -> Op | None:
     for base_cpp_type, base_name in signature:
         matched_index = None
 
-        for index in range(schema_index, len(op.params)):
-            schema_param = op.params[index]
+        for index, schema_param in enumerate(op.params):
+            if bindings[index] is not None:
+                continue
 
             if _cpp_param_compatible(schema_param, base_cpp_type, base_name):
                 matched_index = index
                 break
-
-            if not _is_omittable_param(schema_param):
-                return None
 
         if matched_index is None:
             return None
@@ -711,9 +708,11 @@ def _bind_base_signature(op: Op, signature: list[tuple[str, str]]) -> Op | None:
         )
         bindings[matched_index] = api_param
         signature_params.append(api_param)
-        schema_index = matched_index + 1
 
-    if any(not _is_omittable_param(param) for param in op.params[schema_index:]):
+    if any(
+        binding is None and not _is_omittable_param(param)
+        for param, binding in zip(op.params, bindings)
+    ):
         return None
 
     if explicit_inplace_out is not None:
@@ -1747,6 +1746,14 @@ def main() -> int:
                             "type": p.aten_type,
                             "is_tensor": p.is_tensor,
                             "is_out": p.is_out,
+                            "schema_index": next(
+                                (
+                                    schema_index
+                                    for schema_index in range(len(op.params))
+                                    if op.api_param_for(schema_index) is p
+                                ),
+                                None,
+                            ),
                         }
                         for p in op.visible_params
                     ],

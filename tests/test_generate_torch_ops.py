@@ -332,6 +332,45 @@ def test_existing_base_overload_matches_by_name_when_types_repeat():
     assert "unbiased" not in source
 
 
+def test_existing_base_overload_can_group_tensor_inputs_before_attributes():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "gather.out(Tensor self, int dim, Tensor index, bool sparse_grad=False, "
+        "*, Tensor(a!) out) -> Tensor(a!)"
+    )
+    signature = [
+        ("Tensor", "input"),
+        ("Tensor", "index"),
+        ("int64_t", "dim"),
+        ("bool", "sparse_grad"),
+        ("Tensor", "out"),
+    ]
+
+    bound = module._bind_base_signature(op, signature)
+
+    assert bound is not None
+    assert [param.api_name for param in bound.visible_params] == [
+        "input",
+        "index",
+        "dim",
+        "sparse_grad",
+        "out",
+    ]
+
+    assert [
+        next(
+            index
+            for index, binding in enumerate(bound.param_bindings)
+            if binding is param
+        )
+        for param in bound.visible_params
+    ] == [0, 2, 1, 3, 4]
+
+    source = module._generate_torch_method_source("gather", bound)
+
+    assert "at::gather_out(at_out, at_self, dim, at_index, sparse_grad)" in source
+
+
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_generator_module()
     path = tmp_path / "generated.cc"

@@ -7,9 +7,9 @@ namespace infini::ops {
 
 class EluBackward : public Operator<EluBackward> {
  public:
-  EluBackward(const Tensor grad_output, const double alpha, const double scale,
-              const double input_scale, const bool is_result,
-              const Tensor self_or_result, Tensor grad_input)
+  EluBackward(const Tensor grad_output, const Tensor self_or_result,
+              const double alpha, const double scale, const double input_scale,
+              const bool is_result, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -25,9 +25,9 @@ class EluBackward : public Operator<EluBackward> {
         is_result_{is_result},
         device_index_{grad_input.device().index()} {}
 
-  virtual void operator()(const Tensor grad_output, const double alpha,
-                          const double scale, const double input_scale,
-                          const bool is_result, const Tensor self_or_result,
+  virtual void operator()(const Tensor grad_output, const Tensor self_or_result,
+                          const double alpha, const double scale,
+                          const double input_scale, const bool is_result,
                           Tensor grad_input) const = 0;
 
  protected:

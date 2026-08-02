@@ -9,8 +9,8 @@ namespace infini::ops {
 
 class IndexReduce : public Operator<IndexReduce> {
  public:
-  IndexReduce(const Tensor input, const int64_t dim, const Tensor index,
-              const Tensor source, const std::string reduce,
+  IndexReduce(const Tensor input, const Tensor index, const Tensor source,
+              const int64_t dim, const std::string reduce,
               const bool include_self, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -29,8 +29,8 @@ class IndexReduce : public Operator<IndexReduce> {
         include_self_{include_self},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor source,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor source, const int64_t dim,
                           const std::string reduce, const bool include_self,
                           Tensor out) const = 0;
 

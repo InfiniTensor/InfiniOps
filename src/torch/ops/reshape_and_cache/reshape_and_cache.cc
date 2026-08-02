@@ -21,16 +21,16 @@ at::Tensor PrepareCacheValues(const at::Tensor& values, const at::Tensor& scale,
 template <Device::Type kDev>
 Operator<ReshapeAndCache, kDev, 1>::Operator(
     const Tensor key, const Tensor value, Tensor key_cache, Tensor value_cache,
-    const Tensor slot_mapping, const std::string kv_cache_dtype,
-    const Tensor k_scale, const Tensor v_scale)
-    : ReshapeAndCache{key,          value,          key_cache, value_cache,
-                      slot_mapping, kv_cache_dtype, k_scale,   v_scale} {}
+    const Tensor slot_mapping, const Tensor k_scale, const Tensor v_scale,
+    const std::string kv_cache_dtype)
+    : ReshapeAndCache{key,          value,   key_cache, value_cache,
+                      slot_mapping, k_scale, v_scale,   kv_cache_dtype} {}
 
 template <Device::Type kDev>
 void Operator<ReshapeAndCache, kDev, 1>::operator()(
     const Tensor key, const Tensor value, Tensor key_cache, Tensor value_cache,
-    const Tensor slot_mapping, const std::string kv_cache_dtype,
-    const Tensor k_scale, const Tensor v_scale) const {
+    const Tensor slot_mapping, const Tensor k_scale, const Tensor v_scale,
+    const std::string kv_cache_dtype) const {
   auto at_key = ToAtenTensor<kDev>(const_cast<void*>(key.data()), key_shape_,
                                    key_strides_, key_type_, device_index_);
   auto at_value =

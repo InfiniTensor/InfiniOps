@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class ScatterAdd : public Operator<ScatterAdd> {
  public:
-  ScatterAdd(const Tensor input, const int64_t dim, const Tensor index,
-             const Tensor src, Tensor out)
+  ScatterAdd(const Tensor input, const Tensor index, const Tensor src,
+             const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -24,8 +24,8 @@ class ScatterAdd : public Operator<ScatterAdd> {
         dim_{dim},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor src,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor src, const int64_t dim,
                           Tensor out) const = 0;
 
  protected:

@@ -620,7 +620,7 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     )
     out_params = [p for p in op_meta["params"] if p["is_out"]]
 
-    # Build inputs in YAML order.
+    # Build inputs in InfiniOps API order.
     inputs = []
     tensor_idx = 0
 
@@ -637,7 +637,13 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
     # exception types — the gap is in our test harness's input synthesis,
     # not in the InfiniOps wrapper.
     ref_inputs = [
-        clone_strided(x) if isinstance(x, torch.Tensor) else x for x in inputs
+        clone_strided(inputs[index])
+        if isinstance(inputs[index], torch.Tensor)
+        else inputs[index]
+        for index in sorted(
+            range(len(in_params)),
+            key=lambda index: in_params[index]["schema_index"],
+        )
     ]
 
     if aten_name == "elu":
