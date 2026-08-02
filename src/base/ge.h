@@ -29,6 +29,9 @@ class Ge : public Operator<Ge> {
         other_type_{other.dtype()},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   Ge(Tensor input, const double other)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -36,6 +39,9 @@ class Ge : public Operator<Ge> {
         other_{other},
         device_index_{input.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   Ge(Tensor input, const Tensor other)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -51,8 +57,14 @@ class Ge : public Operator<Ge> {
   virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const double other) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const Tensor other) const = 0;
 
  protected:

@@ -29,6 +29,9 @@ class ClampMin : public Operator<ClampMin> {
         min_type_{min.dtype()},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   ClampMin(Tensor input, const Tensor min)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -44,6 +47,9 @@ class ClampMin : public Operator<ClampMin> {
   virtual void operator()(const Tensor input, const Tensor min,
                           Tensor out) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const Tensor min) const = 0;
 
  protected:
