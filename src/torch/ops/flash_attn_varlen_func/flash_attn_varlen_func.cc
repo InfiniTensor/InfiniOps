@@ -1,6 +1,7 @@
 #include "torch/ops/flash_attn_varlen_func/flash_attn_varlen_func.h"
 
 #include <ATen/ops/_flash_attention_forward.h>
+#include <ATen/ops/arange.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
 #include <cuda_runtime_api.h>
@@ -76,7 +77,26 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>::operator()(
     // by copying them into caller-provided buffers on the selected CUDA stream.
     at_out.copy_(std::get<0>(result));
     if (at_softmax_lse.has_value()) {
-      at_softmax_lse->copy_(std::get<1>(result));
+      const auto& result_softmax_lse = std::get<1>(result);
+      if (result_softmax_lse.dim() == 3) {
+        // ATen may return padded (batch, heads, max_q) storage instead of the
+        // packed FlashAttention (heads, total_q) layout.
+        const auto batch_size = result_softmax_lse.size(0);
+        const auto q_lengths = at_cu_seqlens_q.narrow(0, 1, batch_size) -
+                               at_cu_seqlens_q.narrow(0, 0, batch_size);
+        const auto positions =
+            at::arange(result_softmax_lse.size(2), at_cu_seqlens_q.options());
+        const auto valid_positions =
+            positions.unsqueeze(0).lt(q_lengths.unsqueeze(1));
+        const auto packed_softmax_lse =
+            result_softmax_lse.transpose(1, 2)
+                .masked_select(valid_positions.unsqueeze(2))
+                .view({at_q.size(0), at_q.size(1)})
+                .transpose(0, 1);
+        at_softmax_lse->copy_(packed_softmax_lse);
+      } else {
+        at_softmax_lse->copy_(result_softmax_lse);
+      }
       at_s_dmask->copy_(std::get<4>(result));
     }
   };

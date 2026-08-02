@@ -114,7 +114,11 @@ def test_flash_attn_varlen_func(
             0 if causal else None if window_size[1] < 0 else window_size[1]
         ),
     )
-    torch.testing.assert_close(softmax_lse, expected_auxiliary[1])
+    expected_softmax_lse = _pack_varlen_softmax_lse(
+        expected_auxiliary[1],
+        q_lens,
+    )
+    torch.testing.assert_close(softmax_lse, expected_softmax_lse)
     torch.testing.assert_close(s_dmask, expected_auxiliary[4])
 
 
@@ -296,6 +300,18 @@ def _cumulative_lengths(lengths, device):
         values.append(values[-1] + length)
 
     return torch.tensor(values, dtype=torch.int32, device=device)
+
+
+def _pack_varlen_softmax_lse(softmax_lse, q_lens):
+    if softmax_lse.ndim == 2:
+        return softmax_lse
+
+    return torch.cat(
+        tuple(
+            sequence_lse[:, :q_len] for sequence_lse, q_len in zip(softmax_lse, q_lens)
+        ),
+        dim=1,
+    )
 
 
 def _reference_varlen_attention(
