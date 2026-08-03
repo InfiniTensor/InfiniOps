@@ -7,7 +7,7 @@ namespace infini::ops {
 
 class IndexSelect : public Operator<IndexSelect> {
  public:
-  IndexSelect(const Tensor input, const int64_t dim, const Tensor index,
+  IndexSelect(const Tensor input, const Tensor index, const int64_t dim,
               Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -21,8 +21,8 @@ class IndexSelect : public Operator<IndexSelect> {
         dim_{dim},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const int64_t dim, Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

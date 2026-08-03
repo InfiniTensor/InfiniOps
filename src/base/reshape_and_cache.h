@@ -12,8 +12,8 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
  public:
   ReshapeAndCache(const Tensor key, const Tensor value, Tensor key_cache,
                   Tensor value_cache, const Tensor slot_mapping,
-                  const std::string kv_cache_dtype, const Tensor k_scale,
-                  const Tensor v_scale)
+                  const Tensor k_scale, const Tensor v_scale,
+                  const std::string kv_cache_dtype)
       : key_shape_{key.shape()},
         value_shape_{value.shape()},
         key_cache_shape_{key_cache.shape()},
@@ -100,9 +100,9 @@ class ReshapeAndCache : public Operator<ReshapeAndCache> {
 
   virtual void operator()(const Tensor key, const Tensor value,
                           Tensor key_cache, Tensor value_cache,
-                          const Tensor slot_mapping,
-                          const std::string kv_cache_dtype,
-                          const Tensor k_scale, const Tensor v_scale) const = 0;
+                          const Tensor slot_mapping, const Tensor k_scale,
+                          const Tensor v_scale,
+                          const std::string kv_cache_dtype) const = 0;
 
  protected:
   Tensor::Shape key_shape_;

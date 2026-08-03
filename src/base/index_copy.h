@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class IndexCopy : public Operator<IndexCopy> {
  public:
-  IndexCopy(const Tensor input, const int64_t dim, const Tensor index,
-            const Tensor source, Tensor out)
+  IndexCopy(const Tensor input, const Tensor index, const Tensor source,
+            const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -24,8 +24,8 @@ class IndexCopy : public Operator<IndexCopy> {
         dim_{dim},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor source,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor source, const int64_t dim,
                           Tensor out) const = 0;
 
  protected:

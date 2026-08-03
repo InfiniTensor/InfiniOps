@@ -18,9 +18,8 @@ class CudaRotaryEmbedding : public RotaryEmbedding {
   using RotaryEmbedding::RotaryEmbedding;
 
   void operator()(const Tensor positions, Tensor query,
-                  std::optional<Tensor> key, int64_t,
-                  const Tensor cos_sin_cache, bool, int64_t,
-                  bool) const override {
+                  std::optional<Tensor> key, const Tensor cos_sin_cache,
+                  int64_t, bool, int64_t, bool) const override {
     if (num_tokens_ == 0) {
       return;
     }

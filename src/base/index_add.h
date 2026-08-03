@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class IndexAdd : public Operator<IndexAdd> {
  public:
-  IndexAdd(const Tensor input, const int64_t dim, const Tensor index,
-           const Tensor source, const double alpha, Tensor out)
+  IndexAdd(const Tensor input, const Tensor index, const Tensor source,
+           const int64_t dim, const double alpha, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -25,8 +25,8 @@ class IndexAdd : public Operator<IndexAdd> {
         alpha_{alpha},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor source,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor source, const int64_t dim,
                           const double alpha, Tensor out) const = 0;
 
  protected:

@@ -601,6 +601,9 @@ def _generate_pybind11(operator):
     def _is_optional_tensor(arg):
         spelling = arg.type.spelling
 
+        if _is_known_non_tensor_type(spelling):
+            return False
+
         if _is_optional_vector_tensor(arg):
             return False
 
@@ -1139,6 +1142,9 @@ def _generate_generated_dispatch_entries(operator):
     def _is_optional_tensor(arg):
         spelling = arg.type.spelling
 
+        if _is_known_non_tensor_type(spelling):
+            return False
+
         if _is_optional_vector_tensor(arg):
             return False
 
@@ -1423,6 +1429,9 @@ def _generate_operator_call_instantiation_entries(operator):
             return False
 
         spelling = arg.type.spelling
+
+        if _is_known_non_tensor_type(spelling):
+            return False
 
         if "std::optional" in spelling:
             return "Tensor" in spelling or "TensorView" in spelling

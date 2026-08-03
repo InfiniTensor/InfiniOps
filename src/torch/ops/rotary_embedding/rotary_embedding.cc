@@ -40,16 +40,16 @@ void ApplyRotaryEmbedding(at::Tensor data, const at::Tensor& positions,
 template <Device::Type kDev>
 Operator<RotaryEmbedding, kDev, 1>::Operator(
     const Tensor positions, Tensor query, std::optional<Tensor> key,
-    int64_t head_size, const Tensor cos_sin_cache, bool is_neox,
+    const Tensor cos_sin_cache, int64_t head_size, bool is_neox,
     int64_t rope_dim_offset, bool inverse)
-    : RotaryEmbedding{positions,       query,         key,
-                      head_size,       cos_sin_cache, is_neox,
+    : RotaryEmbedding{positions,       query,     key,
+                      cos_sin_cache,   head_size, is_neox,
                       rope_dim_offset, inverse} {}
 
 template <Device::Type kDev>
 void Operator<RotaryEmbedding, kDev, 1>::operator()(
-    const Tensor positions, Tensor query, std::optional<Tensor> key, int64_t,
-    const Tensor cos_sin_cache, bool, int64_t, bool) const {
+    const Tensor positions, Tensor query, std::optional<Tensor> key,
+    const Tensor cos_sin_cache, int64_t, bool, int64_t, bool) const {
   if (num_tokens_ == 0) {
     return;
   }

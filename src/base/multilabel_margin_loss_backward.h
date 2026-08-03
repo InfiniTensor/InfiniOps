@@ -9,8 +9,8 @@ class MultilabelMarginLossBackward
     : public Operator<MultilabelMarginLossBackward> {
  public:
   MultilabelMarginLossBackward(const Tensor grad_output, const Tensor input,
-                               const Tensor target, const int64_t reduction,
-                               const Tensor is_target, Tensor grad_input)
+                               const Tensor target, const Tensor is_target,
+                               const int64_t reduction, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -30,8 +30,8 @@ class MultilabelMarginLossBackward
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
-                          const Tensor target, const int64_t reduction,
-                          const Tensor is_target, Tensor grad_input) const = 0;
+                          const Tensor target, const Tensor is_target,
+                          const int64_t reduction, Tensor grad_input) const = 0;
 
  protected:
   Tensor::Shape grad_output_shape_;

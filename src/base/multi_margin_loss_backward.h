@@ -10,10 +10,10 @@ namespace infini::ops {
 class MultiMarginLossBackward : public Operator<MultiMarginLossBackward> {
  public:
   MultiMarginLossBackward(const Tensor grad_output, const Tensor input,
-                          const Tensor target, const double p,
-                          const double margin,
-                          const std::optional<Tensor> weight,
-                          const int64_t reduction, Tensor grad_input)
+                          const Tensor target,
+                          const std::optional<Tensor> weight, const double p,
+                          const double margin, const int64_t reduction,
+                          Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -38,10 +38,10 @@ class MultiMarginLossBackward : public Operator<MultiMarginLossBackward> {
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
-                          const Tensor target, const double p,
-                          const double margin,
-                          const std::optional<Tensor> weight,
-                          const int64_t reduction, Tensor grad_input) const = 0;
+                          const Tensor target,
+                          const std::optional<Tensor> weight, const double p,
+                          const double margin, const int64_t reduction,
+                          Tensor grad_input) const = 0;
 
  protected:
   Tensor::Shape grad_output_shape_;

@@ -35,9 +35,9 @@ class Histogram : public Operator<Histogram> {
         device_index_{hist.device().index()} {}
 
   Histogram(const Tensor input, const int64_t bins,
-            const std::optional<std::vector<double>> range,
-            const std::optional<Tensor> weight, const bool density, Tensor hist,
-            Tensor bin_edges)
+            const std::optional<Tensor> weight,
+            const std::optional<std::vector<double>> range, const bool density,
+            Tensor hist, Tensor bin_edges)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -64,8 +64,8 @@ class Histogram : public Operator<Histogram> {
                           Tensor bin_edges) const = 0;
 
   virtual void operator()(const Tensor input, const int64_t bins,
-                          const std::optional<std::vector<double>> range,
                           const std::optional<Tensor> weight,
+                          const std::optional<std::vector<double>> range,
                           const bool density, Tensor hist,
                           Tensor bin_edges) const = 0;
 

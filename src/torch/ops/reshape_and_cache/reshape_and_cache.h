@@ -11,14 +11,13 @@ template <Device::Type kDev>
 class Operator<ReshapeAndCache, kDev, 1> : public ReshapeAndCache {
  public:
   Operator(const Tensor key, const Tensor value, Tensor key_cache,
-           Tensor value_cache, const Tensor slot_mapping,
-           const std::string kv_cache_dtype, const Tensor k_scale,
-           const Tensor v_scale);
+           Tensor value_cache, const Tensor slot_mapping, const Tensor k_scale,
+           const Tensor v_scale, const std::string kv_cache_dtype);
 
   void operator()(const Tensor key, const Tensor value, Tensor key_cache,
                   Tensor value_cache, const Tensor slot_mapping,
-                  const std::string kv_cache_dtype, const Tensor k_scale,
-                  const Tensor v_scale) const override;
+                  const Tensor k_scale, const Tensor v_scale,
+                  const std::string kv_cache_dtype) const override;
 };
 
 }  // namespace infini::ops

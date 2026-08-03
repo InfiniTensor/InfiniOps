@@ -11,8 +11,8 @@ namespace infini::ops {
 class ThnnConv2d : public Operator<ThnnConv2d> {
  public:
   ThnnConv2d(const Tensor input, const Tensor weight,
-             const std::vector<int64_t> kernel_size,
              const std::optional<Tensor> bias,
+             const std::vector<int64_t> kernel_size,
              const std::vector<int64_t> stride,
              const std::vector<int64_t> padding, Tensor out)
       : input_shape_{input.shape()},
@@ -35,8 +35,8 @@ class ThnnConv2d : public Operator<ThnnConv2d> {
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
-                          const std::vector<int64_t> kernel_size,
                           const std::optional<Tensor> bias,
+                          const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           Tensor out) const = 0;

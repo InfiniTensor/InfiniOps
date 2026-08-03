@@ -11,9 +11,10 @@ class FractionalMaxPool3dBackward
     : public Operator<FractionalMaxPool3dBackward> {
  public:
   FractionalMaxPool3dBackward(const Tensor grad_output, const Tensor input,
+                              const Tensor indices,
                               const std::vector<int64_t> kernel_size,
                               const std::vector<int64_t> output_size,
-                              const Tensor indices, Tensor grad_input)
+                              Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -31,9 +32,10 @@ class FractionalMaxPool3dBackward
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
+                          const Tensor indices,
                           const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> output_size,
-                          const Tensor indices, Tensor grad_input) const = 0;
+                          Tensor grad_input) const = 0;
 
  protected:
   Tensor::Shape grad_output_shape_;

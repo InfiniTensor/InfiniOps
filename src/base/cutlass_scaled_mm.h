@@ -12,8 +12,8 @@ namespace infini::ops {
 class CutlassScaledMm : public Operator<CutlassScaledMm> {
  public:
   CutlassScaledMm(const Tensor a, const Tensor b, const Tensor scale_a,
-                  const Tensor scale_b, const DataType out_dtype,
-                  std::optional<Tensor> bias, Tensor out)
+                  const Tensor scale_b, std::optional<Tensor> bias,
+                  const DataType out_dtype, Tensor out)
       : m_{a.ndim() == 2 ? a.size(0) : 0},
         n_{b.ndim() == 2 ? b.size(1) : 0},
         k_{a.ndim() == 2 ? a.size(1) : 0},
@@ -83,8 +83,8 @@ class CutlassScaledMm : public Operator<CutlassScaledMm> {
   }
 
   virtual void operator()(const Tensor a, const Tensor b, const Tensor scale_a,
-                          const Tensor scale_b, const DataType out_dtype,
-                          std::optional<Tensor> bias, Tensor out) const = 0;
+                          const Tensor scale_b, std::optional<Tensor> bias,
+                          const DataType out_dtype, Tensor out) const = 0;
 
  protected:
   Tensor::Size m_{0};

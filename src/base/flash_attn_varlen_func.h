@@ -23,6 +23,8 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
                             v,
                             cu_seqlens_q,
                             cu_seqlens_k,
+                            std::nullopt,
+                            std::nullopt,
                             max_seqlen_q,
                             max_seqlen_k,
                             0.0,
@@ -30,26 +32,21 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
                             false,
                             {-1, -1},
                             0.0,
-                            std::nullopt,
                             false,
                             false,
-                            std::nullopt,
                             out,
                             std::nullopt,
                             std::nullopt} {}
 
-  FlashAttnVarlenFunc(const Tensor q, const Tensor k, const Tensor v,
-                      const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
-                      const int64_t max_seqlen_q, const int64_t max_seqlen_k,
-                      const double dropout_p,
-                      const std::optional<double> softmax_scale,
-                      const bool causal, const std::vector<int64_t> window_size,
-                      const double softcap,
-                      const std::optional<Tensor> alibi_slopes,
-                      const bool deterministic, const bool return_attn_probs,
-                      const std::optional<Tensor> block_table, Tensor out,
-                      std::optional<Tensor> softmax_lse,
-                      std::optional<Tensor> s_dmask)
+  FlashAttnVarlenFunc(
+      const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q,
+      const Tensor cu_seqlens_k, const std::optional<Tensor> alibi_slopes,
+      const std::optional<Tensor> block_table, const int64_t max_seqlen_q,
+      const int64_t max_seqlen_k, const double dropout_p,
+      const std::optional<double> softmax_scale, const bool causal,
+      const std::vector<int64_t> window_size, const double softcap,
+      const bool deterministic, const bool return_attn_probs, Tensor out,
+      std::optional<Tensor> softmax_lse, std::optional<Tensor> s_dmask)
       : q_shape_{q.shape()},
         k_shape_{k.shape()},
         v_shape_{v.shape()},
@@ -164,20 +161,20 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
                   const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
                   const int64_t max_seqlen_q, const int64_t max_seqlen_k,
                   Tensor out) const {
-    (*this)(q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k,
-            0.0, std::nullopt, false, {-1, -1}, 0.0, std::nullopt, false, false,
-            std::nullopt, out, std::nullopt, std::nullopt);
+    (*this)(q, k, v, cu_seqlens_q, cu_seqlens_k, std::nullopt, std::nullopt,
+            max_seqlen_q, max_seqlen_k, 0.0, std::nullopt, false, {-1, -1}, 0.0,
+            false, false, out, std::nullopt, std::nullopt);
   }
 
   virtual void operator()(
       const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q,
-      const Tensor cu_seqlens_k, const int64_t max_seqlen_q,
+      const Tensor cu_seqlens_k, const std::optional<Tensor> alibi_slopes,
+      const std::optional<Tensor> block_table, const int64_t max_seqlen_q,
       const int64_t max_seqlen_k, const double dropout_p,
       const std::optional<double> softmax_scale, const bool causal,
       const std::vector<int64_t> window_size, const double softcap,
-      const std::optional<Tensor> alibi_slopes, const bool deterministic,
-      const bool return_attn_probs, const std::optional<Tensor> block_table,
-      Tensor out, std::optional<Tensor> softmax_lse,
+      const bool deterministic, const bool return_attn_probs, Tensor out,
+      std::optional<Tensor> softmax_lse,
       std::optional<Tensor> s_dmask) const = 0;
 
  protected:

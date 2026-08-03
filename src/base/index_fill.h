@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class IndexFill : public Operator<IndexFill> {
  public:
-  IndexFill(const Tensor input, const int64_t dim, const Tensor index,
-            const double value, Tensor out)
+  IndexFill(const Tensor input, const Tensor index, const double value,
+            const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -22,8 +22,8 @@ class IndexFill : public Operator<IndexFill> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  IndexFill(const Tensor input, const int64_t dim, const Tensor index,
-            const Tensor value, Tensor out)
+  IndexFill(const Tensor input, const Tensor index, const Tensor value,
+            const int64_t dim, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -39,12 +39,12 @@ class IndexFill : public Operator<IndexFill> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const double value,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const double value, const int64_t dim,
                           Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const int64_t dim,
-                          const Tensor index, const Tensor value,
+  virtual void operator()(const Tensor input, const Tensor index,
+                          const Tensor value, const int64_t dim,
                           Tensor out) const = 0;
 
  protected:

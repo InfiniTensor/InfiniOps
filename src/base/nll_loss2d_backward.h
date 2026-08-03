@@ -11,8 +11,8 @@ class NllLoss2dBackward : public Operator<NllLoss2dBackward> {
  public:
   NllLoss2dBackward(const Tensor grad_output, const Tensor input,
                     const Tensor target, const std::optional<Tensor> weight,
-                    const int64_t reduction, const int64_t ignore_index,
-                    const Tensor total_weight, Tensor grad_input)
+                    const Tensor total_weight, const int64_t reduction,
+                    const int64_t ignore_index, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -41,8 +41,8 @@ class NllLoss2dBackward : public Operator<NllLoss2dBackward> {
   virtual void operator()(const Tensor grad_output, const Tensor input,
                           const Tensor target,
                           const std::optional<Tensor> weight,
-                          const int64_t reduction, const int64_t ignore_index,
-                          const Tensor total_weight,
+                          const Tensor total_weight, const int64_t reduction,
+                          const int64_t ignore_index,
                           Tensor grad_input) const = 0;
 
  protected:

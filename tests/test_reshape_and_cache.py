@@ -69,9 +69,9 @@ def test_reshape_and_cache(
         expected_key_cache,
         expected_value_cache,
         slot_mapping,
-        kv_cache_dtype,
         k_scale,
         v_scale,
+        kv_cache_dtype,
     )
     result = infini.ops.reshape_and_cache(
         key,
@@ -79,9 +79,9 @@ def test_reshape_and_cache(
         key_cache,
         value_cache,
         slot_mapping,
-        kv_cache_dtype,
         k_scale,
         v_scale,
+        kv_cache_dtype,
         implementation_index=implementation_index,
         stream=get_stream(key.device),
     )
@@ -97,9 +97,9 @@ def _torch_reshape_and_cache(
     key_cache,
     value_cache,
     slot_mapping,
-    kv_cache_dtype,
     k_scale,
     v_scale,
+    kv_cache_dtype,
 ):
     token_indices = torch.nonzero(slot_mapping >= 0).flatten()
     slots = slot_mapping[token_indices]

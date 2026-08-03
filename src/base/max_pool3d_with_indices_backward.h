@@ -11,12 +11,12 @@ class MaxPool3dWithIndicesBackward
     : public Operator<MaxPool3dWithIndicesBackward> {
  public:
   MaxPool3dWithIndicesBackward(const Tensor grad_output, const Tensor input,
+                               const Tensor indices,
                                const std::vector<int64_t> kernel_size,
                                const std::vector<int64_t> stride,
                                const std::vector<int64_t> padding,
                                const std::vector<int64_t> dilation,
-                               const bool ceil_mode, const Tensor indices,
-                               Tensor grad_input)
+                               const bool ceil_mode, Tensor grad_input)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
@@ -37,12 +37,12 @@ class MaxPool3dWithIndicesBackward
         device_index_{grad_input.device().index()} {}
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
+                          const Tensor indices,
                           const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> stride,
                           const std::vector<int64_t> padding,
                           const std::vector<int64_t> dilation,
-                          const bool ceil_mode, const Tensor indices,
-                          Tensor grad_input) const = 0;
+                          const bool ceil_mode, Tensor grad_input) const = 0;
 
  protected:
   Tensor::Shape grad_output_shape_;
