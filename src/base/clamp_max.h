@@ -29,6 +29,9 @@ class ClampMax : public Operator<ClampMax> {
         max_type_{max.dtype()},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   ClampMax(Tensor input, const Tensor max)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -44,6 +47,9 @@ class ClampMax : public Operator<ClampMax> {
   virtual void operator()(const Tensor input, const Tensor max,
                           Tensor out) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const Tensor max) const = 0;
 
  protected:

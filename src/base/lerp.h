@@ -35,6 +35,9 @@ class Lerp : public Operator<Lerp> {
         weight_type_{weight.dtype()},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   Lerp(Tensor input, const Tensor end, const double weight)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -45,6 +48,9 @@ class Lerp : public Operator<Lerp> {
         weight_{weight},
         device_index_{input.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   Lerp(Tensor input, const Tensor end, const Tensor weight)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -63,9 +69,15 @@ class Lerp : public Operator<Lerp> {
   virtual void operator()(const Tensor input, const Tensor end,
                           const Tensor weight, Tensor out) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const Tensor end,
                           const double weight) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const Tensor end,
                           const Tensor weight) const = 0;
 

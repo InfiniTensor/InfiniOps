@@ -29,6 +29,9 @@ class Pow : public Operator<Pow> {
         exponent_{exponent},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   Pow(Tensor input, const double exponent)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -36,6 +39,9 @@ class Pow : public Operator<Pow> {
         exponent_{exponent},
         device_index_{input.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output overload instead.")]]
   Pow(Tensor input, const Tensor exponent)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -51,8 +57,14 @@ class Pow : public Operator<Pow> {
   virtual void operator()(const Tensor input, const double exponent,
                           Tensor out) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const double exponent) const = 0;
 
+  /// \deprecated Use an explicit-output `operator()` overload. This overload
+  /// will be removed in a future release.
+  [[deprecated("Use an explicit-output overload instead.")]]
   virtual void operator()(Tensor input, const Tensor exponent) const = 0;
 
  protected:
