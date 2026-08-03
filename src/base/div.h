@@ -36,6 +36,9 @@ class Div : public Operator<Div> {
         rounding_mode_{rounding_mode},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will
+  /// be removed in a future release.
+  [[deprecated("Use the `(input, other, out)` overload instead.")]]
   Div(Tensor input, const Tensor other)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -45,6 +48,9 @@ class Div : public Operator<Div> {
         other_type_{other.dtype()},
         device_index_{input.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will
+  /// be removed in a future release.
+  [[deprecated("Use the explicit-output rounding-mode overload instead.")]]
   Div(Tensor input, const Tensor other,
       const std::optional<std::string> rounding_mode)
       : input_shape_{input.shape()},
@@ -56,21 +62,27 @@ class Div : public Operator<Div> {
         rounding_mode_{rounding_mode},
         device_index_{input.device().index()} {}
 
-  Div(Tensor input, const double other)
+  Div(const Tensor input, const double other, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
         other_{other},
-        device_index_{input.device().index()} {}
+        device_index_{out.device().index()} {}
 
-  Div(Tensor input, const double other,
-      const std::optional<std::string> rounding_mode)
+  Div(const Tensor input, const double other,
+      const std::optional<std::string> rounding_mode, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
         rounding_mode_{rounding_mode},
         other_{other},
-        device_index_{input.device().index()} {}
+        device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;
@@ -79,17 +91,24 @@ class Div : public Operator<Div> {
                           const std::optional<std::string> rounding_mode,
                           Tensor out) const = 0;
 
+  /// \deprecated Use the explicit-output overload. This overload will be
+  /// removed in a future release.
+  [[deprecated("Use `operator()(input, other, out)` instead.")]]
   virtual void operator()(Tensor input, const Tensor other) const = 0;
 
+  /// \deprecated Use the explicit-output overload. This overload will be
+  /// removed in a future release.
+  [[deprecated("Use the explicit-output rounding-mode overload instead.")]]
   virtual void operator()(
       Tensor input, const Tensor other,
       const std::optional<std::string> rounding_mode) const = 0;
 
-  virtual void operator()(Tensor input, const double other) const = 0;
+  virtual void operator()(const Tensor input, const double other,
+                          Tensor out) const = 0;
 
-  virtual void operator()(
-      Tensor input, const double other,
-      const std::optional<std::string> rounding_mode) const = 0;
+  virtual void operator()(const Tensor input, const double other,
+                          const std::optional<std::string> rounding_mode,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

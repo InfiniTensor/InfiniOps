@@ -20,6 +20,9 @@ class Sub : public Operator<Sub> {
         alpha_{alpha},
         device_index_{out.device().index()} {}
 
+  /// \deprecated Use the explicit-output constructor. This constructor will
+  /// be removed in a future release.
+  [[deprecated("Use the `(input, other, alpha, out)` overload instead.")]]
   Sub(Tensor input, const Tensor other, const double alpha)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -30,22 +33,28 @@ class Sub : public Operator<Sub> {
         alpha_{alpha},
         device_index_{input.device().index()} {}
 
-  Sub(Tensor input, const double other, const double alpha)
+  Sub(const Tensor input, const double other, const double alpha, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
         alpha_{alpha},
         other_{other},
-        device_index_{input.device().index()} {}
+        device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const Tensor other,
                           const double alpha, Tensor out) const = 0;
 
+  /// \deprecated Use the explicit-output overload. This overload will be
+  /// removed in a future release.
+  [[deprecated("Use `operator()(input, other, alpha, out)` instead.")]]
   virtual void operator()(Tensor input, const Tensor other,
                           const double alpha) const = 0;
 
-  virtual void operator()(Tensor input, const double other,
-                          const double alpha) const = 0;
+  virtual void operator()(const Tensor input, const double other,
+                          const double alpha, Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;

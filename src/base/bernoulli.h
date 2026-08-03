@@ -16,16 +16,20 @@ class Bernoulli : public Operator<Bernoulli> {
         out_type_{out.dtype()},
         device_index_{out.device().index()} {}
 
-  Bernoulli(Tensor input, const double p)
+  Bernoulli(const Tensor input, const double p, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
         p_{p},
-        device_index_{input.device().index()} {}
+        device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, Tensor out) const = 0;
 
-  virtual void operator()(Tensor input, const double p) const = 0;
+  virtual void operator()(const Tensor input, const double p,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
