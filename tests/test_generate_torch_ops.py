@@ -371,6 +371,51 @@ def test_existing_base_overload_can_group_tensor_inputs_before_attributes():
     assert "at::gather_out(at_out, at_self, dim, at_index, sparse_grad)" in source
 
 
+def test_rrelu_with_noise_base_order_preserves_aten_call_order():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "rrelu_with_noise.out(Tensor self, Tensor(b!) noise, Scalar lower=0.125, "
+        "Scalar upper=0.3333333333333333, bool training=False, "
+        "Generator? generator=None, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    signature = [
+        ("Tensor", "input"),
+        ("double", "lower"),
+        ("double", "upper"),
+        ("bool", "training"),
+        ("Tensor", "out"),
+        ("Tensor", "noise"),
+    ]
+
+    bound = module._bind_base_signature(op, signature)
+
+    assert bound is not None
+    assert [param.api_name for param in bound.visible_params] == [
+        "input",
+        "lower",
+        "upper",
+        "training",
+        "out",
+        "noise",
+    ]
+    assert [
+        next(
+            index
+            for index, binding in enumerate(bound.param_bindings)
+            if binding is param
+        )
+        for param in bound.visible_params
+    ] == [0, 2, 3, 4, 6, 1]
+
+    source = module._generate_torch_method_source("rrelu_with_noise", bound)
+
+    assert "Tensor out, Tensor noise" in source
+    assert (
+        "at::rrelu_with_noise_out(at_out, at_self, at_noise, lower, upper, "
+        "training, c10::optional<at::Generator>{})" in source
+    )
+
+
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_generator_module()
     path = tmp_path / "generated.cc"
