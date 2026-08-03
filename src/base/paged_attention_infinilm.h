@@ -11,7 +11,11 @@
 
 namespace infini::ops {
 
-class PagedAttentionInfinilm : public Operator<PagedAttentionInfinilm> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+PagedAttentionInfinilm : public Operator<PagedAttentionInfinilm> {
  public:
   PagedAttentionInfinilm(const Tensor q, const Tensor k_cache,
                          const Tensor v_cache, const Tensor block_tables,

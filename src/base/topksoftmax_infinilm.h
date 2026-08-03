@@ -7,7 +7,10 @@
 
 namespace infini::ops {
 
-class TopksoftmaxInfinilm : public Operator<TopksoftmaxInfinilm> {
+/// \deprecated Use `TopkSoftmax`. This interface will be removed in a future
+/// release.
+class [[deprecated("Use `TopkSoftmax` instead.")]] TopksoftmaxInfinilm
+    : public Operator<TopksoftmaxInfinilm> {
  public:
   TopksoftmaxInfinilm(const Tensor input, const int64_t topk, const bool norm,
                       Tensor values, Tensor indices)

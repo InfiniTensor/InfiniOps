@@ -7,7 +7,9 @@
 
 namespace infini::ops {
 
-class GelutanhInfinilm : public Operator<GelutanhInfinilm> {
+/// \deprecated Use `Gelu`. This interface will be removed in a future release.
+class [[deprecated("Use `Gelu` instead.")]] GelutanhInfinilm
+    : public Operator<GelutanhInfinilm> {
  public:
   GelutanhInfinilm(const Tensor input, Tensor out)
       : input_shape_{input.shape()},

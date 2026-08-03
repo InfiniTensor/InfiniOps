@@ -10,7 +10,11 @@
 
 namespace infini::ops {
 
-class PagedCachingInfinilm : public Operator<PagedCachingInfinilm> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+PagedCachingInfinilm : public Operator<PagedCachingInfinilm> {
  public:
   PagedCachingInfinilm(const Tensor k, const Tensor v,
                        const Tensor slot_mapping, Tensor k_cache,

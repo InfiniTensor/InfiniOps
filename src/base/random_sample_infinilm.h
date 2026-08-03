@@ -11,7 +11,11 @@
 
 namespace infini::ops {
 
-class RandomSampleInfinilm : public Operator<RandomSampleInfinilm> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+RandomSampleInfinilm : public Operator<RandomSampleInfinilm> {
  public:
   RandomSampleInfinilm(const Tensor logits, float random_val, float topp,
                        int64_t topk, float temperature, Tensor out)

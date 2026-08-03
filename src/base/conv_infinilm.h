@@ -10,7 +10,11 @@
 
 namespace infini::ops {
 
-class ConvInfinilm : public Operator<ConvInfinilm> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]] ConvInfinilm
+    : public Operator<ConvInfinilm> {
  public:
   ConvInfinilm(const Tensor input, const Tensor weight,
                std::optional<Tensor> bias, const std::vector<int64_t> padding,

@@ -7,7 +7,10 @@
 
 namespace infini::ops {
 
-class SiluAndMulInfinilm : public Operator<SiluAndMulInfinilm> {
+/// \deprecated Use `SiluAndMul`. This interface will be removed in a future
+/// release.
+class [[deprecated("Use `SiluAndMul` instead.")]] SiluAndMulInfinilm
+    : public Operator<SiluAndMulInfinilm> {
  public:
   SiluAndMulInfinilm(const Tensor input, Tensor out)
       : input_shape_{input.shape()},

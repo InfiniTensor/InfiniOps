@@ -11,10 +11,11 @@
 
 namespace infini::ops {
 
-/// \deprecated Use `ScaledSoftmaxInfinilm`. This interface will be removed in
-/// a future release.
-class [[deprecated("Use `ScaledSoftmaxInfinilm` instead.")]] ScaledSoftmax
-    : public Operator<ScaledSoftmax> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+ScaledSoftmax : public Operator<ScaledSoftmax> {
  public:
   ScaledSoftmax(const Tensor input, double scale, Tensor out)
       : scale_{scale},

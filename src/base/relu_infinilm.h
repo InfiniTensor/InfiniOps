@@ -7,7 +7,9 @@
 
 namespace infini::ops {
 
-class ReluInfinilm : public Operator<ReluInfinilm> {
+/// \deprecated Use `Relu`. This interface will be removed in a future release.
+class [[deprecated("Use `Relu` instead.")]] ReluInfinilm
+    : public Operator<ReluInfinilm> {
  public:
   ReluInfinilm(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
