@@ -10,7 +10,10 @@
 
 namespace infini::ops {
 
-class RotaryEmbeddingInfinilm : public Operator<RotaryEmbeddingInfinilm> {
+/// \deprecated Use `RotaryEmbedding`. This interface will be removed in a
+/// future release.
+class [[deprecated("Use `RotaryEmbedding` instead.")]] RotaryEmbeddingInfinilm
+    : public Operator<RotaryEmbeddingInfinilm> {
  public:
   RotaryEmbeddingInfinilm(const Tensor input, const Tensor pos_ids,
                           const Tensor sin_table, const Tensor cos_table,

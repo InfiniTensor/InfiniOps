@@ -8,7 +8,10 @@
 
 namespace infini::ops {
 
-class SoftmaxInfinilm : public Operator<SoftmaxInfinilm> {
+/// \deprecated Use `Softmax`. This interface will be removed in a future
+/// release.
+class [[deprecated("Use `Softmax` instead.")]] SoftmaxInfinilm
+    : public Operator<SoftmaxInfinilm> {
  public:
   SoftmaxInfinilm(const Tensor input, const int64_t dim,
                   const std::optional<DataType> dtype, Tensor out)

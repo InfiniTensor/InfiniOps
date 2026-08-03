@@ -7,7 +7,10 @@
 
 namespace infini::ops {
 
-class SigmoidInfinilm : public Operator<SigmoidInfinilm> {
+/// \deprecated Use `Sigmoid`. This interface will be removed in a future
+/// release.
+class [[deprecated("Use `Sigmoid` instead.")]] SigmoidInfinilm
+    : public Operator<SigmoidInfinilm> {
  public:
   SigmoidInfinilm(const Tensor input, Tensor out)
       : input_shape_{input.shape()},

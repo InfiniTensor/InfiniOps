@@ -8,7 +8,9 @@
 
 namespace infini::ops {
 
-class GeluInfinilm : public Operator<GeluInfinilm> {
+/// \deprecated Use `Gelu`. This interface will be removed in a future release.
+class [[deprecated("Use `Gelu` instead.")]] GeluInfinilm
+    : public Operator<GeluInfinilm> {
  public:
   GeluInfinilm(const Tensor input, const std::string approximate, Tensor out)
       : input_shape_{input.shape()},

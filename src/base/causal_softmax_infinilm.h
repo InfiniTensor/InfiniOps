@@ -9,7 +9,11 @@
 
 namespace infini::ops {
 
-class CausalSoftmaxInfinilm : public Operator<CausalSoftmaxInfinilm> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+CausalSoftmaxInfinilm : public Operator<CausalSoftmaxInfinilm> {
  public:
   CausalSoftmaxInfinilm(const Tensor input, Tensor out)
       : dtype_{input.dtype()},

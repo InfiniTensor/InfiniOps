@@ -13,10 +13,11 @@ namespace infini::ops {
 // Legacy sampler for 2D `logits` after optional rank and nucleus filtering.
 // Temperature scaling is intentionally handled by callers.
 // The optional `k` and `p` tensors may be shaped as `[1]` or `[batch_size]`.
-/// \deprecated Use `TopKTopPSampleInfinilm`. This interface will be removed in
-/// a future release.
-class [[deprecated("Use `TopKTopPSampleInfinilm` instead.")]] TopKTopPSampler
-    : public Operator<TopKTopPSampler> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+TopKTopPSampler : public Operator<TopKTopPSampler> {
  public:
   TopKTopPSampler(const Tensor logits, std::optional<Tensor> k,
                   std::optional<Tensor> p, Tensor out)

@@ -7,7 +7,11 @@
 
 namespace infini::ops {
 
-class KvCachingInfinilm : public Operator<KvCachingInfinilm> {
+/// \deprecated Migrate to an open-source-aligned operator when available. This
+/// interface will be removed in a future release.
+class [[deprecated(
+    "Migrate to an open-source-aligned operator when available.")]]
+KvCachingInfinilm : public Operator<KvCachingInfinilm> {
  public:
   KvCachingInfinilm(const Tensor k, const Tensor v,
                     const Tensor past_kv_lengths, Tensor k_cache,
