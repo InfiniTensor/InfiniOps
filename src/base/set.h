@@ -9,8 +9,9 @@ namespace infini::ops {
 
 class Set : public Operator<Set> {
  public:
-  Set(Tensor input, const Tensor source, const int64_t storage_offset,
-      const std::vector<int64_t> size, const std::vector<int64_t> stride)
+  Set(const Tensor input, const Tensor source, const int64_t storage_offset,
+      const std::vector<int64_t> size, const std::vector<int64_t> stride,
+      Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -20,23 +21,31 @@ class Set : public Operator<Set> {
         storage_offset_{storage_offset},
         size_{size},
         stride_{stride},
-        device_index_{input.device().index()} {}
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        device_index_{out.device().index()} {}
 
-  Set(Tensor input, const Tensor source)
+  Set(const Tensor input, const Tensor source, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
         source_shape_{source.shape()},
         source_strides_{source.strides()},
         source_type_{source.dtype()},
-        device_index_{input.device().index()} {}
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        out_type_{out.dtype()},
+        device_index_{out.device().index()} {}
 
-  virtual void operator()(Tensor input, const Tensor source,
+  virtual void operator()(const Tensor input, const Tensor source,
                           const int64_t storage_offset,
                           const std::vector<int64_t> size,
-                          const std::vector<int64_t> stride) const = 0;
+                          const std::vector<int64_t> stride,
+                          Tensor out) const = 0;
 
-  virtual void operator()(Tensor input, const Tensor source) const = 0;
+  virtual void operator()(const Tensor input, const Tensor source,
+                          Tensor out) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
@@ -56,6 +65,12 @@ class Set : public Operator<Set> {
   std::vector<int64_t> size_{};
 
   std::vector<int64_t> stride_{};
+
+  Tensor::Shape out_shape_;
+
+  Tensor::Strides out_strides_;
+
+  DataType out_type_;
 
   int device_index_{0};
 };

@@ -380,6 +380,7 @@ class Op:
     params: list[Param]
     signature_params: list[Param] | None = None
     param_bindings: list[Param | None] | None = None
+    explicit_inplace_out: Param | None = None
 
     @property
     def pascal_name(self) -> str:
@@ -419,6 +420,9 @@ class Op:
         """Mutable tensor outputs.  Most ops have one (`Tensor(a!) out`);
         multi-output ops like `frexp` or `sort` have several
         (`Tensor(a!) values`, `Tensor(b!) indices`)."""
+
+        if self.explicit_inplace_out is not None:
+            return [self.explicit_inplace_out]
 
         if self.is_inplace:
             return [self.params[0]]
@@ -667,6 +671,23 @@ def _bind_base_signature(op: Op, signature: list[tuple[str, str]]) -> Op | None:
     bindings: list[Param | None] = [None] * len(op.params)
     signature_params = []
     schema_index = 0
+    explicit_inplace_out = None
+
+    if (
+        op.is_inplace
+        and signature
+        and signature[-1][1] == "out"
+        and _cpp_types_compatible("Tensor", signature[-1][0])
+    ):
+        out_cpp_type, out_name = signature[-1]
+        explicit_inplace_out = Param(
+            name=out_name,
+            aten_type="Tensor(a!)",
+            default=None,
+            keyword_only=True,
+            cpp_type_override=out_cpp_type,
+        )
+        signature = signature[:-1]
 
     for base_cpp_type, base_name in signature:
         matched_index = None
@@ -695,8 +716,14 @@ def _bind_base_signature(op: Op, signature: list[tuple[str, str]]) -> Op | None:
     if any(not _is_omittable_param(param) for param in op.params[schema_index:]):
         return None
 
+    if explicit_inplace_out is not None:
+        signature_params.append(explicit_inplace_out)
+
     return dataclasses.replace(
-        op, signature_params=signature_params, param_bindings=bindings
+        op,
+        signature_params=signature_params,
+        param_bindings=bindings,
+        explicit_inplace_out=explicit_inplace_out,
     )
 
 
@@ -1341,15 +1368,26 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             conversion_lines.append("  }")
             continue
 
+        use_mutable_data = param.is_mutable_tensor and not (
+            op.explicit_inplace_out is not None and schema_index == 0
+        )
         data_expr = (
             f"{api_name}.data()"
-            if param.is_mutable_tensor
+            if use_mutable_data
             else f"const_cast<void*>({api_name}.data())"
         )
         conversion_lines.append(
             f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
             f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
             f"      {api_name}_type_, device_index);"
+        )
+
+    if op.explicit_inplace_out is not None:
+        out_name = op.explicit_inplace_out.api_name
+        conversion_lines.append(
+            f"  auto at_{out_name} = ToAtenTensor<kDev>(\n"
+            f"      {out_name}.data(), {out_name}_shape_, {out_name}_strides_,\n"
+            f"      {out_name}_type_, device_index);"
         )
 
     for schema_index, param in enumerate(op.params):
@@ -1390,7 +1428,12 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         rendered_args = ", ".join(
             _render_arg(index + 1, p) for index, p in enumerate(arg_order)
         )
-        aten_call = f"at_{input_param.name}.{op.aten_name}({rendered_args})"
+        if op.explicit_inplace_out is not None:
+            out_name = op.explicit_inplace_out.api_name
+            aten_call = f"at_{out_name}.copy_(at_{input_param.name});\n"
+            aten_call += f"  at_{out_name}.{op.aten_name}({rendered_args})"
+        else:
+            aten_call = f"at_{input_param.name}.{op.aten_name}({rendered_args})"
     else:
         # ATen `_out` form puts all out tensors first, then non-out params
         # in YAML order. Hardcoded-nullopt params become `at::nullopt`.
