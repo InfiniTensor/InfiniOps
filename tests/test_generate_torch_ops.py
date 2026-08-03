@@ -163,6 +163,27 @@ def test_tensor_list_params_are_exposed_and_forwarded_to_aten():
     assert "at::stack_out(at_out, at_tensors, dim)" in source
 
 
+def test_optional_tensor_list_params_are_exposed_and_forwarded_to_aten():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "index.Tensor_out(Tensor self, Tensor?[] indices, "
+        "*, Tensor(a!) out) -> Tensor(a!)"
+    )
+
+    assert [param.cpp_type for param in op.visible_params] == [
+        "Tensor",
+        "std::vector<std::optional<Tensor>>",
+        "Tensor",
+    ]
+
+    source = module._generate_torch_method_source("index", op)
+
+    assert "c10::List<c10::optional<at::Tensor>> at_indices" in source
+    assert "for (const auto& tensor : indices)" in source
+    assert "at_indices.push_back(c10::nullopt)" in source
+    assert "at::index_out(at_out, at_self, at_indices)" in source
+
+
 def test_optional_scalar_and_array_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     quantile = module._parse_func(

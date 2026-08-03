@@ -143,6 +143,7 @@ _EXPOSED_OPTIONAL_CPP_TYPES = {
     "str?": "std::optional<std::string>",
     "ScalarType?": "std::optional<DataType>",
     "Tensor?": "std::optional<Tensor>",
+    "Tensor?[]": "std::vector<std::optional<Tensor>>",
     "int[]?": "std::optional<std::vector<int64_t>>",
     "int[1]?": "std::optional<std::vector<int64_t>>",
     "int[2]?": "std::optional<std::vector<int64_t>>",
@@ -243,6 +244,16 @@ class Param:
             return _normalize_cpp_type(self.cpp_type_override) == "std::vector<Tensor>"
 
         return self.aten_type == "Tensor[]"
+
+    @property
+    def is_optional_tensor_list(self) -> bool:
+        if self.cpp_type_override is not None:
+            return (
+                _normalize_cpp_type(self.cpp_type_override)
+                == "std::vector<std::optional<Tensor>>"
+            )
+
+        return self.aten_type == "Tensor?[]"
 
     @property
     def is_mutable_tensor(self) -> bool:
@@ -1284,7 +1295,11 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         conversion_lines.append("  }")
 
     for schema_index, param in enumerate(op.params):
-        if not param.is_tensor and not param.is_tensor_list:
+        if (
+            not param.is_tensor
+            and not param.is_tensor_list
+            and not param.is_optional_tensor_list
+        ):
             continue
 
         api_param = op.api_param_for(schema_index)
@@ -1293,6 +1308,25 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             continue
 
         api_name = api_param.api_name
+
+        if param.is_optional_tensor_list:
+            conversion_lines.append(
+                f"  c10::List<c10::optional<at::Tensor>> at_{param.name};"
+            )
+            conversion_lines.append(f"  at_{param.name}.reserve({api_name}.size());")
+            conversion_lines.append(f"  for (const auto& tensor : {api_name}) {{")
+            conversion_lines.append("    if (tensor.has_value()) {")
+            conversion_lines.append(
+                "      at_"
+                f"{param.name}.push_back(ToAtenTensor<kDev>("
+                "const_cast<void*>(tensor->data()), tensor->shape(), "
+                "tensor->strides(), tensor->dtype(), device_index));"
+            )
+            conversion_lines.append("    } else {")
+            conversion_lines.append(f"      at_{param.name}.push_back(c10::nullopt);")
+            conversion_lines.append("    }")
+            conversion_lines.append("  }")
+            continue
 
         if param.is_tensor_list:
             conversion_lines.append(f"  std::vector<at::Tensor> at_{param.name};")
@@ -1321,7 +1355,11 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
     for schema_index, param in enumerate(op.params):
         api_param = op.api_param_for(schema_index)
 
-        if api_param is not None and param.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES:
+        if (
+            api_param is not None
+            and param.aten_type in _EXPOSED_OPTIONAL_CPP_TYPES
+            and not param.is_optional_tensor_list
+        ):
             _append_optional_conversion(param, api_param)
 
     def _render_arg(schema_index, p):

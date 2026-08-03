@@ -323,6 +323,9 @@ def _torch_func(op_name):
 
         return _call_inplace
 
+    if op_name == "index":
+        return torch.ops.aten.index.Tensor
+
     candidates = [
         (torch, op_name),
         (torch.special, op_name),
@@ -401,6 +404,10 @@ def _build_input_value(op_name, param, shape, dtype, device, tensor_idx):
 
     if t == "float[]?":
         return None
+
+    if t == "Tensor?[]":
+        index = torch.arange(min(2, shape[0]), dtype=torch.int64, device=device)
+        return [index, None]
 
     if t.startswith(("int[", "SymInt[")) or t in {"int[]?", "SymInt[]?"}:
         return _list_default(t)
