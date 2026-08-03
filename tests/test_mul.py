@@ -21,6 +21,8 @@ _UINT_DTYPES = tuple(
 @pytest.mark.parametrize(
     "shape, input_strides, other_strides, out_strides",
     (
+        ((), None, None, None),
+        ((0, 4), None, None, None),
         ((13, 4), None, None, None),
         ((13, 4), (10, 1), (10, 1), (10, 1)),
         ((13, 4), (0, 1), None, None),
