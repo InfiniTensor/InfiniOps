@@ -16,13 +16,12 @@ void Operator<SiluAndMul, Device::Type::kMetax, 11>::operator()(
     const Tensor input, Tensor out) const {
   const linked::cuda::TorchContextGuard context_guard{stream_, device_index_};
   auto at_input = ToAtenTensor<Device::Type::kMetax>(
-      const_cast<void*>(input.data()), input_shape_, input_strides_, input_type_,
-      device_index_);
+      const_cast<void*>(input.data()), input_shape_, input_strides_,
+      input_type_, device_index_);
   auto at_out = ToAtenTensor<Device::Type::kMetax>(
       out.data(), out_shape_, out_strides_, out_type_, device_index_);
 
-  auto provider_input =
-      is_input_contiguous_ ? at_input : at_input.contiguous();
+  auto provider_input = is_input_contiguous_ ? at_input : at_input.contiguous();
   auto provider_out =
       is_out_contiguous_ ? at_out : at::empty(at_out.sizes(), at_out.options());
 
