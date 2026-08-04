@@ -831,8 +831,10 @@ def _generate_pybind11(operator):
                     "    if (config_dict.has_value()) {\n"
                     "      triton_config_ptr = "
                     "triton::jit::ConfigFromPyDict(*config_dict);\n"
-                    "      triton_config_ptr->set_implementation_index(\n"
-                    "          config.implementation_index());\n"
+                    "      if (!config.auto_select()) {\n"
+                    "        triton_config_ptr->set_implementation_index(\n"
+                    "            config.implementation_index());\n"
+                    "      }\n"
                     "    }\n"
                 )
                 extra_pybind = ', py::arg("config") = py::none()'
@@ -845,10 +847,6 @@ def _generate_pybind11(operator):
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
-            default_impl_index = _default_impl_index_expr(
-                call, converted_first_tensor_name
-            )
-
             if supports_triton_config:
                 dispatch = (
                     "    if (triton_config_ptr) {\n"
@@ -872,9 +870,6 @@ def _generate_pybind11(operator):
                 f"    Config config;\n"
                 f"    if (implementation_index.has_value()) {{\n"
                 f"      config.set_implementation_index(*implementation_index);\n"
-                f"    }} else {{\n"
-                f"      config.set_implementation_index(\n"
-                f"          {default_impl_index});\n"
                 f"    }}\n"
                 f"{extra_config_init}"
                 f"{dispatch}\n"
