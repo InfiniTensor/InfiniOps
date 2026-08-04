@@ -7,8 +7,8 @@ namespace infini::ops {
 
 class RreluWithNoise : public Operator<RreluWithNoise> {
  public:
-  RreluWithNoise(const Tensor input, const Tensor noise, const double lower,
-                 const double upper, const bool training, Tensor out)
+  RreluWithNoise(const Tensor input, const double lower, const double upper,
+                 const bool training, Tensor out, Tensor noise)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
         input_type_{input.dtype()},
@@ -23,9 +23,9 @@ class RreluWithNoise : public Operator<RreluWithNoise> {
         training_{training},
         device_index_{out.device().index()} {}
 
-  virtual void operator()(const Tensor input, const Tensor noise,
-                          const double lower, const double upper,
-                          const bool training, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const double lower,
+                          const double upper, const bool training, Tensor out,
+                          Tensor noise) const = 0;
 
  protected:
   Tensor::Shape input_shape_;
