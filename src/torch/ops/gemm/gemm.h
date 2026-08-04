@@ -8,15 +8,19 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<Gemm, kDev, 2> : public Gemm {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c);
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c);
+
+  Operator(const Tensor a, const Tensor b, Tensor c);
 
   using Gemm::operator();
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override;
+  void operator()(const Tensor a, const Tensor b,
+                  const std::optional<Tensor> input_c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override;
 
  private:
   Tensor::Shape a_shape_;

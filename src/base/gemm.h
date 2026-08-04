@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_GEMM_H_
 
 #include <algorithm>
+#include <cassert>
 #include <optional>
 
 #include "operator.h"
@@ -10,49 +11,49 @@ namespace infini::ops {
 
 class Gemm : public Operator<Gemm> {
  public:
-  Gemm(const Tensor a, const Tensor b, std::optional<float> alpha,
-       std::optional<float> beta, std::optional<int> trans_a,
-       std::optional<int> trans_b, Tensor c)
+  Gemm(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+       std::optional<float> alpha, std::optional<float> beta,
+       std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
       : alpha_{alpha.value_or(1.0)},
-        beta_{beta.value_or(1.0)},
+        beta_{EffectiveBeta(c, beta)},
         trans_a_{static_cast<bool>(trans_a.value_or(false))},
         trans_b_{static_cast<bool>(trans_b.value_or(false))},
-        m_{c.size(-2)},
-        n_{c.size(-1)},
+        m_{y.size(-2)},
+        n_{y.size(-1)},
         k_{trans_a_ ? a.size(-2) : a.size(-1)},
         a_type_{a.dtype()},
         b_type_{b.dtype()},
-        c_type_{c.dtype()},
+        c_type_{y.dtype()},
         a_strides_{a.strides()},
         b_strides_{b.strides()},
-        c_strides_{c.strides()},
+        c_strides_{y.strides()},
         lda_{std::max(a.stride(-2), a.stride(-1))},
         ldb_{std::max(b.stride(-2), b.stride(-1))},
-        ldc_{std::max(c.stride(-2), c.stride(-1))},
-        batch_count_{c.strides().size() > 2 ? c.size(-3) : 1},
+        ldc_{std::max(y.stride(-2), y.stride(-1))},
+        batch_count_{y.strides().size() > 2 ? y.size(-3) : 1},
         batch_stride_a_{a.strides().size() > 2 ? a.stride(-3) : 0},
         batch_stride_b_{b.strides().size() > 2 ? b.stride(-3) : 0},
-        batch_stride_c_{c.strides().size() > 2 ? c.stride(-3) : 0} {
-    // TODO: Check constraints.
-  }
+        batch_stride_c_{y.strides().size() > 2 ? y.stride(-3) : 0} {}
 
-  Gemm(const Tensor a, const Tensor b, Tensor c)
-      : Gemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt, c} {}
+  Gemm(const Tensor a, const Tensor b, Tensor y)
+      : Gemm{a,
+             b,
+             std::nullopt,
+             std::nullopt,
+             std::nullopt,
+             std::nullopt,
+             std::nullopt,
+             y} {}
 
   virtual void operator()(const Tensor a, const Tensor b,
+                          const std::optional<Tensor> c,
                           std::optional<float> alpha, std::optional<float> beta,
                           std::optional<int> trans_a,
-                          std::optional<int> trans_b, Tensor c) const = 0;
+                          std::optional<int> trans_b, Tensor y) const = 0;
 
-  virtual void operator()(const Tensor a, const Tensor b, Tensor c) const {
+  virtual void operator()(const Tensor a, const Tensor b, Tensor y) const {
     return operator()(a, b, std::nullopt, std::nullopt, std::nullopt,
-                      std::nullopt, c);
-  }
-
-  virtual void operator()(const Tensor a, const Tensor b,
-                          std::optional<float> alpha, std::optional<float> beta,
-                          Tensor c) const {
-    return operator()(a, b, alpha, beta, std::nullopt, std::nullopt, c);
+                      std::nullopt, std::nullopt, y);
   }
 
   template <typename TensorLike>
@@ -63,6 +64,13 @@ class Gemm : public Operator<Gemm> {
   }
 
  protected:
+  static float EffectiveBeta(const std::optional<Tensor>& c,
+                             std::optional<float> beta) {
+    static_cast<void>(beta);
+    assert(!c && "operator Gemm C input is not supported yet");
+    return 0.0F;
+  }
+
   float alpha_{1.0};
 
   float beta_{1.0};

@@ -18,35 +18,41 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c)
+      : Gemm{a, b, input_c, alpha, beta, trans_a, trans_b, c},
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
         swap_a_and_b_{c.stride(-1) == 1} {}
 
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
-
   Operator(const Tensor a, const Tensor b, Tensor c)
-      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
                  c} {}
+
+  using Gemm::operator();
 
   // TODO: Refactor to move initialization/setup logic to the constructor
   // and cleanup/teardown logic to the destructor, rather than executing
   // everything within the computation step.
   // TODO: Replace the current return value checks with utility functions
   // (e.g., `CheckCublasLt`).
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b,
+                  const std::optional<Tensor> input_c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override {
     [[maybe_unused]] HostRangeScope host_range_backend_submit{
         HostRangeLayer::kBackendSubmit};
 
     const auto alpha_value{alpha.value_or(alpha_)};
-    const auto beta_value{beta.value_or(beta_)};
+    const auto beta_value{EffectiveBeta(input_c, beta)};
     const auto trans_a_value{trans_a.value_or(trans_a_)};
     const auto trans_b_value{trans_b.value_or(trans_b_)};
 

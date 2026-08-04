@@ -18,10 +18,10 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c)
+      : Gemm{a, b, input_c, alpha, beta, trans_a, trans_b, c},
         a_rows_{a.size(-2)},
         a_cols_{a.size(-1)},
         b_rows_{b.size(-2)},
@@ -60,12 +60,16 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
   }
 
   Operator(const Tensor a, const Tensor b, Tensor c)
-      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
                  c} {}
 
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+  using Gemm::operator();
 
   ~Operator() {
     cnrtFree(default_workspace_);
@@ -78,11 +82,13 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     cnnlDestroy(cnnl_handle_);
   }
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b,
+                  const std::optional<Tensor> input_c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override {
     const auto& alpha_value{alpha.value_or(alpha_)};
-    const auto& beta_value{beta.value_or(beta_)};
+    const auto beta_value{EffectiveBeta(input_c, beta)};
 
     cnnlSetQueue(cnnl_handle_, (cnrtQueue_t)stream_);
 

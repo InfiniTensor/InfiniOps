@@ -6,23 +6,33 @@ namespace infini::ops {
 
 template <Device::Type kDev>
 Operator<Gemm, kDev, 2>::Operator(const Tensor a, const Tensor b,
+                                  const std::optional<Tensor> input_c,
                                   std::optional<float> alpha,
                                   std::optional<float> beta,
                                   std::optional<int> trans_a,
                                   std::optional<int> trans_b, Tensor c)
-    : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
+    : Gemm{a, b, input_c, alpha, beta, trans_a, trans_b, c},
       a_shape_{a.shape()},
       b_shape_{b.shape()},
       c_shape_{c.shape()},
       device_index_{c.device().index()} {}
 
 template <Device::Type kDev>
-void Operator<Gemm, kDev, 2>::operator()(const Tensor a, const Tensor b,
-                                         std::optional<float> alpha,
-                                         std::optional<float> beta,
-                                         std::optional<int> trans_a,
-                                         std::optional<int> trans_b,
-                                         Tensor c) const {
+Operator<Gemm, kDev, 2>::Operator(const Tensor a, const Tensor b, Tensor c)
+    : Operator{a,
+               b,
+               std::nullopt,
+               std::nullopt,
+               std::nullopt,
+               std::nullopt,
+               std::nullopt,
+               c} {}
+
+template <Device::Type kDev>
+void Operator<Gemm, kDev, 2>::operator()(
+    const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+    std::optional<float> alpha, std::optional<float> beta,
+    std::optional<int> trans_a, std::optional<int> trans_b, Tensor c) const {
   auto at_a = ToAtenTensor<kDev>(const_cast<void*>(a.data()), a_shape_,
                                  a_strides_, a_type_, device_index_);
   auto at_b = ToAtenTensor<kDev>(const_cast<void*>(b.data()), b_shape_,
@@ -31,7 +41,7 @@ void Operator<Gemm, kDev, 2>::operator()(const Tensor a, const Tensor b,
                                  device_index_);
 
   auto alpha_val = alpha.value_or(alpha_);
-  auto beta_val = beta.value_or(beta_);
+  auto beta_val = EffectiveBeta(input_c, beta);
 
   if (trans_a.value_or(trans_a_)) {
     at_a = at_a.transpose(-2, -1);

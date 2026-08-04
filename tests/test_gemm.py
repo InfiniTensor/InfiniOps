@@ -102,7 +102,9 @@ def test_gemm(
 
     return Payload(
         lambda *args: _gemm(*args, implementation_index=implementation_index),
-        ref,
+        lambda a, b, alpha, _beta, trans_a, trans_b, c: ref(
+            a, b, alpha, 0.0, trans_a, trans_b, c
+        ),
         (a, b, alpha, beta, trans_a, trans_b, c),
         {},
         rtol=rtol,
@@ -114,6 +116,7 @@ def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
     infini.ops.gemm(
         a,
         b,
+        None,
         alpha,
         beta,
         trans_a,

@@ -100,6 +100,7 @@ def _nvidia_cases(device_name):
         ops.gemm(
             gemm_a,
             gemm_b,
+            None,
             1.0,
             0.0,
             False,

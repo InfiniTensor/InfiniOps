@@ -11,32 +11,38 @@ namespace infini::ops {
 template <typename Backend>
 class BlasGemm : public Gemm {
  public:
-  BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
+  BlasGemm(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c)
+      : Gemm{a, b, input_c, alpha, beta, trans_a, trans_b, c},
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
         swap_a_and_b_{c.stride(-1) == 1} {
     // TODO: Check constraints.
   }
 
-  BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : BlasGemm{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
-
   BlasGemm(const Tensor a, const Tensor b, Tensor c)
-      : BlasGemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+      : BlasGemm{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
                  c} {}
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  using Gemm::operator();
+
+  void operator()(const Tensor a, const Tensor b,
+                  const std::optional<Tensor> input_c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override {
     Backend::BlasSetStream(GetHandle(),
                            static_cast<typename Backend::Stream>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
-    const auto& beta_value{beta.value_or(beta_)};
+    const auto beta_value{EffectiveBeta(input_c, beta)};
 
     const auto& trans_a_value{trans_a.value_or(trans_a_)};
     const auto& trans_b_value{trans_b.value_or(trans_b_)};

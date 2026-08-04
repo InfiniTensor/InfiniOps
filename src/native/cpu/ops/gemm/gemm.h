@@ -13,29 +13,36 @@ template <>
 class Operator<Gemm, Device::Type::kCpu> : public Gemm,
                                            Caster<Device::Type::kCpu> {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c} {
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c)
+      : Gemm{a, b, input_c, alpha, beta, trans_a, trans_b, c} {
     // TODO: Check constraints.
   }
 
   Operator(const Tensor a, const Tensor b, Tensor c)
-      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
                  c} {}
 
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+  using Gemm::operator();
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b,
+                  const std::optional<Tensor> input_c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override {
+    const auto beta_value{EffectiveBeta(input_c, beta)};
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         c.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          Compute<T>(a, b, alpha, beta, trans_a, trans_b, c);
+          Compute<T>(a, b, alpha, beta_value, trans_a, trans_b, c);
         },
         "`Operator<Gemm, Device::Type::kCpu>::operator()`");
   }

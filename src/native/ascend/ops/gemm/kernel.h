@@ -15,13 +15,13 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kAscend> : public Gemm {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm(a, b, alpha, beta, trans_a, trans_b, c),
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c)
+      : Gemm(a, b, input_c, alpha, beta, trans_a, trans_b, c),
         batched_{batch_count_ > 1},
         alpha_val_{alpha.value_or(1.0f)},
-        beta_val_{beta.value_or(1.0f)},
+        beta_val_{0.0f},
         self_cache_(c),
         a_cache_(a, trans_a_),
         b_cache_(b, trans_b_),
@@ -29,6 +29,18 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
     alpha_scalar_ = aclCreateScalar(&alpha_val_, ACL_FLOAT);
     beta_scalar_ = aclCreateScalar(&beta_val_, ACL_FLOAT);
   }
+
+  Operator(const Tensor a, const Tensor b, Tensor c)
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 c} {}
+
+  using Gemm::operator();
 
   ~Operator() {
     if (!ascend::IsAclRuntimeAlive()) return;
@@ -43,9 +55,12 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
     if (beta_scalar_) aclDestroyScalar(beta_scalar_);
   }
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b,
+                  const std::optional<Tensor> input_c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor c) const override {
+    static_cast<void>(EffectiveBeta(input_c, beta));
     auto stream = static_cast<aclrtStream>(stream_);
 
     auto t_self = self_cache_.get(c.data());
