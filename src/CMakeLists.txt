@@ -841,6 +841,28 @@ if(TORCH_SOURCES)
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
+            if(WITH_LINKED AND _infini_ops_linked_uses_torch)
+                execute_process(
+                    COMMAND "${_TORCH_PYTHON}" -c
+                        "import importlib.metadata, pathlib; root = pathlib.Path(importlib.metadata.distribution('torch-musa').locate_file('')).resolve(); compat = root / 'torch_musa/share/generated_cuda_compatible/include'; print(root, compat, sep=';')"
+                    OUTPUT_VARIABLE _torch_musa_include_dirs
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    RESULT_VARIABLE _torch_musa_include_result
+                )
+                if(NOT _torch_musa_include_result EQUAL 0 OR
+                   NOT _torch_musa_include_dirs)
+                    message(FATAL_ERROR
+                        "Could not determine `torch_musa` include directories.")
+                endif()
+                foreach(_dir IN LISTS _torch_musa_include_dirs)
+                    if(NOT IS_DIRECTORY "${_dir}")
+                        message(FATAL_ERROR
+                            "Could not find `torch_musa` include directory `${_dir}`.")
+                    endif()
+                    list(APPEND _torch_include_flags
+                        "-isystem" "${_dir}")
+                endforeach()
+            endif()
         endif()
 
         # Vendor-specific defines required by forked `torch` headers.

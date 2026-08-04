@@ -54,34 +54,41 @@ def test_silu_and_mul(
 
 
 def test_silu_and_mul_non_default_stream(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("non-default CUDA streams require a CUDA-compatible backend")
+    if device == "cuda":
+        accelerator = torch.cuda
+    elif device == "musa":
+        accelerator = torch.musa
+    else:
+        pytest.skip(
+            "non-default streams require a CUDA-compatible or MUSA backend"
+        )
 
     input = torch.randn((32, 128), dtype=torch.float16, device=device)
     out = torch.zeros((32, 64), dtype=torch.float16, device=device)
     expected = _torch_silu_and_mul(input, torch.empty_like(out)).cpu()
-    torch.cuda.synchronize()
+    accelerator.synchronize()
 
-    stream = torch.cuda.Stream()
-    stream.wait_stream(torch.cuda.current_stream())
+    stream = accelerator.Stream()
+    stream.wait_stream(accelerator.current_stream())
+    stream_ptr = stream.cuda_stream if device == "cuda" else stream.musa_stream
 
     # Keep the current stream busy. A provider call that ignores the explicit
     # stream will be queued behind this delay, while the requested stream can
     # complete independently.
-    torch.cuda._sleep(50_000_000)
+    accelerator._sleep(50_000_000)
     try:
         infini.ops.silu_and_mul(
             input,
             out,
             implementation_index=implementation_index,
-            stream=stream.cuda_stream,
+            stream=stream_ptr,
         )
         stream.synchronize()
-        with torch.cuda.stream(stream):
+        with accelerator.stream(stream):
             actual = out.cpu()
         torch.testing.assert_close(actual, expected, rtol=1e-3, atol=1e-3)
     finally:
-        torch.cuda.synchronize()
+        accelerator.synchronize()
 
 
 def _silu_and_mul(input, out, implementation_index=0):
