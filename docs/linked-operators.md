@@ -52,8 +52,9 @@ its provider-specific `Call` ABI.
 
 At configure time, `scripts/resolve_linked_ops.py` locates the installed Python
 distribution and verifies every required symbol with both `nm` and `readelf`.
-It writes a CMake manifest and diagnostic JSON under `generated/linked/`.
-Generated files are not committed.
+Raw `readelf` symbols are demangled with GNU or LLVM `c++filt` before exact
+comparison. The resolver writes a CMake manifest and diagnostic JSON under
+`generated/linked/`. Generated files are not committed.
 
 Enable the backend independently of generated ATen implementations:
 

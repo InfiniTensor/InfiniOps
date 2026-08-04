@@ -290,12 +290,40 @@ def _parse_readelf_symbols(output):
     return symbols
 
 
-def _inspect_dynamic_symbols(library_path, nm, readelf):
+def _demangle_symbols(symbols, cxxfilt):
+    if not symbols:
+        return set()
+
+    ordered = sorted(symbols)
+    try:
+        result = subprocess.run(
+            [cxxfilt],
+            check=True,
+            capture_output=True,
+            text=True,
+            input="\n".join(ordered) + "\n",
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        stderr = getattr(error, "stderr", "") or ""
+        detail = f": {stderr.strip()}" if stderr.strip() else ""
+        raise ResolutionError(
+            f"failed to demangle dynamic symbols with {cxxfilt}{detail}"
+        ) from error
+
+    demangled = result.stdout.splitlines()
+    if len(demangled) != len(ordered):
+        raise ResolutionError(f"{cxxfilt} returned an unexpected number of symbols")
+
+    return set(demangled)
+
+
+def _inspect_dynamic_symbols(library_path, nm, readelf, cxxfilt):
     nm_output = _run_symbol_tool([nm, "-D", "--defined-only", "-C"], library_path)
     readelf_output = _run_symbol_tool(
-        [readelf, "--dyn-syms", "--wide", "--demangle"], library_path
+        [readelf, "--dyn-syms", "--wide"], library_path
     )
-    return _parse_nm_symbols(nm_output), _parse_readelf_symbols(readelf_output)
+    readelf_symbols = _parse_readelf_symbols(readelf_output)
+    return _parse_nm_symbols(nm_output), _demangle_symbols(readelf_symbols, cxxfilt)
 
 
 def _matches_required_symbol(exported, required):
@@ -378,6 +406,7 @@ def resolve_linked_ops(
     output_dir=_DEFAULT_OUTPUT_DIR,
     nm="nm",
     readelf="readelf",
+    cxxfilt="c++filt",
 ):
     source_root = pathlib.Path(source_root).resolve()
     output_dir = pathlib.Path(output_dir).resolve()
@@ -418,7 +447,9 @@ def resolve_linked_ops(
         if key not in resolved_libraries:
             library_path = _locate_distribution_library(library_config)
             resolved_libraries[key] = library_path
-            inspected_symbols[key] = _inspect_dynamic_symbols(library_path, nm, readelf)
+            inspected_symbols[key] = _inspect_dynamic_symbols(
+                library_path, nm, readelf, cxxfilt
+            )
 
         library_path = resolved_libraries[key]
         nm_symbols, readelf_symbols = inspected_symbols[key]
@@ -499,6 +530,7 @@ def _parse_args():
     parser.add_argument("--output-dir", default=_DEFAULT_OUTPUT_DIR)
     parser.add_argument("--nm", default=os.environ.get("CMAKE_NM", "nm"))
     parser.add_argument("--readelf", default=os.environ.get("CMAKE_READELF", "readelf"))
+    parser.add_argument("--cxxfilt", default="c++filt")
     return parser.parse_args()
 
 
@@ -515,6 +547,7 @@ def main():
             output_dir=args.output_dir,
             nm=args.nm,
             readelf=args.readelf,
+            cxxfilt=args.cxxfilt,
         )
     except ResolutionError as error:
         print(f"error: {error}", file=sys.stderr)
