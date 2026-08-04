@@ -59,9 +59,7 @@ def test_silu_and_mul_non_default_stream(device, implementation_index):
     elif device == "musa":
         accelerator = torch.musa
     else:
-        pytest.skip(
-            "non-default streams require a CUDA-compatible or MUSA backend"
-        )
+        pytest.skip("non-default streams require a CUDA-compatible or MUSA backend")
 
     input = torch.randn((32, 128), dtype=torch.float16, device=device)
     out = torch.zeros((32, 64), dtype=torch.float16, device=device)
