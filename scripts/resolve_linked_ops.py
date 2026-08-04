@@ -319,9 +319,7 @@ def _demangle_symbols(symbols, cxxfilt):
 
 def _inspect_dynamic_symbols(library_path, nm, readelf, cxxfilt):
     nm_output = _run_symbol_tool([nm, "-D", "--defined-only", "-C"], library_path)
-    readelf_output = _run_symbol_tool(
-        [readelf, "--dyn-syms", "--wide"], library_path
-    )
+    readelf_output = _run_symbol_tool([readelf, "--dyn-syms", "--wide"], library_path)
     readelf_symbols = _parse_readelf_symbols(readelf_output)
     return _parse_nm_symbols(nm_output), _demangle_symbols(readelf_symbols, cxxfilt)
 
