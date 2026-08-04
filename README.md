@@ -48,6 +48,7 @@ InfiniOps extension so `import infini.ops` can load its runtime dependency.
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
 | `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |
 | `-DWITH_TORCH=[ON\|OFF]` | Compile generated PyTorch ATen-backed operators | OFF |
+| `-DWITH_TUNING=[ON\|OFF]` | Enable runtime auto-tuning of default implementation selection (ships a `tuning.json` table) | OFF |
 | `-DAUTO_DETECT_DEVICES=[ON\|OFF]` | Auto-detect available platforms | ON |
 | `-DINFINI_RT_ROOT=<path>` | InfiniRT install prefix containing `include/` and `lib/` | `$INFINI_RT_ROOT` |
 
@@ -62,6 +63,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, commit conventions, PR wo
 ## Development Docs
 
 - [Adding ATen-backed operators](docs/aten-operators.md)
+- [Auto-tuning default implementation selection](docs/autotune.md)
 
 ## License
 

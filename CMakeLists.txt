@@ -25,6 +25,9 @@ option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
+# 自动调优：启用后可根据 tuning.json 自动选择最优算子实现
+option(WITH_TUNING "Enable runtime auto-tuning of operator implementations" OFF)
+
 # Custom `AscendC` kernels under `src/native/ascend/custom/`. `ON` by default
 # so CI and routine dev builds always exercise `implementation_index=1/2`
 # for `RmsNorm` / `AddRmsNorm`. Gated by `WITH_ASCEND` in
@@ -320,6 +323,12 @@ endif()
 
 if(WITH_NINETOOTHED)
     set(NINETOOTHED_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run NineToothed code generation")
+endif()
+
+# 启用自动调优：添加编译宏，让 C++ 代码可以通过 #ifdef WITH_TUNING 条件编译
+if(WITH_TUNING)
+    add_compile_definitions(WITH_TUNING=1)
+    message(STATUS "Auto-tuning enabled: will use tuning.json if available")
 endif()
 
 if(WITH_NVIDIA)
