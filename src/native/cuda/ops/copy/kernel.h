@@ -1,12 +1,12 @@
-#ifndef INFINI_OPS_CUDA_REARRANGE_INFINILM_KERNEL_H_
-#define INFINI_OPS_CUDA_REARRANGE_INFINILM_KERNEL_H_
+#ifndef INFINI_OPS_CUDA_COPY_KERNEL_H_
+#define INFINI_OPS_CUDA_COPY_KERNEL_H_
 
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <vector>
 
-#include "base/rearrange_infinilm.h"
+#include "base/copy.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
@@ -17,10 +17,10 @@
 namespace infini::ops {
 
 template <typename Backend>
-class CudaRearrangeInfinilm : public RearrangeInfinilm {
+class CudaCopy : public Copy {
  public:
-  CudaRearrangeInfinilm(const Tensor input, Tensor out)
-      : RearrangeInfinilm{input, out} {
+  CudaCopy(const Tensor input, const bool non_blocking, Tensor out)
+      : Copy{input, non_blocking, out} {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 2 * (shape_size + strides_size);
@@ -48,9 +48,14 @@ class CudaRearrangeInfinilm : public RearrangeInfinilm {
                     Backend::kMemcpyHostToDevice);
   }
 
-  ~CudaRearrangeInfinilm() { Backend::Free(d_metadata_); }
+  ~CudaCopy() { Backend::Free(d_metadata_); }
 
-  void operator()(const Tensor input, Tensor out) const override {
+  void operator()(const Tensor input, const bool /*non_blocking*/,
+                  Tensor out) const override {
+    if (output_size_ == 0) {
+      return;
+    }
+
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
     int block_size = std::min(
@@ -70,7 +75,7 @@ class CudaRearrangeInfinilm : public RearrangeInfinilm {
               d_input_shape_, d_out_strides_, d_input_strides_, output_size_,
               ndim_, is_out_contiguous_, is_input_contiguous_);
         },
-        "CudaRearrangeInfinilm::operator()");
+        "CudaCopy::operator()");
   }
 
  private:
