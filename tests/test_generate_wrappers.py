@@ -641,6 +641,30 @@ def test_filter_ops_strict_rejects_unavailable_ops():
         raise AssertionError("strict unknown ops should fail")
 
 
+def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    src_dir = tmp_path / "moore" / "src"
+    base_dir = src_dir / "base"
+    linked_header = (
+        src_dir / "linked" / "cuda" / "metax" / "ops" / "silu_and_mul" / "adapter.h"
+    )
+    base_dir.mkdir(parents=True)
+    linked_header.parent.mkdir(parents=True)
+    (base_dir / "silu_and_mul.h").write_text("class SiluAndMul {};\n")
+    linked_header.write_text(
+        "class Operator<SiluAndMul, Device::Type::kMetax, 11> {};\n"
+    )
+    monkeypatch.setattr(module, "_SRC_DIR", src_dir)
+    monkeypatch.setattr(module, "_BASE_DIR", base_dir)
+    monkeypatch.setattr(module, "_GENERATION_DIR", tmp_path / "generated")
+
+    assert "silu_and_mul" not in module._get_all_ops(["metax"])
+    assert "silu_and_mul" not in module._get_all_ops(["moore"], with_linked=True)
+    assert module._get_all_ops(["metax"], with_linked=True) == {
+        "silu_and_mul": [linked_header]
+    }
+
+
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_generator_module()
     path = tmp_path / "bindings.cc"

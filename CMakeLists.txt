@@ -22,6 +22,7 @@ option(WITH_MOORE "Enable Moore backend" OFF)
 option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
+option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
@@ -217,7 +218,7 @@ if(AUTO_DETECT_BACKENDS)
     endif()
 endif()
 
-if(WITH_TORCH)
+if(WITH_TORCH OR WITH_LINKED)
     find_package(Python COMPONENTS Interpreter REQUIRED)
 
     # Prefer the interpreter that the auto-detect block already
@@ -240,7 +241,8 @@ if(WITH_TORCH)
     )
 
     if(NOT _torch_result EQUAL 0)
-        message(FATAL_ERROR "`WITH_TORCH` is `ON` but `torch` is not installed.")
+        message(FATAL_ERROR
+            "`WITH_TORCH=ON` or `WITH_LINKED=ON` requires an installed `torch` package.")
     endif()
 
     execute_process(
@@ -250,7 +252,7 @@ if(WITH_TORCH)
     )
 
     execute_process(
-        COMMAND ${Python_EXECUTABLE} -c "import pathlib, torch; p = pathlib.Path(torch.__file__).resolve().parent.parent / 'torch.libs'; print(str(p) if p.exists() else '')"
+        COMMAND ${_TORCH_PYTHON} -c "import pathlib, torch; p = pathlib.Path(torch.__file__).resolve().parent.parent / 'torch.libs'; print(str(p) if p.exists() else '')"
         OUTPUT_VARIABLE _torch_private_lib_dir
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )

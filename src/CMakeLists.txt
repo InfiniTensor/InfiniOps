@@ -510,6 +510,113 @@ if(INFINI_OPS_OPS)
     message(STATUS "Wrapper op allowlist: ${_infini_ops_op_allowlist}")
 endif()
 
+set(INFINI_OPS_LINKED_SOURCES "")
+set(INFINI_OPS_LINKED_LIBRARIES "")
+set(INFINI_OPS_LINKED_RUNTIME_DIRS "")
+set(INFINI_OPS_LINKED_TRANSPORTS "")
+set(_infini_ops_linked_uses_torch FALSE)
+
+if(WITH_LINKED)
+    if(NOT DEVICE_LIST)
+        message(FATAL_ERROR
+            "`WITH_LINKED=ON` requires an enabled device backend.")
+    endif()
+
+    file(GLOB_RECURSE _linked_resolution_inputs CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/src/linked/*.cc"
+        "${PROJECT_SOURCE_DIR}/src/linked/*.h"
+        "${PROJECT_SOURCE_DIR}/src/linked/*.yaml")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/scripts/resolve_linked_ops.py"
+        ${_linked_resolution_inputs})
+
+    if(CMAKE_NM AND EXISTS "${CMAKE_NM}")
+        set(_linked_nm "${CMAKE_NM}")
+    else()
+        find_program(_linked_nm NAMES llvm-nm nm)
+    endif()
+    if(CMAKE_READELF AND EXISTS "${CMAKE_READELF}")
+        set(_linked_readelf "${CMAKE_READELF}")
+    else()
+        find_program(_linked_readelf NAMES llvm-readelf readelf)
+    endif()
+    if(NOT _linked_nm OR NOT _linked_readelf)
+        message(FATAL_ERROR
+            "`WITH_LINKED=ON` requires `nm` and `readelf` compatible tools.")
+    endif()
+
+    set(_linked_resolver_args
+        "${PROJECT_SOURCE_DIR}/scripts/resolve_linked_ops.py"
+        --devices ${DEVICE_LIST}
+        --nm "${_linked_nm}"
+        --readelf "${_linked_readelf}")
+    if(INFINI_OPS_OPS)
+        list(APPEND _linked_resolver_args --ops ${_infini_ops_op_allowlist})
+    endif()
+
+    execute_process(
+        COMMAND "${_TORCH_PYTHON}" ${_linked_resolver_args}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        RESULT_VARIABLE _linked_resolution_result
+    )
+    if(NOT _linked_resolution_result EQUAL 0)
+        message(FATAL_ERROR "Resolving linked operator libraries failed.")
+    endif()
+
+    include("${PROJECT_SOURCE_DIR}/generated/linked/manifest.cmake")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        ${INFINI_OPS_LINKED_LIBRARIES})
+
+    foreach(_linked_transport IN LISTS INFINI_OPS_LINKED_TRANSPORTS)
+        if(_linked_transport STREQUAL "torch")
+            set(_infini_ops_linked_uses_torch TRUE)
+        else()
+            message(FATAL_ERROR
+                "Unsupported linked operator transport `${_linked_transport}`.")
+        endif()
+    endforeach()
+
+    list(REMOVE_DUPLICATES INFINI_OPS_LINKED_LIBRARIES)
+    set(_linked_library_basenames)
+    set(_linked_library_index 0)
+    foreach(_linked_library IN LISTS INFINI_OPS_LINKED_LIBRARIES)
+        get_filename_component(_linked_library_dir
+            "${_linked_library}" DIRECTORY)
+        get_filename_component(_linked_library_name
+            "${_linked_library}" NAME)
+        list(FIND _linked_library_basenames "${_linked_library_name}"
+            _linked_duplicate_basename)
+        if(NOT _linked_duplicate_basename EQUAL -1)
+            message(FATAL_ERROR
+                "Linked operator libraries contain duplicate basename "
+                "`${_linked_library_name}` from different directories.")
+        endif()
+        list(APPEND _linked_library_basenames "${_linked_library_name}")
+
+        set(_linked_library_target
+            "infini_ops_linked_library_${_linked_library_index}")
+        add_library("${_linked_library_target}" INTERFACE IMPORTED)
+        set_target_properties("${_linked_library_target}" PROPERTIES
+            INTERFACE_LINK_DIRECTORIES "${_linked_library_dir}"
+            INTERFACE_LINK_LIBRARIES "-l:${_linked_library_name}")
+        # Python extension DSOs generally have no SONAME. Link the exact
+        # resolved basename while keeping the install location configurable.
+        target_link_libraries(infiniops PRIVATE "${_linked_library_target}")
+        set_property(TARGET infiniops APPEND PROPERTY LINK_DEPENDS
+            "${_linked_library}")
+        math(EXPR _linked_library_index "${_linked_library_index} + 1")
+    endforeach()
+
+    foreach(_linked_runtime_dir IN LISTS INFINI_OPS_LINKED_RUNTIME_DIRS)
+        set_property(TARGET infiniops APPEND PROPERTY BUILD_RPATH
+            "${_linked_runtime_dir}")
+    endforeach()
+
+    list(LENGTH INFINI_OPS_LINKED_SOURCES _linked_source_count)
+    message(STATUS
+        "Resolved ${_linked_source_count} linked operator source(s).")
+endif()
+
 set(_build_flash_attn_with_kvcache FALSE)
 if(WITH_NVIDIA AND WITH_TORCH AND
    (NOT INFINI_OPS_OPS OR
@@ -577,6 +684,7 @@ if(WITH_NVIDIA AND WITH_TORCH AND
         "Found FlashAttention ${FLASH_ATTN_VERSION}: ${FLASH_ATTN_LIBRARY}")
 endif()
 
+set(TORCH_SOURCES "")
 if(WITH_TORCH)
     # Auto-generate ATen-backed operator wrappers from `scripts/torch_ops.yaml`.
     # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
@@ -636,7 +744,13 @@ if(WITH_TORCH)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_with_kvcache/flash_attn\\.cc$")
     endif()
+endif()
 
+if(_infini_ops_linked_uses_torch)
+    list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_SOURCES})
+endif()
+
+if(TORCH_SOURCES)
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
     set(TORCH_COMPILE_SOURCES ${TORCH_SOURCES})
@@ -684,7 +798,9 @@ if(WITH_TORCH)
             "${_torch_unity_source_count} translation units")
     endif()
 
-    target_compile_definitions(infiniops PUBLIC WITH_TORCH=1)
+    if(WITH_TORCH)
+        target_compile_definitions(infiniops PUBLIC WITH_TORCH=1)
+    endif()
     target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
     target_include_directories(infiniops PUBLIC
         ${TORCH_INCLUDE_DIRS}
@@ -756,6 +872,7 @@ if(WITH_TORCH)
             string(REPLACE ".cc" ".o" _obj_name "${_obj_name}")
             string(REPLACE ".cpp" ".o" _obj_name "${_obj_name}")
             set(_obj "${TORCH_OBJECT_DIR}/${_obj_name}")
+            set(_depfile "${_obj}.d")
 
             add_custom_command(
                 OUTPUT "${_obj}"
@@ -767,8 +884,10 @@ if(WITH_TORCH)
                     ${_torch_vendor_include_flags}
                     ${_torch_include_flags}
                     ${_torch_extra_flags}
+                    -MMD -MT "${_obj}" -MF "${_depfile}"
                     -c "${_src}" -o "${_obj}"
                 DEPENDS "${_src}"
+                DEPFILE "${_depfile}"
                 COMMENT "Compiling ${_rel} with system C++ compiler"
                 JOB_POOL torch_compile
             )
@@ -807,6 +926,18 @@ if(WITH_TORCH)
     endif()
 endif()
 
+set(_INFINI_OPS_LINKED_INSTALL_RPATH "$ORIGIN")
+if(WITH_LINKED)
+    if(_infini_ops_linked_uses_torch)
+        list(APPEND _INFINI_OPS_LINKED_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
+    endif()
+    list(APPEND _INFINI_OPS_LINKED_INSTALL_RPATH
+        ${INFINI_OPS_LINKED_RUNTIME_DIRS})
+    list(REMOVE_DUPLICATES _INFINI_OPS_LINKED_INSTALL_RPATH)
+    set_target_properties(infiniops PROPERTIES
+        INSTALL_RPATH "${_INFINI_OPS_LINKED_INSTALL_RPATH}")
+endif()
+
 target_include_directories(infiniops
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -835,6 +966,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     endif()
     if(WITH_TORCH)
         list(APPEND GENERATOR_ARGS --with-torch)
+    endif()
+    if(WITH_LINKED)
+        list(APPEND GENERATOR_ARGS --with-linked)
     endif()
     if(WITH_NINETOOTHED)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)
@@ -1219,12 +1353,17 @@ if(GENERATE_PYTHON_BINDINGS)
         add_dependencies(ops no_workspace_kernel_build)
     endif()
     set(_INFINI_OPS_INSTALL_RPATH "$ORIGIN")
-    if(WITH_TORCH)
+    if(WITH_LINKED)
+        set(_INFINI_OPS_INSTALL_RPATH
+            ${_INFINI_OPS_LINKED_INSTALL_RPATH})
+    elseif(WITH_TORCH)
         list(APPEND _INFINI_OPS_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
     endif()
 
-    set_target_properties(infiniops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
-    set_target_properties(ops PROPERTIES INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
+    set_target_properties(infiniops PROPERTIES
+        INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
+    set_target_properties(ops PROPERTIES
+        INSTALL_RPATH "${_INFINI_OPS_INSTALL_RPATH}")
 
     get_target_property(_infinirt_imported infinirt IMPORTED)
     if(_infinirt_imported)
