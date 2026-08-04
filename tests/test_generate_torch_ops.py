@@ -96,6 +96,19 @@ def test_schema_self_param_renders_as_input_in_public_cpp_api():
     assert "at::_softmax_out(at_out, at_self" in source
 
 
+def test_generated_torch_source_installs_handle_stream_guard():
+    module = _load_generator_module()
+    op = module._parse_func("abs.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+
+    method = module._generate_torch_method_source("abs", op)
+    source = module._generate_torch_source("abs", [op])
+
+    assert (
+        "detail::TorchStreamGuard<kDev> stream_guard{stream_, device_index};" in method
+    )
+    assert '#include "torch/stream_.h"' in source
+
+
 def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     op = module._parse_func(

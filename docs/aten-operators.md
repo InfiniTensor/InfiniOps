@@ -48,6 +48,11 @@ generated ATen wrappers. Hand-written ATen backends may use another explicit
 implementation index, but must avoid colliding with the operator's existing
 implementations.
 
+On NVIDIA, generated wrappers temporarily install the stream stored in `Handle`
+as the current ATen CUDA stream and restore the previous device and stream when
+the call returns. Other PyTorch device backends continue to use their
+backend-specific current stream until an external-stream bridge is provided.
+
 ## Add a generated ATen operator
 
 1. Make sure the target environment has PyTorch and `torchgen` installed.
