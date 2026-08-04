@@ -13,29 +13,35 @@ template <>
 class Operator<Gemm, Device::Type::kCpu> : public Gemm,
                                            Caster<Device::Type::kCpu> {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c} {
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
+      : Gemm{a, b, c, alpha, beta, trans_a, trans_b, y} {
     // TODO: Check constraints.
   }
 
-  Operator(const Tensor a, const Tensor b, Tensor c)
-      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                 c} {}
+  Operator(const Tensor a, const Tensor b, Tensor y)
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 y} {}
 
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+  using Gemm::operator();
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor y) const override {
+    const auto beta_value{EffectiveBeta(c, beta)};
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
-        c.dtype(),
+        y.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
-          Compute<T>(a, b, alpha, beta, trans_a, trans_b, c);
+          Compute<T>(a, b, alpha, beta_value, trans_a, trans_b, y);
         },
         "`Operator<Gemm, Device::Type::kCpu>::operator()`");
   }
@@ -44,10 +50,10 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm,
   template <typename T>
   void Compute(const Tensor a, const Tensor b, std::optional<float> alpha,
                std::optional<float> beta, std::optional<int> trans_a,
-               std::optional<int> trans_b, Tensor c) const {
+               std::optional<int> trans_b, Tensor y) const {
     const auto* A = static_cast<const T*>(a.data());
     const auto* B = static_cast<const T*>(b.data());
-    auto* C = static_cast<T*>(c.data());
+    auto* Y = static_cast<T*>(y.data());
 
     const auto& alpha_value{alpha.value_or(alpha_)};
     const auto& beta_value{beta.value_or(beta_)};
@@ -66,13 +72,13 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm,
     Tensor::Stride stride_b_n = trans_b_value
                                     ? b_strides_[b_strides_.size() - 2]
                                     : b_strides_[b_strides_.size() - 1];
-    Tensor::Stride stride_c_m = c_strides_[c_strides_.size() - 2];
-    Tensor::Stride stride_c_n = c_strides_[c_strides_.size() - 1];
+    Tensor::Stride stride_y_m = y_strides_[y_strides_.size() - 2];
+    Tensor::Stride stride_y_n = y_strides_[y_strides_.size() - 1];
 
     for (Tensor::Size b = 0; b < batch_count_; ++b) {
       const auto* A_batch = A + b * batch_stride_a_;
       const auto* B_batch = B + b * batch_stride_b_;
-      auto* C_batch = C + b * batch_stride_c_;
+      auto* Y_batch = Y + b * batch_stride_y_;
 
       for (Tensor::Size i = 0; i < m_; ++i) {
         for (Tensor::Size j = 0; j < n_; ++j) {
@@ -84,9 +90,9 @@ class Operator<Gemm, Device::Type::kCpu> : public Gemm,
             sum += a_val * b_val;
           }
 
-          Tensor::Size idx = i * stride_c_m + j * stride_c_n;
-          float c_val = beta_value == 0.0f ? 0.0f : Cast<float>(C_batch[idx]);
-          C_batch[idx] = Cast<T>(alpha_value * sum + beta_value * c_val);
+          Tensor::Size y_idx = i * stride_y_m + j * stride_y_n;
+          float y_val = beta_value == 0.0f ? 0.0f : Cast<float>(Y_batch[y_idx]);
+          Y_batch[y_idx] = Cast<T>(alpha_value * sum + beta_value * y_val);
         }
       }
     }

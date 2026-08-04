@@ -11,39 +11,44 @@ namespace infini::ops {
 template <typename Backend>
 class BlasGemm : public Gemm {
  public:
-  BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
+  BlasGemm(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
+      : Gemm{a, b, c, alpha, beta, trans_a, trans_b, y},
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
-        swap_a_and_b_{c.stride(-1) == 1} {
+        swap_a_and_b_{y.stride(-1) == 1} {
     // TODO: Check constraints.
   }
 
-  BlasGemm(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : BlasGemm{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+  BlasGemm(const Tensor a, const Tensor b, Tensor y)
+      : BlasGemm{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 y} {}
 
-  BlasGemm(const Tensor a, const Tensor b, Tensor c)
-      : BlasGemm{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                 c} {}
+  using Gemm::operator();
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor y) const override {
     Backend::BlasSetStream(GetHandle(),
                            static_cast<typename Backend::Stream>(stream_));
 
     const auto& alpha_value{alpha.value_or(alpha_)};
-    const auto& beta_value{beta.value_or(beta_)};
+    const auto beta_value{EffectiveBeta(c, beta)};
 
     const auto& trans_a_value{trans_a.value_or(trans_a_)};
     const auto& trans_b_value{trans_b.value_or(trans_b_)};
     auto op_a{GetOpA(trans_a_value, trans_b_value)};
     auto op_b{GetOpB(trans_a_value, trans_b_value)};
-    const void* alpha_ptr{GetAlphaPtr(alpha_value, c.dtype())};
-    const void* beta_ptr{GetBetaPtr(beta_value, c.dtype())};
+    const void* alpha_ptr{GetAlphaPtr(alpha_value, y.dtype())};
+    const void* beta_ptr{GetBetaPtr(beta_value, y.dtype())};
 
     Backend::BlasGemmStridedBatchedEx(
         GetHandle(), op_a, op_b, swap_a_and_b_ ? n_ : m_,
@@ -57,10 +62,10 @@ class BlasGemm : public Gemm {
         BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? a.dtype()
                                                                    : b.dtype()),
         swap_a_and_b_ ? lda_ : ldb_,
-        swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr, c.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(c.dtype()), ldc_,
-        batch_stride_c_, batch_count_,
-        BlasUtils<Backend::kDeviceType>::GetComputeType(c.dtype()),
+        swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr, y.data(),
+        BlasUtils<Backend::kDeviceType>::GetDataType(y.dtype()), ldy_,
+        batch_stride_y_, batch_count_,
+        BlasUtils<Backend::kDeviceType>::GetComputeType(y.dtype()),
         Backend::BLAS_GEMM_DEFAULT);
   }
 
