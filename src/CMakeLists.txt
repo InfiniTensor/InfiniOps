@@ -254,7 +254,7 @@ if(WITH_METAX)
     target_compile_options(infiniops PRIVATE "-x" "maca")
     target_sources(infiniops PRIVATE ${METAX_SOURCES})
 
-    target_include_directories(infiniops PUBLIC "${MACA_PATH}/include")
+    target_include_directories(infiniops PUBLIC ${MACA_INCLUDE_DIRS})
     target_link_libraries(infiniops PUBLIC 
         ${MACA_RUNTIME_LIB} 
         ${MACA_DNN_LIB} 
@@ -721,7 +721,9 @@ if(WITH_TORCH)
 
         set(_torch_vendor_include_flags "")
         if(WITH_METAX)
-            list(APPEND _torch_vendor_include_flags "-I${MACA_PATH}/include")
+            foreach(_dir ${MACA_INCLUDE_DIRS})
+                list(APPEND _torch_vendor_include_flags "-I${_dir}")
+            endforeach()
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
