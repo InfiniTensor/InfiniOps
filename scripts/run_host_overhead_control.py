@@ -94,17 +94,18 @@ def _nvidia_cases(device_name):
 
     gemm_a = torch.randn((4, 48, 64), dtype=torch.float32, device=device)
     gemm_b = torch.randn((4, 64, 6), dtype=torch.float32, device=device)
-    gemm_c = torch.empty((4, 48, 6), dtype=torch.float32, device=device)
+    gemm_y = torch.empty((4, 48, 6), dtype=torch.float32, device=device)
 
     def gemm():
         ops.gemm(
             gemm_a,
             gemm_b,
+            None,
             1.0,
             0.0,
             False,
             False,
-            gemm_c,
+            gemm_y,
             stream=stream,
             implementation_index=1,
         )
@@ -125,7 +126,7 @@ def _nvidia_cases(device_name):
             {
                 "a_shape": [4, 48, 64],
                 "b_shape": [4, 64, 6],
-                "c_shape": [4, 48, 6],
+                "y_shape": [4, 48, 6],
                 "dtype": "float32",
                 "implementation_index": 1,
             },

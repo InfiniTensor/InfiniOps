@@ -386,10 +386,10 @@ def _is_smoke_gemm_case(params):
             params,
             "a_shape",
             "b_shape",
-            "c_shape",
+            "y_shape",
             "a_strides",
             "b_strides",
-            "c_strides",
+            "y_strides",
             "alpha",
             "beta",
         )

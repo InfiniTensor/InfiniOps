@@ -18,16 +18,16 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
  public:
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, alpha, beta, trans_a, trans_b, c},
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
+      : Gemm{a, b, c, alpha, beta, trans_a, trans_b, y},
         a_rows_{a.size(-2)},
         a_cols_{a.size(-1)},
         b_rows_{b.size(-2)},
         b_cols_{b.size(-1)},
-        c_rows_{c.size(-2)},
-        c_cols_{c.size(-1)} {
+        y_rows_{y.size(-2)},
+        y_cols_{y.size(-1)} {
     assert(!trans_a_ && "`trans_a` is not currently supported");
     assert(!trans_b_ && "`trans_b` is not currently supported");
 
@@ -35,7 +35,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
     cnnlCreateTensorDescriptor(&desc_a_);
     cnnlCreateTensorDescriptor(&desc_b_);
-    cnnlCreateTensorDescriptor(&desc_c_);
+    cnnlCreateTensorDescriptor(&desc_y_);
 
     cnnlCreateMatMulDescriptor(&matmul_desc_);
     cnnlCreateMatMulAlgo(&matmul_algo_);
@@ -49,27 +49,31 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
                           batch_count_, batch_stride_a_);
     SetupTensorDescriptor(desc_b_, b_strides_, b_type_, b_rows_, b_cols_,
                           batch_count_, batch_stride_b_);
-    SetupTensorDescriptor(desc_c_, c_strides_, c_type_, c_rows_, c_cols_,
-                          batch_count_, batch_stride_c_);
+    SetupTensorDescriptor(desc_y_, y_strides_, y_type_, y_rows_, y_cols_,
+                          batch_count_, batch_stride_y_);
     int count = 0;
     cnnlGetBatchMatMulExAlgoHeuristic(cnnl_handle_, matmul_desc_, desc_a_,
-                                      desc_b_, desc_c_, NULL, 1,
+                                      desc_b_, desc_y_, NULL, 1,
                                       &heuristic_result_, &count);
 
     cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
   }
 
-  Operator(const Tensor a, const Tensor b, Tensor c)
-      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                 c} {}
+  Operator(const Tensor a, const Tensor b, Tensor y)
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 y} {}
 
-  Operator(const Tensor a, const Tensor b, std::optional<float> alpha,
-           std::optional<float> beta, Tensor c)
-      : Operator{a, b, alpha, beta, std::nullopt, std::nullopt, c} {}
+  using Gemm::operator();
 
   ~Operator() {
     cnrtFree(default_workspace_);
-    cnnlDestroyTensorDescriptor(desc_c_);
+    cnnlDestroyTensorDescriptor(desc_y_);
     cnnlDestroyTensorDescriptor(desc_b_);
     cnnlDestroyTensorDescriptor(desc_a_);
     cnnlDestroyMatMulDescriptor(matmul_desc_);
@@ -78,11 +82,12 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     cnnlDestroy(cnnl_handle_);
   }
 
-  void operator()(const Tensor a, const Tensor b, std::optional<float> alpha,
-                  std::optional<float> beta, std::optional<int> trans_a,
-                  std::optional<int> trans_b, Tensor c) const override {
+  void operator()(const Tensor a, const Tensor b, const std::optional<Tensor> c,
+                  std::optional<float> alpha, std::optional<float> beta,
+                  std::optional<int> trans_a, std::optional<int> trans_b,
+                  Tensor y) const override {
     const auto& alpha_value{alpha.value_or(alpha_)};
-    const auto& beta_value{beta.value_or(beta_)};
+    const auto beta_value{EffectiveBeta(c, beta)};
 
     cnnlSetQueue(cnnl_handle_, (cnrtQueue_t)stream_);
 
@@ -92,7 +97,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
     cnnlBatchMatMulEx(cnnl_handle_, matmul_desc_, matmul_algo_, &alpha_value,
                       desc_a_, a.data(), desc_b_, b.data(), &beta_value,
-                      desc_c_, c.data(), workspace, workspace_size);
+                      desc_y_, y.data(), workspace, workspace_size);
   }
 
   std::size_t workspace_size_in_bytes() const override {
@@ -135,7 +140,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
   cnnlTensorDescriptor_t desc_b_;
 
-  cnnlTensorDescriptor_t desc_c_;
+  cnnlTensorDescriptor_t desc_y_;
 
   cnnlMatMulDescriptor_t matmul_desc_;
 
@@ -147,7 +152,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
   Tensor::Size b_rows_, b_cols_;
 
-  Tensor::Size c_rows_, c_cols_;
+  Tensor::Size y_rows_, y_cols_;
 
   // TODO: Remove the following member after default workspace mechanism has
   // been introduced globally.
