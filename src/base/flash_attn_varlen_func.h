@@ -53,9 +53,10 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
         cu_seqlens_q_shape_{cu_seqlens_q.shape()},
         cu_seqlens_k_shape_{cu_seqlens_k.shape()},
         out_shape_{out.shape()},
-        softmax_lse_shape_{softmax_lse.has_value() ? softmax_lse->shape()
-                                                   : Tensor::Shape{}},
-        s_dmask_shape_{s_dmask.has_value() ? s_dmask->shape()
+        softmax_lse_shape_{softmax_lse.has_value()
+                               ? Tensor::Shape{softmax_lse->shape()}
+                               : Tensor::Shape{}},
+        s_dmask_shape_{s_dmask.has_value() ? Tensor::Shape{s_dmask->shape()}
                                            : Tensor::Shape{}},
         q_strides_{q.strides()},
         k_strides_{k.strides()},
@@ -63,10 +64,12 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
         cu_seqlens_q_strides_{cu_seqlens_q.strides()},
         cu_seqlens_k_strides_{cu_seqlens_k.strides()},
         out_strides_{out.strides()},
-        softmax_lse_strides_{softmax_lse.has_value() ? softmax_lse->strides()
-                                                     : Tensor::Strides{}},
-        s_dmask_strides_{s_dmask.has_value() ? s_dmask->strides()
-                                             : Tensor::Strides{}},
+        softmax_lse_strides_{softmax_lse.has_value()
+                                 ? Tensor::Strides{softmax_lse->strides()}
+                                 : Tensor::Strides{}},
+        s_dmask_strides_{s_dmask.has_value()
+                             ? Tensor::Strides{s_dmask->strides()}
+                             : Tensor::Strides{}},
         q_dtype_{q.dtype()},
         k_dtype_{k.dtype()},
         v_dtype_{v.dtype()},
