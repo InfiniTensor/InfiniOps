@@ -9,8 +9,8 @@
 
 namespace infini::ops {
 
-device_info_t current_device() {
-  device_info_t info;
+DeviceInfo CurrentDevice() {
+  DeviceInfo info;
   CUdevice dev;
   if (cuCtxGetDevice(&dev) != CUDA_SUCCESS) return info;
   info.id = static_cast<int>(dev);
@@ -23,17 +23,17 @@ device_info_t current_device() {
   return info;
 }
 
-static CUresult load_cubin(const char* cubin_path, const char* meta_path,
-                           CUfunction* out_func, unsigned* out_shared,
-                           CUmodule* out_mod) {
-  if (!file_exists(meta_path)) return CUDA_ERROR_FILE_NOT_FOUND;
-  std::string meta_json = read_file(meta_path);
-  int shared = json_get_int(meta_json, "shared", 0);
+static CUresult LoadCubin(const char* cubin_path, const char* meta_path,
+                          CUfunction* out_func, unsigned* out_shared,
+                          CUmodule* out_mod) {
+  if (!FileExists(meta_path)) return CUDA_ERROR_FILE_NOT_FOUND;
+  std::string meta_json = ReadFile(meta_path);
+  int shared = JsonGetInt(meta_json, "shared", 0);
   if (shared < 0) shared = 0;
-  std::string fn_name = json_get_string(meta_json, "name", "kernel");
+  std::string fn_name = JsonGetString(meta_json, "name", "kernel");
 
-  int global_scratch = json_get_int(meta_json, "global_scratch_size", 0);
-  int profile_scratch = json_get_int(meta_json, "profile_scratch_size", 0);
+  int global_scratch = JsonGetInt(meta_json, "global_scratch_size", 0);
+  int profile_scratch = JsonGetInt(meta_json, "profile_scratch_size", 0);
   if (global_scratch > 0 || profile_scratch > 0) {
     fprintf(stderr, "triton jit: scratch not supported yet\n");
     return CUDA_ERROR_NOT_SUPPORTED;
@@ -80,12 +80,12 @@ static CUresult load_cubin(const char* cubin_path, const char* meta_path,
   return CUDA_SUCCESS;
 }
 
-void* get_kernel(const char* op_name, const char* signature_str, void* stream,
-                 const config_t& opts, unsigned* out_shared) {
-  device_info_t dev = current_device();
+void* GetKernel(const char* op_name, const char* signature_str, void* stream,
+                const TritonConfig& opts, unsigned* out_shared) {
+  DeviceInfo dev = CurrentDevice();
 
-  auto r = cache_query(op_name, signature_str, opts.num_warps, opts.num_stages,
-                       dev.arch, dev.id);
+  auto r = CacheQuery(op_name, signature_str, opts.num_warps, opts.num_stages,
+                      dev.arch, dev.id);
   if (r.mem_hit) {
     *out_shared = r.shared;
     return r.func;
@@ -94,9 +94,9 @@ void* get_kernel(const char* op_name, const char* signature_str, void* stream,
   std::string cubin_path = r.out_prefix + ".cubin";
   std::string meta_path = r.out_prefix + ".json";
 
-  if (!cache_complete(cubin_path, meta_path)) {
-    int ret = compile_kernel(op_name, r.out_prefix.c_str(), opts.num_warps,
-                             opts.num_stages, dev.id, signature_str);
+  if (!CacheComplete(cubin_path, meta_path)) {
+    int ret = CompileKernel(op_name, r.out_prefix.c_str(), opts.num_warps,
+                            opts.num_stages, dev.id, signature_str);
     if (ret != 0) return nullptr;
   }
 
@@ -104,28 +104,28 @@ void* get_kernel(const char* op_name, const char* signature_str, void* stream,
   unsigned shared;
   CUmodule mod;
   CUresult err =
-      load_cubin(cubin_path.c_str(), meta_path.c_str(), &func, &shared, &mod);
+      LoadCubin(cubin_path.c_str(), meta_path.c_str(), &func, &shared, &mod);
   if (err != CUDA_SUCCESS) return nullptr;
 
-  kernel_cache_entry_t mine{static_cast<void*>(func), shared};
-  kernel_cache_entry_t winner;
-  if (kernel_cache_lookup(r.mem_key, &winner)) {
+  KernelCacheEntry mine{static_cast<void*>(func), shared};
+  KernelCacheEntry winner;
+  if (KernelCacheLookup(r.mem_key, &winner)) {
     cuModuleUnload(mod);
     func = static_cast<CUfunction>(winner.func);
     shared = winner.shared;
   } else {
-    kernel_cache_insert(r.mem_key, mine);
+    KernelCacheInsert(r.mem_key, mine);
   }
 
   *out_shared = shared;
   return static_cast<void*>(func);
 }
 
-int launch_kernel(const char* op_name, const char* signature_str, void* stream,
-                  grid_t grid, config_t opts, void** args) {
+int LaunchKernel(const char* op_name, const char* signature_str, void* stream,
+                 Grid grid, TritonConfig opts, void** args) {
   CUstream cu_stream = static_cast<CUstream>(stream);
   unsigned shared = 0;
-  void* func_ptr = get_kernel(op_name, signature_str, stream, opts, &shared);
+  void* func_ptr = GetKernel(op_name, signature_str, stream, opts, &shared);
   if (func_ptr == nullptr) return static_cast<int>(CUDA_ERROR_UNKNOWN);
 
   return static_cast<int>(cuLaunchKernel(

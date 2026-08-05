@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_TRITON_JIT_ADD_H_
-#define INFINI_OPS_TRITON_JIT_ADD_H_
+#ifndef INFINI_OPS_TRITON_OPS_ADD_JIT_H_
+#define INFINI_OPS_TRITON_OPS_ADD_JIT_H_
 
 #include <cuda.h>
 
@@ -14,14 +14,16 @@
 namespace infini::ops {
 
 template <>
-class Operator<Add, Device::Type::kNvidia, 7> : public Add {
+class Operator<Add, Device::Type::kNvidia, 10> : public Add {
  public:
   using Add::Add;
   using Add::operator();
 
-  static config_t default_config() { return {4u, 3u, {{"BLOCK_SIZE", 1024}}}; }
+  static TritonConfig DefaultConfig() {
+    return {4u, 3u, {{"BLOCK_SIZE", 1024}}};
+  }
 
-  static std::vector<config_t> autotune_configs() {
+  static std::vector<TritonConfig> AutotuneConfigs() {
     return {
         {4u, 3u, {{"BLOCK_SIZE", 256}}},
         {4u, 3u, {{"BLOCK_SIZE", 512}}},
@@ -30,7 +32,7 @@ class Operator<Add, Device::Type::kNvidia, 7> : public Add {
     };
   }
 
-  void operator()(const Tensor input, const Tensor other,
+  void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
     const int ndim = static_cast<int>(ndim_);
 
@@ -61,33 +63,33 @@ class Operator<Add, Device::Type::kNvidia, 7> : public Add {
     const size_t n_elements = out.numel();
 
     auto extension = config_.extension();
-    static const config_t defaults = default_config();
-    const auto* config_ptr = static_cast<const config_t*>(extension.get());
-    config_t config = config_ptr ? *config_ptr : defaults;
-    if (extension) config.apply_defaults(defaults);
+    static const TritonConfig defaults = DefaultConfig();
+    const auto* config_ptr = static_cast<const TritonConfig*>(extension.get());
+    TritonConfig config = config_ptr ? *config_ptr : defaults;
+    if (extension) config.ApplyDefaults(defaults);
 
     int result;
-    if (config.is_autotune()) {
-      if (config.configs.empty()) config.configs = autotune_configs();
-      for (auto& c : config.configs) c.apply_defaults(defaults);
-      result = launch_jit_autotune(
+    if (config.IsAutotune()) {
+      if (config.configs.empty()) config.configs = AutotuneConfigs();
+      for (auto& c : config.configs) c.ApplyDefaults(defaults);
+      result = LaunchJitAutotune(
           "add", stream_, config, {n_elements}, out.dtype(),
-          [&](const config_t& c) {
-            int block_size = c.at("BLOCK_SIZE");
-            return grid_t{static_cast<unsigned>((n_elements + block_size - 1) /
-                                                block_size)};
+          [&](const TritonConfig& c) {
+            int block_size = c.At("BLOCK_SIZE");
+            return Grid{static_cast<unsigned>((n_elements + block_size - 1) /
+                                              block_size)};
           },
           input, other, out, d_out_shape, d_input_strides, d_other_strides,
           d_out_strides, is_input_contiguous_, is_other_contiguous_,
-          is_out_contiguous_, ndim, n_elements);
+          is_out_contiguous_, ndim, n_elements, alpha);
     } else {
-      const int block_size = config.at("BLOCK_SIZE");
-      grid_t grid{
+      const int block_size = config.At("BLOCK_SIZE");
+      Grid grid{
           static_cast<unsigned>((n_elements + block_size - 1) / block_size)};
-      result = launch_jit(
+      result = LaunchJit(
           "add", stream_, grid, config, input, other, out, d_out_shape,
           d_input_strides, d_other_strides, d_out_strides, is_input_contiguous_,
-          is_other_contiguous_, is_out_contiguous_, ndim, n_elements);
+          is_other_contiguous_, is_out_contiguous_, ndim, n_elements, alpha);
     }
 
     cuMemFreeAsync(d_meta, static_cast<CUstream>(stream_));

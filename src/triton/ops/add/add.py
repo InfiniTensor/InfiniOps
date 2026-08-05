@@ -16,6 +16,7 @@ def kernel(
     out_contig,
     ndim,
     n_elements,
+    alpha,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -25,7 +26,7 @@ def kernel(
     if (x_contig != 0) and (y_contig != 0) and (out_contig != 0):
         x = tl.load(x_ptr + offsets, mask=mask)
         y = tl.load(y_ptr + offsets, mask=mask)
-        tl.store(out_ptr + offsets, x + y, mask=mask)
+        tl.store(out_ptr + offsets, x + y * alpha, mask=mask)
     else:
         x_offs = tl.zeros([BLOCK_SIZE], dtype=tl.int64)
         y_offs = tl.zeros([BLOCK_SIZE], dtype=tl.int64)
@@ -49,4 +50,4 @@ def kernel(
 
         x = tl.load(x_ptr + x_offs, mask=mask)
         y = tl.load(y_ptr + y_offs, mask=mask)
-        tl.store(out_ptr + out_offs, x + y, mask=mask)
+        tl.store(out_ptr + out_offs, x + y * alpha, mask=mask)

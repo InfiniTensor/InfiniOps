@@ -1340,11 +1340,6 @@ if(GENERATE_PYTHON_BINDINGS)
             ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
 
-    if(WITH_TRITON)
-        target_include_directories(ops PRIVATE
-            ${INFINIOPS_TRITON_INCLUDE_DIRS})
-    endif()
-
     target_link_libraries(ops PRIVATE infiniops)
 
     # Cambricon generated dispatch is compiled into the Python extension and
@@ -1407,8 +1402,8 @@ if(GENERATE_PYTHON_BINDINGS)
 
     if(WITH_TRITON)
         # Ship the JIT compiler and kernel sources so Triton JIT operators
-        # can compile kernels at runtime.  compile.py uses __file__ to
-        # locate ops/ relative to itself; both must live under triton/.
+        # can compile kernels at runtime. `compile.py` uses `__file__` to
+        # locate `ops/` relative to itself; both must live under `triton/`.
         install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/triton/jit/compile.py"
                 DESTINATION triton/jit)
         install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/triton/ops/"
