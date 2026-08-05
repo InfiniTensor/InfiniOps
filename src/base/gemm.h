@@ -15,7 +15,7 @@ class Gemm : public Operator<Gemm> {
        std::optional<float> alpha, std::optional<float> beta,
        std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
       : alpha_{alpha.value_or(1.0)},
-        beta_{EffectiveBeta(c, beta)},
+        beta_{beta.value_or(1.0)},
         trans_a_{static_cast<bool>(trans_a.value_or(false))},
         trans_b_{static_cast<bool>(trans_b.value_or(false))},
         m_{y.size(-2)},
@@ -23,17 +23,28 @@ class Gemm : public Operator<Gemm> {
         k_{trans_a_ ? a.size(-2) : a.size(-1)},
         a_type_{a.dtype()},
         b_type_{b.dtype()},
-        c_type_{y.dtype()},
+        y_type_{y.dtype()},
         a_strides_{a.strides()},
         b_strides_{b.strides()},
-        c_strides_{y.strides()},
+        c_shape_{c ? Tensor::Shape{c->shape()} : Tensor::Shape{}},
+        c_strides_{c ? Tensor::Strides{c->strides()} : Tensor::Strides{}},
+        c_broadcast_strides_{c ? BroadcastStrides(*c, y)
+                               : Tensor::Strides(y.ndim(), 0)},
+        y_shape_{y.shape()},
+        y_strides_{y.strides()},
         lda_{std::max(a.stride(-2), a.stride(-1))},
         ldb_{std::max(b.stride(-2), b.stride(-1))},
-        ldc_{std::max(y.stride(-2), y.stride(-1))},
+        ldy_{std::max(y.stride(-2), y.stride(-1))},
         batch_count_{y.strides().size() > 2 ? y.size(-3) : 1},
         batch_stride_a_{a.strides().size() > 2 ? a.stride(-3) : 0},
         batch_stride_b_{b.strides().size() > 2 ? b.stride(-3) : 0},
-        batch_stride_c_{y.strides().size() > 2 ? y.stride(-3) : 0} {}
+        batch_stride_y_{y.strides().size() > 2 ? y.stride(-3) : 0} {
+    assert(a.dtype() == b.dtype() && a.dtype() == y.dtype() &&
+           (!c || c->dtype() == y.dtype()) &&
+           "operator `Gemm` requires A, B, C, and Y to have the same dtype");
+    assert((!c || c->data() != y.data()) &&
+           "operator `Gemm` does not support C/Y aliasing");
+  }
 
   Gemm(const Tensor a, const Tensor b, Tensor y)
       : Gemm{a,
@@ -58,17 +69,32 @@ class Gemm : public Operator<Gemm> {
 
   template <typename TensorLike>
   static auto MakeReturnValue(const TensorLike& a, const TensorLike& b) {
-    Tensor::Shape c_shape{a.shape()[a.shape().size() - 2],
+    Tensor::Shape y_shape{a.shape()[a.shape().size() - 2],
                           b.shape()[b.shape().size() - 1]};
-    return TensorLike::Empty(c_shape, a.dtype(), a.device());
+    return TensorLike::Empty(y_shape, a.dtype(), a.device());
   }
 
  protected:
-  static float EffectiveBeta(const std::optional<Tensor>& c,
-                             std::optional<float> beta) {
-    static_cast<void>(beta);
-    assert(!c && "operator Gemm C input is not supported yet");
-    return 0.0F;
+  static Tensor::Strides BroadcastStrides(const Tensor input,
+                                          const Tensor out) {
+    assert(input.ndim() <= out.ndim() &&
+           "operator `Gemm` C rank must not exceed Y rank");
+    Tensor::Strides strides(out.ndim(), 0);
+    const auto offset = out.ndim() - input.ndim();
+
+    for (Tensor::Size i = 0; i < input.ndim(); ++i) {
+      const auto out_dim = i + offset;
+      assert((input.size(i) == 1 || input.size(i) == out.size(out_dim)) &&
+             "operator `Gemm` C shape is not broadcast-compatible with Y");
+      strides[out_dim] = input.size(i) == 1 ? 0 : input.stride(i);
+    }
+
+    return strides;
+  }
+
+  float EffectiveBeta(const std::optional<Tensor>& c,
+                      std::optional<float> beta) const {
+    return c ? beta.value_or(beta_) : 0.0F;
   }
 
   float alpha_{1.0};
@@ -89,19 +115,27 @@ class Gemm : public Operator<Gemm> {
 
   const DataType b_type_;
 
-  const DataType c_type_;
+  const DataType y_type_;
 
   Tensor::Strides a_strides_;
 
   Tensor::Strides b_strides_;
 
+  Tensor::Shape c_shape_;
+
   Tensor::Strides c_strides_;
+
+  Tensor::Strides c_broadcast_strides_;
+
+  Tensor::Shape y_shape_;
+
+  Tensor::Strides y_strides_;
 
   Tensor::Stride lda_{0};
 
   Tensor::Stride ldb_{0};
 
-  Tensor::Stride ldc_{0};
+  Tensor::Stride ldy_{0};
 
   Tensor::Size batch_count_{1};
 
@@ -109,7 +143,7 @@ class Gemm : public Operator<Gemm> {
 
   Tensor::Stride batch_stride_b_{0};
 
-  Tensor::Stride batch_stride_c_{0};
+  Tensor::Stride batch_stride_y_{0};
 };
 
 }  // namespace infini::ops

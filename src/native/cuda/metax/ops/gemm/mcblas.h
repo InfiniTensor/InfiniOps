@@ -2,6 +2,7 @@
 #define INFINI_OPS_METAX_GEMM_MCBLAS_H_
 
 #include "native/cuda/metax/blas.h"
+#include "native/cuda/metax/ops/add/kernel.h"
 #include "native/cuda/ops/gemm/blas.h"
 
 namespace infini::ops {

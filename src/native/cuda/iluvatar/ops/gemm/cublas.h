@@ -2,6 +2,7 @@
 #define INFINI_OPS_ILUVATAR_GEMM_CUBLAS_H_
 
 #include "native/cuda/iluvatar/blas.h"
+#include "native/cuda/iluvatar/ops/add/kernel.h"
 #include "native/cuda/ops/gemm/blas.h"
 
 namespace infini::ops {

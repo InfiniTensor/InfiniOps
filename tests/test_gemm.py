@@ -92,41 +92,87 @@ def test_gemm(
         b = b.transpose(-2, -1)
 
     c = randn_strided(c_shape, c_strides, dtype=dtype, device=device)
-    use_portable_ref = implementation_index == 2 and not (
-        device == "cpu"
-        or (
-            device == "cuda" and infini.ops.Gemm.active_implementation_indices("nvidia")
+    y = randn_strided(c_shape, c_strides, dtype=dtype, device=device)
+    # Native separate-C paths accumulate in a second kernel; match their rounding.
+    native_separate_c = (
+        beta != 0
+        and implementation_index in (0, 1)
+        and device in ("cuda", "mlu", "musa")
+    )
+    use_portable_ref = native_separate_c or (
+        implementation_index == 2
+        and not (
+            device == "cpu"
+            or (
+                device == "cuda"
+                and infini.ops.Gemm.active_implementation_indices("nvidia")
+            )
         )
     )
     ref = _torch_gemm_portable if use_portable_ref else _torch_gemm
 
     return Payload(
         lambda *args: _gemm(*args, implementation_index=implementation_index),
-        lambda a, b, alpha, _beta, trans_a, trans_b, c: ref(
-            a, b, alpha, 0.0, trans_a, trans_b, c
-        ),
-        (a, b, alpha, beta, trans_a, trans_b, c),
+        lambda *args: ref(*args[:-1]),
+        (a, b, alpha, beta, trans_a, trans_b, c, y),
         {},
         rtol=rtol,
         atol=atol,
     )
 
 
-def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
+def _gemm(a, b, alpha, beta, trans_a, trans_b, c, y, implementation_index=0):
     infini.ops.gemm(
         a,
         b,
-        None,
+        c,
         alpha,
         beta,
         trans_a,
         trans_b,
-        c,
+        y,
         stream=get_stream(a.device),
         implementation_index=implementation_index,
     )
 
-    return c
+    return y
+
+
+@pytest.mark.smoke
+def test_gemm_without_c_overload(device, implementation_index):
+    if implementation_index == 2 and device == "npu":
+        pytest.skip("Gemm impl=2 is not instantiated for Ascend")
+
+    a = torch.randn((3, 4), dtype=torch.float32, device=device)
+    b = torch.randn((4, 2), dtype=torch.float32, device=device)
+    y = torch.full((3, 2), torch.nan, dtype=torch.float32, device=device)
+
+    infini.ops.gemm(
+        a,
+        b,
+        y,
+        stream=get_stream(a.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(y, torch.matmul(a, b), rtol=1e-3, atol=1e-3)
+
+    y.fill_(torch.nan)
+
+    infini.ops.gemm(
+        a,
+        b,
+        None,
+        0.0,
+        1.0,
+        False,
+        False,
+        y,
+        stream=get_stream(a.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(y, torch.zeros_like(y), rtol=0.0, atol=0.0)
 
 
 def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None):
@@ -185,3 +231,33 @@ def _torch_gemm_portable(
     c.add_(product, alpha=alpha)
 
     return c
+
+
+@pytest.mark.smoke
+def test_gemm_broadcast_c(device, implementation_index):
+    if implementation_index == 2 and device == "npu":
+        pytest.skip("Gemm impl=2 is not instantiated for Ascend")
+
+    a = torch.randn((3, 4), dtype=torch.float32, device=device)
+    b = torch.randn((4, 2), dtype=torch.float32, device=device)
+    c = torch.randn((1, 2), dtype=torch.float32, device=device)
+    y = torch.full((3, 2), torch.nan, dtype=torch.float32, device=device)
+
+    expected = torch.matmul(a, b)
+    expected.mul_(0.5)
+    expected.add_(c, alpha=-0.5)
+
+    infini.ops.gemm(
+        a,
+        b,
+        c,
+        0.5,
+        -0.5,
+        False,
+        False,
+        y,
+        stream=get_stream(a.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(y, expected, rtol=1e-3, atol=1e-3)

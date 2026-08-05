@@ -11,6 +11,7 @@
 #include "base/gemm.h"
 #include "host_range_profiler.h"
 #include "native/cuda/nvidia/blas_utils.h"
+#include "native/cuda/nvidia/ops/add/kernel.h"
 #include "native/cuda/nvidia/runtime_.h"
 
 namespace infini::ops {
@@ -18,15 +19,17 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
  public:
-  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> input_c,
+  Operator(const Tensor a, const Tensor b, const std::optional<Tensor> c,
            std::optional<float> alpha, std::optional<float> beta,
-           std::optional<int> trans_a, std::optional<int> trans_b, Tensor c)
-      : Gemm{a, b, input_c, alpha, beta, trans_a, trans_b, c},
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
+      : Gemm{a, b, c, alpha, beta, trans_a, trans_b, y},
         a_is_col_major_{a.stride(-1) == 1},
         b_is_col_major_{b.stride(-1) == 1},
-        swap_a_and_b_{c.stride(-1) == 1} {}
+        swap_a_and_b_{y.stride(-1) == 1} {}
 
-  Operator(const Tensor a, const Tensor b, Tensor c)
+  using Gemm::operator();
+
+  Operator(const Tensor a, const Tensor b, Tensor y)
       : Operator{a,
                  b,
                  std::nullopt,
@@ -34,25 +37,22 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
                  std::nullopt,
                  std::nullopt,
                  std::nullopt,
-                 c} {}
-
-  using Gemm::operator();
+                 y} {}
 
   // TODO: Refactor to move initialization/setup logic to the constructor
   // and cleanup/teardown logic to the destructor, rather than executing
   // everything within the computation step.
   // TODO: Replace the current return value checks with utility functions
   // (e.g., `CheckCublasLt`).
-  void operator()(const Tensor a, const Tensor b,
-                  const std::optional<Tensor> input_c,
+  void operator()(const Tensor a, const Tensor b, const std::optional<Tensor> c,
                   std::optional<float> alpha, std::optional<float> beta,
                   std::optional<int> trans_a, std::optional<int> trans_b,
-                  Tensor c) const override {
+                  Tensor y) const override {
     [[maybe_unused]] HostRangeScope host_range_backend_submit{
         HostRangeLayer::kBackendSubmit};
 
     const auto alpha_value{alpha.value_or(alpha_)};
-    const auto beta_value{EffectiveBeta(input_c, beta)};
+    const auto beta_value{EffectiveBeta(c, beta)};
     const auto trans_a_value{trans_a.value_or(trans_a_)};
     const auto trans_b_value{trans_b.value_or(trans_b_)};
 
@@ -68,20 +68,20 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
         swap_a_and_b_ ? b.dtype() : a.dtype())};
     const auto b_dtype{BlasUtils<Device::Type::kNvidia>::GetDataType(
         swap_a_and_b_ ? a.dtype() : b.dtype())};
-    const auto c_dtype{
-        BlasUtils<Device::Type::kNvidia>::GetDataType(c.dtype())};
+    const auto y_dtype{
+        BlasUtils<Device::Type::kNvidia>::GetDataType(y.dtype())};
     const auto a_ld{static_cast<uint64_t>(swap_a_and_b_ ? ldb_ : lda_)};
     const auto b_ld{static_cast<uint64_t>(swap_a_and_b_ ? lda_ : ldb_)};
-    const auto c_ld{static_cast<uint64_t>(ldc_)};
+    const auto y_ld{static_cast<uint64_t>(ldy_)};
     const auto a_batch_stride{static_cast<int64_t>(
         swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_)};
     const auto b_batch_stride{static_cast<int64_t>(
         swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_)};
-    const auto c_batch_stride{static_cast<int64_t>(batch_stride_c_)};
+    const auto y_batch_stride{static_cast<int64_t>(batch_stride_y_)};
 
     cublasLtMatmulDesc_t op_desc{};
     auto status = cublasLtMatmulDescCreate(
-        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(c.dtype()),
+        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(y.dtype()),
         CUDA_R_32F);
     assert(status == CUBLAS_STATUS_SUCCESS &&
            "failed to create cuBLASLt matmul descriptor");
@@ -110,16 +110,16 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
     assert(status == CUBLAS_STATUS_SUCCESS &&
            "failed to create cuBLASLt B layout");
 
-    cublasLtMatrixLayout_t c_layout{};
-    status = cublasLtMatrixLayoutCreate(&c_layout, c_dtype, matmul_m, matmul_n,
-                                        c_ld);
+    cublasLtMatrixLayout_t y_layout{};
+    status = cublasLtMatrixLayoutCreate(&y_layout, y_dtype, matmul_m, matmul_n,
+                                        y_ld);
     assert(status == CUBLAS_STATUS_SUCCESS &&
            "failed to create cuBLASLt C layout");
 
     if (batch_count_ > 1) {
       SetStridedBatchAttributes(a_layout, a_batch_stride);
       SetStridedBatchAttributes(b_layout, b_batch_stride);
-      SetStridedBatchAttributes(c_layout, c_batch_stride);
+      SetStridedBatchAttributes(y_layout, y_batch_stride);
     }
 
     cublasLtMatmulPreference_t preference{};
@@ -137,20 +137,23 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
     cublasLtMatmulHeuristicResult_t heuristic{};
     int returned_results{0};
     status = cublasLtMatmulAlgoGetHeuristic(
-        GetHandle(), op_desc, a_layout, b_layout, c_layout, c_layout,
+        GetHandle(), op_desc, a_layout, b_layout, y_layout, y_layout,
         preference, 1, &heuristic, &returned_results);
     assert(status == CUBLAS_STATUS_SUCCESS && returned_results > 0 &&
            "failed to find a cuBLASLt GEMM algorithm");
 
     status = cublasLtMatmul(
         GetHandle(), op_desc, GetAlphaPtr(alpha_value), a_ptr, a_layout, b_ptr,
-        b_layout, GetBetaPtr(beta_value), c.data(), c_layout, c.data(),
-        c_layout, &heuristic.algo, workspace_, workspace_size_in_bytes_,
+        b_layout, GetBetaPtr(0.0F), y.data(), y_layout, y.data(), y_layout,
+        &heuristic.algo, workspace_, workspace_size_in_bytes_,
         static_cast<Runtime<Device::Type::kNvidia>::Stream>(stream_));
     assert(status == CUBLAS_STATUS_SUCCESS && "cuBLASLt GEMM launch failed");
+    if (c && beta_value != 0.0F) {
+      Add::Call(handle_, Config{}, y, *c, static_cast<double>(beta_value), y);
+    }
 
     cublasLtMatmulPreferenceDestroy(preference);
-    cublasLtMatrixLayoutDestroy(c_layout);
+    cublasLtMatrixLayoutDestroy(y_layout);
     cublasLtMatrixLayoutDestroy(b_layout);
     cublasLtMatrixLayoutDestroy(a_layout);
     cublasLtMatmulDescDestroy(op_desc);
