@@ -123,8 +123,9 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
                                 ? Tensor::Shape{alibi_slopes->shape()}
                                 : Tensor::Shape{}},
         out_shape_{out.shape()},
-        softmax_lse_shape_{softmax_lse.has_value() ? softmax_lse->shape()
-                                                   : Tensor::Shape{}},
+        softmax_lse_shape_{softmax_lse.has_value()
+                               ? Tensor::Shape{softmax_lse->shape()}
+                               : Tensor::Shape{}},
         q_strides_{q.strides()},
         k_cache_strides_{k_cache.strides()},
         v_cache_strides_{v_cache.strides()},
@@ -155,8 +156,9 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
                                   ? Tensor::Strides{alibi_slopes->strides()}
                                   : Tensor::Strides{}},
         out_strides_{out.strides()},
-        softmax_lse_strides_{softmax_lse.has_value() ? softmax_lse->strides()
-                                                     : Tensor::Strides{}},
+        softmax_lse_strides_{softmax_lse.has_value()
+                                 ? Tensor::Strides{softmax_lse->strides()}
+                                 : Tensor::Strides{}},
         q_dtype_{q.dtype()},
         k_cache_dtype_{k_cache.dtype()},
         v_cache_dtype_{v_cache.dtype()},
