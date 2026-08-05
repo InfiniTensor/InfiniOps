@@ -583,7 +583,7 @@ def _is_data_type_spelling(spelling):
     return spelling.rsplit("::", maxsplit=1)[-1] == "DataType"
 
 def _uses_config_extension(impl_paths):
-    pattern = re.compile(r"\bconfig_t\b")
+    pattern = re.compile(r"\bTritonConfig\b")
     for path in impl_paths:
         try:
             if pattern.search(path.read_text()):
@@ -595,38 +595,37 @@ def _uses_config_extension(impl_paths):
 
 def _generate_triton_jit_config_parser():
     return textwrap.dedent("""\
-    inline std::shared_ptr<config_t> config_from_py_dict(const py::dict& d) {
-      namespace py = pybind11;
-      auto ext = std::make_shared<config_t>();
-      if (d.contains("autotune")) {
-        ext->autotune = true;
-        py::dict at = d["autotune"].cast<py::dict>();
-        if (at.contains("warmup")) ext->warmup = at["warmup"].cast<unsigned>();
-        if (at.contains("rep")) ext->rep = at["rep"].cast<unsigned>();
-        if (at.contains("configs")) {
-          for (auto cand : at["configs"].cast<py::list>()) {
-            config_t c;
-            py::dict cd = cand.cast<py::dict>();
-            if (cd.contains("num_warps")) c.num_warps = cd["num_warps"].cast<unsigned>();
-            if (cd.contains("num_stages")) c.num_stages = cd["num_stages"].cast<unsigned>();
-            for (auto item : cd) {
+    inline std::shared_ptr<TritonConfig> ConfigFromPyDict(const py::dict& config_dict) {
+      auto config = std::make_shared<TritonConfig>();
+      if (config_dict.contains("autotune")) {
+        config->autotune = true;
+        py::dict autotune_dict = config_dict["autotune"].cast<py::dict>();
+        if (autotune_dict.contains("warmup")) config->warmup = autotune_dict["warmup"].cast<unsigned>();
+        if (autotune_dict.contains("rep")) config->rep = autotune_dict["rep"].cast<unsigned>();
+        if (autotune_dict.contains("configs")) {
+          for (auto candidate : autotune_dict["configs"].cast<py::list>()) {
+            TritonConfig candidate_config;
+            py::dict candidate_dict = candidate.cast<py::dict>();
+            if (candidate_dict.contains("num_warps")) candidate_config.num_warps = candidate_dict["num_warps"].cast<unsigned>();
+            if (candidate_dict.contains("num_stages")) candidate_config.num_stages = candidate_dict["num_stages"].cast<unsigned>();
+            for (auto item : candidate_dict) {
               std::string key = item.first.cast<std::string>();
               if (key != "num_warps" && key != "num_stages")
-                c.constexprs.emplace_back(key, item.second.cast<int>());
+                candidate_config.constexprs.emplace_back(key, item.second.cast<int>());
             }
-            ext->configs.push_back(std::move(c));
+            config->configs.push_back(std::move(candidate_config));
           }
         }
       } else {
-        if (d.contains("num_warps")) ext->num_warps = d["num_warps"].cast<unsigned>();
-        if (d.contains("num_stages")) ext->num_stages = d["num_stages"].cast<unsigned>();
-        for (auto item : d) {
+        if (config_dict.contains("num_warps")) config->num_warps = config_dict["num_warps"].cast<unsigned>();
+        if (config_dict.contains("num_stages")) config->num_stages = config_dict["num_stages"].cast<unsigned>();
+        for (auto item : config_dict) {
           std::string key = item.first.cast<std::string>();
           if (key != "num_warps" && key != "num_stages")
-            ext->constexprs.emplace_back(key, item.second.cast<int>());
+            config->constexprs.emplace_back(key, item.second.cast<int>());
         }
       }
-      return ext;
+      return config;
     }""")
 
 
@@ -849,7 +848,7 @@ def _generate_pybind11(operator):
                 extra_params = ", std::optional<py::dict> config_dict"
                 extra_config_init = (
                     "    if (config_dict.has_value()) {\n"
-                    "      config.set_extension(config_from_py_dict(*config_dict));\n"
+                    "      config.set_extension(ConfigFromPyDict(*config_dict));\n"
                     "    }\n"
                 )
                 extra_pybind = ', py::arg("config") = py::none()'
@@ -947,8 +946,10 @@ def _generate_pybind11(operator):
     )
     if supports_triton:
         jit_include = (
-            '\n#include "triton/jit/jit.h"\n'
-            "namespace infini::ops {\n" + _generate_triton_jit_config_parser() + "\n}\n"
+            '\n#include "triton/jit/jit.h"\n\n'
+            "namespace infini::ops {\n\n"
+            + _generate_triton_jit_config_parser()
+            + "\n\n}  // namespace infini::ops\n"
         )
     else:
         jit_include = ""

@@ -14,7 +14,7 @@ namespace infini::ops {
 
 // ---- file helpers ----
 
-inline bool file_exists(const char* path) {
+inline bool FileExists(const char* path) {
   FILE* f = fopen(path, "rb");
   if (f != nullptr) {
     fclose(f);
@@ -23,7 +23,7 @@ inline bool file_exists(const char* path) {
   return false;
 }
 
-inline std::string read_file(const char* path) {
+inline std::string ReadFile(const char* path) {
   FILE* f = fopen(path, "rb");
   if (f == nullptr) return {};
   fseek(f, 0, SEEK_END);
@@ -40,15 +40,15 @@ inline std::string read_file(const char* path) {
   return buf;
 }
 
-inline bool cache_complete(const std::string& cubin_path,
-                           const std::string& meta_path) {
-  return file_exists(cubin_path.c_str()) && file_exists(meta_path.c_str());
+inline bool CacheComplete(const std::string& cubin_path,
+                          const std::string& meta_path) {
+  return FileExists(cubin_path.c_str()) && FileExists(meta_path.c_str());
 }
 
-// ---- json field extraction ----
+// ---- JSON field extraction ----
 
-inline int json_get_int(const std::string& json, const char* key,
-                        int fallback = 0) {
+inline int JsonGetInt(const std::string& json, const char* key,
+                      int fallback = 0) {
   std::string pat = std::string("\"") + key + "\":";
   auto pos = json.find(pat);
   if (pos == std::string::npos) return fallback;
@@ -57,8 +57,8 @@ inline int json_get_int(const std::string& json, const char* key,
   return std::atoi(json.c_str() + pos);
 }
 
-inline std::string json_get_string(const std::string& json, const char* key,
-                                   const char* fallback) {
+inline std::string JsonGetString(const std::string& json, const char* key,
+                                 const char* fallback) {
   std::string pat = std::string("\"") + key + "\":";
   auto pos = json.find(pat);
   if (pos == std::string::npos) return fallback;
@@ -73,45 +73,46 @@ inline std::string json_get_string(const std::string& json, const char* key,
 
 // ---- kernel cache ----
 
-inline std::string generate_desc(const char* op, const char* sig,
-                                 unsigned num_warps, unsigned num_stages,
-                                 int arch) {
+inline std::string GenerateDesc(const char* op, const char* sig,
+                                unsigned num_warps, unsigned num_stages,
+                                int arch) {
   return std::string(op) + "|" + sig + "|" + std::to_string(num_warps) + "|" +
          std::to_string(num_stages) + "|sm" + std::to_string(arch);
 }
 
-inline std::string cache_mem_key(const char* op_name, const char* signature_str,
-                                 unsigned num_warps, unsigned num_stages,
-                                 int arch, int dev_id) {
-  return generate_desc(op_name, signature_str, num_warps, num_stages, arch) +
+inline std::string CacheMemKey(const char* op_name, const char* signature_str,
+                               unsigned num_warps, unsigned num_stages,
+                               int arch, int dev_id) {
+  return GenerateDesc(op_name, signature_str, num_warps, num_stages, arch) +
          "|dev" + std::to_string(dev_id);
 }
 
-inline std::string cache_file_key(const char* op_name,
-                                  const char* signature_str, unsigned num_warps,
-                                  unsigned num_stages, int arch) {
+inline std::string CacheFileKey(const char* op_name, const char* signature_str,
+                                unsigned num_warps, unsigned num_stages,
+                                int arch) {
   return std::to_string(std::hash<std::string>{}(
-      generate_desc(op_name, signature_str, num_warps, num_stages, arch)));
+      GenerateDesc(op_name, signature_str, num_warps, num_stages, arch)));
 }
 
-struct kernel_cache_entry_t {
+struct KernelCacheEntry {
   void* func;
+
   unsigned shared;
 };
 
-struct kernel_cache_t {
+struct KernelCache {
   std::mutex mutex;
-  std::unordered_map<std::string, kernel_cache_entry_t> map;
+
+  std::unordered_map<std::string, KernelCacheEntry> map;
 };
 
-inline kernel_cache_t& kernel_cache() {
-  static kernel_cache_t c;
+inline KernelCache& GetKernelCache() {
+  static KernelCache c;
   return c;
 }
 
-inline bool kernel_cache_lookup(const std::string& key,
-                                kernel_cache_entry_t* out) {
-  auto& c = kernel_cache();
+inline bool KernelCacheLookup(const std::string& key, KernelCacheEntry* out) {
+  auto& c = GetKernelCache();
   std::lock_guard<std::mutex> lk(c.mutex);
   auto it = c.map.find(key);
   if (it == c.map.end()) return false;
@@ -119,51 +120,55 @@ inline bool kernel_cache_lookup(const std::string& key,
   return true;
 }
 
-inline void kernel_cache_insert(const std::string& key,
-                                kernel_cache_entry_t entry) {
-  auto& c = kernel_cache();
+inline void KernelCacheInsert(const std::string& key, KernelCacheEntry entry) {
+  auto& c = GetKernelCache();
   std::lock_guard<std::mutex> lk(c.mutex);
   c.map[key] = entry;
 }
 
-struct cache_query_result_t {
+struct CacheQueryResult {
   bool mem_hit;
+
   void* func;
+
   unsigned shared;
+
   std::string out_prefix;
+
   std::string mem_key;
 };
 
-inline cache_query_result_t cache_query(const char* op, const char* sig,
-                                        unsigned num_warps, unsigned num_stages,
-                                        int arch, int dev_id) {
-  auto mem_key = cache_mem_key(op, sig, num_warps, num_stages, arch, dev_id);
-  kernel_cache_entry_t entry;
-  if (kernel_cache_lookup(mem_key, &entry))
+inline CacheQueryResult CacheQuery(const char* op, const char* sig,
+                                   unsigned num_warps, unsigned num_stages,
+                                   int arch, int dev_id) {
+  auto mem_key = CacheMemKey(op, sig, num_warps, num_stages, arch, dev_id);
+  KernelCacheEntry entry;
+  if (KernelCacheLookup(mem_key, &entry))
     return {true, entry.func, entry.shared, "", mem_key};
-  auto desc = generate_desc(op, sig, num_warps, num_stages, arch);
+  auto desc = GenerateDesc(op, sig, num_warps, num_stages, arch);
   return {false, nullptr, 0,
           std::string(TRITON_JIT_CACHE_DIR) + "/" +
               std::to_string(std::hash<std::string>{}(desc)),
           mem_key};
 }
 
-struct autotune_cache_t {
+struct AutotuneCache {
   std::mutex mutex;
-  std::unordered_map<std::string, config_t> map;
+
+  std::unordered_map<std::string, TritonConfig> map;
 };
 
-inline autotune_cache_t& autotune_cache() {
-  static autotune_cache_t c;
+inline AutotuneCache& GetAutotuneCache() {
+  static AutotuneCache c;
   return c;
 }
 
-inline std::string autotune_cache_file_path(const std::string& key) {
+inline std::string AutotuneCacheFilePath(const std::string& key) {
   return std::string(TRITON_JIT_CACHE_DIR) + "/" +
          std::to_string(std::hash<std::string>{}(key)) + ".autotune";
 }
 
-inline std::string serialize_config(const config_t& config) {
+inline std::string SerializeConfig(const TritonConfig& config) {
   std::string s = std::to_string(config.num_warps) + " " +
                   std::to_string(config.num_stages);
   for (const auto& [name, val] : config.constexprs)
@@ -171,7 +176,7 @@ inline std::string serialize_config(const config_t& config) {
   return s;
 }
 
-inline bool deserialize_config(const std::string& content, config_t* out) {
+inline bool DeserializeConfig(const std::string& content, TritonConfig* out) {
   std::istringstream iss(content);
   std::string line;
   if (!std::getline(iss, line)) return false;
@@ -187,18 +192,18 @@ inline bool deserialize_config(const std::string& content, config_t* out) {
   return true;
 }
 
-inline bool autotune_cache_lookup(const std::string& key, config_t* out) {
-  auto& c = autotune_cache();
+inline bool AutotuneCacheLookup(const std::string& key, TritonConfig* out) {
+  auto& c = GetAutotuneCache();
   std::lock_guard<std::mutex> lk(c.mutex);
   auto it = c.map.find(key);
   if (it != c.map.end()) {
     *out = it->second;
     return true;
   }
-  std::string path = autotune_cache_file_path(key);
-  if (file_exists(path.c_str())) {
-    config_t parsed;
-    if (deserialize_config(read_file(path.c_str()), &parsed)) {
+  std::string path = AutotuneCacheFilePath(key);
+  if (FileExists(path.c_str())) {
+    TritonConfig parsed;
+    if (DeserializeConfig(ReadFile(path.c_str()), &parsed)) {
       c.map[key] = parsed;
       *out = parsed;
       return true;
@@ -207,13 +212,13 @@ inline bool autotune_cache_lookup(const std::string& key, config_t* out) {
   return false;
 }
 
-inline void autotune_cache_insert(const std::string& key,
-                                  const config_t& config) {
-  auto& c = autotune_cache();
+inline void AutotuneCacheInsert(const std::string& key,
+                                const TritonConfig& config) {
+  auto& c = GetAutotuneCache();
   std::lock_guard<std::mutex> lk(c.mutex);
   c.map[key] = config;
-  std::string path = autotune_cache_file_path(key);
-  std::string content = serialize_config(config);
+  std::string path = AutotuneCacheFilePath(key);
+  std::string content = SerializeConfig(config);
   FILE* f = fopen(path.c_str(), "w");
   if (f) {
     fwrite(content.data(), 1, content.size(), f);

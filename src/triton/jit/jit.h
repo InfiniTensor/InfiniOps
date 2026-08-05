@@ -15,33 +15,39 @@
 
 namespace infini::ops {
 
-struct config_t : Config {
-  config_t() = default;
-  config_t(unsigned num_warps, unsigned num_stages,
-           std::vector<std::pair<std::string, int>> constexprs)
+struct TritonConfig : Config {
+  TritonConfig() = default;
+
+  TritonConfig(unsigned num_warps, unsigned num_stages,
+               std::vector<std::pair<std::string, int>> constexprs)
       : num_warps(num_warps),
         num_stages(num_stages),
         constexprs(std::move(constexprs)) {}
 
   unsigned num_warps = 4;
+
   unsigned num_stages = 3;
+
   std::vector<std::pair<std::string, int>> constexprs;
 
   bool autotune = false;
-  std::vector<config_t> configs;
+
+  std::vector<TritonConfig> configs;
+
   int warmup = 5;
+
   int rep = 50;
 
-  bool is_autotune() const { return autotune; }
+  bool IsAutotune() const { return autotune; }
 
-  int at(const std::string& key) const {
+  int At(const std::string& key) const {
     for (const auto& [k, v] : constexprs)
       if (k == key) return v;
-    assert(false && "constexpr not found");
+    assert(false && "`constexpr` not found");
     return 0;
   }
 
-  void apply_defaults(const config_t& defaults) {
+  void ApplyDefaults(const TritonConfig& defaults) {
     for (const auto& [dk, dv] : defaults.constexprs) {
       bool found = false;
       for (const auto& [k, v] : constexprs)
@@ -54,49 +60,54 @@ struct config_t : Config {
   }
 };
 
-struct grid_t {
-  unsigned x = 1, y = 1, z = 1;
+struct Grid {
+  unsigned x = 1;
+
+  unsigned y = 1;
+
+  unsigned z = 1;
 };
 
-struct device_info_t {
+struct DeviceInfo {
   int id = 0;
+
   int arch = 0;
 };
 
-bool compiler_init();
+bool CompilerInit();
 
-int compile_kernel(const char* op_name, const char* out_prefix, int num_warps,
+int CompileKernel(const char* op_name, const char* out_prefix, int num_warps,
+                  int num_stages, int device_id, const char* signature);
 
-                   int num_stages, int device_id, const char* signature);
+int LaunchKernel(const char* op_name, const char* signature_str, void* stream,
+                 Grid grid, TritonConfig config, void** args);
 
-int launch_kernel(const char* op_name, const char* signature_str, void* stream,
-                  grid_t grid, config_t config, void** args);
+void* GetKernel(const char* op_name, const char* signature_str, void* stream,
+                const TritonConfig& config, unsigned* out_shared);
 
-void* get_kernel(const char* op_name, const char* signature_str, void* stream,
-                 const config_t& config, unsigned* out_shared);
+DeviceInfo CurrentDevice();
 
-device_info_t current_device();
-
-config_t autotune_bench(const char* op_name,
-                        const std::vector<config_t>& configs,
-                        const std::string& sig, const std::vector<void*>& ptrs,
-                        const std::vector<grid_t>& grids, int warmup, int rep,
-                        const char* key, int device_id);
+TritonConfig AutotuneBench(const char* op_name,
+                           const std::vector<TritonConfig>& configs,
+                           const std::string& sig,
+                           const std::vector<void*>& ptrs,
+                           const std::vector<Grid>& grids, int warmup, int rep,
+                           const char* key, int device_id);
 
 // ---- specialization ----
 
-inline const char* spec_ptr(uintptr_t v) { return v % 16 == 0 ? ":16" : ""; }
+inline const char* SpecPtr(uintptr_t v) { return v % 16 == 0 ? ":16" : ""; }
 
 template <typename T>
-const char* spec_int(T v) {
+const char* SpecInt(T v) {
   if (v == 1) return ":1";
   if ((v & 15) == 0) return ":16";
   return "";
 }
 
-// ---- DataType → Triton string ----
+// ---- `DataType` → Triton string ----
 
-inline const char* dtype_to_ttype(DataType dt) {
+inline const char* DataTypeToTritonType(DataType dt) {
   switch (dt) {
     case DataType::kFloat16:
       return "fp16";
@@ -129,7 +140,7 @@ inline const char* dtype_to_ttype(DataType dt) {
 // ---- C++ scalar type → Triton string ----
 
 template <typename T>
-const char* cstype_to_ttype() {
+const char* ScalarTypeToTritonType() {
   if constexpr (std::is_same_v<T, float>)
     return "fp64";
   else if constexpr (std::is_same_v<T, double>)
@@ -147,15 +158,17 @@ const char* cstype_to_ttype() {
 
 // ---- arguments parser ----
 
-struct arg_pack_t {
+struct ArgPack {
   std::vector<void*> ptrs;
+
   std::deque<uint64_t> storage;
+
   std::string sig;
 
   template <typename T>
-  void* store(T v) {
+  void* Store(T v) {
     static_assert(sizeof(T) <= sizeof(uint64_t),
-                  "scalar arg wider than 8 bytes");
+                  "scalar arg wider than `uint64_t`");
     uint64_t slot = 0;
     std::memcpy(&slot, &v, sizeof(T));
     storage.push_back(slot);
@@ -163,83 +176,83 @@ struct arg_pack_t {
   }
 };
 
-inline void _push_arg(const Tensor& t, arg_pack_t& pack) {
+inline void PushArg(const Tensor& t, ArgPack& pack) {
   auto ptr = reinterpret_cast<uintptr_t>(t.data());
   pack.sig +=
-      std::string("*") + dtype_to_ttype(t.dtype()) + spec_ptr(ptr) + ",";
-  pack.ptrs.push_back(pack.store(ptr));
+      std::string("*") + DataTypeToTritonType(t.dtype()) + SpecPtr(ptr) + ",";
+  pack.ptrs.push_back(pack.Store(ptr));
 }
 
 template <typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
-void _push_arg(T v, arg_pack_t& pack) {
-  const char* s = spec_int(v);
-  pack.sig += std::string(cstype_to_ttype<T>()) + s + ",";
-  if (std::strcmp(s, ":1") != 0) pack.ptrs.push_back(pack.store(v));
+void PushArg(T v, ArgPack& pack) {
+  const char* s = SpecInt(v);
+  pack.sig += std::string(ScalarTypeToTritonType<T>()) + s + ",";
+  if (std::strcmp(s, ":1") != 0) pack.ptrs.push_back(pack.Store(v));
 }
 
-inline void _push_arg(float v, arg_pack_t& pack) {
-  pack.ptrs.push_back(pack.store(v));
+inline void PushArg(float v, ArgPack& pack) {
+  pack.ptrs.push_back(pack.Store(v));
   pack.sig += "fp32,";
 }
 
-inline void _push_arg(double v, arg_pack_t& pack) {
-  pack.ptrs.push_back(pack.store(v));
+inline void PushArg(double v, ArgPack& pack) {
+  pack.ptrs.push_back(pack.Store(v));
   pack.sig += "fp64,";
 }
 
 // ---- launch wrapper ----
 
 template <typename... Args>
-int launch_jit(const char* op, void* stream, grid_t grid, config_t config,
-               Args&&... args) {
-  arg_pack_t pack;
+int LaunchJit(const char* op, void* stream, Grid grid, TritonConfig config,
+              Args&&... args) {
+  ArgPack pack;
   pack.sig.reserve(256);
-  (_push_arg(std::forward<Args>(args), pack), ...);
+  (PushArg(std::forward<Args>(args), pack), ...);
   for (const auto& [name, val] : config.constexprs)
     pack.sig += name + "=" + std::to_string(val) + ",";
   if (!pack.sig.empty()) pack.sig.pop_back();
 
-  // triton need
-  void* scratch = pack.store<uint64_t>(0);
+  // Triton needs two trailing scratch pointers.
+  void* scratch = pack.Store<uint64_t>(0);
   pack.ptrs.push_back(scratch);
   pack.ptrs.push_back(scratch);
 
-  return launch_kernel(op, pack.sig.c_str(), stream, grid, config,
-                       pack.ptrs.data());
+  return LaunchKernel(op, pack.sig.c_str(), stream, grid, config,
+                      pack.ptrs.data());
 }
 
 template <typename GridFn, typename... Args>
-int launch_jit_autotune(const char* op, void* stream, const config_t& config,
-                        const std::vector<Tensor::Size>& key_dims,
-                        DataType dtype, GridFn grid_fn, Args&&... args) {
+int LaunchJitAutotune(const char* op, void* stream, const TritonConfig& config,
+                      const std::vector<Tensor::Size>& key_dims, DataType dtype,
+                      GridFn grid_fn, Args&&... args) {
   std::string cache_key = op;
   for (auto d : key_dims) cache_key += "|" + std::to_string(d);
   cache_key += "|dt=" + std::to_string(static_cast<int>(dtype));
 
-  arg_pack_t pack;
+  ArgPack pack;
   pack.sig.reserve(256);
-  (_push_arg(std::forward<Args>(args), pack), ...);
+  (PushArg(std::forward<Args>(args), pack), ...);
 
-  std::vector<grid_t> grids;
+  std::vector<Grid> grids;
   grids.reserve(config.configs.size());
   for (const auto& c : config.configs) grids.push_back(grid_fn(c));
 
-  config_t best = autotune_bench(op, config.configs, pack.sig, pack.ptrs, grids,
-                                 config.warmup, config.rep, cache_key.c_str(),
-                                 current_device().id);
+  TritonConfig best = AutotuneBench(op, config.configs, pack.sig, pack.ptrs,
+                                    grids, config.warmup, config.rep,
+                                    cache_key.c_str(), CurrentDevice().id);
 
-  grid_t grid = grid_fn(best);
+  Grid grid = grid_fn(best);
 
   for (const auto& [name, val] : best.constexprs)
     pack.sig += name + "=" + std::to_string(val) + ",";
   if (!pack.sig.empty()) pack.sig.pop_back();
 
-  void* scratch = pack.store<uint64_t>(0);
+  void* scratch = pack.Store<uint64_t>(0);
   pack.ptrs.push_back(scratch);
   pack.ptrs.push_back(scratch);
 
-  return launch_kernel(op, pack.sig.c_str(), stream, grid, best,
-                       pack.ptrs.data());
+  return LaunchKernel(op, pack.sig.c_str(), stream, grid, best,
+                      pack.ptrs.data());
 }
 
 }  // namespace infini::ops
