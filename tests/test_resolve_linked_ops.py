@@ -131,7 +131,10 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (exports[library], exports[library]),
+        lambda library, nm, readelf, cxxfilt: (
+            exports[library],
+            exports[library],
+        ),
     )
 
     payload = module.resolve_linked_ops(
