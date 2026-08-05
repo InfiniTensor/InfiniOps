@@ -9,7 +9,7 @@
 #include "data_type.h"
 #include "dispatcher.h"
 #include "native/cuda/kernel_commons.cuh"
-#include "native/cuda/ops/paged_caching_infinilm/kernel.cuh"
+#include "native/cuda/ops/reshape_and_cache_flash/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
@@ -42,7 +42,7 @@ class CudaPagedCachingInfinilm : public PagedCachingInfinilm {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
 
-          PagedCachingInfinilmKernel<T, kBlockSize>
+          ReshapeAndCacheFlashKernel<T, kBlockSize>
               <<<grid, kBlockSize, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(k_cache.data()),
                   reinterpret_cast<T*>(v_cache.data()),
@@ -50,6 +50,8 @@ class CudaPagedCachingInfinilm : public PagedCachingInfinilm {
                   reinterpret_cast<const T*>(v.data()),
                   reinterpret_cast<const int64_t*>(slot_mapping.data()),
                   head_size_, block_size_, k_src_stride_, v_src_stride_,
+                  static_cast<Tensor::Stride>(head_size_),
+                  static_cast<Tensor::Stride>(head_size_),
                   k_cache_block_stride_, v_cache_block_stride_,
                   k_cache_head_stride_, v_cache_head_stride_,
                   k_cache_slot_stride_, v_cache_slot_stride_);
