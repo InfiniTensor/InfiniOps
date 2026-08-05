@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_CUDA_CONV_INFINILM_KERNEL_CUH_
-#define INFINI_OPS_CUDA_CONV_INFINILM_KERNEL_CUH_
+#ifndef INFINI_OPS_CUDA_CONVOLUTION_KERNEL_CUH_
+#define INFINI_OPS_CUDA_CONVOLUTION_KERNEL_CUH_
 
 #include <cstddef>
 
@@ -23,19 +23,21 @@ OffsetFromCoordinates(const size_t* __restrict__ coords, size_t ndim,
 }  // namespace
 
 template <Device::Type kDev, typename T, unsigned int block_size>
-__global__ void ConvInfinilmKernel(
-    T* __restrict__ out, const T* __restrict__ input,
-    const T* __restrict__ weight, const T* __restrict__ bias,
-    const size_t* __restrict__ input_shape,
-    const size_t* __restrict__ weight_shape,
-    const size_t* __restrict__ out_shape,
-    const ptrdiff_t* __restrict__ input_strides,
-    const ptrdiff_t* __restrict__ weight_strides,
-    const ptrdiff_t* __restrict__ out_strides,
-    const ptrdiff_t* __restrict__ bias_strides,
-    const int64_t* __restrict__ padding, const int64_t* __restrict__ stride,
-    const int64_t* __restrict__ dilation, size_t output_size,
-    size_t spatial_ndim, size_t kernel_size, int64_t groups, bool has_bias) {
+__global__ void ConvKernel(T* __restrict__ out, const T* __restrict__ input,
+                           const T* __restrict__ weight,
+                           const T* __restrict__ bias,
+                           const size_t* __restrict__ input_shape,
+                           const size_t* __restrict__ weight_shape,
+                           const size_t* __restrict__ out_shape,
+                           const ptrdiff_t* __restrict__ input_strides,
+                           const ptrdiff_t* __restrict__ weight_strides,
+                           const ptrdiff_t* __restrict__ out_strides,
+                           const ptrdiff_t* __restrict__ bias_strides,
+                           const int64_t* __restrict__ padding,
+                           const int64_t* __restrict__ stride,
+                           const int64_t* __restrict__ dilation,
+                           size_t output_size, size_t spatial_ndim,
+                           size_t kernel_size, int64_t groups, bool has_bias) {
   size_t linear = blockIdx.x * blockDim.x + threadIdx.x;
   if (linear >= output_size) {
     return;

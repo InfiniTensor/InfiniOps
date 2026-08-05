@@ -539,6 +539,9 @@ def _vector_int64_kind(arg, vector_params, optional_vector_params):
     if spelling == "std::vector<int64_t>":
         return "vector"
 
+    if spelling != "int":
+        return None
+
     if arg.spelling in optional_vector_params:
         return "optional"
 

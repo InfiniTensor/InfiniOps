@@ -268,6 +268,24 @@ class MaxUnpool3d {
     assert "const std::vector<std::vector<int64_t>> dims" in generated
 
 
+def test_vector_fallback_does_not_override_string_overload(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    base_header = tmp_path / "conv1d.h"
+    base_header.write_text(
+        "class Conv1d { public: "
+        "Conv1d(const Tensor input, const std::vector<int64_t> padding, Tensor out); "
+        "Conv1d(const Tensor input, const std::string padding, Tensor out); };"
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    vector = module._ParsedArgument("const int", "padding")
+    string = module._ParsedArgument("const std::string", "padding")
+    vector_params = module._find_vector_int64_params("conv1d")
+
+    assert module._vector_int64_kind(vector, vector_params, set()) == "vector"
+    assert module._vector_int64_kind(string, vector_params, set()) is None
+
+
 def test_pybind_default_implementation_uses_first_active_index(monkeypatch, tmp_path):
     module = _load_generator_module()
     base_header = tmp_path / "mul.h"

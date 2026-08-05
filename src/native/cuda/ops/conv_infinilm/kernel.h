@@ -12,7 +12,7 @@
 #include "data_type.h"
 #include "dispatcher.h"
 #include "native/cuda/kernel_commons.cuh"
-#include "native/cuda/ops/conv_infinilm/kernel.cuh"
+#include "native/cuda/ops/convolution/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
@@ -125,7 +125,7 @@ class CudaConvInfinilm : public ConvInfinilm {
                                   ? reinterpret_cast<const T*>(bias->data())
                                   : nullptr;
 
-          ConvInfinilmKernel<Backend::kDeviceType, T, kBlockSize>
+          ConvKernel<Backend::kDeviceType, T, kBlockSize>
               <<<grid, block, 0, cuda_stream>>>(
                   reinterpret_cast<T*>(out.data()),
                   reinterpret_cast<const T*>(input.data()),
