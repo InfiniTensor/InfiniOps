@@ -15,7 +15,11 @@ import yaml
 _PROJECT_DIR = pathlib.Path(__file__).resolve().parents[1]
 _DEFAULT_SOURCE_ROOT = _PROJECT_DIR / "src" / "linked"
 _DEFAULT_OUTPUT_DIR = _PROJECT_DIR / "generated" / "linked"
-_LIBRARY_KEYS = {"transport", "python_distribution", "library_glob"}
+_LIBRARY_KEYS = {
+    "transport",
+    "python_distribution_package",
+    "library_glob",
+}
 _BINDING_KEYS = {"library", "required_symbols"}
 _SUPPORTED_TRANSPORTS = {"torch"}
 
@@ -56,7 +60,7 @@ class LibraryConfig:
     name: str
     path: pathlib.Path
     transport: str
-    python_distribution: str
+    python_distribution_package: str
     library_glob: str
 
 
@@ -64,9 +68,10 @@ class LibraryConfig:
 class BindingConfig:
     device: str
     family: str
+    implementation: str
     name: str
     path: pathlib.Path
-    adapter: pathlib.Path
+    source: pathlib.Path
     library: str
     required_symbols: tuple[str, ...]
 
@@ -153,7 +158,9 @@ def _load_libraries(source_root, platform_dir, device):
             name=path.stem,
             path=path,
             transport=transport,
-            python_distribution=_require_string(data, "python_distribution", path),
+            python_distribution_package=_require_string(
+                data, "python_distribution_package", path
+            ),
             library_glob=_require_relative_glob(data, "library_glob", path),
         )
 
@@ -163,7 +170,7 @@ def _load_libraries(source_root, platform_dir, device):
 def _load_bindings(source_root, platform_dir, device, selected_ops):
     family = _platform_family(source_root, platform_dir)
     bindings = []
-    for path in sorted((platform_dir / "ops").glob("*/binding.yaml")):
+    for path in sorted((platform_dir / "ops").glob("*/*.yaml")):
         name = path.parent.name
         if selected_ops is not None and name not in selected_ops:
             continue
@@ -184,17 +191,21 @@ def _load_bindings(source_root, platform_dir, device, selected_ops):
         if len(symbols) != len(set(symbols)):
             raise ResolutionError(f"{path}: required_symbols contains duplicates")
 
-        adapter = path.parent / "adapter.cc"
-        if not adapter.is_file():
-            raise ResolutionError(f"{path}: missing sibling adapter.cc")
+        header = path.with_suffix(".h")
+        source = path.with_suffix(".cc")
+        if not header.is_file():
+            raise ResolutionError(f"{path}: missing sibling {header.name}")
+        if not source.is_file():
+            raise ResolutionError(f"{path}: missing sibling {source.name}")
 
         bindings.append(
             BindingConfig(
                 device=device,
                 family=family,
+                implementation=path.stem,
                 name=name,
                 path=path,
-                adapter=adapter.resolve(),
+                source=source.resolve(),
                 library=_require_string(data, "library", path),
                 required_symbols=symbols,
             )
@@ -214,10 +225,13 @@ def _matches_library_glob(relative, pattern):
 
 def _locate_distribution_library(config):
     try:
-        distribution = importlib.metadata.distribution(config.python_distribution)
+        distribution = importlib.metadata.distribution(
+            config.python_distribution_package
+        )
     except importlib.metadata.PackageNotFoundError as error:
         raise ResolutionError(
-            f"Python distribution {config.python_distribution!r} required by "
+            f"Python distribution package "
+            f"{config.python_distribution_package!r} required by "
             f"{config.path} is not installed"
         ) from error
 
@@ -246,7 +260,8 @@ def _locate_distribution_library(config):
         formatted = ", ".join(str(path) for path in matches) or "none"
         raise ResolutionError(
             f"{config.path}: library_glob {config.library_glob!r} matched "
-            f"{len(matches)} files in {config.python_distribution!r}: {formatted}"
+            f"{len(matches)} files in "
+            f"{config.python_distribution_package!r}: {formatted}"
         )
 
     return matches[0]
@@ -332,7 +347,7 @@ def _cmake_quote(value):
 def _render_cmake_manifest(payload):
     variables = {
         "INFINI_OPS_LINKED_SOURCES": [
-            operator["adapter"] for operator in payload["operators"]
+            operator["source"] for operator in payload["operators"]
         ],
         "INFINI_OPS_LINKED_LIBRARIES": [
             library["path"] for library in payload["libraries"]
@@ -404,7 +419,13 @@ def resolve_linked_ops(
             _load_bindings(source_root, platform_dir, device, selected_op_set)
         )
 
-    bindings.sort(key=lambda binding: (binding.device, binding.name))
+    bindings.sort(
+        key=lambda binding: (
+            binding.device,
+            binding.name,
+            binding.implementation,
+        )
+    )
     resolved_libraries = {}
     inspected_symbols = {}
     for binding in bindings:
@@ -460,7 +481,7 @@ def resolve_linked_ops(
                 "family": config.family,
                 "name": config.name,
                 "path": str(library_path),
-                "python_distribution": config.python_distribution,
+                "python_distribution_package": (config.python_distribution_package),
                 "runtime_dir": str(library_path.parent),
                 "transport": config.transport,
             }
@@ -471,12 +492,13 @@ def resolve_linked_ops(
         "libraries": libraries,
         "operators": [
             {
-                "adapter": str(binding.adapter),
                 "device": binding.device,
                 "family": binding.family,
                 "library": binding.library,
+                "implementation": binding.implementation,
                 "name": binding.name,
                 "required_symbols": list(binding.required_symbols),
+                "source": str(binding.source),
             }
             for binding in bindings
         ],

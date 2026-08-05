@@ -27,30 +27,32 @@ def _write_linked_config(root, *, library_extra="", binding_extra=""):
     op_dir.mkdir(parents=True)
     (platform / "vllm.yaml").write_text(
         "transport: torch\n"
-        "python_distribution: vllm\n"
+        "python_distribution_package: vllm\n"
         "library_glob: vllm/_C*.so\n"
         f"{library_extra}"
     )
-    (op_dir / "binding.yaml").write_text(
+    (op_dir / "vllm.yaml").write_text(
         "library: vllm\n"
         "required_symbols:\n"
         "  - silu_and_mul(at::Tensor&, at::Tensor&)\n"
         f"{binding_extra}"
     )
-    (op_dir / "adapter.cc").write_text("// adapter\n")
+    (op_dir / "vllm.h").write_text("// declaration\n")
+    (op_dir / "vllm.cc").write_text("// definition\n")
     return platform, op_dir
 
 
-def test_resolve_collects_selected_adapter_and_library(monkeypatch, tmp_path):
+def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_path):
     module = _load_resolver_module()
     source_root = tmp_path / "linked"
     _, op_dir = _write_linked_config(source_root)
     ignored_dir = source_root / "cuda" / "metax" / "ops" / "ignored"
     ignored_dir.mkdir()
-    (ignored_dir / "binding.yaml").write_text(
+    (ignored_dir / "missing.yaml").write_text(
         "library: missing\nrequired_symbols:\n  - missing()\n"
     )
-    (ignored_dir / "adapter.cc").write_text("// ignored\n")
+    (ignored_dir / "missing.h").write_text("// ignored\n")
+    (ignored_dir / "missing.cc").write_text("// ignored\n")
     library_path = tmp_path / "site-packages" / "vllm" / "_C.abi3.so"
     library_path.parent.mkdir(parents=True)
     library_path.touch()
@@ -76,12 +78,13 @@ def test_resolve_collects_selected_adapter_and_library(monkeypatch, tmp_path):
     assert payload["devices"] == ["cpu", "metax"]
     assert payload["operators"] == [
         {
-            "adapter": str((op_dir / "adapter.cc").resolve()),
             "device": "metax",
             "family": "cuda",
+            "implementation": "vllm",
             "library": "vllm",
             "name": "silu_and_mul",
             "required_symbols": ["silu_and_mul(at::Tensor&, at::Tensor&)"],
+            "source": str((op_dir / "vllm.cc").resolve()),
         }
     ]
     assert payload["libraries"][0]["path"] == str(library_path)
@@ -89,10 +92,68 @@ def test_resolve_collects_selected_adapter_and_library(monkeypatch, tmp_path):
 
     manifest = (output_dir / "manifest.cmake").read_text()
     assert "INFINI_OPS_LINKED_SOURCES" in manifest
-    assert str(op_dir / "adapter.cc").replace("\\", "/") in manifest
+    assert str(op_dir / "vllm.cc").replace("\\", "/") in manifest
     assert str(library_path).replace("\\", "/") in manifest
     assert '"torch"' in manifest
     assert "ignored" not in manifest
+
+
+def test_resolve_supports_multiple_implementations_for_one_operator(
+    monkeypatch, tmp_path
+):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    platform, op_dir = _write_linked_config(source_root)
+    (platform / "apex.yaml").write_text(
+        "transport: torch\n"
+        "python_distribution_package: apex\n"
+        "library_glob: apex/_C*.so\n"
+    )
+    (op_dir / "apex.yaml").write_text(
+        "library: apex\n"
+        "required_symbols:\n"
+        "  - bias_swiglu_fwd(at::Tensor&, at::Tensor&)\n"
+    )
+    (op_dir / "apex.h").write_text("// declaration\n")
+    (op_dir / "apex.cc").write_text("// definition\n")
+
+    libraries = {
+        "apex": tmp_path / "apex" / "_C.apex.so",
+        "vllm": tmp_path / "vllm" / "_C.vllm.so",
+    }
+    for library in libraries.values():
+        library.parent.mkdir()
+        library.touch()
+    exports = {
+        libraries["apex"]: {"bias_swiglu_fwd(at::Tensor&, at::Tensor&)"},
+        libraries["vllm"]: {"silu_and_mul(at::Tensor&, at::Tensor&)"},
+    }
+    monkeypatch.setattr(
+        module,
+        "_locate_distribution_library",
+        lambda config: libraries[config.name],
+    )
+    monkeypatch.setattr(
+        module,
+        "_inspect_dynamic_symbols",
+        lambda library, nm, readelf: (exports[library], exports[library]),
+    )
+
+    payload = module.resolve_linked_ops(
+        ["metax"],
+        ["silu_and_mul"],
+        source_root=source_root,
+        output_dir=tmp_path / "generated",
+    )
+
+    assert [entry["implementation"] for entry in payload["operators"]] == [
+        "apex",
+        "vllm",
+    ]
+    assert [pathlib.Path(entry["source"]).name for entry in payload["operators"]] == [
+        "apex.cc",
+        "vllm.cc",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -100,6 +161,7 @@ def test_resolve_collects_selected_adapter_and_library(monkeypatch, tmp_path):
     (
         ("schema: silu_and_mul\n", "", "schema"),
         ("", "call: vllm::silu_and_mul\n", "call"),
+        ("python_distribution: vllm\n", "", "python_distribution"),
     ),
 )
 def test_resolve_rejects_unknown_yaml_keys(
@@ -114,6 +176,24 @@ def test_resolve_rejects_unknown_yaml_keys(
     )
 
     with pytest.raises(module.ResolutionError, match=f"unknown keys: {unknown_key}"):
+        module.resolve_linked_ops(
+            ["metax"],
+            source_root=source_root,
+            output_dir=tmp_path / "generated",
+        )
+
+
+@pytest.mark.parametrize("missing_suffix", (".h", ".cc"))
+def test_resolve_requires_matching_implementation_sources(tmp_path, missing_suffix):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    _, op_dir = _write_linked_config(source_root)
+    (op_dir / f"vllm{missing_suffix}").unlink()
+
+    with pytest.raises(
+        module.ResolutionError,
+        match=rf"missing sibling vllm\{missing_suffix}",
+    ):
         module.resolve_linked_ops(
             ["metax"],
             source_root=source_root,
@@ -178,14 +258,17 @@ def test_resolve_rejects_distinct_libraries_with_same_basename(monkeypatch, tmp_
     source_root = tmp_path / "linked"
     platform, _ = _write_linked_config(source_root)
     (platform / "other.yaml").write_text(
-        "transport: torch\npython_distribution: other\nlibrary_glob: other/_C*.so\n"
+        "transport: torch\n"
+        "python_distribution_package: other\n"
+        "library_glob: other/_C*.so\n"
     )
     other_op_dir = platform / "ops" / "other_op"
     other_op_dir.mkdir()
-    (other_op_dir / "binding.yaml").write_text(
+    (other_op_dir / "other.yaml").write_text(
         "library: other\nrequired_symbols:\n  - other_op()\n"
     )
-    (other_op_dir / "adapter.cc").write_text("// adapter\n")
+    (other_op_dir / "other.h").write_text("// declaration\n")
+    (other_op_dir / "other.cc").write_text("// definition\n")
 
     vllm_library = tmp_path / "vllm" / "_C.abi3.so"
     other_library = tmp_path / "other" / "_C.abi3.so"
@@ -222,14 +305,17 @@ def test_resolve_rejects_symbol_exported_by_distinct_libraries(monkeypatch, tmp_
     source_root = tmp_path / "linked"
     platform, _ = _write_linked_config(source_root)
     (platform / "other.yaml").write_text(
-        "transport: torch\npython_distribution: other\nlibrary_glob: other/_C*.so\n"
+        "transport: torch\n"
+        "python_distribution_package: other\n"
+        "library_glob: other/_C*.so\n"
     )
     other_op_dir = platform / "ops" / "other_op"
     other_op_dir.mkdir()
-    (other_op_dir / "binding.yaml").write_text(
+    (other_op_dir / "other.yaml").write_text(
         "library: other\nrequired_symbols:\n  - other_op()\n"
     )
-    (other_op_dir / "adapter.cc").write_text("// adapter\n")
+    (other_op_dir / "other.h").write_text("// declaration\n")
+    (other_op_dir / "other.cc").write_text("// definition\n")
 
     vllm_library = tmp_path / "vllm" / "_C.vllm.so"
     other_library = tmp_path / "other" / "_C.other.so"
@@ -342,7 +428,7 @@ def test_locate_distribution_library_requires_one_glob_match(monkeypatch, tmp_pa
         name="vllm",
         path=tmp_path / "vllm.yaml",
         transport="torch",
-        python_distribution="vllm",
+        python_distribution_package="vllm",
         library_glob="vllm/_C*.so",
     )
 
@@ -373,7 +459,7 @@ def test_locate_distribution_library_falls_back_to_distribution_root(
         name="vllm",
         path=tmp_path / "vllm.yaml",
         transport="torch",
-        python_distribution="vllm",
+        python_distribution_package="vllm",
         library_glob="vllm/_C*.so",
     )
 

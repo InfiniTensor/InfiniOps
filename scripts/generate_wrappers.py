@@ -1668,11 +1668,18 @@ def _matches_scan_dir(impl_path, scan_dirs):
         linked_path = None
 
     if linked_path is not None:
-        if len(linked_path.parts) < 2 or "linked" not in scan_dirs:
+        if "linked" not in scan_dirs:
             return False
 
+        try:
+            ops_index = linked_path.parts.index("ops")
+        except ValueError:
+            return False
+        platform_parts = linked_path.parts[:ops_index]
+        if not platform_parts:
+            return False
         active_devices = scan_dirs - {"linked", "ninetoothed", "torch"}
-        return linked_path.parts[1] in active_devices
+        return any(part in active_devices for part in platform_parts)
 
     return any(part in scan_dirs for part in impl_path.parts)
 

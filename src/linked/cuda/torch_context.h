@@ -5,22 +5,21 @@
 #include <c10/cuda/CUDAStream.h>
 #include <cuda_runtime_api.h>
 
-namespace infini::ops::linked::cuda {
+#include "linked/torch_context.h"
 
-class TorchContextGuard {
- public:
-  TorchContextGuard(void* stream, int device_index)
-      : device_guard_{static_cast<c10::DeviceIndex>(device_index)},
-        stream_guard_{c10::cuda::getStreamFromExternal(
-            reinterpret_cast<cudaStream_t>(stream),
-            static_cast<c10::DeviceIndex>(device_index))} {}
+namespace infini::ops::linked {
 
- private:
-  c10::cuda::CUDAGuard device_guard_;
+template <>
+struct TorchStreamBridge<Device::Type::kMetax> {
+  using Guard = c10::cuda::CUDAStreamGuard;
 
-  c10::cuda::CUDAStreamGuard stream_guard_;
+  static c10::cuda::CUDAStream FromExternal(void* stream, int device_index) {
+    return c10::cuda::getStreamFromExternal(
+        reinterpret_cast<cudaStream_t>(stream),
+        static_cast<c10::DeviceIndex>(device_index));
+  }
 };
 
-}  // namespace infini::ops::linked::cuda
+}  // namespace infini::ops::linked
 
 #endif  // INFINI_OPS_LINKED_CUDA_TORCH_CONTEXT_H_
