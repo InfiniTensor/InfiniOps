@@ -1,3 +1,0 @@
-transport: torch
-python_distribution: vllm
-library_glob: vllm/_C*.so
