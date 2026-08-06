@@ -24,15 +24,15 @@ class TorchSiluAndMul : public ::infini::ops::SiluAndMul {
     auto at_out = ToAtenTensor<Backend::kDeviceType>(
         out.data(), out_shape_, out_strides_, out_type_, device_index_);
 
-    auto provider_input =
+    auto backend_input =
         is_input_contiguous_ ? at_input : at_input.contiguous();
-    auto provider_out = is_out_contiguous_
-                            ? at_out
-                            : at::empty(at_out.sizes(), at_out.options());
+    auto backend_out = is_out_contiguous_
+                           ? at_out
+                           : at::empty(at_out.sizes(), at_out.options());
 
-    Backend::Call(provider_out, provider_input);
+    Backend::Call(backend_out, backend_input);
     if (!is_out_contiguous_) {
-      at_out.copy_(provider_out);
+      at_out.copy_(backend_out);
     }
   }
 
