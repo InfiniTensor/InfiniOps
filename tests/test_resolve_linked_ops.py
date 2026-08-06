@@ -26,9 +26,7 @@ def _write_linked_config(root, *, library_extra="", binding_extra=""):
     op_dir = platform / "ops" / "silu_and_mul"
     op_dir.mkdir(parents=True)
     (platform / "vllm.yaml").write_text(
-        "python_distribution_package: vllm\n"
-        "library_glob: vllm/_C*.so\n"
-        f"{library_extra}"
+        f"python_distribution_package: vllm\nlibrary_glob: vllm/_C*.so\n{library_extra}"
     )
     (op_dir / "vllm.yaml").write_text(
         "library: vllm\n"
@@ -104,8 +102,7 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
     source_root = tmp_path / "linked"
     platform, op_dir = _write_linked_config(source_root)
     (platform / "apex.yaml").write_text(
-        "python_distribution_package: apex\n"
-        "library_glob: apex/_C*.so\n"
+        "python_distribution_package: apex\nlibrary_glob: apex/_C*.so\n"
     )
     (op_dir / "apex.yaml").write_text(
         "library: apex\n"
@@ -257,8 +254,7 @@ def test_resolve_rejects_distinct_libraries_with_same_basename(monkeypatch, tmp_
     source_root = tmp_path / "linked"
     platform, _ = _write_linked_config(source_root)
     (platform / "other.yaml").write_text(
-        "python_distribution_package: other\n"
-        "library_glob: other/_C*.so\n"
+        "python_distribution_package: other\nlibrary_glob: other/_C*.so\n"
     )
     other_op_dir = platform / "ops" / "other_op"
     other_op_dir.mkdir()
@@ -303,8 +299,7 @@ def test_resolve_rejects_symbol_exported_by_distinct_libraries(monkeypatch, tmp_
     source_root = tmp_path / "linked"
     platform, _ = _write_linked_config(source_root)
     (platform / "other.yaml").write_text(
-        "python_distribution_package: other\n"
-        "library_glob: other/_C*.so\n"
+        "python_distribution_package: other\nlibrary_glob: other/_C*.so\n"
     )
     other_op_dir = platform / "ops" / "other_op"
     other_op_dir.mkdir()

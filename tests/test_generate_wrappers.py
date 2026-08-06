@@ -645,20 +645,14 @@ def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path
     module = _load_generator_module()
     src_dir = tmp_path / "moore" / "src"
     base_dir = src_dir / "base"
-    provider_dir = (
-        src_dir / "linked" / "torch" / "metax" / "ops" / "silu_and_mul"
-    )
+    provider_dir = src_dir / "linked" / "torch" / "metax" / "ops" / "silu_and_mul"
     vllm_header = provider_dir / "vllm.h"
     apex_header = provider_dir / "apex.h"
     base_dir.mkdir(parents=True)
     provider_dir.mkdir(parents=True)
     (base_dir / "silu_and_mul.h").write_text("class SiluAndMul {};\n")
-    vllm_header.write_text(
-        "class Operator<SiluAndMul, Device::Type::kMetax, 16> {};\n"
-    )
-    apex_header.write_text(
-        "class Operator<SiluAndMul, Device::Type::kMetax, 17> {};\n"
-    )
+    vllm_header.write_text("class Operator<SiluAndMul, Device::Type::kMetax, 16> {};\n")
+    apex_header.write_text("class Operator<SiluAndMul, Device::Type::kMetax, 17> {};\n")
     monkeypatch.setattr(module, "_SRC_DIR", src_dir)
     monkeypatch.setattr(module, "_BASE_DIR", base_dir)
     monkeypatch.setattr(module, "_GENERATION_DIR", tmp_path / "generated")

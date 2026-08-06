@@ -393,9 +393,7 @@ def resolve_linked_ops(
             for name, config in libraries.items():
                 library_configs[(transport, device, name)] = config
             bindings.extend(
-                _load_bindings(
-                    platform_dir, device, transport, selected_op_set
-                )
+                _load_bindings(platform_dir, device, transport, selected_op_set)
             )
 
     bindings.sort(
