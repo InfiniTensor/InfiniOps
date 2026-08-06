@@ -4,10 +4,6 @@
 #include "linked/torch/metax/c10.h"
 #include "linked/torch/ops/silu_and_mul.h"
 
-namespace at {
-class Tensor;
-}
-
 namespace infini::ops::linked::torch::metax {
 
 struct VllmSiluAndMul : C10<Device::Type::kMetax> {
@@ -15,6 +11,13 @@ struct VllmSiluAndMul : C10<Device::Type::kMetax> {
 };
 
 }  // namespace infini::ops::linked::torch::metax
+
+namespace infini::ops::linked::torch {
+
+extern template class TorchSiluAndMul<
+    ::infini::ops::linked::torch::metax::VllmSiluAndMul>;
+
+}  // namespace infini::ops::linked::torch
 
 namespace infini::ops {
 

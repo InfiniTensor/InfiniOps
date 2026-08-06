@@ -1,7 +1,5 @@
 #include "linked/torch/metax/ops/silu_and_mul/vllm.h"
 
-#include "linked/torch/ops/silu_and_mul_impl.h"
-
 // MetaX vLLM `_C` exports this global C++ symbol.
 void silu_and_mul(at::Tensor& out, at::Tensor& input);
 
