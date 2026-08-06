@@ -58,10 +58,15 @@ def test_rms_norm(
 def test_rms_norm_non_default_stream(device, implementation_index):
     if device == "cuda":
         accelerator = torch.cuda
+        stream_attribute = "cuda_stream"
     elif device == "musa":
         accelerator = torch.musa
+        stream_attribute = "musa_stream"
+    elif device == "mlu":
+        accelerator = torch.mlu
+        stream_attribute = "mlu_stream"
     else:
-        pytest.skip("non-default streams require a CUDA-compatible or MUSA backend")
+        pytest.skip("non-default streams require an accelerator backend")
 
     input = torch.randn((32, 128), dtype=torch.float16, device=device)
     weight = torch.randn((128,), dtype=torch.float16, device=device)
@@ -71,7 +76,7 @@ def test_rms_norm_non_default_stream(device, implementation_index):
 
     stream = accelerator.Stream()
     stream.wait_stream(accelerator.current_stream())
-    stream_ptr = stream.cuda_stream if device == "cuda" else stream.musa_stream
+    stream_ptr = getattr(stream, stream_attribute)
 
     accelerator._sleep(50_000_000)
     try:
