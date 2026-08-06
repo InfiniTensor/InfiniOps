@@ -11,6 +11,7 @@
 #include "dispatcher.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/paged_attention_infinilm/kernel.cuh"
+#include "native/cuda/ops/paged_attention_v1/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
@@ -111,7 +112,7 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
                       reinterpret_cast<TData*>(out.data()), partial_acc,
                       partial_m, partial_l, num_splits, out_stride_);
             } else {
-              PagedAttentionInfinilmDecodeWarpKernel<TIndex, TData, kHeadSize>
+              PagedAttentionDecodeWarpKernel<TIndex, TData, kHeadSize>
                   <<<grid, 32, 0, cuda_stream>>>(
                       reinterpret_cast<TData*>(out.data()),
                       reinterpret_cast<const TData*>(q.data()),
@@ -124,13 +125,14 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
                           : nullptr,
                       num_heads_, num_kv_heads_, scale, max_num_blocks_per_seq_,
                       block_size_, k_cache_block_stride_, k_cache_head_stride_,
-                      k_cache_slot_stride_, v_cache_block_stride_,
-                      v_cache_head_stride_, v_cache_slot_stride_, q_stride_,
-                      q_head_stride_, out_stride_, out_head_stride_,
-                      block_table_batch_stride_, seq_lens_stride_);
+                      k_cache_slot_stride_, 0, 1, static_cast<int>(head_size_),
+                      v_cache_block_stride_, v_cache_head_stride_,
+                      v_cache_slot_stride_, 1, q_stride_, q_head_stride_,
+                      out_stride_, out_head_stride_, block_table_batch_stride_,
+                      seq_lens_stride_);
             }
           } else {
-            PagedAttentionInfinilmDecodeWarpKernel<TIndex, TData, kHeadSize>
+            PagedAttentionDecodeWarpKernel<TIndex, TData, kHeadSize>
                 <<<grid, 32, 0, cuda_stream>>>(
                     reinterpret_cast<TData*>(out.data()),
                     reinterpret_cast<const TData*>(q.data()),
@@ -143,10 +145,11 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
                         : nullptr,
                     num_heads_, num_kv_heads_, scale, max_num_blocks_per_seq_,
                     block_size_, k_cache_block_stride_, k_cache_head_stride_,
-                    k_cache_slot_stride_, v_cache_block_stride_,
-                    v_cache_head_stride_, v_cache_slot_stride_, q_stride_,
-                    q_head_stride_, out_stride_, out_head_stride_,
-                    block_table_batch_stride_, seq_lens_stride_);
+                    k_cache_slot_stride_, 0, 1, static_cast<int>(head_size_),
+                    v_cache_block_stride_, v_cache_head_stride_,
+                    v_cache_slot_stride_, 1, q_stride_, q_head_stride_,
+                    out_stride_, out_head_stride_, block_table_batch_stride_,
+                    seq_lens_stride_);
           }
         },
         "CudaPagedAttentionInfinilm::operator()");
