@@ -14,6 +14,10 @@ class Sigmoid : public Operator<Sigmoid> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
+        output_size_{out.numel()},
+        ndim_{out.ndim()},
+        is_input_contiguous_{input.IsContiguous()},
+        is_out_contiguous_{out.IsContiguous()},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, Tensor out) const = 0;
@@ -30,6 +34,14 @@ class Sigmoid : public Operator<Sigmoid> {
   Tensor::Strides out_strides_;
 
   DataType out_type_;
+
+  Tensor::Size output_size_{0};
+
+  Tensor::Size ndim_{0};
+
+  bool is_input_contiguous_{false};
+
+  bool is_out_contiguous_{false};
 
   int device_index_{0};
 };
