@@ -56,19 +56,24 @@ def test_rms_norm(
 
 
 def test_rms_norm_non_default_stream(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("non-default CUDA streams require a CUDA-compatible backend")
+    if device == "cuda":
+        accelerator = torch.cuda
+    elif device == "musa":
+        accelerator = torch.musa
+    else:
+        pytest.skip("non-default streams require a CUDA-compatible or MUSA backend")
 
     input = torch.randn((32, 128), dtype=torch.float16, device=device)
     weight = torch.randn((128,), dtype=torch.float16, device=device)
     out = torch.zeros_like(input)
     expected = _torch_rms_norm(input, weight, out=torch.empty_like(out)).cpu()
-    torch.cuda.synchronize()
+    accelerator.synchronize()
 
-    stream = torch.cuda.Stream()
-    stream.wait_stream(torch.cuda.current_stream())
+    stream = accelerator.Stream()
+    stream.wait_stream(accelerator.current_stream())
+    stream_ptr = stream.cuda_stream if device == "cuda" else stream.musa_stream
 
-    torch.cuda._sleep(50_000_000)
+    accelerator._sleep(50_000_000)
     try:
         infini.ops.rms_norm(
             input,
@@ -76,14 +81,14 @@ def test_rms_norm_non_default_stream(device, implementation_index):
             1e-6,
             out,
             implementation_index=implementation_index,
-            stream=stream.cuda_stream,
+            stream=stream_ptr,
         )
         stream.synchronize()
-        with torch.cuda.stream(stream):
+        with accelerator.stream(stream):
             actual = out.cpu()
         torch.testing.assert_close(actual, expected, rtol=1e-2, atol=1e-2)
     finally:
-        torch.cuda.synchronize()
+        accelerator.synchronize()
 
 
 def _rms_norm(input, weight, *, eps=1e-6, out=None, implementation_index=0):
