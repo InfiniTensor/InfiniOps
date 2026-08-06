@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_NVIDIA_TOPK_SOFTMAX_KERNEL_CUH_
-#define INFINI_OPS_NVIDIA_TOPK_SOFTMAX_KERNEL_CUH_
+#ifndef INFINI_OPS_CUDA_TOPK_SOFTMAX_KERNEL_CUH_
+#define INFINI_OPS_CUDA_TOPK_SOFTMAX_KERNEL_CUH_
 
 /*
  * Portions of this kernel are adapted from vLLM's `topk_softmax` CUDA
@@ -184,4 +184,4 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
 }  // namespace topk_softmax_detail
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_NVIDIA_TOPK_SOFTMAX_KERNEL_CUH_
+#endif  // INFINI_OPS_CUDA_TOPK_SOFTMAX_KERNEL_CUH_
