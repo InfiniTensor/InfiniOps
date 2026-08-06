@@ -12,12 +12,13 @@ TorchSiluAndMul<Backend>::TorchSiluAndMul(const Tensor input, Tensor out)
       device_index_{out.device().index()} {}
 
 template <typename Backend>
-void TorchSiluAndMul<Backend>::operator()(const Tensor input, Tensor out) const {
+void TorchSiluAndMul<Backend>::operator()(const Tensor input,
+                                          Tensor out) const {
   const typename Backend::StreamGuard stream_guard{
       Backend::GetStreamFromExternal(stream_, device_index_)};
   auto at_input = ToAtenTensor<Backend::kDeviceType>(
-      const_cast<void*>(input.data()), input_shape_, input_strides_, input_type_,
-      device_index_);
+      const_cast<void*>(input.data()), input_shape_, input_strides_,
+      input_type_, device_index_);
   auto at_out = ToAtenTensor<Backend::kDeviceType>(
       out.data(), out_shape_, out_strides_, out_type_, device_index_);
 

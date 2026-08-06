@@ -16,7 +16,7 @@ struct C10<Device::Type::kMetax> {
   using StreamGuard = c10::cuda::CUDAStreamGuard;
 
   static c10::cuda::CUDAStream GetStreamFromExternal(void* stream,
-                                                      int device_index) {
+                                                     int device_index) {
     return c10::cuda::getStreamFromExternal(
         reinterpret_cast<cudaStream_t>(stream),
         static_cast<c10::DeviceIndex>(device_index));
