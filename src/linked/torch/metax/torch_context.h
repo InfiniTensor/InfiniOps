@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_LINKED_CUDA_TORCH_CONTEXT_H_
-#define INFINI_OPS_LINKED_CUDA_TORCH_CONTEXT_H_
+#ifndef INFINI_OPS_LINKED_TORCH_METAX_TORCH_CONTEXT_H_
+#define INFINI_OPS_LINKED_TORCH_METAX_TORCH_CONTEXT_H_
 
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
@@ -22,4 +22,4 @@ struct TorchStreamBridge<Device::Type::kMetax> {
 
 }  // namespace infini::ops::linked
 
-#endif  // INFINI_OPS_LINKED_CUDA_TORCH_CONTEXT_H_
+#endif  // INFINI_OPS_LINKED_TORCH_METAX_TORCH_CONTEXT_H_

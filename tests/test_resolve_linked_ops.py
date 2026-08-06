@@ -22,11 +22,10 @@ def _load_resolver_module():
 
 
 def _write_linked_config(root, *, library_extra="", binding_extra=""):
-    platform = root / "cuda" / "metax"
+    platform = root / "torch" / "metax"
     op_dir = platform / "ops" / "silu_and_mul"
     op_dir.mkdir(parents=True)
     (platform / "vllm.yaml").write_text(
-        "transport: torch\n"
         "python_distribution_package: vllm\n"
         "library_glob: vllm/_C*.so\n"
         f"{library_extra}"
@@ -46,7 +45,7 @@ def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_p
     module = _load_resolver_module()
     source_root = tmp_path / "linked"
     _, op_dir = _write_linked_config(source_root)
-    ignored_dir = source_root / "cuda" / "metax" / "ops" / "ignored"
+    ignored_dir = source_root / "torch" / "metax" / "ops" / "ignored"
     ignored_dir.mkdir()
     (ignored_dir / "missing.yaml").write_text(
         "library: missing\nrequired_symbols:\n  - missing()\n"
@@ -79,7 +78,7 @@ def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_p
     assert payload["operators"] == [
         {
             "device": "metax",
-            "family": "cuda",
+            "transport": "torch",
             "implementation": "vllm",
             "library": "vllm",
             "name": "silu_and_mul",
@@ -105,7 +104,6 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
     source_root = tmp_path / "linked"
     platform, op_dir = _write_linked_config(source_root)
     (platform / "apex.yaml").write_text(
-        "transport: torch\n"
         "python_distribution_package: apex\n"
         "library_glob: apex/_C*.so\n"
     )
@@ -162,6 +160,7 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
         ("schema: silu_and_mul\n", "", "schema"),
         ("", "call: vllm::silu_and_mul\n", "call"),
         ("python_distribution: vllm\n", "", "python_distribution"),
+        ("transport: torch\n", "", "transport"),
     ),
 )
 def test_resolve_rejects_unknown_yaml_keys(
@@ -258,7 +257,6 @@ def test_resolve_rejects_distinct_libraries_with_same_basename(monkeypatch, tmp_
     source_root = tmp_path / "linked"
     platform, _ = _write_linked_config(source_root)
     (platform / "other.yaml").write_text(
-        "transport: torch\n"
         "python_distribution_package: other\n"
         "library_glob: other/_C*.so\n"
     )
@@ -305,7 +303,6 @@ def test_resolve_rejects_symbol_exported_by_distinct_libraries(monkeypatch, tmp_
     source_root = tmp_path / "linked"
     platform, _ = _write_linked_config(source_root)
     (platform / "other.yaml").write_text(
-        "transport: torch\n"
         "python_distribution_package: other\n"
         "library_glob: other/_C*.so\n"
     )
@@ -424,7 +421,6 @@ def test_locate_distribution_library_requires_one_glob_match(monkeypatch, tmp_pa
     )
     config = module.LibraryConfig(
         device="metax",
-        family="cuda",
         name="vllm",
         path=tmp_path / "vllm.yaml",
         transport="torch",
@@ -455,7 +451,6 @@ def test_locate_distribution_library_falls_back_to_distribution_root(
     )
     config = module.LibraryConfig(
         device="moore",
-        family="musa",
         name="vllm",
         path=tmp_path / "vllm.yaml",
         transport="torch",

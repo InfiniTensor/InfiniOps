@@ -16,7 +16,6 @@ _PROJECT_DIR = pathlib.Path(__file__).resolve().parents[1]
 _DEFAULT_SOURCE_ROOT = _PROJECT_DIR / "src" / "linked"
 _DEFAULT_OUTPUT_DIR = _PROJECT_DIR / "generated" / "linked"
 _LIBRARY_KEYS = {
-    "transport",
     "python_distribution_package",
     "library_glob",
 }
@@ -56,10 +55,9 @@ _StrictLoader.add_constructor(
 @dataclasses.dataclass(frozen=True)
 class LibraryConfig:
     device: str
-    family: str
+    transport: str
     name: str
     path: pathlib.Path
-    transport: str
     python_distribution_package: str
     library_glob: str
 
@@ -67,7 +65,7 @@ class LibraryConfig:
 @dataclasses.dataclass(frozen=True)
 class BindingConfig:
     device: str
-    family: str
+    transport: str
     implementation: str
     name: str
     path: pathlib.Path
@@ -115,49 +113,32 @@ def _require_relative_glob(data, key, path):
     return normalized.as_posix()
 
 
-def _find_platform_dir(source_root, device):
-    candidates = []
-    direct = source_root / device
-    if direct.is_dir():
-        candidates.append(direct)
-    candidates.extend(
-        path
-        for path in sorted(source_root.glob(f"*/{device}"))
-        if path.is_dir() and path != direct
-    )
+def _find_platform_dirs(source_root, device):
+    platform_dirs = []
+    for path in sorted(source_root.glob(f"*/{device}")):
+        if not path.is_dir():
+            continue
 
-    if len(candidates) > 1:
-        formatted = ", ".join(str(path) for path in candidates)
-        raise ResolutionError(
-            f"multiple linked platform directories found for {device}: {formatted}"
-        )
-
-    return candidates[0] if candidates else None
-
-
-def _platform_family(source_root, platform_dir):
-    relative = platform_dir.relative_to(source_root)
-    return relative.parts[-2] if len(relative.parts) > 1 else "generic"
-
-
-def _load_libraries(source_root, platform_dir, device):
-    family = _platform_family(source_root, platform_dir)
-    libraries = {}
-    for path in sorted(platform_dir.glob("*.yaml")):
-        data = _load_yaml_mapping(path, _LIBRARY_KEYS)
-        transport = _require_string(data, "transport", path)
+        transport = path.parent.name
         if transport not in _SUPPORTED_TRANSPORTS:
             supported = ", ".join(sorted(_SUPPORTED_TRANSPORTS))
             raise ResolutionError(
                 f"{path}: unsupported transport {transport!r}; expected {supported}"
             )
+        platform_dirs.append((transport, path))
 
+    return platform_dirs
+
+
+def _load_libraries(platform_dir, device, transport):
+    libraries = {}
+    for path in sorted(platform_dir.glob("*.yaml")):
+        data = _load_yaml_mapping(path, _LIBRARY_KEYS)
         libraries[path.stem] = LibraryConfig(
             device=device,
-            family=family,
+            transport=transport,
             name=path.stem,
             path=path,
-            transport=transport,
             python_distribution_package=_require_string(
                 data, "python_distribution_package", path
             ),
@@ -167,8 +148,7 @@ def _load_libraries(source_root, platform_dir, device):
     return libraries
 
 
-def _load_bindings(source_root, platform_dir, device, selected_ops):
-    family = _platform_family(source_root, platform_dir)
+def _load_bindings(platform_dir, device, transport, selected_ops):
     bindings = []
     for path in sorted((platform_dir / "ops").glob("*/*.yaml")):
         name = path.parent.name
@@ -201,7 +181,7 @@ def _load_bindings(source_root, platform_dir, device, selected_ops):
         bindings.append(
             BindingConfig(
                 device=device,
-                family=family,
+                transport=transport,
                 implementation=path.stem,
                 name=name,
                 path=path,
@@ -408,19 +388,19 @@ def resolve_linked_ops(
     bindings = []
     library_configs = {}
     for device in devices:
-        platform_dir = _find_platform_dir(source_root, device)
-        if platform_dir is None:
-            continue
-
-        libraries = _load_libraries(source_root, platform_dir, device)
-        for name, config in libraries.items():
-            library_configs[(device, name)] = config
-        bindings.extend(
-            _load_bindings(source_root, platform_dir, device, selected_op_set)
-        )
+        for transport, platform_dir in _find_platform_dirs(source_root, device):
+            libraries = _load_libraries(platform_dir, device, transport)
+            for name, config in libraries.items():
+                library_configs[(transport, device, name)] = config
+            bindings.extend(
+                _load_bindings(
+                    platform_dir, device, transport, selected_op_set
+                )
+            )
 
     bindings.sort(
         key=lambda binding: (
+            binding.transport,
             binding.device,
             binding.name,
             binding.implementation,
@@ -429,7 +409,7 @@ def resolve_linked_ops(
     resolved_libraries = {}
     inspected_symbols = {}
     for binding in bindings:
-        key = (binding.device, binding.library)
+        key = (binding.transport, binding.device, binding.library)
         library_config = library_configs.get(key)
         if library_config is None:
             raise ResolutionError(
@@ -478,7 +458,6 @@ def resolve_linked_ops(
         libraries.append(
             {
                 "device": config.device,
-                "family": config.family,
                 "name": config.name,
                 "path": str(library_path),
                 "python_distribution_package": (config.python_distribution_package),
@@ -493,7 +472,7 @@ def resolve_linked_ops(
         "operators": [
             {
                 "device": binding.device,
-                "family": binding.family,
+                "transport": binding.transport,
                 "library": binding.library,
                 "implementation": binding.implementation,
                 "name": binding.name,

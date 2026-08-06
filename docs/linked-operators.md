@@ -8,7 +8,7 @@ Linked implementations live alongside, rather than under, the native and
 PyTorch backends:
 
 ```text
-src/linked/<platform-area>/
+src/linked/<transport>/<device>/
   <library>.yaml
   ops/<operator>/
     <implementation>.yaml
@@ -19,15 +19,14 @@ src/linked/<platform-area>/
 The platform library file contains only discovery information:
 
 ```yaml
-transport: torch
 python_distribution_package: vllm
 library_glob: vllm/_C*.so
 ```
 
-The platform area follows the repository's backend organization; it is not a
-required `<family>/<device>` schema. Each operator implementation uses the
-provider name as its file stem. This allows the same operator and device to use
-multiple linked libraries in distinct implementation slots.
+The transport is inferred from the first directory component and validated by
+the resolver, so it is not repeated in YAML. Each operator implementation uses
+the provider name as its file stem. This allows the same operator and device to
+use multiple linked libraries in distinct implementation slots.
 
 The implementation YAML names the library and the exact demangled symbols
 required by its C++ source:

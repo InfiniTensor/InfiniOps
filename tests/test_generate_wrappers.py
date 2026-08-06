@@ -645,18 +645,18 @@ def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path
     module = _load_generator_module()
     src_dir = tmp_path / "moore" / "src"
     base_dir = src_dir / "base"
-    family_header = (
-        src_dir / "linked" / "cuda" / "metax" / "ops" / "silu_and_mul" / "vllm.h"
+    provider_dir = (
+        src_dir / "linked" / "torch" / "metax" / "ops" / "silu_and_mul"
     )
-    direct_header = src_dir / "linked" / "metax" / "ops" / "silu_and_mul" / "apex.h"
+    vllm_header = provider_dir / "vllm.h"
+    apex_header = provider_dir / "apex.h"
     base_dir.mkdir(parents=True)
-    family_header.parent.mkdir(parents=True)
-    direct_header.parent.mkdir(parents=True)
+    provider_dir.mkdir(parents=True)
     (base_dir / "silu_and_mul.h").write_text("class SiluAndMul {};\n")
-    family_header.write_text(
+    vllm_header.write_text(
         "class Operator<SiluAndMul, Device::Type::kMetax, 16> {};\n"
     )
-    direct_header.write_text(
+    apex_header.write_text(
         "class Operator<SiluAndMul, Device::Type::kMetax, 17> {};\n"
     )
     monkeypatch.setattr(module, "_SRC_DIR", src_dir)
@@ -667,8 +667,8 @@ def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path
     assert "silu_and_mul" not in module._get_all_ops(["moore"], with_linked=True)
     linked_ops = module._get_all_ops(["metax"], with_linked=True)
     assert set(linked_ops["silu_and_mul"]) == {
-        family_header,
-        direct_header,
+        vllm_header,
+        apex_header,
     }
 
 
