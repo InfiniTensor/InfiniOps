@@ -17,8 +17,11 @@ class Softmax : public Operator<Softmax> {
         out_shape_{out.shape()},
         out_strides_{out.strides()},
         out_type_{out.dtype()},
-        dim_{dim},
+        dim_{dim < 0 ? dim + static_cast<int64_t>(input.ndim()) : dim},
         dtype_{dtype},
+        ndim_{out.ndim()},
+        dim_size_{out.size(dim_)},
+        row_count_{dim_size_ == 0 ? 0 : out.numel() / dim_size_},
         device_index_{out.device().index()} {}
 
   virtual void operator()(const Tensor input, const int64_t dim,
@@ -41,6 +44,12 @@ class Softmax : public Operator<Softmax> {
   int64_t dim_{};
 
   std::optional<DataType> dtype_{};
+
+  Tensor::Size ndim_{0};
+
+  Tensor::Size dim_size_{0};
+
+  Tensor::Size row_count_{0};
 
   int device_index_{0};
 };
