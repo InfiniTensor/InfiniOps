@@ -5,7 +5,7 @@
 
 namespace infini::ops::linked::torch {
 
-template <Device::Type kDev, typename Provider>
+template <typename Backend>
 class TorchSiluAndMul : public ::infini::ops::SiluAndMul {
  public:
   TorchSiluAndMul(const Tensor input, Tensor out);

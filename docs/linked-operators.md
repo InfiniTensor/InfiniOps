@@ -44,6 +44,10 @@ function declarations, synthesized arguments, and provider-specific return
 handling. This keeps simple implementations small without restricting more
 complex provider ABIs.
 
+For the `torch` transport, a provider backend inherits its device `C10`
+specialization for device identity and external-stream handling, then adds only
+its provider-specific `Call` ABI.
+
 At configure time, `scripts/resolve_linked_ops.py` locates the installed Python
 distribution and verifies every required symbol with both `nm` and `readelf`.
 It writes a disposable CMake manifest and diagnostic JSON under
