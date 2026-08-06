@@ -111,12 +111,12 @@ Metadata MakeMetadata(const Tensor input, const Tensor weight,
                       const std::vector<int64_t>& dilation,
                       const int64_t groups, Tensor out) {
   Metadata metadata;
-  metadata.input_shape = input.shape();
-  metadata.input_strides = input.strides();
-  metadata.weight_shape = weight.shape();
-  metadata.weight_strides = weight.strides();
-  metadata.out_shape = out.shape();
-  metadata.out_strides = out.strides();
+  metadata.input_shape = Tensor::Shape{input.shape()};
+  metadata.input_strides = Tensor::Strides{input.strides()};
+  metadata.weight_shape = Tensor::Shape{weight.shape()};
+  metadata.weight_strides = Tensor::Strides{weight.strides()};
+  metadata.out_shape = Tensor::Shape{out.shape()};
+  metadata.out_strides = Tensor::Strides{out.strides()};
   metadata.bias_shape =
       bias.has_value() ? Tensor::Shape{bias->shape()} : Tensor::Shape{};
   metadata.bias_strides =
