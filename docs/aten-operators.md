@@ -48,6 +48,18 @@ generated ATen wrappers. Hand-written ATen backends may use another explicit
 implementation index, but must avoid colliding with the operator's existing
 implementations.
 
+Generated wrappers obtain each backend's native stream type from InfiniRT's
+`Runtime<kDev>::Stream`. On NVIDIA and MetaX, they temporarily install the
+stream stored in `Handle` as the current ATen CUDA stream. On Ascend, they use
+the equivalent NPU stream guard when the installed `torch_npu` provides its
+external-stream API. Each guard restores the previous device and stream when
+the call returns. When `Handle` carries no stream, generated calls leave
+PyTorch's current stream unchanged.
+
+Older `torch_npu` releases without external-stream support continue to use the
+current NPU stream because they cannot represent an arbitrary `aclrtStream`.
+CPU and PyTorch device backends without a bridge also keep their current stream.
+
 ## Add a generated ATen operator
 
 1. Make sure the target environment has PyTorch and `torchgen` installed.

@@ -1271,6 +1271,9 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
     conversion_lines = []
     out_device_index = f"{op.out_params[0].api_name}.device().index()"
     conversion_lines.append(f"  const auto device_index = {out_device_index};")
+    conversion_lines.append(
+        "  const detail::TorchStreamGuard<kDev> stream_guard{stream_, device_index};"
+    )
 
     def _optional_aten_type(param: Param) -> str:
         return _NULLOPT_BY_TYPE[param.aten_type].removesuffix("{}")
@@ -1534,6 +1537,7 @@ void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
 _TORCH_SOURCE_TEMPLATE = """\
 #include "torch/{name}/{name}.h"
 
+#include "torch/stream_.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {{

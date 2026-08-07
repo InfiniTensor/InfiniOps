@@ -276,6 +276,47 @@ if(WITH_TORCH OR WITH_LINKED)
             -Wl,--no-as-needed ${TORCH_CUDA_LIB} ${C10_CUDA_LIB} -Wl,--as-needed)
     endif()
 
+    if(WITH_METAX)
+        find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
+        find_library(MACA_TORCH_RUNTIME_LIB runtime_cu
+            HINTS "$ENV{MACA_PATH}/lib" REQUIRED)
+        # The C10 external-stream bridge and its CUDA-to-MACA adapter both
+        # provide symbols referenced directly by generated Torch sources.
+        list(APPEND TORCH_LIBRARIES
+            ${C10_CUDA_LIB} ${MACA_TORCH_RUNTIME_LIB})
+    endif()
+
+    if(WITH_ASCEND)
+        execute_process(
+            COMMAND ${_TORCH_PYTHON} -c
+                "import importlib.util, os; s = importlib.util.find_spec('torch_npu'); print(os.path.dirname(s.origin) if s and s.origin else '')"
+            OUTPUT_VARIABLE TORCH_NPU_PACKAGE_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _torch_npu_result
+        )
+
+        if(NOT _torch_npu_result EQUAL 0 OR NOT TORCH_NPU_PACKAGE_DIR)
+            message(FATAL_ERROR
+                "`WITH_ASCEND` and `WITH_TORCH` require `torch_npu`.")
+        endif()
+
+        set(TORCH_NPU_INCLUDE_DIR "${TORCH_NPU_PACKAGE_DIR}/include")
+        set(TORCH_NPU_LIBRARY_DIR "${TORCH_NPU_PACKAGE_DIR}/lib")
+        list(APPEND TORCH_NPU_INCLUDE_DIRS
+            "${TORCH_NPU_INCLUDE_DIR}"
+            "${TORCH_NPU_INCLUDE_DIR}/third_party/acl/inc"
+            "${TORCH_NPU_INCLUDE_DIR}/third_party/hccl/inc")
+        list(APPEND TORCH_INCLUDE_DIRS ${TORCH_NPU_INCLUDE_DIRS})
+        list(APPEND TORCH_RUNTIME_DIRS "${TORCH_NPU_LIBRARY_DIR}")
+
+        find_library(TORCH_NPU_LIB torch_npu
+            HINTS "${TORCH_NPU_LIBRARY_DIR}" REQUIRED)
+        # Retain torch_npu so its PrivateUse1 kernels and stream APIs remain
+        # available even when the generated wrappers only call ATen symbols.
+        list(APPEND TORCH_LIBRARIES
+            -Wl,--no-as-needed ${TORCH_NPU_LIB} -Wl,--as-needed)
+    endif()
+
     # `auditwheel`-repaired `torch` wheels bundle transitive dependencies
     # (e.g. `libgfortran-<hash>.so`, `libopenblasp-<hash>.so`) in a sibling
     # `torch.libs/` directory that `library_paths()` does not return.  When
@@ -431,10 +472,14 @@ if(WITH_METAX)
 
     # Normally can be found at: `/opt/maca/`.
     set(MACA_PATH $ENV{MACA_PATH})
+    set(MACA_INCLUDE_DIRS
+        "${MACA_PATH}/include"
+        "${MACA_PATH}/include/mcr"
+        "${MACA_PATH}/tools/cu-bridge/include")
     set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
     set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
 
-    include_directories("${MACA_PATH}/include")
+    include_directories(${MACA_INCLUDE_DIRS})
     link_directories("${MACA_PATH}/lib")
 
     # Libraries: mcruntime / mcdnn / mcblas.
