@@ -8,9 +8,10 @@ import pathlib
 import re
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 import yaml
-
 
 _PROJECT_DIR = pathlib.Path(__file__).resolve().parents[1]
 _DEFAULT_SOURCE_ROOT = _PROJECT_DIR / "src" / "linked"
@@ -232,6 +233,43 @@ def _matches_library_glob(relative, pattern):
     )
 
 
+def _locate_editable_distribution_root(distribution):
+    direct_url = distribution.read_text("direct_url.json")
+    if direct_url is None:
+        return None
+
+    try:
+        metadata = json.loads(direct_url)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    if not isinstance(metadata, dict):
+        return None
+
+    directory = metadata.get("dir_info")
+    if not isinstance(directory, dict) or directory.get("editable") is not True:
+        return None
+
+    url = metadata.get("url")
+    if not isinstance(url, str):
+        return None
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "file":
+        return None
+
+    path = urllib.request.url2pathname(parsed.path)
+    if parsed.netloc:
+        path = f"//{parsed.netloc}{path}"
+
+    root = pathlib.Path(path)
+    if not root.is_absolute():
+        return None
+
+    root = root.resolve()
+    return root if root.is_dir() else None
+
+
 def _locate_distribution_library(config):
     try:
         distribution = importlib.metadata.distribution(
@@ -257,12 +295,18 @@ def _locate_distribution_library(config):
             if candidate.is_file() and candidate.is_relative_to(distribution_root):
                 matches.append(candidate)
 
+    search_roots = [distribution_root]
+    editable_root = _locate_editable_distribution_root(distribution)
+    if editable_root is not None:
+        search_roots.append(editable_root)
+
     # Some vendor wheels intentionally ship sparse or empty RECORD metadata.
-    # Keep the YAML contract unchanged and fall back to the distribution root.
-    for candidate in distribution_root.glob(config.library_glob):
-        candidate = candidate.resolve()
-        if candidate.is_file() and candidate.is_relative_to(distribution_root):
-            matches.append(candidate)
+    # Editable distributions also keep project files outside the metadata root.
+    for root in search_roots:
+        for candidate in root.glob(config.library_glob):
+            candidate = candidate.resolve()
+            if candidate.is_file() and candidate.is_relative_to(root):
+                matches.append(candidate)
 
     matches = sorted(set(matches))
     if len(matches) != 1:
