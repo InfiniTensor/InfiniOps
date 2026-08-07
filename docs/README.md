@@ -35,6 +35,8 @@ Start with these pages:
 - [API Reference](api/reference.md): generate the Doxygen C++ API reference.
 - [Adding ATen-backed operators](aten-operators.md): generated and hand-written
   PyTorch ATen backend guidance.
+- [Adding linked operators](linked-operators.md): adapt typed symbols from
+  installed third-party shared libraries.
 - [Compatibility](compatibility.md): public API boundary, generated files, and
   internal implementation headers.
 

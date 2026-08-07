@@ -17,6 +17,7 @@ entry is `python -m pip install` with CMake options passed through
 | `WITH_MOORE` | Enable the Moore backend. | `OFF` |
 | `WITH_ASCEND` | Enable the Ascend backend. | `OFF` |
 | `WITH_TORCH` | Enable PyTorch C++ ATen-backed operators. | `OFF` |
+| `WITH_LINKED` | Enable operators linked from installed third-party libraries. | `OFF` |
 | `WITH_NINETOOTHED` | Enable NineToothed-generated kernels. | `OFF` |
 | `AUTO_DETECT_DEVICES` | Auto-detect available device files. | `OFF` |
 | `AUTO_DETECT_BACKENDS` | Auto-detect available backend packages. | `OFF` |

@@ -659,6 +659,31 @@ def test_filter_ops_strict_rejects_unavailable_ops():
         raise AssertionError("strict unknown ops should fail")
 
 
+def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    src_dir = tmp_path / "moore" / "src"
+    base_dir = src_dir / "base"
+    provider_dir = src_dir / "linked" / "torch" / "metax" / "ops" / "silu_and_mul"
+    vllm_header = provider_dir / "vllm.h"
+    apex_header = provider_dir / "apex.h"
+    base_dir.mkdir(parents=True)
+    provider_dir.mkdir(parents=True)
+    (base_dir / "silu_and_mul.h").write_text("class SiluAndMul {};\n")
+    vllm_header.write_text("class Operator<SiluAndMul, Device::Type::kMetax, 16> {};\n")
+    apex_header.write_text("class Operator<SiluAndMul, Device::Type::kMetax, 17> {};\n")
+    monkeypatch.setattr(module, "_SRC_DIR", src_dir)
+    monkeypatch.setattr(module, "_BASE_DIR", base_dir)
+    monkeypatch.setattr(module, "_GENERATION_DIR", tmp_path / "generated")
+
+    assert "silu_and_mul" not in module._get_all_ops(["metax"])
+    assert "silu_and_mul" not in module._get_all_ops(["moore"], with_linked=True)
+    linked_ops = module._get_all_ops(["metax"], with_linked=True)
+    assert set(linked_ops["silu_and_mul"]) == {
+        vllm_header,
+        apex_header,
+    }
+
+
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_generator_module()
     path = tmp_path / "bindings.cc"

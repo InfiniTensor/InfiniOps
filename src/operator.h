@@ -383,7 +383,7 @@ class Operator : public OperatorBase {
 
 // Maximum number of implementation slots per (operator, device) pair.
 // Increase this value when adding operators with more implementations.
-constexpr std::size_t kMaxImplementations = 16;
+constexpr std::size_t kMaxImplementations = 32;
 
 // SFINAE-based implementation detection. A partial specialization
 // `Operator<Key, kDev, N>` inherits from `Key` (the operator base class),

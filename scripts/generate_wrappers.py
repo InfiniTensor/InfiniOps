@@ -1664,6 +1664,26 @@ def _to_include_path(path):
 
 
 def _matches_scan_dir(impl_path, scan_dirs):
+    linked_root = _SRC_DIR / "linked"
+    try:
+        linked_path = impl_path.relative_to(linked_root)
+    except ValueError:
+        linked_path = None
+
+    if linked_path is not None:
+        if "linked" not in scan_dirs:
+            return False
+
+        try:
+            ops_index = linked_path.parts.index("ops")
+        except ValueError:
+            return False
+        platform_parts = linked_path.parts[:ops_index]
+        if not platform_parts:
+            return False
+        active_devices = scan_dirs - {"linked", "ninetoothed", "torch"}
+        return any(part in active_devices for part in platform_parts)
+
     return any(part in scan_dirs for part in impl_path.parts)
 
 
@@ -1724,13 +1744,15 @@ def _filter_ops(ops, op_allowlist, *, strict=False):
     return {op_name: ops[op_name] for op_name in op_allowlist if op_name in ops}
 
 
-def _get_all_ops(devices, with_torch=False, with_ninetoothed=False):
+def _get_all_ops(devices, with_torch=False, with_ninetoothed=False, with_linked=False):
     scan_dirs = set(devices)
 
     if with_torch:
         scan_dirs.add("torch")
     if with_ninetoothed:
         scan_dirs.add("ninetoothed")
+    if with_linked:
+        scan_dirs.add("linked")
 
     ops = {}
 
@@ -1931,6 +1953,11 @@ if __name__ == "__main__":
         help="Include NineToothed backend implementations.",
     )
     parser.add_argument(
+        "--with-linked",
+        action="store_true",
+        help="Include linked third-party backend implementations.",
+    )
+    parser.add_argument(
         "--ops",
         nargs="+",
         default=[],
@@ -1957,6 +1984,7 @@ if __name__ == "__main__":
             args.devices,
             with_torch=args.with_torch,
             with_ninetoothed=args.with_ninetoothed,
+            with_linked=args.with_linked,
         )
 
     ops = _filter_ops(
