@@ -85,6 +85,7 @@ def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_p
         }
     ]
     assert payload["libraries"][0]["path"] == str(library_path)
+    assert not payload["libraries"][0]["force_load"]
     assert json.loads((output_dir / "resolved.json").read_text()) == payload
 
     manifest = (output_dir / "manifest.cmake").read_text()
@@ -93,6 +94,77 @@ def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_p
     assert str(library_path).replace("\\", "/") in manifest
     assert '"torch"' in manifest
     assert "ignored" not in manifest
+
+
+def test_resolve_validates_dispatcher_contract_and_force_loads_library(
+    monkeypatch, tmp_path
+):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    platform = source_root / "torch" / "nvidia"
+    op_dir = platform / "ops" / "gptq_marlin_repack"
+    op_dir.mkdir(parents=True)
+    (platform / "vllm.yaml").write_text(
+        "python_distribution_package: vllm\n" "library_glob: vllm/_C*.so\n"
+    )
+    schema = (
+        "_C::gptq_marlin_repack(Tensor b_q_weight, Tensor perm, "
+        "SymInt size_k, SymInt size_n, int num_bits, bool is_a_8bit) -> Tensor"
+    )
+    (op_dir / "vllm.yaml").write_text(
+        "library: vllm\n" f"dispatcher_schema: {schema}\n" "dispatch_key: CUDA\n"
+    )
+    (op_dir / "vllm.h").write_text("// declaration\n")
+    (op_dir / "vllm.cc").write_text("// definition\n")
+    library_path = tmp_path / "site-packages" / "vllm" / "_C.abi3.so"
+    library_path.parent.mkdir(parents=True)
+    library_path.touch()
+
+    monkeypatch.setattr(
+        module, "_locate_distribution_library", lambda config: library_path
+    )
+    contracts = []
+    monkeypatch.setattr(
+        module,
+        "_verify_dispatcher_contracts",
+        lambda resolved: contracts.extend(resolved),
+    )
+    monkeypatch.setattr(
+        module,
+        "_inspect_dynamic_symbols",
+        lambda *args: pytest.fail("Dispatcher bindings do not inspect symbols"),
+    )
+
+    output_dir = tmp_path / "generated"
+    payload = module.resolve_linked_ops(
+        ["nvidia"],
+        ["gptq_marlin_repack"],
+        source_root=source_root,
+        output_dir=output_dir,
+    )
+
+    assert len(contracts) == 1
+    contract, resolved_path = contracts[0]
+    assert (contract.dispatcher_schema, contract.dispatch_key) == (schema, "CUDA")
+    assert resolved_path == library_path
+    assert payload["libraries"][0]["force_load"]
+    assert payload["operators"] == [
+        {
+            "device": "nvidia",
+            "transport": "torch",
+            "implementation": "vllm",
+            "library": "vllm",
+            "name": "gptq_marlin_repack",
+            "dispatcher_schema": schema,
+            "dispatch_key": "CUDA",
+            "source": str((op_dir / "vllm.cc").resolve()),
+        }
+    ]
+    manifest = (output_dir / "manifest.cmake").read_text()
+    force_load_block = manifest.split(
+        "set(INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES", maxsplit=1
+    )[1].split(")", maxsplit=1)[0]
+    assert str(library_path).replace("\\", "/") in force_load_block
 
 
 def test_resolve_supports_multiple_implementations_for_one_operator(
@@ -152,6 +224,44 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
         "apex.cc",
         "vllm.cc",
     ]
+
+
+@pytest.mark.parametrize(
+    ("binding", "message"),
+    (
+        (
+            "library: vllm\n"
+            "required_symbols:\n"
+            "  - symbol()\n"
+            "dispatcher_schema: _C::op() -> Tensor\n"
+            "dispatch_key: CUDA\n",
+            "exactly one of required_symbols or dispatcher_schema",
+        ),
+        (
+            "library: vllm\n" "dispatcher_schema: _C::op() -> Tensor\n",
+            "dispatcher_schema requires dispatch_key",
+        ),
+        (
+            "library: vllm\n"
+            "required_symbols:\n"
+            "  - symbol()\n"
+            "dispatch_key: CUDA\n",
+            "dispatch_key requires dispatcher_schema",
+        ),
+    ),
+)
+def test_resolve_requires_one_complete_binding_contract(tmp_path, binding, message):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    _, op_dir = _write_linked_config(source_root)
+    (op_dir / "vllm.yaml").write_text(binding)
+
+    with pytest.raises(module.ResolutionError, match=message):
+        module.resolve_linked_ops(
+            ["metax"],
+            source_root=source_root,
+            output_dir=tmp_path / "generated",
+        )
 
 
 @pytest.mark.parametrize(
@@ -387,6 +497,73 @@ def test_dynamic_symbol_inspection_uses_nm_readelf_and_cxxfilt(monkeypatch, tmp_
     assert calls[2][1] == {
         **common,
         "input": "_ZN4vllm12silu_and_mulERN2at6TensorES3_\n",
+    }
+
+
+def test_dispatcher_contract_validation_uses_one_isolated_process(
+    monkeypatch, tmp_path
+):
+    module = _load_resolver_module()
+    schema = "_C::op(Tensor input) -> Tensor"
+    config = module.BindingConfig(
+        device="nvidia",
+        name="op",
+        implementation="vllm",
+        path=tmp_path / "vllm.yaml",
+        transport="torch",
+        source=tmp_path / "vllm.cc",
+        library="vllm",
+        required_symbols=(),
+        dispatcher_schema=schema,
+        dispatch_key="CUDA",
+    )
+    other_schema = "other::op(Tensor input) -> Tensor"
+    other_config = module.BindingConfig(
+        device="nvidia",
+        name="other_op",
+        implementation="other",
+        path=tmp_path / "other.yaml",
+        transport="torch",
+        source=tmp_path / "other.cc",
+        library="other",
+        required_symbols=(),
+        dispatcher_schema=other_schema,
+        dispatch_key="CUDA",
+    )
+    library_path = tmp_path / "_C.so"
+    other_library_path = tmp_path / "other.so"
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    module._verify_dispatcher_contracts(
+        [(config, library_path), (other_config, other_library_path)]
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0][0:2] == [sys.executable, "-c"]
+    payload = json.loads(calls[0][0][-1])
+    assert payload == [
+        {
+            "binding_path": str(config.path),
+            "library_path": str(library_path),
+            "schema": schema,
+            "dispatch_key": "CUDA",
+        },
+        {
+            "binding_path": str(other_config.path),
+            "library_path": str(other_library_path),
+            "schema": other_schema,
+            "dispatch_key": "CUDA",
+        },
+    ]
+    assert calls[0][1] == {
+        "check": True,
+        "capture_output": True,
+        "text": True,
     }
 
 

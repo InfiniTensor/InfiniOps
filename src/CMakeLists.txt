@@ -512,6 +512,7 @@ endif()
 
 set(INFINI_OPS_LINKED_SOURCES "")
 set(INFINI_OPS_LINKED_LIBRARIES "")
+set(INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES "")
 set(INFINI_OPS_LINKED_RUNTIME_DIRS "")
 set(INFINI_OPS_LINKED_TRANSPORTS "")
 set(_infini_ops_linked_uses_torch FALSE)
@@ -598,10 +599,20 @@ if(WITH_LINKED)
 
         set(_linked_library_target
             "infini_ops_linked_library_${_linked_library_index}")
+        list(FIND INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES
+            "${_linked_library}" _linked_force_load)
+        if(_linked_force_load EQUAL -1)
+            set(_linked_library_link_items "-l:${_linked_library_name}")
+        else()
+            set(_linked_library_link_items
+                "-Wl,--push-state,--no-as-needed"
+                "-l:${_linked_library_name}"
+                "-Wl,--pop-state")
+        endif()
         add_library("${_linked_library_target}" INTERFACE IMPORTED)
         set_target_properties("${_linked_library_target}" PROPERTIES
             INTERFACE_LINK_DIRECTORIES "${_linked_library_dir}"
-            INTERFACE_LINK_LIBRARIES "-l:${_linked_library_name}")
+            INTERFACE_LINK_LIBRARIES "${_linked_library_link_items}")
         # Python extension DSOs generally have no SONAME. Link the exact
         # resolved basename while keeping the install location configurable.
         target_link_libraries(infiniops PRIVATE "${_linked_library_target}")

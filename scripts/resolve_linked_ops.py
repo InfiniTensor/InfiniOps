@@ -19,7 +19,12 @@ _LIBRARY_KEYS = {
     "python_distribution_package",
     "library_glob",
 }
-_BINDING_KEYS = {"library", "required_symbols"}
+_BINDING_KEYS = {
+    "library",
+    "required_symbols",
+    "dispatcher_schema",
+    "dispatch_key",
+}
 _SUPPORTED_TRANSPORTS = {"torch"}
 
 
@@ -72,9 +77,11 @@ class BindingConfig:
     source: pathlib.Path
     library: str
     required_symbols: tuple[str, ...]
+    dispatcher_schema: str | None
+    dispatch_key: str | None
 
 
-def _load_yaml_mapping(path, expected_keys):
+def _load_yaml_mapping(path, expected_keys, required_keys=None):
     try:
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=_StrictLoader)
     except (OSError, yaml.YAMLError) as error:
@@ -85,7 +92,8 @@ def _load_yaml_mapping(path, expected_keys):
 
     keys = set(data)
     unknown_keys = sorted(keys - expected_keys)
-    missing_keys = sorted(expected_keys - keys)
+    required_keys = expected_keys if required_keys is None else required_keys
+    missing_keys = sorted(required_keys - keys)
     if unknown_keys:
         raise ResolutionError(
             f"{path} contains unknown keys: {', '.join(unknown_keys)}"
@@ -155,21 +163,45 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
         if selected_ops is not None and name not in selected_ops:
             continue
 
-        data = _load_yaml_mapping(path, _BINDING_KEYS)
-        symbols = data["required_symbols"]
-        if (
-            not isinstance(symbols, list)
-            or not symbols
-            or any(
-                not isinstance(symbol, str) or not symbol.strip() for symbol in symbols
-            )
-        ):
+        data = _load_yaml_mapping(path, _BINDING_KEYS, {"library"})
+        symbols = data.get("required_symbols")
+        dispatcher_schema = data.get("dispatcher_schema")
+        dispatch_key = data.get("dispatch_key")
+
+        if (symbols is None) == (dispatcher_schema is None):
             raise ResolutionError(
-                f"{path}: required_symbols must be a non-empty list of strings"
+                f"{path} must define exactly one of required_symbols or "
+                "dispatcher_schema"
             )
-        symbols = tuple(symbol.strip() for symbol in symbols)
-        if len(symbols) != len(set(symbols)):
-            raise ResolutionError(f"{path}: required_symbols contains duplicates")
+
+        if symbols is not None:
+            if dispatch_key is not None:
+                raise ResolutionError(
+                    f"{path}: dispatch_key requires dispatcher_schema"
+                )
+            if (
+                not isinstance(symbols, list)
+                or not symbols
+                or any(
+                    not isinstance(symbol, str) or not symbol.strip()
+                    for symbol in symbols
+                )
+            ):
+                raise ResolutionError(
+                    f"{path}: required_symbols must be a non-empty list of strings"
+                )
+            symbols = tuple(symbol.strip() for symbol in symbols)
+            if len(symbols) != len(set(symbols)):
+                raise ResolutionError(f"{path}: required_symbols contains duplicates")
+            dispatcher_schema = None
+        else:
+            symbols = ()
+            dispatcher_schema = _require_string(data, "dispatcher_schema", path)
+            if dispatch_key is None:
+                raise ResolutionError(
+                    f"{path}: dispatcher_schema requires dispatch_key"
+                )
+            dispatch_key = _require_string(data, "dispatch_key", path)
 
         header = path.with_suffix(".h")
         source = path.with_suffix(".cc")
@@ -188,6 +220,8 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
                 source=source.resolve(),
                 library=_require_string(data, "library", path),
                 required_symbols=symbols,
+                dispatcher_schema=dispatcher_schema,
+                dispatch_key=dispatch_key,
             )
         )
 
@@ -346,6 +380,65 @@ def _verify_required_symbols(config, library_path, nm_symbols, readelf_symbols):
             )
 
 
+def _verify_dispatcher_contracts(contracts):
+    payload = [
+        {
+            "binding_path": str(config.path),
+            "library_path": str(library_path),
+            "schema": config.dispatcher_schema,
+            "dispatch_key": config.dispatch_key,
+        }
+        for config, library_path in contracts
+    ]
+    script = (
+        "import json\n"
+        "import sys\n"
+        "import torch\n"
+        "contracts = json.loads(sys.argv[1])\n"
+        "loaded = set()\n"
+        "for contract in contracts:\n"
+        "    library_path = contract['library_path']\n"
+        "    if library_path not in loaded:\n"
+        "        torch.ops.load_library(library_path)\n"
+        "        loaded.add(library_path)\n"
+        "for contract in contracts:\n"
+        "    expected = torch._C.parse_schema(contract['schema'])\n"
+        "    actual = torch._C._dispatch_find_schema_or_throw(\n"
+        "        expected.name, expected.overload_name\n"
+        "    ).schema()\n"
+        "    if str(actual) != str(expected):\n"
+        "        sys.exit(\n"
+        "            f\"{contract['binding_path']}: expected {expected}, \"\n"
+        "            f'found {actual}'\n"
+        "        )\n"
+        "    qualified_name = expected.name\n"
+        "    if expected.overload_name:\n"
+        "        qualified_name += f'.{expected.overload_name}'\n"
+        "    dispatch_key = contract['dispatch_key']\n"
+        "    if not torch._C._dispatch_has_kernel_for_dispatch_key(\n"
+        "        qualified_name, dispatch_key\n"
+        "    ):\n"
+        "        sys.exit(\n"
+        "            f\"{contract['binding_path']}: {qualified_name} has no \"\n"
+        "            f'{dispatch_key} kernel'\n"
+        "        )\n"
+    )
+    try:
+        subprocess.run(
+            [sys.executable, "-c", script, json.dumps(payload)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        stderr = getattr(error, "stderr", "") or ""
+        detail = f": {stderr.strip()}" if stderr.strip() else ""
+        raise ResolutionError(
+            "dispatcher contracts are not provided by the resolved "
+            f"libraries{detail}"
+        ) from error
+
+
 def _cmake_quote(value):
     return str(value).replace("\\", "/").replace(";", "\\;").replace('"', '\\"')
 
@@ -357,6 +450,9 @@ def _render_cmake_manifest(payload):
         ],
         "INFINI_OPS_LINKED_LIBRARIES": [
             library["path"] for library in payload["libraries"]
+        ],
+        "INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES": [
+            library["path"] for library in payload["libraries"] if library["force_load"]
         ],
         "INFINI_OPS_LINKED_RUNTIME_DIRS": [
             library["runtime_dir"] for library in payload["libraries"]
@@ -433,6 +529,7 @@ def resolve_linked_ops(
     )
     resolved_libraries = {}
     inspected_symbols = {}
+    dispatcher_contracts = []
     for binding in bindings:
         key = (binding.transport, binding.device, binding.library)
         library_config = library_configs.get(key)
@@ -445,14 +542,20 @@ def resolve_linked_ops(
         if key not in resolved_libraries:
             library_path = _locate_distribution_library(library_config)
             resolved_libraries[key] = library_path
-            inspected_symbols[key] = _inspect_dynamic_symbols(
-                library_path, nm, readelf, cxxfilt
-            )
 
         library_path = resolved_libraries[key]
-        nm_symbols, readelf_symbols = inspected_symbols[key]
-        _verify_required_symbols(binding, library_path, nm_symbols, readelf_symbols)
+        if binding.required_symbols:
+            if key not in inspected_symbols:
+                inspected_symbols[key] = _inspect_dynamic_symbols(
+                    library_path, nm, readelf, cxxfilt
+                )
+            nm_symbols, readelf_symbols = inspected_symbols[key]
+            _verify_required_symbols(binding, library_path, nm_symbols, readelf_symbols)
+        else:
+            dispatcher_contracts.append((binding, library_path))
 
+    if dispatcher_contracts:
+        _verify_dispatcher_contracts(dispatcher_contracts)
     required_symbols = {
         symbol for binding in bindings for symbol in binding.required_symbols
     }
@@ -478,6 +581,11 @@ def resolve_linked_ops(
                 f"{previous} and {library_path}"
             )
 
+    force_load_keys = {
+        (binding.transport, binding.device, binding.library)
+        for binding in bindings
+        if binding.dispatcher_schema is not None
+    }
     libraries = []
     for key in sorted(resolved_libraries):
         config = library_configs[key]
@@ -485,6 +593,7 @@ def resolve_linked_ops(
         libraries.append(
             {
                 "device": config.device,
+                "force_load": key in force_load_keys,
                 "name": config.name,
                 "path": str(library_path),
                 "python_distribution_package": (config.python_distribution_package),
@@ -493,21 +602,27 @@ def resolve_linked_ops(
             }
         )
 
+    operators = []
+    for binding in bindings:
+        operator = {
+            "device": binding.device,
+            "transport": binding.transport,
+            "library": binding.library,
+            "implementation": binding.implementation,
+            "name": binding.name,
+            "source": str(binding.source),
+        }
+        if binding.required_symbols:
+            operator["required_symbols"] = list(binding.required_symbols)
+        else:
+            operator["dispatcher_schema"] = binding.dispatcher_schema
+            operator["dispatch_key"] = binding.dispatch_key
+        operators.append(operator)
+
     payload = {
         "devices": list(devices),
         "libraries": libraries,
-        "operators": [
-            {
-                "device": binding.device,
-                "transport": binding.transport,
-                "library": binding.library,
-                "implementation": binding.implementation,
-                "name": binding.name,
-                "required_symbols": list(binding.required_symbols),
-                "source": str(binding.source),
-            }
-            for binding in bindings
-        ],
+        "operators": operators,
     }
     _write_if_changed(output_dir / "manifest.cmake", _render_cmake_manifest(payload))
     _write_if_changed(
