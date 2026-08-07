@@ -56,10 +56,15 @@ def test_silu_and_mul(
 def test_silu_and_mul_non_default_stream(device, implementation_index):
     if device == "cuda":
         accelerator = torch.cuda
+        stream_attribute = "cuda_stream"
     elif device == "musa":
         accelerator = torch.musa
+        stream_attribute = "musa_stream"
+    elif device == "mlu":
+        accelerator = torch.mlu
+        stream_attribute = "mlu_stream"
     else:
-        pytest.skip("non-default streams require a CUDA-compatible or MUSA backend")
+        pytest.skip("non-default streams require an accelerator backend")
 
     input = torch.randn((32, 128), dtype=torch.float16, device=device)
     out = torch.zeros((32, 64), dtype=torch.float16, device=device)
@@ -68,7 +73,7 @@ def test_silu_and_mul_non_default_stream(device, implementation_index):
 
     stream = accelerator.Stream()
     stream.wait_stream(accelerator.current_stream())
-    stream_ptr = stream.cuda_stream if device == "cuda" else stream.musa_stream
+    stream_ptr = getattr(stream, stream_attribute)
 
     # Keep the current stream busy. A provider call that ignores the explicit
     # stream will be queued behind this delay, while the requested stream can

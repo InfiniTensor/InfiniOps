@@ -753,6 +753,34 @@ if(_infini_ops_linked_uses_torch)
     list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_SOURCES})
 endif()
 
+if(WITH_CAMBRICON AND _infini_ops_linked_uses_torch)
+    execute_process(
+        COMMAND "${_TORCH_PYTHON}" -c
+            "import importlib.metadata, pathlib; root = pathlib.Path(importlib.metadata.distribution('torch-mlu').locate_file('')).resolve(); include = root / 'torch_mlu/csrc'; lib = include / 'lib'; print(include, lib, sep=';')"
+        OUTPUT_VARIABLE _torch_mlu_paths
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _torch_mlu_paths_result
+    )
+    if(NOT _torch_mlu_paths_result EQUAL 0 OR NOT _torch_mlu_paths)
+        message(FATAL_ERROR
+            "Could not determine `torch-mlu` include and library directories.")
+    endif()
+    list(GET _torch_mlu_paths 0 _torch_mlu_include_dir)
+    list(GET _torch_mlu_paths 1 _torch_mlu_library_dir)
+    if(NOT IS_DIRECTORY "${_torch_mlu_include_dir}" OR
+       NOT IS_DIRECTORY "${_torch_mlu_library_dir}")
+        message(FATAL_ERROR
+            "Could not find the installed `torch-mlu` C++ development files.")
+    endif()
+
+    find_library(TORCH_MLU_LIB torch_mlu
+        HINTS "${_torch_mlu_library_dir}"
+        NO_DEFAULT_PATH REQUIRED)
+    list(APPEND TORCH_INCLUDE_DIRS "${_torch_mlu_include_dir}")
+    list(APPEND TORCH_LIBRARIES "${TORCH_MLU_LIB}")
+    list(APPEND TORCH_RUNTIME_DIRS "${_torch_mlu_library_dir}")
+endif()
+
 if(TORCH_SOURCES)
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
