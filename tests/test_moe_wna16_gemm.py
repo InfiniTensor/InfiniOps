@@ -229,6 +229,64 @@ def test_moe_wna16_gemm_skips_padding_and_unmapped_expert(device, implementation
     assert torch.count_nonzero(output.flatten(0, 1)[3:]).item() == 0
 
 
+@pytest.mark.parametrize("device, implementation_index", (("cuda", 16),))
+def test_moe_wna16_gemm_linked_vllm(device, implementation_index):
+    if (
+        implementation_index
+        not in infini.ops.MoeWna16Gemm.active_implementation_indices(device)
+    ):
+        pytest.skip("vLLM linked implementation is not active")
+
+    tensors = _make_case(4, True, True, torch.float16, device)
+    (
+        input,
+        qweight,
+        scales,
+        qzeros,
+        topk_weights,
+        sorted_token_ids,
+        expert_ids,
+        num_tokens_post_pad,
+        output,
+        quantized_weight,
+        zero_points,
+    ) = tensors
+
+    result = infini.ops.moe_wna16_gemm(
+        input,
+        qweight,
+        scales,
+        qzeros,
+        topk_weights,
+        sorted_token_ids,
+        expert_ids,
+        num_tokens_post_pad,
+        2,
+        2,
+        16,
+        32,
+        4,
+        output,
+        stream=get_stream(input.device),
+        implementation_index=implementation_index,
+    )
+
+    assert result is None
+    expected = _reference(
+        input,
+        quantized_weight,
+        scales,
+        zero_points,
+        4,
+        topk_weights,
+        sorted_token_ids,
+        expert_ids,
+        num_tokens_post_pad,
+        block_size_m=2,
+    )
+    torch.testing.assert_close(output, expected, rtol=2e-2, atol=2e-2)
+
+
 def _make_case(
     bit,
     has_zero_point,
