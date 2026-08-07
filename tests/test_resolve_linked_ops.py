@@ -593,6 +593,9 @@ def test_locate_distribution_library_requires_one_glob_match(monkeypatch, tmp_pa
                 return outside_library
             return site_packages / entry
 
+        def read_text(self, filename):
+            return None
+
     monkeypatch.setattr(
         module.importlib.metadata, "distribution", lambda name: FakeDistribution()
     )
@@ -623,6 +626,9 @@ def test_locate_distribution_library_falls_back_to_distribution_root(
         def locate_file(self, entry):
             return site_packages / entry
 
+        def read_text(self, filename):
+            return None
+
     monkeypatch.setattr(
         module.importlib.metadata, "distribution", lambda name: FakeDistribution()
     )
@@ -636,3 +642,60 @@ def test_locate_distribution_library_falls_back_to_distribution_root(
     )
 
     assert module._locate_distribution_library(config) == library.resolve()
+
+
+def test_locate_distribution_library_supports_editable_install(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    site_packages = tmp_path / "site-packages"
+    project_root = tmp_path / "vllm-project"
+    library = project_root / "vllm" / "_C.abi3.so"
+    library.parent.mkdir(parents=True)
+    library.touch()
+
+    class FakeDistribution:
+        files = (pathlib.PurePosixPath("__editable__.vllm.pth"),)
+
+        def locate_file(self, entry):
+            return site_packages / entry
+
+        def read_text(self, filename):
+            assert filename == "direct_url.json"
+            return json.dumps(
+                {
+                    "url": project_root.as_uri(),
+                    "dir_info": {"editable": True},
+                }
+            )
+
+    monkeypatch.setattr(
+        module.importlib.metadata, "distribution", lambda name: FakeDistribution()
+    )
+    config = module.LibraryConfig(
+        device="nvidia",
+        name="vllm",
+        path=tmp_path / "vllm.yaml",
+        transport="torch",
+        python_distribution_package="vllm",
+        library_glob="vllm/_C*.so",
+    )
+
+    assert module._locate_distribution_library(config) == library.resolve()
+
+
+@pytest.mark.parametrize(
+    "editable, url",
+    ((False, None), (True, "https://example.com/vllm")),
+)
+def test_locate_editable_distribution_root_ignores_unsupported_metadata(
+    tmp_path, editable, url
+):
+    module = _load_resolver_module()
+    if url is None:
+        url = tmp_path.as_uri()
+
+    class FakeDistribution:
+        def read_text(self, filename):
+            assert filename == "direct_url.json"
+            return json.dumps({"url": url, "dir_info": {"editable": editable}})
+
+    assert module._locate_editable_distribution_root(FakeDistribution()) is None
