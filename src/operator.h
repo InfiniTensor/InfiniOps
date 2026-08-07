@@ -35,6 +35,16 @@ struct CacheKey {
     return key;
   }
 
+  template <typename... Args>
+  bool Matches(const Args&... args) const {
+    std::size_t tensor_index{0};
+    std::size_t candidate_scalar_hash{0};
+    bool matches{true};
+    (Match(args, tensor_index, candidate_scalar_hash, matches), ...);
+    return matches && tensor_index == tensors.size() &&
+           candidate_scalar_hash == scalar_hash;
+  }
+
  private:
   void Absorb(const Tensor& t) {
     HashCombine(hash, t);
@@ -42,6 +52,7 @@ struct CacheKey {
   }
 
   void Absorb(const std::vector<Tensor>& ts) {
+    HashCombine(scalar_hash, ts.size());
     HashCombine(hash, ts.size());
     for (const auto& t : ts) {
       HashCombine(hash, t);
@@ -53,6 +64,30 @@ struct CacheKey {
   void Absorb(const T& v) {
     HashCombine(hash, v);
     HashCombine(scalar_hash, v);
+  }
+
+  void Match(const Tensor& tensor, std::size_t& tensor_index,
+             std::size_t& /*candidate_scalar_hash*/, bool& matches) const {
+    if (tensor_index >= tensors.size() ||
+        !std::equal_to<Tensor>{}(tensors[tensor_index], tensor)) {
+      matches = false;
+    }
+    ++tensor_index;
+  }
+
+  void Match(const std::vector<Tensor>& candidate_tensors,
+             std::size_t& tensor_index, std::size_t& candidate_scalar_hash,
+             bool& matches) const {
+    HashCombine(candidate_scalar_hash, candidate_tensors.size());
+    for (const auto& tensor : candidate_tensors) {
+      Match(tensor, tensor_index, candidate_scalar_hash, matches);
+    }
+  }
+
+  template <typename T>
+  void Match(const T& value, std::size_t& /*tensor_index*/,
+             std::size_t& candidate_scalar_hash, bool& /*matches*/) const {
+    HashCombine(candidate_scalar_hash, value);
   }
 };
 
@@ -151,7 +186,30 @@ struct CacheKeyBuilder {
   detail::CacheKey operator()(const Config& config, const Args&... args) const {
     return detail::CacheKey::Build(config.implementation_index(), args...);
   }
+
+  template <typename... Args>
+  bool Matches(const detail::CacheKey& key, const Config& config,
+               const Args&... args) const {
+    return key.Matches(config.implementation_index(), args...);
+  }
 };
+
+namespace detail {
+
+template <typename Builder, typename... Args>
+auto CacheKeyMatches(int, const Builder& builder, const CacheKey& key,
+                     const Config& config, const Args&... args)
+    -> decltype(builder.Matches(key, config, args...), bool{}) {
+  return builder.Matches(key, config, args...);
+}
+
+template <typename Builder, typename... Args>
+bool CacheKeyMatches(long, const Builder& /*builder*/, const CacheKey& /*key*/,
+                     const Config& /*config*/, const Args&... /*args*/) {
+  return false;
+}
+
+}  // namespace detail
 
 template <typename Key, Device::Type kDev>
 struct ActiveImplementations;
@@ -235,46 +293,77 @@ class Operator : public OperatorBase {
                                            std::unique_ptr<Operator>>
         cache;
     static thread_local std::size_t generation{0};
+    static thread_local const detail::CacheKey* last_key{nullptr};
+    static thread_local Operator* last_operator{nullptr};
+    static thread_local const detail::CacheKey* previous_key{nullptr};
+    static thread_local Operator* previous_operator{nullptr};
 
     const auto cache_generation =
         cache_generation_.load(std::memory_order_relaxed);
     if (generation != cache_generation) {
       cache.clear();
       generation = cache_generation;
+      last_key = nullptr;
+      last_operator = nullptr;
+      previous_key = nullptr;
+      previous_operator = nullptr;
     }
 
-#if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
+    const auto key_builder{CacheKeyBuilder<Key>{}};
+    const auto invoke = [&](Operator* op) {
+      [[maybe_unused]] HostRangeScope host_range_operator_invoke{
+          HostRangeLayer::kOperatorInvoke};
+      return (*op)(handle, args...);
+    };
+    const auto hot_operator = [&]() -> Operator* {
+      [[maybe_unused]] HostRangeScope host_range_cache_match{
+          HostRangeLayer::kCacheMatch};
+      if (last_key != nullptr &&
+          detail::CacheKeyMatches(0, key_builder, *last_key, config, args...)) {
+        return last_operator;
+      }
+      if (previous_key != nullptr &&
+          detail::CacheKeyMatches(0, key_builder, *previous_key, config,
+                                  args...)) {
+        std::swap(last_key, previous_key);
+        std::swap(last_operator, previous_operator);
+        return last_operator;
+      }
+      return nullptr;
+    }();
+
+    if (hot_operator != nullptr) {
+      return invoke(hot_operator);
+    }
+
     auto key = [&]() {
-      HostRangeScope host_range_cache_key{HostRangeLayer::kCacheKey};
-      return CacheKeyBuilder<Key>{}(config, args...);
+      [[maybe_unused]] HostRangeScope host_range_cache_key{
+          HostRangeLayer::kCacheKey};
+      return key_builder(config, args...);
     }();
 
-    auto it = [&]() {
-      HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
-      return cache.find(key);
+    auto [it, inserted] = [&]() {
+      [[maybe_unused]] HostRangeScope host_range_cache_lookup{
+          HostRangeLayer::kCacheLookup};
+      return cache.try_emplace(std::move(key));
     }();
 
-    if (it == cache.end()) {
-      HostRangeScope host_range_cache_construct{
+    if (inserted) {
+      [[maybe_unused]] HostRangeScope host_range_cache_construct{
           HostRangeLayer::kCacheConstruct};
-      auto new_op = Make(config, args...);
-      it = cache.emplace(std::move(key), std::move(new_op)).first;
+      try {
+        it->second = Make(config, args...);
+      } catch (...) {
+        cache.erase(it);
+        throw;
+      }
     }
-#else
-    auto key = CacheKeyBuilder<Key>{}(config, args...);
 
-    auto it{cache.find(key)};
-
-    if (it == cache.end()) {
-      it = cache.emplace(std::move(key), Make(config, args...)).first;
-    }
-#endif
-
-    auto& op{it->second};
-
-    [[maybe_unused]] HostRangeScope host_range_operator_invoke{
-        HostRangeLayer::kOperatorInvoke};
-    return (*op)(handle, args...);
+    previous_key = last_key;
+    previous_operator = last_operator;
+    last_key = &it->first;
+    last_operator = it->second.get();
+    return invoke(last_operator);
   }
 
   template <typename... Args>
