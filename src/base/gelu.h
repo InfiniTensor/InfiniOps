@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_BASE_GELU_H_
 #define INFINI_OPS_BASE_GELU_H_
 
+#include <cassert>
 #include <string>
 
 #include "operator.h"
@@ -17,7 +18,14 @@ class Gelu : public Operator<Gelu> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         approximate_{approximate},
-        device_index_{out.device().index()} {}
+        output_size_{out.numel()},
+        ndim_{out.ndim()},
+        is_input_contiguous_{input.IsContiguous()},
+        is_out_contiguous_{out.IsContiguous()},
+        device_index_{out.device().index()} {
+    assert((approximate == "none" || approximate == "tanh") &&
+           "`Gelu` requires `approximate` to be `none` or `tanh`");
+  }
 
   virtual void operator()(const Tensor input, const std::string approximate,
                           Tensor out) const = 0;
@@ -36,6 +44,14 @@ class Gelu : public Operator<Gelu> {
   DataType out_type_;
 
   std::string approximate_{};
+
+  Tensor::Size output_size_{0};
+
+  Tensor::Size ndim_{0};
+
+  bool is_input_contiguous_{false};
+
+  bool is_out_contiguous_{false};
 
   int device_index_{0};
 };
