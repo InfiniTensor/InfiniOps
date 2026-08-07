@@ -105,14 +105,14 @@ def test_resolve_validates_dispatcher_contract_and_force_loads_library(
     op_dir = platform / "ops" / "gptq_marlin_repack"
     op_dir.mkdir(parents=True)
     (platform / "vllm.yaml").write_text(
-        "python_distribution_package: vllm\n" "library_glob: vllm/_C*.so\n"
+        "python_distribution_package: vllm\nlibrary_glob: vllm/_C*.so\n"
     )
     schema = (
         "_C::gptq_marlin_repack(Tensor b_q_weight, Tensor perm, "
         "SymInt size_k, SymInt size_n, int num_bits, bool is_a_8bit) -> Tensor"
     )
     (op_dir / "vllm.yaml").write_text(
-        "library: vllm\n" f"dispatcher_schema: {schema}\n" "dispatch_key: CUDA\n"
+        f"library: vllm\ndispatcher_schema: {schema}\ndispatch_key: CUDA\n"
     )
     (op_dir / "vllm.h").write_text("// declaration\n")
     (op_dir / "vllm.cc").write_text("// definition\n")
@@ -238,14 +238,11 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
             "exactly one of required_symbols or dispatcher_schema",
         ),
         (
-            "library: vllm\n" "dispatcher_schema: _C::op() -> Tensor\n",
+            "library: vllm\ndispatcher_schema: _C::op() -> Tensor\n",
             "dispatcher_schema requires dispatch_key",
         ),
         (
-            "library: vllm\n"
-            "required_symbols:\n"
-            "  - symbol()\n"
-            "dispatch_key: CUDA\n",
+            "library: vllm\nrequired_symbols:\n  - symbol()\ndispatch_key: CUDA\n",
             "dispatch_key requires dispatcher_schema",
         ),
     ),

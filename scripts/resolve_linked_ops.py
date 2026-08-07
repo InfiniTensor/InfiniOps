@@ -434,8 +434,7 @@ def _verify_dispatcher_contracts(contracts):
         stderr = getattr(error, "stderr", "") or ""
         detail = f": {stderr.strip()}" if stderr.strip() else ""
         raise ResolutionError(
-            "dispatcher contracts are not provided by the resolved "
-            f"libraries{detail}"
+            f"dispatcher contracts are not provided by the resolved libraries{detail}"
         ) from error
 
 
