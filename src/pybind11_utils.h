@@ -28,39 +28,20 @@ inline py::handle InternedName(const char* value) {
   return py::handle{name};
 }
 
-inline py::handle DataPtrName() {
-  static const auto name{InternedName("data_ptr")};
-  return name;
-}
+struct InternedNames {
+  py::handle data_ptr{InternedName("data_ptr")};
+  py::handle shape{InternedName("shape")};
+  py::handle dtype{InternedName("dtype")};
+  py::handle device{InternedName("device")};
+  py::handle type{InternedName("type")};
+  py::handle index{InternedName("index")};
+  py::handle stride{InternedName("stride")};
+};
 
-inline py::handle ShapeName() {
-  static const auto name{InternedName("shape")};
-  return name;
-}
-
-inline py::handle DTypeName() {
-  static const auto name{InternedName("dtype")};
-  return name;
-}
-
-inline py::handle DeviceName() {
-  static const auto name{InternedName("device")};
-  return name;
-}
-
-inline py::handle TypeName() {
-  static const auto name{InternedName("type")};
-  return name;
-}
-
-inline py::handle IndexName() {
-  static const auto name{InternedName("index")};
-  return name;
-}
-
-inline py::handle StrideName() {
-  static const auto name{InternedName("stride")};
-  return name;
+inline const InternedNames& GetInternedNames() {
+  // Defer Python C API calls until conversion runs with an active interpreter.
+  static const InternedNames names;
+  return names;
 }
 
 inline py::object CallMethodNoArgs(py::handle obj, py::handle name) {
@@ -240,9 +221,10 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
 
 namespace detail {
 
-inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
-  auto device_obj{py::getattr(obj, detail::DeviceName())};
-  auto device_type_obj{py::getattr(device_obj, detail::TypeName())};
+inline Device DeviceFromPybind11HandleImpl(py::handle obj,
+                                           const InternedNames& names) {
+  auto device_obj{py::getattr(obj, names.device)};
+  auto device_type_obj{py::getattr(device_obj, names.type)};
   std::string device_type_storage;
   std::string_view device_type_str;
   if (PyUnicode_Check(device_type_obj.ptr())) {
@@ -256,28 +238,27 @@ inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
     device_type_storage = device_type_obj.cast<std::string>();
     device_type_str = device_type_storage;
   }
-  auto device_index_obj{py::getattr(device_obj, detail::IndexName())};
+  auto device_index_obj{py::getattr(device_obj, names.index)};
   auto device_index{device_index_obj.is_none() ? 0
                                                : device_index_obj.cast<int>()};
 
   return Device{DeviceTypeFromString(device_type_str), device_index};
 }
 
-inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
+inline Tensor TensorFromPybind11HandleImpl(py::handle obj,
+                                           const InternedNames& names) {
   auto data{reinterpret_cast<void*>(
-      detail::CallMethodNoArgs(obj, detail::DataPtrName())
-          .cast<std::uintptr_t>())};
+      detail::CallMethodNoArgs(obj, names.data_ptr).cast<std::uintptr_t>())};
 
   auto shape{detail::VectorFromSequence<typename Tensor::Shape>(
-      py::getattr(obj, detail::ShapeName()))};
+      py::getattr(obj, names.shape))};
 
-  auto dtype{
-      DataTypeFromPybind11HandleImpl(py::getattr(obj, detail::DTypeName()))};
+  auto dtype{DataTypeFromPybind11HandleImpl(py::getattr(obj, names.dtype))};
 
-  auto device{DeviceFromPybind11HandleImpl(obj)};
+  auto device{DeviceFromPybind11HandleImpl(obj, names)};
 
   auto strides{detail::VectorFromSequence<typename Tensor::Strides>(
-      detail::CallMethodNoArgs(obj, detail::StrideName()))};
+      detail::CallMethodNoArgs(obj, names.stride))};
 
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
 }
@@ -287,13 +268,13 @@ inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
 inline Device DeviceFromPybind11Handle(py::handle obj) {
   [[maybe_unused]] HostRangeScope host_range_device_conversion{
       HostRangeLayer::kDeviceConversion};
-  return detail::DeviceFromPybind11HandleImpl(obj);
+  return detail::DeviceFromPybind11HandleImpl(obj, detail::GetInternedNames());
 }
 
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
   [[maybe_unused]] HostRangeScope host_range_tensor_conversion{
       HostRangeLayer::kTensorConversion};
-  return detail::TensorFromPybind11HandleImpl(obj);
+  return detail::TensorFromPybind11HandleImpl(obj, detail::GetInternedNames());
 }
 
 inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
@@ -301,7 +282,7 @@ inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
   [[maybe_unused]] HostRangeScope host_range_tensor_conversion{
       HostRangeLayer::kTensorConversion};
   if (!obj.has_value() || obj->is_none()) return std::nullopt;
-  return detail::TensorFromPybind11HandleImpl(*obj);
+  return detail::TensorFromPybind11HandleImpl(*obj, detail::GetInternedNames());
 }
 
 inline std::vector<Tensor> VectorTensorFromPybind11Handle(
@@ -310,8 +291,9 @@ inline std::vector<Tensor> VectorTensorFromPybind11Handle(
       HostRangeLayer::kTensorConversion};
   std::vector<Tensor> result;
   result.reserve(objs.size());
+  const auto& names{detail::GetInternedNames()};
   for (const auto& obj : objs) {
-    result.push_back(detail::TensorFromPybind11HandleImpl(obj));
+    result.push_back(detail::TensorFromPybind11HandleImpl(obj, names));
   }
   return result;
 }
@@ -322,11 +304,12 @@ VectorOptionalTensorFromPybind11Handle(const std::vector<py::object>& objs) {
       HostRangeLayer::kTensorConversion};
   std::vector<std::optional<Tensor>> result;
   result.reserve(objs.size());
+  const auto& names{detail::GetInternedNames()};
   for (const auto& obj : objs) {
     if (obj.is_none()) {
       result.push_back(std::nullopt);
     } else {
-      result.push_back(detail::TensorFromPybind11HandleImpl(obj));
+      result.push_back(detail::TensorFromPybind11HandleImpl(obj, names));
     }
   }
   return result;
