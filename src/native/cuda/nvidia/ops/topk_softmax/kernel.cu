@@ -7,7 +7,7 @@
 #include "data_type.h"
 #include "dispatcher.h"
 #include "native/cuda/nvidia/caster.cuh"
-#include "native/cuda/nvidia/ops/topk_softmax/kernel.cuh"
+#include "native/cuda/ops/topk_softmax/kernel.cuh"
 #include "native/cuda/nvidia/ops/topk_softmax/kernel.h"
 
 namespace infini::ops {
