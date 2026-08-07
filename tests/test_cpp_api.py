@@ -58,6 +58,32 @@ def test_cpp_returning_call_smoke(tmp_path):
     _run([str(binary)])
 
 
+def test_cpp_configless_calls_use_first_active_implementation(tmp_path):
+    install_prefix = _install_prefix()
+    include_dir = install_prefix / "include"
+    library_dir = _library_dir(install_prefix)
+    source = tmp_path / "configless_active_implementation.cc"
+    binary = tmp_path / "configless_active_implementation"
+    source.write_text(_CONFIGLESS_ACTIVE_IMPLEMENTATION_SOURCE)
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            f"-I{include_dir}",
+            str(source),
+            f"-L{library_dir}",
+            "-linfiniops",
+            "-linfinirt",
+            f"-Wl,-rpath,{library_dir}",
+            "-o",
+            str(binary),
+        ]
+    )
+    _run([str(binary)])
+
+
 @pytest.mark.parametrize(
     "header",
     (
@@ -326,6 +352,122 @@ _ADD_RETURN_SMOKE_SOURCE = textwrap.dedent(
                                                                   value);
       if (attention_output.shape() != OwningTensor::Shape{1, 2, 3, 6}) {
         return 1;
+      }
+
+      return 0;
+    }
+    """
+).lstrip()
+
+
+_CONFIGLESS_ACTIVE_IMPLEMENTATION_SOURCE = textwrap.dedent(
+    r"""
+    #include <infini/ops.h>
+
+    #include <cmath>
+    #include <cstdint>
+    #include <vector>
+
+    namespace infini::ops {
+
+    class ConfiglessSelection : public Operator<ConfiglessSelection> {
+     public:
+      ConfiglessSelection(const Tensor input, Tensor out) {}
+
+      ConfiglessSelection(const std::vector<Tensor> inputs, Tensor out) {}
+
+      virtual void operator()(const Tensor input, Tensor out) const = 0;
+
+      virtual void operator()(const std::vector<Tensor> inputs,
+                              Tensor out) const = 0;
+
+      template <typename TensorLike>
+      static auto MakeReturnValue(const TensorLike& input) {
+        return TensorLike::Empty(input.shape(), input.dtype(), input.device());
+      }
+    };
+
+    template <>
+    class Operator<ConfiglessSelection, Device::Type::kCpu, 16>
+        : public ConfiglessSelection {
+     public:
+      using ConfiglessSelection::ConfiglessSelection;
+
+      void operator()(const Tensor input, Tensor out) const override {
+        const auto* input_data = static_cast<const float*>(input.data());
+        auto* out_data = static_cast<float*>(out.data());
+        out_data[0] = input_data[0] + 16.0f;
+      }
+
+      void operator()(const std::vector<Tensor> inputs,
+                      Tensor out) const override {
+        const auto* first_data = static_cast<const float*>(inputs[0].data());
+        const auto* second_data = static_cast<const float*>(inputs[1].data());
+        auto* out_data = static_cast<float*>(out.data());
+        out_data[0] = first_data[0] + second_data[0] + 16.0f;
+      }
+    };
+
+    }  // namespace infini::ops
+
+    int main() {
+      float input_data = 1.0f;
+      float second_data = 2.0f;
+      float out_data = 0.0f;
+      const infini::ops::Tensor::Shape shape{1};
+      const infini::ops::Device device{infini::ops::Device::Type::kCpu};
+      const infini::ops::DataType dtype{infini::ops::DataType::kFloat32};
+      infini::ops::Tensor input(&input_data, shape, dtype, device);
+      infini::ops::Tensor second(&second_data, shape, dtype, device);
+      infini::ops::Tensor out(&out_data, shape, dtype, device);
+
+      auto tensor_op = infini::ops::ConfiglessSelection::Make(input, out);
+      (*tensor_op)(input, out);
+      if (std::fabs(out_data - 17.0f) > 1e-6f) {
+        return 1;
+      }
+
+      out_data = 0.0f;
+      std::vector<infini::ops::Tensor> inputs{input, second};
+      auto vector_op = infini::ops::ConfiglessSelection::Make(inputs, out);
+      (*vector_op)(inputs, out);
+      if (std::fabs(out_data - 19.0f) > 1e-6f) {
+        return 2;
+      }
+
+      float cat_out_data[2] = {};
+      const infini::ops::Tensor::Shape cat_shape{2};
+      infini::ops::Tensor cat_out(cat_out_data, cat_shape, dtype, device);
+      auto cat_op =
+          infini::ops::Cat::Make(inputs, std::int64_t{0}, cat_out);
+      (*cat_op)(inputs, std::int64_t{0}, cat_out);
+      if (std::fabs(cat_out_data[0] - 1.0f) > 1e-6f ||
+          std::fabs(cat_out_data[1] - 2.0f) > 1e-6f) {
+        return 3;
+      }
+
+      float abs_input_data = -4.0f;
+      float abs_out_data = 0.0f;
+      infini::ops::Tensor abs_input(&abs_input_data, shape, dtype, device);
+      infini::ops::Tensor abs_out(&abs_out_data, shape, dtype, device);
+      auto abs_op = infini::ops::Abs::Make(abs_input, abs_out);
+      (*abs_op)(abs_input, abs_out);
+      if (std::fabs(abs_out_data - 4.0f) > 1e-6f) {
+        return 4;
+      }
+
+      auto abs_op_from_rvalue = infini::ops::Abs::Make(
+          abs_input,
+          infini::ops::Tensor(&abs_out_data, shape, dtype, device));
+      (*abs_op_from_rvalue)(abs_input, abs_out);
+      if (std::fabs(abs_out_data - 4.0f) > 1e-6f) {
+        return 5;
+      }
+
+      abs_out_data = 0.0f;
+      infini::ops::Abs::Call(abs_input, abs_out);
+      if (std::fabs(abs_out_data - 4.0f) > 1e-6f) {
+        return 6;
       }
 
       return 0;

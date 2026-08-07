@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -206,7 +207,8 @@ class Operator : public OperatorBase {
 
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Tensor tensor, Args&&... args) {
-    return Make({}, tensor, std::forward<Args>(args)...);
+    return Make(DefaultConfig(tensor.device().type()), tensor,
+                std::as_const(args)...);
   }
 
   template <typename... Args>
@@ -222,7 +224,10 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const std::vector<Tensor> tensors,
                                         Args&&... args) {
-    return Make({}, tensors, std::forward<Args>(args)...);
+    assert(!tensors.empty() && "operator tensor list input cannot be empty");
+
+    return Make(DefaultConfig(tensors.front().device().type()), tensors,
+                std::as_const(args)...);
   }
 
   template <typename... Args>
@@ -279,7 +284,7 @@ class Operator : public OperatorBase {
 
   template <typename... Args>
   static void Call(const Tensor tensor, const Args&... args) {
-    return Call({}, {}, tensor, args...);
+    return Call({}, DefaultConfig(tensor.device().type()), tensor, args...);
   }
 
   template <
@@ -329,6 +334,39 @@ class Operator : public OperatorBase {
   static constexpr std::size_t implementation_index_{implementation_index};
 
  private:
+  template <auto first, auto... rest>
+  static constexpr std::size_t FirstActiveImplementationIndex(
+      List<first, rest...>) {
+    return static_cast<std::size_t>(first);
+  }
+
+  static std::size_t FirstActiveImplementationIndex(List<>) {
+    assert(false && "operator has no active implementation for this device");
+    std::abort();
+  }
+
+  static std::size_t DefaultImplementationIndex(Device::Type dev_type) {
+    std::size_t default_index{0};
+
+    DispatchFunc<ActiveDevices<Key>>(
+        dev_type,
+        [&](auto device_tag) {
+          constexpr Device::Type kDev = decltype(device_tag)::value;
+          default_index = FirstActiveImplementationIndex(
+              typename ActiveImplementations<Key, kDev>::type{});
+        },
+        "Operator::DefaultImplementationIndex");
+
+    return default_index;
+  }
+
+  static Config DefaultConfig(Device::Type dev_type) {
+    Config config;
+    config.set_implementation_index(DefaultImplementationIndex(dev_type));
+
+    return config;
+  }
+
   template <typename TensorLike, typename... Args>
   static auto CallReturning(const TensorLike& tensor, const Args&... args) {
     auto out = Key::MakeReturnValue(tensor, args...);
