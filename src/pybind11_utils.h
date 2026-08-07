@@ -20,66 +20,60 @@ namespace infini::ops {
 
 namespace detail {
 
-inline PyObject* InternedName(const char* value) {
+inline py::handle InternedName(const char* value) {
   // Keep one reference for the process lifetime; Python objects must not be
   // decref'd by a static destructor after interpreter finalization.
   auto* name{PyUnicode_InternFromString(value)};
   if (name == nullptr) throw py::error_already_set();
+  return py::handle{name};
+}
+
+inline py::handle DataPtrName() {
+  static const auto name{InternedName("data_ptr")};
   return name;
 }
 
-inline PyObject* DataPtrName() {
-  static PyObject* const name{InternedName("data_ptr")};
+inline py::handle ShapeName() {
+  static const auto name{InternedName("shape")};
   return name;
 }
 
-inline PyObject* ShapeName() {
-  static PyObject* const name{InternedName("shape")};
+inline py::handle DTypeName() {
+  static const auto name{InternedName("dtype")};
   return name;
 }
 
-inline PyObject* DTypeName() {
-  static PyObject* const name{InternedName("dtype")};
+inline py::handle DeviceName() {
+  static const auto name{InternedName("device")};
   return name;
 }
 
-inline PyObject* DeviceName() {
-  static PyObject* const name{InternedName("device")};
+inline py::handle TypeName() {
+  static const auto name{InternedName("type")};
   return name;
 }
 
-inline PyObject* TypeName() {
-  static PyObject* const name{InternedName("type")};
+inline py::handle IndexName() {
+  static const auto name{InternedName("index")};
   return name;
 }
 
-inline PyObject* IndexName() {
-  static PyObject* const name{InternedName("index")};
+inline py::handle StrideName() {
+  static const auto name{InternedName("stride")};
   return name;
 }
 
-inline PyObject* StrideName() {
-  static PyObject* const name{InternedName("stride")};
-  return name;
-}
-
-inline py::object GetAttr(py::handle obj, PyObject* name) {
-  auto* value{PyObject_GetAttr(obj.ptr(), name)};
-  if (value == nullptr) throw py::error_already_set();
-  return py::reinterpret_steal<py::object>(value);
-}
-
-inline py::object CallMethodNoArgs(py::handle obj, PyObject* name) {
-  auto* value{PyObject_CallMethodNoArgs(obj.ptr(), name)};
+inline py::object CallMethodNoArgs(py::handle obj, py::handle name) {
+  auto* value{PyObject_CallMethodNoArgs(obj.ptr(), name.ptr())};
   if (value == nullptr) throw py::error_already_set();
   return py::reinterpret_steal<py::object>(value);
 }
 
 template <typename Integer>
-Integer IntegerFromPyObject(PyObject* obj) {
+Integer IntegerFromPybind11Handle(py::handle obj) {
   static_assert(std::is_integral_v<Integer>);
   if constexpr (std::is_unsigned_v<Integer>) {
-    const auto value{PyLong_AsUnsignedLongLong(obj)};
+    const auto value{PyLong_AsUnsignedLongLong(obj.ptr())};
     if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
       throw py::error_already_set();
     }
@@ -90,7 +84,7 @@ Integer IntegerFromPyObject(PyObject* obj) {
     }
     return static_cast<Integer>(value);
   } else {
-    const auto value{PyLong_AsLongLong(obj)};
+    const auto value{PyLong_AsLongLong(obj.ptr())};
     if (value == -1 && PyErr_Occurred()) throw py::error_already_set();
     if (value < std::numeric_limits<Integer>::min() ||
         value > std::numeric_limits<Integer>::max()) {
@@ -112,8 +106,8 @@ Vector VectorFromSequence(py::handle obj) {
   Vector result;
   result.reserve(static_cast<std::size_t>(size));
   for (Py_ssize_t i = 0; i < size; ++i) {
-    result.push_back(IntegerFromPyObject<typename Vector::value_type>(
-        PySequence_Fast_GET_ITEM(sequence.ptr(), i)));
+    result.push_back(IntegerFromPybind11Handle<typename Vector::value_type>(
+        py::handle{PySequence_Fast_GET_ITEM(sequence.ptr(), i)}));
   }
   return result;
 }
@@ -247,8 +241,8 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
 namespace detail {
 
 inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
-  auto device_obj{detail::GetAttr(obj, detail::DeviceName())};
-  auto device_type_obj{detail::GetAttr(device_obj, detail::TypeName())};
+  auto device_obj{py::getattr(obj, detail::DeviceName())};
+  auto device_type_obj{py::getattr(device_obj, detail::TypeName())};
   std::string device_type_storage;
   std::string_view device_type_str;
   if (PyUnicode_Check(device_type_obj.ptr())) {
@@ -262,7 +256,7 @@ inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
     device_type_storage = device_type_obj.cast<std::string>();
     device_type_str = device_type_storage;
   }
-  auto device_index_obj{detail::GetAttr(device_obj, detail::IndexName())};
+  auto device_index_obj{py::getattr(device_obj, detail::IndexName())};
   auto device_index{device_index_obj.is_none() ? 0
                                                : device_index_obj.cast<int>()};
 
@@ -275,10 +269,10 @@ inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
           .cast<std::uintptr_t>())};
 
   auto shape{detail::VectorFromSequence<typename Tensor::Shape>(
-      detail::GetAttr(obj, detail::ShapeName()))};
+      py::getattr(obj, detail::ShapeName()))};
 
-  auto dtype{DataTypeFromPybind11HandleImpl(
-      detail::GetAttr(obj, detail::DTypeName()))};
+  auto dtype{
+      DataTypeFromPybind11HandleImpl(py::getattr(obj, detail::DTypeName()))};
 
   auto device{DeviceFromPybind11HandleImpl(obj)};
 
