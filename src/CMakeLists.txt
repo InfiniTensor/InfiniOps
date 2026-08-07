@@ -620,73 +620,6 @@ if(WITH_LINKED)
         "Resolved ${_linked_source_count} linked operator source(s).")
 endif()
 
-set(_build_flash_attn_with_kvcache FALSE)
-if(WITH_NVIDIA AND WITH_TORCH AND
-   (NOT INFINI_OPS_OPS OR
-    "flash_attn_with_kvcache" IN_LIST _infini_ops_op_allowlist))
-    execute_process(
-        COMMAND ${_TORCH_PYTHON} -c
-            "import importlib.metadata; print(importlib.metadata.version('flash-attn'))"
-        OUTPUT_VARIABLE FLASH_ATTN_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _flash_attn_version_result
-        ERROR_QUIET
-    )
-    if(NOT _flash_attn_version_result EQUAL 0 OR
-       NOT FLASH_ATTN_VERSION MATCHES "^2\\.7([.+-]|$)")
-        message(FATAL_ERROR
-            "`flash_attn_with_kvcache` requires installed FlashAttention 2.7; "
-            "found `${FLASH_ATTN_VERSION}`.")
-    endif()
-
-    execute_process(
-        COMMAND ${_TORCH_PYTHON} -c
-            "import importlib.util; s = importlib.util.find_spec('flash_attn_2_cuda'); print(s.origin if s else '')"
-        OUTPUT_VARIABLE FLASH_ATTN_LIBRARY
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _flash_attn_library_result
-        ERROR_QUIET
-    )
-    if(NOT _flash_attn_library_result EQUAL 0 OR
-       NOT EXISTS "${FLASH_ATTN_LIBRARY}")
-        message(FATAL_ERROR
-            "FlashAttention ${FLASH_ATTN_VERSION} does not provide the "
-            "`flash_attn_2_cuda` shared library.")
-    endif()
-
-    execute_process(
-        COMMAND ${CMAKE_NM} -D -C "${FLASH_ATTN_LIBRARY}"
-        OUTPUT_VARIABLE _flash_attn_symbols
-        RESULT_VARIABLE _flash_attn_nm_result
-        ERROR_QUIET
-    )
-    string(FIND "${_flash_attn_symbols}" "flash::mha_fwd_kvcache("
-        _flash_attn_kvcache_symbol)
-    if(NOT _flash_attn_nm_result EQUAL 0 OR
-       _flash_attn_kvcache_symbol EQUAL -1)
-        message(FATAL_ERROR
-            "FlashAttention ${FLASH_ATTN_VERSION} does not export the "
-            "required `flash::mha_fwd_kvcache` ABI.")
-    endif()
-
-    set(_build_flash_attn_with_kvcache TRUE)
-    get_filename_component(FLASH_ATTN_RUNTIME_DIR
-        "${FLASH_ATTN_LIBRARY}" DIRECTORY)
-    get_filename_component(FLASH_ATTN_LIBRARY_NAME
-        "${FLASH_ATTN_LIBRARY}" NAME)
-    target_link_directories(infiniops PRIVATE "${FLASH_ATTN_RUNTIME_DIR}")
-    # The Python extension has no SONAME, so link by its exact basename.
-    target_link_libraries(infiniops PRIVATE
-        "-l:${FLASH_ATTN_LIBRARY_NAME}")
-
-    list(APPEND TORCH_RUNTIME_DIRS
-        "${FLASH_ATTN_RUNTIME_DIR}" "$ORIGIN/..")
-    set_property(TARGET infiniops APPEND PROPERTY BUILD_RPATH
-        "${FLASH_ATTN_RUNTIME_DIR}")
-    message(STATUS
-        "Found FlashAttention ${FLASH_ATTN_VERSION}: ${FLASH_ATTN_LIBRARY}")
-endif()
-
 set(TORCH_SOURCES "")
 if(WITH_TORCH)
     # Auto-generate ATen-backed operator wrappers from `scripts/torch_ops.yaml`.
@@ -742,10 +675,6 @@ if(WITH_TORCH)
     if(NOT WITH_NVIDIA)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_varlen_func/flash_attn_varlen_func\\.cc$")
-    endif()
-    if(NOT _build_flash_attn_with_kvcache)
-        list(FILTER TORCH_SOURCES EXCLUDE REGEX
-            ".*/flash_attn_with_kvcache/flash_attn\\.cc$")
     endif()
 endif()
 
