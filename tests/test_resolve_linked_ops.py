@@ -61,7 +61,7 @@ def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_p
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (exported, exported),
+        lambda library, nm, readelf, cxxfilt: (exported, exported),
     )
 
     output_dir = tmp_path / "generated" / "linked"
@@ -131,7 +131,10 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (exports[library], exports[library]),
+        lambda library, nm, readelf, cxxfilt: (
+            exports[library],
+            exports[library],
+        ),
     )
 
     payload = module.resolve_linked_ops(
@@ -210,7 +213,7 @@ def test_resolve_rejects_symbol_missing_from_either_tool(monkeypatch, tmp_path):
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (
+        lambda library, nm, readelf, cxxfilt: (
             {"silu_and_mul(at::Tensor&, at::Tensor&)"},
             set(),
         ),
@@ -238,7 +241,7 @@ def test_resolve_requires_exact_demangled_symbol(monkeypatch, tmp_path):
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (exported, exported),
+        lambda library, nm, readelf, cxxfilt: (exported, exported),
     )
 
     with pytest.raises(module.ResolutionError, match="according to nm and readelf"):
@@ -283,7 +286,7 @@ def test_resolve_rejects_distinct_libraries_with_same_basename(monkeypatch, tmp_
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (exports[library], exports[library]),
+        lambda library, nm, readelf, cxxfilt: (exports[library], exports[library]),
     )
     output_dir = tmp_path / "generated"
 
@@ -331,7 +334,7 @@ def test_resolve_rejects_symbol_exported_by_distinct_libraries(monkeypatch, tmp_
     monkeypatch.setattr(
         module,
         "_inspect_dynamic_symbols",
-        lambda library, nm, readelf: (exports[library], exports[library]),
+        lambda library, nm, readelf, cxxfilt: (exports[library], exports[library]),
     )
 
     with pytest.raises(module.ResolutionError, match="exported by multiple"):
@@ -342,7 +345,7 @@ def test_resolve_rejects_symbol_exported_by_distinct_libraries(monkeypatch, tmp_
         )
 
 
-def test_dynamic_symbol_inspection_uses_nm_and_readelf(monkeypatch, tmp_path):
+def test_dynamic_symbol_inspection_uses_nm_readelf_and_cxxfilt(monkeypatch, tmp_path):
     module = _load_resolver_module()
     library_path = tmp_path / "_C.so"
     calls = []
@@ -351,16 +354,18 @@ def test_dynamic_symbol_inspection_uses_nm_and_readelf(monkeypatch, tmp_path):
         calls.append((command, kwargs))
         if command[0] == "llvm-nm":
             output = "0000000000001234 T vllm::silu_and_mul(at::Tensor&, at::Tensor&)\n"
-        else:
+        elif command[0] == "llvm-readelf":
             output = (
                 "  12: 0000000000001234 42 FUNC GLOBAL DEFAULT 12 "
-                "vllm::silu_and_mul(at::Tensor&, at::Tensor&)\n"
+                "_ZN4vllm12silu_and_mulERN2at6TensorES3_\n"
             )
+        else:
+            output = "vllm::silu_and_mul(at::Tensor&, at::Tensor&)\n"
         return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
     nm_symbols, readelf_symbols = module._inspect_dynamic_symbols(
-        library_path, "llvm-nm", "llvm-readelf"
+        library_path, "llvm-nm", "llvm-readelf", "llvm-cxxfilt"
     )
 
     expected = {"vllm::silu_and_mul(at::Tensor&, at::Tensor&)"}
@@ -372,14 +377,17 @@ def test_dynamic_symbol_inspection_uses_nm_and_readelf(monkeypatch, tmp_path):
             "llvm-readelf",
             "--dyn-syms",
             "--wide",
-            "--demangle",
             str(library_path),
         ],
+        ["llvm-cxxfilt"],
     ]
-    assert all(
-        kwargs == {"check": True, "capture_output": True, "text": True}
-        for _, kwargs in calls
-    )
+    common = {"check": True, "capture_output": True, "text": True}
+    assert calls[0][1] == common
+    assert calls[1][1] == common
+    assert calls[2][1] == {
+        **common,
+        "input": "_ZN4vllm12silu_and_mulERN2at6TensorES3_\n",
+    }
 
 
 def test_library_glob_matches_path_segments():

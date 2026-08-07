@@ -540,16 +540,19 @@ if(WITH_LINKED)
     else()
         find_program(_linked_readelf NAMES llvm-readelf readelf)
     endif()
-    if(NOT _linked_nm OR NOT _linked_readelf)
+    find_program(_linked_cxxfilt NAMES llvm-cxxfilt c++filt)
+    if(NOT _linked_nm OR NOT _linked_readelf OR NOT _linked_cxxfilt)
         message(FATAL_ERROR
-            "`WITH_LINKED=ON` requires `nm` and `readelf` compatible tools.")
+            "`WITH_LINKED=ON` requires compatible `nm`, `readelf`, and "
+            "`c++filt` tools.")
     endif()
 
     set(_linked_resolver_args
         "${PROJECT_SOURCE_DIR}/scripts/resolve_linked_ops.py"
         --devices ${DEVICE_LIST}
         --nm "${_linked_nm}"
-        --readelf "${_linked_readelf}")
+        --readelf "${_linked_readelf}"
+        --cxxfilt "${_linked_cxxfilt}")
     if(INFINI_OPS_OPS)
         list(APPEND _linked_resolver_args --ops ${_infini_ops_op_allowlist})
     endif()
