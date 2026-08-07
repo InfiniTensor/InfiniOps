@@ -1,8 +1,9 @@
 # Linked Operators
 
-The linked backend calls operator symbols exported by an installed third-party
-shared library. It applies when a platform package exposes a usable C++ ABI but
-does not provide source code or a stable C API.
+The linked backend calls operators provided by an installed third-party shared
+library. It supports exact exported C++ symbols and registered PyTorch
+Dispatcher operators when a platform package does not provide source code or a
+stable C API.
 
 ## Source Layout
 
@@ -37,6 +38,20 @@ required_symbols:
   - silu_and_mul(at::Tensor&, at::Tensor&)
 ```
 
+A Dispatcher implementation instead declares its exact schema and required
+dispatch key:
+
+```yaml
+library: vllm
+operator_schema: >-
+  _C::gptq_marlin_repack(Tensor b_q_weight, Tensor perm, SymInt size_k,
+  SymInt size_n, int num_bits, bool is_a_8bit) -> Tensor
+dispatch_key: CUDA
+```
+
+Each implementation uses exactly one contract form. The resolver rejects a
+partial Dispatcher contract or a binding that mixes both forms.
+
 ## Adapter Boundary
 
 Keep ABI behavior in `<implementation>.cc`, not in YAML. Shared operator
@@ -51,10 +66,15 @@ its provider-specific `Call` ABI.
 ## Configuration
 
 At configure time, `scripts/resolve_linked_ops.py` locates the installed Python
-distribution and verifies every required symbol with both `nm` and `readelf`.
-Raw `readelf` symbols are demangled with GNU or LLVM `c++filt` before exact
-comparison. The resolver writes a CMake manifest and diagnostic JSON under
-`generated/linked/`. Generated files are not committed.
+distribution. It verifies C++ symbols with both `nm` and `readelf`; raw
+`readelf` symbols are demangled with GNU or LLVM `c++filt` before exact
+comparison. Dispatcher contracts are verified in an isolated Python process by
+loading the DSO, comparing the registered schema exactly, and checking the
+requested dispatch key. The resolver writes a CMake manifest and diagnostic
+JSON under `generated/linked/`. Generated files are not committed.
+
+DSOs that provide Dispatcher registrations are force-loaded only for their own
+link item so that the linker cannot discard their static registration code.
 
 Enable the backend independently of generated ATen implementations:
 
