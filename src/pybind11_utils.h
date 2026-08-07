@@ -70,7 +70,7 @@ inline py::object CallMethodNoArgs(py::handle obj, py::handle name) {
 }
 
 template <typename Integer>
-Integer IntegerFromPyObject(py::handle obj) {
+Integer IntegerFromPybind11Handle(py::handle obj) {
   static_assert(std::is_integral_v<Integer>);
   if constexpr (std::is_unsigned_v<Integer>) {
     const auto value{PyLong_AsUnsignedLongLong(obj.ptr())};
@@ -106,7 +106,7 @@ Vector VectorFromSequence(py::handle obj) {
   Vector result;
   result.reserve(static_cast<std::size_t>(size));
   for (Py_ssize_t i = 0; i < size; ++i) {
-    result.push_back(IntegerFromPyObject<typename Vector::value_type>(
+    result.push_back(IntegerFromPybind11Handle<typename Vector::value_type>(
         py::handle{PySequence_Fast_GET_ITEM(sequence.ptr(), i)}));
   }
   return result;
