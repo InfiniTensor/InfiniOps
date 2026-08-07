@@ -22,7 +22,7 @@ _LIBRARY_KEYS = {
 _BINDING_KEYS = {
     "library",
     "required_symbols",
-    "dispatcher_schema",
+    "operator_schema",
     "dispatch_key",
 }
 _SUPPORTED_TRANSPORTS = {"torch"}
@@ -77,7 +77,7 @@ class BindingConfig:
     source: pathlib.Path
     library: str
     required_symbols: tuple[str, ...]
-    dispatcher_schema: str | None
+    operator_schema: str | None
     dispatch_key: str | None
 
 
@@ -165,20 +165,17 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
 
         data = _load_yaml_mapping(path, _BINDING_KEYS, {"library"})
         symbols = data.get("required_symbols")
-        dispatcher_schema = data.get("dispatcher_schema")
+        operator_schema = data.get("operator_schema")
         dispatch_key = data.get("dispatch_key")
 
-        if (symbols is None) == (dispatcher_schema is None):
+        if (symbols is None) == (operator_schema is None):
             raise ResolutionError(
-                f"{path} must define exactly one of required_symbols or "
-                "dispatcher_schema"
+                f"{path} must define exactly one of required_symbols or operator_schema"
             )
 
         if symbols is not None:
             if dispatch_key is not None:
-                raise ResolutionError(
-                    f"{path}: dispatch_key requires dispatcher_schema"
-                )
+                raise ResolutionError(f"{path}: dispatch_key requires operator_schema")
             if (
                 not isinstance(symbols, list)
                 or not symbols
@@ -193,14 +190,12 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
             symbols = tuple(symbol.strip() for symbol in symbols)
             if len(symbols) != len(set(symbols)):
                 raise ResolutionError(f"{path}: required_symbols contains duplicates")
-            dispatcher_schema = None
+            operator_schema = None
         else:
             symbols = ()
-            dispatcher_schema = _require_string(data, "dispatcher_schema", path)
+            operator_schema = _require_string(data, "operator_schema", path)
             if dispatch_key is None:
-                raise ResolutionError(
-                    f"{path}: dispatcher_schema requires dispatch_key"
-                )
+                raise ResolutionError(f"{path}: operator_schema requires dispatch_key")
             dispatch_key = _require_string(data, "dispatch_key", path)
 
         header = path.with_suffix(".h")
@@ -220,7 +215,7 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
                 source=source.resolve(),
                 library=_require_string(data, "library", path),
                 required_symbols=symbols,
-                dispatcher_schema=dispatcher_schema,
+                operator_schema=operator_schema,
                 dispatch_key=dispatch_key,
             )
         )
@@ -385,7 +380,7 @@ def _verify_dispatcher_contracts(contracts):
         {
             "binding_path": str(config.path),
             "library_path": str(library_path),
-            "schema": config.dispatcher_schema,
+            "schema": config.operator_schema,
             "dispatch_key": config.dispatch_key,
         }
         for config, library_path in contracts
@@ -583,7 +578,7 @@ def resolve_linked_ops(
     force_load_keys = {
         (binding.transport, binding.device, binding.library)
         for binding in bindings
-        if binding.dispatcher_schema is not None
+        if binding.operator_schema is not None
     }
     libraries = []
     for key in sorted(resolved_libraries):
@@ -614,7 +609,7 @@ def resolve_linked_ops(
         if binding.required_symbols:
             operator["required_symbols"] = list(binding.required_symbols)
         else:
-            operator["dispatcher_schema"] = binding.dispatcher_schema
+            operator["operator_schema"] = binding.operator_schema
             operator["dispatch_key"] = binding.dispatch_key
         operators.append(operator)
 

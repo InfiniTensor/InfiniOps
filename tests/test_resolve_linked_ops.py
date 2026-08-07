@@ -112,7 +112,7 @@ def test_resolve_validates_dispatcher_contract_and_force_loads_library(
         "SymInt size_k, SymInt size_n, int num_bits, bool is_a_8bit) -> Tensor"
     )
     (op_dir / "vllm.yaml").write_text(
-        f"library: vllm\ndispatcher_schema: {schema}\ndispatch_key: CUDA\n"
+        f"library: vllm\noperator_schema: {schema}\ndispatch_key: CUDA\n"
     )
     (op_dir / "vllm.h").write_text("// declaration\n")
     (op_dir / "vllm.cc").write_text("// definition\n")
@@ -145,7 +145,7 @@ def test_resolve_validates_dispatcher_contract_and_force_loads_library(
 
     assert len(contracts) == 1
     contract, resolved_path = contracts[0]
-    assert (contract.dispatcher_schema, contract.dispatch_key) == (schema, "CUDA")
+    assert (contract.operator_schema, contract.dispatch_key) == (schema, "CUDA")
     assert resolved_path == library_path
     assert payload["libraries"][0]["force_load"]
     assert payload["operators"] == [
@@ -155,7 +155,7 @@ def test_resolve_validates_dispatcher_contract_and_force_loads_library(
             "implementation": "vllm",
             "library": "vllm",
             "name": "gptq_marlin_repack",
-            "dispatcher_schema": schema,
+            "operator_schema": schema,
             "dispatch_key": "CUDA",
             "source": str((op_dir / "vllm.cc").resolve()),
         }
@@ -233,17 +233,17 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
             "library: vllm\n"
             "required_symbols:\n"
             "  - symbol()\n"
-            "dispatcher_schema: _C::op() -> Tensor\n"
+            "operator_schema: _C::op() -> Tensor\n"
             "dispatch_key: CUDA\n",
-            "exactly one of required_symbols or dispatcher_schema",
+            "exactly one of required_symbols or operator_schema",
         ),
         (
-            "library: vllm\ndispatcher_schema: _C::op() -> Tensor\n",
-            "dispatcher_schema requires dispatch_key",
+            "library: vllm\noperator_schema: _C::op() -> Tensor\n",
+            "operator_schema requires dispatch_key",
         ),
         (
             "library: vllm\nrequired_symbols:\n  - symbol()\ndispatch_key: CUDA\n",
-            "dispatch_key requires dispatcher_schema",
+            "dispatch_key requires operator_schema",
         ),
     ),
 )
@@ -511,7 +511,7 @@ def test_dispatcher_contract_validation_uses_one_isolated_process(
         source=tmp_path / "vllm.cc",
         library="vllm",
         required_symbols=(),
-        dispatcher_schema=schema,
+        operator_schema=schema,
         dispatch_key="CUDA",
     )
     other_schema = "other::op(Tensor input) -> Tensor"
@@ -524,7 +524,7 @@ def test_dispatcher_contract_validation_uses_one_isolated_process(
         source=tmp_path / "other.cc",
         library="other",
         required_symbols=(),
-        dispatcher_schema=other_schema,
+        operator_schema=other_schema,
         dispatch_key="CUDA",
     )
     library_path = tmp_path / "_C.so"
