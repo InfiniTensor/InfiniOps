@@ -9,6 +9,9 @@ import torch
 from tests.utils import get_stream
 
 
+_VLLM_IMPLEMENTATION_INDEX = 16
+
+
 if not hasattr(infini.ops, "GroupedTopk"):
     pytest.skip(
         "`GroupedTopk` is not available on this platform", allow_module_level=True
@@ -47,7 +50,6 @@ def test_grouped_topk(
     routed_scaling_factor,
     scoring_func,
     device,
-    implementation_index,
 ):
     if device != "cuda":
         pytest.skip("`grouped_topk` requires the NVIDIA backend")
@@ -68,7 +70,6 @@ def test_grouped_topk(
         topk_values,
         topk_indices,
         stream=get_stream(scores.device),
-        implementation_index=implementation_index,
     )
 
     expected_values, expected_indices = _reference(
@@ -89,7 +90,120 @@ def test_grouped_topk(
     torch.testing.assert_close(scores, original_scores, rtol=0, atol=0)
 
 
-def test_grouped_topk_ties_prefer_smaller_expert_indices(device, implementation_index):
+@pytest.mark.parametrize(
+    (
+        "dtype",
+        "shape",
+        "num_expert_group",
+        "topk_group",
+        "topk",
+        "renormalize",
+        "routed_scaling_factor",
+        "scoring_func",
+    ),
+    (
+        (torch.float32, (2, 16), 4, 2, 4, False, 1.0, 0),
+        (torch.float16, (3, 64), 8, 2, 4, True, 2.5, 0),
+        (torch.bfloat16, (4, 128), 8, 4, 8, True, 1.5, 1),
+    ),
+)
+def test_grouped_topk_matches_vllm_provider(
+    dtype,
+    shape,
+    num_expert_group,
+    topk_group,
+    topk,
+    renormalize,
+    routed_scaling_factor,
+    scoring_func,
+):
+    _require_vllm_implementation()
+    if not torch.cuda.is_available():
+        pytest.skip("vLLM `grouped_topk` requires an NVIDIA device")
+
+    logits = torch.arange(shape[0] * shape[1], device="cuda", dtype=torch.float32)
+    logits = ((logits * 37) % 29 - 14).reshape(shape) / 8
+    scores = logits.to(dtype)
+    bias = (((torch.arange(shape[1], device="cuda") * 11) % 13) - 6).float() / 16
+    original_scores = scores.clone()
+    topk_values = torch.empty((shape[0], topk), dtype=torch.float32, device="cuda")
+    topk_indices = torch.empty((shape[0], topk), dtype=torch.int32, device="cuda")
+
+    routed_scores = scores if scoring_func == 0 else torch.sigmoid(scores)
+    scores_with_bias = (routed_scores + bias.unsqueeze(0)).to(dtype)
+    expected_values, expected_indices = torch.ops._moe_C.grouped_topk(
+        routed_scores,
+        scores_with_bias,
+        num_expert_group,
+        topk_group,
+        topk,
+        renormalize,
+        routed_scaling_factor,
+    )
+
+    infini.ops.grouped_topk(
+        scores,
+        bias,
+        num_expert_group,
+        topk_group,
+        topk,
+        renormalize,
+        routed_scaling_factor,
+        scoring_func,
+        topk_values,
+        topk_indices,
+        stream=get_stream(scores.device),
+        implementation_index=_VLLM_IMPLEMENTATION_INDEX,
+    )
+
+    torch.testing.assert_close(topk_values, expected_values.float(), rtol=0, atol=0)
+    torch.testing.assert_close(topk_indices, expected_indices, rtol=0, atol=0)
+    torch.testing.assert_close(scores, original_scores, rtol=0, atol=0)
+
+
+def test_grouped_topk_uses_vllm_provider_tie_semantics():
+    _require_vllm_implementation()
+    if not torch.cuda.is_available():
+        pytest.skip("vLLM `grouped_topk` requires an NVIDIA device")
+
+    scores = torch.tensor(
+        [[0.25, 0.5, 0.25, 0.5, 0.75, 0.75, 0.125, 0.125]],
+        dtype=torch.bfloat16,
+        device="cuda",
+    )
+    bias = torch.zeros(8, dtype=torch.float32, device="cuda")
+    topk_values = torch.empty((1, 4), dtype=torch.float32, device="cuda")
+    topk_indices = torch.empty((1, 4), dtype=torch.int32, device="cuda")
+    expected_values, expected_indices = torch.ops._moe_C.grouped_topk(
+        scores,
+        (scores + bias.unsqueeze(0)).to(scores.dtype),
+        2,
+        2,
+        4,
+        False,
+        1.0,
+    )
+
+    infini.ops.grouped_topk(
+        scores,
+        bias,
+        2,
+        2,
+        4,
+        False,
+        1.0,
+        0,
+        topk_values,
+        topk_indices,
+        stream=get_stream(scores.device),
+        implementation_index=_VLLM_IMPLEMENTATION_INDEX,
+    )
+
+    torch.testing.assert_close(topk_values, expected_values.float(), rtol=0, atol=0)
+    torch.testing.assert_close(topk_indices, expected_indices, rtol=0, atol=0)
+
+
+def test_grouped_topk_ties_prefer_smaller_expert_indices(device):
     if device != "cuda":
         pytest.skip("`grouped_topk` requires the NVIDIA backend")
 
@@ -109,7 +223,6 @@ def test_grouped_topk_ties_prefer_smaller_expert_indices(device, implementation_
         topk_values,
         topk_indices,
         stream=get_stream(scores.device),
-        implementation_index=implementation_index,
     )
 
     expected_indices = torch.tensor(((0, 1, 2, 3),), dtype=torch.int32, device=device)
@@ -118,7 +231,7 @@ def test_grouped_topk_ties_prefer_smaller_expert_indices(device, implementation_
     torch.testing.assert_close(topk_values, expected_values, rtol=0, atol=0)
 
 
-def test_grouped_topk_group_ties_prefer_smaller_group_ids(device, implementation_index):
+def test_grouped_topk_group_ties_prefer_smaller_group_ids(device):
     if device != "cuda":
         pytest.skip("`grouped_topk` requires the NVIDIA backend")
 
@@ -142,7 +255,6 @@ def test_grouped_topk_group_ties_prefer_smaller_group_ids(device, implementation
         topk_values,
         topk_indices,
         stream=get_stream(scores.device),
-        implementation_index=implementation_index,
     )
 
     expected_indices = torch.tensor(((0, 2),), dtype=torch.int32, device=device)
@@ -152,9 +264,7 @@ def test_grouped_topk_group_ties_prefer_smaller_group_ids(device, implementation
 
 
 @pytest.mark.parametrize("scoring_func", (0, 1))
-def test_grouped_topk_excludes_nonfinite_experts(
-    scoring_func, device, implementation_index
-):
+def test_grouped_topk_excludes_nonfinite_experts(scoring_func, device):
     if device != "cuda":
         pytest.skip("`grouped_topk` requires the NVIDIA backend")
 
@@ -178,7 +288,6 @@ def test_grouped_topk_excludes_nonfinite_experts(
         topk_values,
         topk_indices,
         stream=get_stream(scores.device),
-        implementation_index=implementation_index,
     )
 
     expected_values, expected_indices = _reference(
@@ -212,7 +321,7 @@ def test_grouped_topk_descriptor_reuses_matching_metadata(device):
     torch.testing.assert_close(reused_outputs[1], expected[1], rtol=0, atol=0)
 
 
-def test_grouped_topk_non_default_stream(device, implementation_index):
+def test_grouped_topk_non_default_stream(device):
     if device != "cuda":
         pytest.skip("non-default CUDA streams require the NVIDIA backend")
 
@@ -234,7 +343,6 @@ def test_grouped_topk_non_default_stream(device, implementation_index):
         1,
         *outputs,
         stream=stream.cuda_stream,
-        implementation_index=implementation_index,
     )
 
     stream.synchronize()
@@ -312,6 +420,14 @@ def _make_inputs(shape, scores_dtype, bias_dtype, scoring_func, device):
     bias = bias.roll(3).to(bias_dtype)
 
     return scores, bias
+
+
+def _require_vllm_implementation():
+    if (
+        _VLLM_IMPLEMENTATION_INDEX
+        not in infini.ops.GroupedTopk.active_implementation_indices("nvidia")
+    ):
+        pytest.skip("vLLM `grouped_topk` implementation is not available")
 
 
 def _make_outputs(scores, topk):
