@@ -1,3 +1,7 @@
+import subprocess
+import sys
+import textwrap
+
 import infini.ops
 import pytest
 import torch
@@ -318,3 +322,93 @@ def _reference(gating_output, bias, is_padding, topk, renormalize):
     ).unsqueeze(-1)
 
     return weights, indices, token_expert_indices
+
+
+_LINKED_IMPLEMENTATION_INDEX = 16
+
+
+@pytest.mark.parametrize("renormalize", (False, True))
+@pytest.mark.parametrize("has_bias", (False, True))
+@pytest.mark.parametrize("index_dtype", (torch.int32, torch.int64, torch.uint32))
+@pytest.mark.parametrize("dtype", (torch.float16, torch.bfloat16, torch.float32))
+def test_topk_softmax_linked(dtype, index_dtype, has_bias, renormalize, device):
+    if device != "cuda":
+        pytest.skip("linked `topk_softmax` requires the NVIDIA backend")
+    if _LINKED_IMPLEMENTATION_INDEX not in (
+        infini.ops.TopkSoftmax.active_implementation_indices("nvidia")
+    ):
+        pytest.skip("linked `topk_softmax` provider is not active")
+
+    gating_output = torch.tensor(
+        (
+            (1.25, -0.5, 0.75, 2.0, -1.0),
+            (-0.25, 1.5, 0.5, -1.25, 2.25),
+            (0.125, 0.75, 2.5, 1.0, -0.75),
+        ),
+        dtype=dtype,
+        device=device,
+    )
+    bias = None
+    if has_bias:
+        bias = torch.tensor(
+            (0.0, 0.75, -0.5, -1.0, 1.25),
+            dtype=torch.float32,
+            device=device,
+        )
+    outputs = _make_outputs(gating_output, topk=2, index_dtype=index_dtype)
+
+    infini.ops.topk_softmax(
+        gating_output,
+        bias,
+        None,
+        renormalize,
+        *outputs,
+        stream=get_stream(gating_output.device),
+        implementation_index=_LINKED_IMPLEMENTATION_INDEX,
+    )
+
+    expected = _reference(gating_output, bias, None, 2, renormalize)
+    torch.testing.assert_close(outputs[0], expected[0], rtol=1e-6, atol=1e-6)
+    torch.testing.assert_close(outputs[1], expected[1].to(index_dtype), rtol=0, atol=0)
+    torch.testing.assert_close(outputs[2], expected[2], rtol=0, atol=0)
+
+
+def test_topk_softmax_linked_rejects_is_padding(device):
+    if device != "cuda":
+        pytest.skip("linked `topk_softmax` requires the NVIDIA backend")
+    if _LINKED_IMPLEMENTATION_INDEX not in (
+        infini.ops.TopkSoftmax.active_implementation_indices("nvidia")
+    ):
+        pytest.skip("linked `topk_softmax` provider is not active")
+
+    result = subprocess.run(
+        [sys.executable, "-c", _IS_PADDING_SCRIPT], capture_output=True, text=True
+    )
+
+    assert result.returncode != 0
+    assert "does not support `is_padding`" in result.stderr
+
+
+_IS_PADDING_SCRIPT = textwrap.dedent(
+    """
+    import infini.ops
+    import torch
+
+
+    gating_output = torch.randn((2, 4), dtype=torch.float16, device="cuda")
+    is_padding = torch.zeros((2,), dtype=torch.bool, device="cuda")
+    outputs = (
+        torch.empty((2, 2), dtype=torch.float32, device="cuda"),
+        torch.empty((2, 2), dtype=torch.int32, device="cuda"),
+        torch.empty((2, 2), dtype=torch.int32, device="cuda"),
+    )
+    infini.ops.topk_softmax(
+        gating_output,
+        None,
+        is_padding,
+        False,
+        *outputs,
+        implementation_index=16,
+    )
+    """
+)
