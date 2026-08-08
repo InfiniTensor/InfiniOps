@@ -21,11 +21,16 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 8>::operator()(
     const std::vector<int64_t> window_size, const double softcap,
     const bool deterministic, const bool return_attn_probs, Tensor out,
     std::optional<Tensor> softmax_lse, std::optional<Tensor> s_dmask) const {
+  assert(!alibi_slopes.has_value() &&
+         "The PyTorch `FlashAttnVarlenFunc` provider does not support "
+         "`alibi_slopes`.");
+  assert(!block_table.has_value() &&
+         "The PyTorch `FlashAttnVarlenFunc` provider does not support "
+         "`block_table`.");
+
   (void)softcap;
-  (void)alibi_slopes;
   (void)deterministic;
   (void)return_attn_probs;
-  (void)block_table;
 
   const auto device_index = static_cast<c10::DeviceIndex>(device_index_);
   const c10::cuda::CUDAGuard device_guard{device_index};
