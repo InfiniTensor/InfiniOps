@@ -14,6 +14,26 @@ def test_get_cutlass_moe_mm_data_binding_exists():
     assert hasattr(infini.ops, "GetCutlassMoeMmData")
 
 
+def test_linked_get_cutlass_moe_mm_data_rejects_unsupported_gating():
+    _require_linked_implementation()
+    result = _run_unsupported_call(is_gated=False)
+
+    assert result.returncode != 0
+    assert "only supports `is_gated=true`" in result.stderr
+
+
+def test_linked_get_cutlass_moe_mm_data_rejects_unsupported_architecture():
+    _require_linked_implementation()
+
+    if torch.cuda.get_device_capability()[0] >= 9:
+        pytest.skip("linked vLLM implementation supports this CUDA architecture")
+
+    result = _run_unsupported_call(is_gated=True)
+
+    assert result.returncode != 0
+    assert "requires compute capability 9.0 or newer" in result.stderr
+
+
 @pytest.mark.parametrize("is_gated", (False, True))
 def test_get_cutlass_moe_mm_data_problem_sizes(is_gated, device, implementation_index):
     if device != "cuda":
@@ -78,6 +98,7 @@ def test_get_cutlass_moe_mm_data_defaults_to_gated_and_swaps_small_problem(
     n = 64
     k = 128
     outputs = _make_outputs(topk_ids, num_experts)
+    _skip_unsupported_linked_impl(implementation_index, is_gated=True)
 
     infini.ops.get_cutlass_moe_mm_data(
         topk_ids,
@@ -253,6 +274,7 @@ def test_get_cutlass_moe_mm_data_non_default_stream(device, implementation_index
     outputs = _make_outputs(topk_ids, num_experts)
     stream = torch.cuda.Stream()
     stream.wait_stream(torch.cuda.current_stream())
+    _skip_unsupported_linked_impl(implementation_index, is_gated=True)
 
     infini.ops.get_cutlass_moe_mm_data(
         topk_ids,
@@ -346,6 +368,7 @@ def _get_cutlass_moe_mm_data(
     *outputs,
     implementation_index,
 ):
+    _skip_unsupported_linked_impl(implementation_index, is_gated=is_gated)
     infini.ops.get_cutlass_moe_mm_data(
         topk_ids,
         num_experts,
@@ -355,6 +378,34 @@ def _get_cutlass_moe_mm_data(
         *outputs,
         stream=get_stream(topk_ids.device),
         implementation_index=implementation_index,
+    )
+
+
+def _skip_unsupported_linked_impl(implementation_index, *, is_gated):
+    if implementation_index != 16:
+        return
+
+    if not is_gated:
+        pytest.skip("linked vLLM implementation requires `is_gated=true`")
+
+    if torch.cuda.get_device_capability()[0] < 9:
+        pytest.skip("linked vLLM implementation requires compute capability 9.0")
+
+
+def _require_linked_implementation():
+    if not torch.cuda.is_available():
+        pytest.skip("`get_cutlass_moe_mm_data` requires the NVIDIA backend")
+
+    if 16 not in infini.ops.GetCutlassMoeMmData.active_implementation_indices("nvidia"):
+        pytest.skip("linked vLLM implementation is not active")
+
+
+def _run_unsupported_call(*, is_gated):
+    return subprocess.run(
+        [sys.executable, "-c", _UNSUPPORTED_CALL_SCRIPT, str(is_gated)],
+        capture_output=True,
+        check=False,
+        text=True,
     )
 
 
@@ -501,5 +552,38 @@ _DESCRIPTOR_REUSE_SCRIPT = textwrap.dedent(
 
     operator(*args)
     torch.cuda.synchronize()
+    """
+)
+
+
+_UNSUPPORTED_CALL_SCRIPT = textwrap.dedent(
+    r"""
+    import sys
+
+    import infini.ops
+    import torch
+
+
+    is_gated = sys.argv[1] == "True"
+    topk_ids = torch.tensor(((0, 1), (2, 3)), dtype=torch.int32, device="cuda")
+    expert_offsets = torch.empty(5, dtype=torch.int32, device="cuda")
+    problem_sizes1 = torch.empty((4, 3), dtype=torch.int32, device="cuda")
+    problem_sizes2 = torch.empty_like(problem_sizes1)
+    input_permutation = torch.empty(4, dtype=torch.int32, device="cuda")
+    output_permutation = torch.empty_like(input_permutation)
+    infini.ops.get_cutlass_moe_mm_data(
+        topk_ids,
+        4,
+        64,
+        128,
+        is_gated,
+        expert_offsets,
+        problem_sizes1,
+        problem_sizes2,
+        input_permutation,
+        output_permutation,
+        None,
+        implementation_index=16,
+    )
     """
 )
