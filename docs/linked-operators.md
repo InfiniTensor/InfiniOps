@@ -38,7 +38,7 @@ required_symbols:
   - silu_and_mul(at::Tensor&, at::Tensor&)
 ```
 
-A Dispatcher implementation instead declares its exact schema and required
+A Dispatcher implementation instead declares its exact schema and a required
 dispatch key:
 
 ```yaml
@@ -48,6 +48,12 @@ operator_schema: >-
   SymInt size_n, int num_bits, bool is_a_8bit) -> Tensor
 dispatch_key: CUDA
 ```
+
+When one implementation requires multiple Dispatcher operators from the same
+library and dispatch key, `operator_schema` may instead be a non-empty YAML list
+of unique, non-empty schema strings. The resolver validates every schema while
+force-loading the library once. A single schema is emitted as a scalar string,
+including when the input uses a one-item list.
 
 Each implementation uses exactly one contract form. The resolver rejects a
 partial Dispatcher contract or a binding that mixes both forms.

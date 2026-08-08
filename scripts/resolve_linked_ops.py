@@ -78,7 +78,7 @@ class BindingConfig:
     source: pathlib.Path
     library: str
     required_symbols: tuple[str, ...]
-    operator_schema: str | None
+    operator_schema: str | tuple[str, ...] | None
     dispatch_key: str | None
 
 
@@ -112,6 +112,34 @@ def _require_string(data, key, path):
     if not isinstance(value, str) or not value.strip():
         raise ResolutionError(f"{path}: {key} must be a non-empty string")
     return value.strip()
+
+
+def _require_operator_schema(data, path):
+    value = data["operator_schema"]
+    if isinstance(value, str):
+        if not value.strip():
+            raise ResolutionError(
+                f"{path}: operator_schema must be a non-empty string or list of "
+                "non-empty strings"
+            )
+
+        return value.strip()
+
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(schema, str) or not schema.strip() for schema in value)
+    ):
+        raise ResolutionError(
+            f"{path}: operator_schema must be a non-empty string or list of "
+            "non-empty strings"
+        )
+
+    schemas = tuple(schema.strip() for schema in value)
+    if len(schemas) != len(set(schemas)):
+        raise ResolutionError(f"{path}: operator_schema contains duplicates")
+
+    return schemas[0] if len(schemas) == 1 else schemas
 
 
 def _require_relative_glob(data, key, path):
@@ -194,7 +222,7 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
             operator_schema = None
         else:
             symbols = ()
-            operator_schema = _require_string(data, "operator_schema", path)
+            operator_schema = _require_operator_schema(data, path)
             if dispatch_key is None:
                 raise ResolutionError(f"{path}: operator_schema requires dispatch_key")
             dispatch_key = _require_string(data, "dispatch_key", path)
@@ -441,26 +469,30 @@ def _verify_dispatcher_contracts(contracts):
         "        torch.ops.load_library(library_path)\n"
         "        loaded.add(library_path)\n"
         "for contract in contracts:\n"
-        "    expected = torch._C.parse_schema(contract['schema'])\n"
-        "    actual = torch._C._dispatch_find_schema_or_throw(\n"
-        "        expected.name, expected.overload_name\n"
-        "    ).schema()\n"
-        "    if str(actual) != str(expected):\n"
-        "        sys.exit(\n"
-        "            f\"{contract['binding_path']}: expected {expected}, \"\n"
-        "            f'found {actual}'\n"
-        "        )\n"
-        "    qualified_name = expected.name\n"
-        "    if expected.overload_name:\n"
-        "        qualified_name += f'.{expected.overload_name}'\n"
-        "    dispatch_key = contract['dispatch_key']\n"
-        "    if not torch._C._dispatch_has_kernel_for_dispatch_key(\n"
-        "        qualified_name, dispatch_key\n"
-        "    ):\n"
-        "        sys.exit(\n"
-        "            f\"{contract['binding_path']}: {qualified_name} has no \"\n"
-        "            f'{dispatch_key} kernel'\n"
-        "        )\n"
+        "    schemas = contract['schema']\n"
+        "    if isinstance(schemas, str):\n"
+        "        schemas = [schemas]\n"
+        "    for schema in schemas:\n"
+        "        expected = torch._C.parse_schema(schema)\n"
+        "        actual = torch._C._dispatch_find_schema_or_throw(\n"
+        "            expected.name, expected.overload_name\n"
+        "        ).schema()\n"
+        "        if str(actual) != str(expected):\n"
+        "            sys.exit(\n"
+        "                f\"{contract['binding_path']}: expected {expected}, \"\n"
+        "                f'found {actual}'\n"
+        "            )\n"
+        "        qualified_name = expected.name\n"
+        "        if expected.overload_name:\n"
+        "            qualified_name += f'.{expected.overload_name}'\n"
+        "        dispatch_key = contract['dispatch_key']\n"
+        "        if not torch._C._dispatch_has_kernel_for_dispatch_key(\n"
+        "            qualified_name, dispatch_key\n"
+        "        ):\n"
+        "            sys.exit(\n"
+        "                f\"{contract['binding_path']}: {qualified_name} has no \"\n"
+        "                f'{dispatch_key} kernel'\n"
+        "            )\n"
     )
     try:
         subprocess.run(
@@ -653,7 +685,11 @@ def resolve_linked_ops(
         if binding.required_symbols:
             operator["required_symbols"] = list(binding.required_symbols)
         else:
-            operator["operator_schema"] = binding.operator_schema
+            operator["operator_schema"] = (
+                list(binding.operator_schema)
+                if isinstance(binding.operator_schema, tuple)
+                else binding.operator_schema
+            )
             operator["dispatch_key"] = binding.dispatch_key
         operators.append(operator)
 

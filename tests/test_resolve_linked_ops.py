@@ -96,8 +96,9 @@ def test_resolve_collects_selected_implementation_and_library(monkeypatch, tmp_p
     assert "ignored" not in manifest
 
 
+@pytest.mark.parametrize("schema_form", ("scalar", "list"))
 def test_resolve_validates_dispatcher_contract_and_force_loads_library(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, schema_form
 ):
     module = _load_resolver_module()
     source_root = tmp_path / "linked"
@@ -111,8 +112,13 @@ def test_resolve_validates_dispatcher_contract_and_force_loads_library(
         "_C::gptq_marlin_repack(Tensor b_q_weight, Tensor perm, "
         "SymInt size_k, SymInt size_n, int num_bits, bool is_a_8bit) -> Tensor"
     )
+    if schema_form == "scalar":
+        schema_yaml = f"operator_schema: {schema}\n"
+    else:
+        schema_yaml = f"operator_schema:\n  - {schema}\n"
+
     (op_dir / "vllm.yaml").write_text(
-        f"library: vllm\noperator_schema: {schema}\ndispatch_key: CUDA\n"
+        f"library: vllm\n{schema_yaml}dispatch_key: CUDA\n"
     )
     (op_dir / "vllm.h").write_text("// declaration\n")
     (op_dir / "vllm.cc").write_text("// definition\n")
@@ -165,6 +171,67 @@ def test_resolve_validates_dispatcher_contract_and_force_loads_library(
         "set(INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES", maxsplit=1
     )[1].split(")", maxsplit=1)[0]
     assert str(library_path).replace("\\", "/") in force_load_block
+
+
+def test_resolve_validates_multiple_dispatcher_schemas(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    platform = source_root / "torch" / "nvidia"
+    op_dir = platform / "ops" / "fused_marlin_moe"
+    op_dir.mkdir(parents=True)
+    (platform / "vllm.yaml").write_text(
+        "python_distribution_package: vllm\nlibrary_glob: vllm/_C*.so\n"
+    )
+    schemas = (
+        "_moe_C::moe_align_block_size(Tensor topk_ids) -> ()",
+        "_moe_C::moe_wna16_marlin_gemm(Tensor input) -> Tensor",
+    )
+    (op_dir / "vllm.yaml").write_text(
+        "library: vllm\n"
+        "operator_schema:\n"
+        f"  - {schemas[0]}\n"
+        f"  - {schemas[1]}\n"
+        "dispatch_key: CUDA\n"
+    )
+    (op_dir / "vllm.h").write_text("// declaration\n")
+    (op_dir / "vllm.cc").write_text("// definition\n")
+    library_path = tmp_path / "site-packages" / "vllm" / "_moe_C.abi3.so"
+    library_path.parent.mkdir(parents=True)
+    library_path.touch()
+
+    monkeypatch.setattr(
+        module, "_locate_distribution_library", lambda config: library_path
+    )
+    contracts = []
+    monkeypatch.setattr(
+        module,
+        "_verify_dispatcher_contracts",
+        lambda resolved: contracts.extend(resolved),
+    )
+
+    output_dir = tmp_path / "generated"
+    payload = module.resolve_linked_ops(
+        ["nvidia"],
+        ["fused_marlin_moe"],
+        source_root=source_root,
+        output_dir=output_dir,
+    )
+
+    assert len(contracts) == 1
+    contract, resolved_path = contracts[0]
+    assert contract.operator_schema == schemas
+    assert contract.dispatch_key == "CUDA"
+    assert resolved_path == library_path
+    assert payload["operators"][0]["operator_schema"] == list(schemas)
+    assert json.loads((output_dir / "resolved.json").read_text()) == payload
+    assert len(payload["libraries"]) == 1
+    assert payload["libraries"][0]["force_load"]
+
+    manifest = (output_dir / "manifest.cmake").read_text()
+    force_load_block = manifest.split(
+        "set(INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES", maxsplit=1
+    )[1].split(")", maxsplit=1)[0]
+    assert force_load_block.count(str(library_path).replace("\\", "/")) == 1
 
 
 def test_resolve_supports_multiple_implementations_for_one_operator(
@@ -252,6 +319,51 @@ def test_resolve_requires_one_complete_binding_contract(tmp_path, binding, messa
     source_root = tmp_path / "linked"
     _, op_dir = _write_linked_config(source_root)
     (op_dir / "vllm.yaml").write_text(binding)
+
+    with pytest.raises(module.ResolutionError, match=message):
+        module.resolve_linked_ops(
+            ["metax"],
+            source_root=source_root,
+            output_dir=tmp_path / "generated",
+        )
+
+
+@pytest.mark.parametrize(
+    ("operator_schema", "message"),
+    (
+        (
+            "operator_schema: []\n",
+            "operator_schema must be a non-empty string or list of non-empty strings",
+        ),
+        (
+            "operator_schema: 1\n",
+            "operator_schema must be a non-empty string or list of non-empty strings",
+        ),
+        (
+            "operator_schema: ''\n",
+            "operator_schema must be a non-empty string or list of non-empty strings",
+        ),
+        (
+            "operator_schema:\n  - _C::op() -> Tensor\n  - 1\n",
+            "operator_schema must be a non-empty string or list of non-empty strings",
+        ),
+        (
+            "operator_schema:\n  - ''\n",
+            "operator_schema must be a non-empty string or list of non-empty strings",
+        ),
+        (
+            "operator_schema:\n  - _C::op() -> Tensor\n  - ' _C::op() -> Tensor '\n",
+            "operator_schema contains duplicates",
+        ),
+    ),
+)
+def test_resolve_rejects_invalid_operator_schema(tmp_path, operator_schema, message):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    _, op_dir = _write_linked_config(source_root)
+    (op_dir / "vllm.yaml").write_text(
+        f"library: vllm\n{operator_schema}dispatch_key: CUDA\n"
+    )
 
     with pytest.raises(module.ResolutionError, match=message):
         module.resolve_linked_ops(
@@ -502,6 +614,7 @@ def test_dispatcher_contract_validation_uses_one_isolated_process(
 ):
     module = _load_resolver_module()
     schema = "_C::op(Tensor input) -> Tensor"
+    schemas = (schema, "_C::other(Tensor input) -> Tensor")
     config = module.BindingConfig(
         device="nvidia",
         name="op",
@@ -511,7 +624,7 @@ def test_dispatcher_contract_validation_uses_one_isolated_process(
         source=tmp_path / "vllm.cc",
         library="vllm",
         required_symbols=(),
-        operator_schema=schema,
+        operator_schema=schemas,
         dispatch_key="CUDA",
     )
     other_schema = "other::op(Tensor input) -> Tensor"
@@ -547,7 +660,7 @@ def test_dispatcher_contract_validation_uses_one_isolated_process(
         {
             "binding_path": str(config.path),
             "library_path": str(library_path),
-            "schema": schema,
+            "schema": list(schemas),
             "dispatch_key": "CUDA",
         },
         {
