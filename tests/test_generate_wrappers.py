@@ -78,6 +78,33 @@ class Clamp {
     ) in text
 
 
+def test_operator_call_instantiations_externalize_default_implementation_lookup():
+    module = _load_generator_module()
+    operator = module._Operator(
+        "abs",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "input"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            )
+        ],
+    )
+
+    declarations, definitions = module._generate_operator_call_instantiation_entries(
+        operator
+    )
+
+    signature = (
+        "std::size_t "
+        "Operator<::infini::ops::Abs>::DefaultImplementationIndex(Device::Type);"
+    )
+    assert f"extern template {signature}" in declarations
+    assert f"template {signature}" in definitions
+
+
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):

@@ -1534,6 +1534,13 @@ def _generate_operator_call_instantiation_entries(operator):
         declarations.append(declaration)
         definitions.append(definition)
 
+    _append_unique(
+        f"extern template std::size_t "
+        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
+        f"template std::size_t "
+        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
+    )
+
     for call in operator.calls:
         template_arguments = _generate_template_arguments(call)
         params = _generate_parameters(call)
