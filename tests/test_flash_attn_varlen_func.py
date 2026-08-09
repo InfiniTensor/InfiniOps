@@ -15,12 +15,16 @@ if not hasattr(infini.ops, "FlashAttnVarlenFunc"):
 
 
 @pytest.mark.parametrize(
-    "q_lens, k_lens, num_heads, num_kv_heads, causal, window_size, scale",
     (
-        ((3, 5), (4, 5), 4, 4, False, (-1, -1), None),
-        ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125),
-        ((4, 3), (6, 2), 4, 2, False, (2, 1), None),
-        ((4, 3), (6, 2), 4, 2, True, (2, 1), None),
+        "q_lens, k_lens, num_heads, num_kv_heads, causal, window_size, "
+        "scale, paged, use_alibi"
+    ),
+    (
+        ((3, 5), (4, 5), 4, 4, False, (-1, -1), None, False, False),
+        ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125, False, False),
+        ((4, 3), (6, 2), 4, 2, False, (2, 1), None, False, False),
+        ((4, 3), (6, 2), 4, 2, True, (2, 1), None, False, False),
+        ((2, 3), (130, 300), 4, 2, True, (-1, -1), None, True, True),
     ),
 )
 @pytest.mark.parametrize("head_dim", (64, 128))
@@ -39,6 +43,8 @@ def test_flash_attn_varlen_func(
     causal,
     window_size,
     scale,
+    paged,
+    use_alibi,
     head_dim,
     dtype,
     device,
@@ -49,18 +55,63 @@ def test_flash_attn_varlen_func(
     if device != "cuda":
         pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
 
+    if (paged or use_alibi) and implementation_index == 8:
+        pytest.skip("paged KV cache and ALiBi require the linked provider")
+
     q = torch.randn((sum(q_lens), num_heads, head_dim), dtype=dtype, device=device)
-    k = torch.randn((sum(k_lens), num_kv_heads, head_dim), dtype=dtype, device=device)
+    block_table = None
+    if paged:
+        page_size = 256
+        max_blocks = max((length + page_size - 1) // page_size for length in k_lens)
+        block_rows = []
+        num_blocks = 0
+
+        for length in k_lens:
+            blocks = (length + page_size - 1) // page_size
+            row = list(range(num_blocks, num_blocks + blocks))
+            row.extend([0] * (max_blocks - blocks))
+            block_rows.append(row)
+            num_blocks += blocks
+
+        k = torch.randn(
+            (num_blocks, page_size, num_kv_heads, head_dim),
+            dtype=dtype,
+            device=device,
+        )
+        block_table = torch.tensor(
+            block_rows,
+            dtype=torch.int32,
+            device=device,
+        )
+    else:
+        k = torch.randn(
+            (sum(k_lens), num_kv_heads, head_dim),
+            dtype=dtype,
+            device=device,
+        )
+
     v = torch.randn_like(k)
     cu_seqlens_q = _cumulative_lengths(q_lens, device)
     cu_seqlens_k = _cumulative_lengths(k_lens, device)
-    out = torch.empty_like(q)
-    softmax_lse = torch.empty(
-        (q.size(1), q.size(0)),
-        dtype=torch.float32,
-        device=q.device,
+    alibi_slopes = (
+        torch.linspace(0.01, 0.04, num_heads, dtype=torch.float32, device=device)
+        if use_alibi
+        else None
     )
-    s_dmask = torch.empty((0,), dtype=q.dtype, device=q.device)
+    out = torch.empty_like(q)
+    return_attn_probs = not paged
+    softmax_lse = (
+        torch.empty(
+            (q.size(1), q.size(0)),
+            dtype=torch.float32,
+            device=q.device,
+        )
+        if return_attn_probs
+        else None
+    )
+    s_dmask = (
+        torch.empty((0,), dtype=q.dtype, device=q.device) if return_attn_probs else None
+    )
 
     infini.ops.flash_attn_varlen_func(
         q,
@@ -68,8 +119,8 @@ def test_flash_attn_varlen_func(
         v,
         cu_seqlens_q,
         cu_seqlens_k,
-        None,
-        None,
+        alibi_slopes,
+        block_table,
         max(q_lens),
         max(k_lens),
         0.0,
@@ -78,7 +129,7 @@ def test_flash_attn_varlen_func(
         window_size,
         0.0,
         False,
-        True,
+        return_attn_probs,
         out,
         softmax_lse,
         s_dmask,
@@ -95,31 +146,35 @@ def test_flash_attn_varlen_func(
         scale,
         causal,
         window_size,
+        block_table,
+        alibi_slopes,
     )
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
-    expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
-        q,
-        k,
-        v,
-        cu_seqlens_q,
-        cu_seqlens_k,
-        max(q_lens),
-        max(k_lens),
-        0.0,
-        causal,
-        False,
-        scale=scale,
-        window_size_left=None if window_size[0] < 0 else window_size[0],
-        window_size_right=(
-            0 if causal else None if window_size[1] < 0 else window_size[1]
-        ),
-    )
-    expected_softmax_lse = _pack_varlen_softmax_lse(
-        expected_auxiliary[1],
-        q_lens,
-    )
-    torch.testing.assert_close(softmax_lse, expected_softmax_lse)
-    torch.testing.assert_close(s_dmask, expected_auxiliary[4])
+
+    if return_attn_probs:
+        expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max(q_lens),
+            max(k_lens),
+            0.0,
+            causal,
+            False,
+            scale=scale,
+            window_size_left=None if window_size[0] < 0 else window_size[0],
+            window_size_right=(
+                0 if causal else None if window_size[1] < 0 else window_size[1]
+            ),
+        )
+        expected_softmax_lse = _pack_varlen_softmax_lse(
+            expected_auxiliary[1],
+            q_lens,
+        )
+        torch.testing.assert_close(softmax_lse, expected_softmax_lse)
+        torch.testing.assert_close(s_dmask, expected_auxiliary[4])
 
 
 def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
@@ -323,15 +378,26 @@ def _reference_varlen_attention(
     scale,
     causal,
     window_size,
+    block_table=None,
+    alibi_slopes=None,
 ):
     outputs = []
     q_offset = 0
     k_offset = 0
 
-    for q_len, k_len in zip(q_lens, k_lens):
+    for batch_index, (q_len, k_len) in enumerate(zip(q_lens, k_lens)):
         q_seq = q[q_offset : q_offset + q_len].transpose(0, 1)
-        k_seq = k[k_offset : k_offset + k_len].transpose(0, 1)
-        v_seq = v[k_offset : k_offset + k_len].transpose(0, 1)
+        if block_table is None:
+            k_seq = k[k_offset : k_offset + k_len]
+            v_seq = v[k_offset : k_offset + k_len]
+        else:
+            blocks = (k_len + k.size(1) - 1) // k.size(1)
+            block_indices = block_table[batch_index, :blocks].tolist()
+            k_seq = torch.cat(tuple(k[index] for index in block_indices))[:k_len]
+            v_seq = torch.cat(tuple(v[index] for index in block_indices))[:k_len]
+
+        k_seq = k_seq.transpose(0, 1)
+        v_seq = v_seq.transpose(0, 1)
         groups = q_seq.size(0) // k_seq.size(0)
         k_seq = k_seq.repeat_interleave(groups, dim=0)
         v_seq = v_seq.repeat_interleave(groups, dim=0)
@@ -346,6 +412,15 @@ def _reference_varlen_attention(
         scores = (
             torch.matmul(q_seq.float(), k_seq.float().transpose(-2, -1)) * scale_factor
         )
+        if alibi_slopes is not None:
+            slopes = (
+                alibi_slopes if alibi_slopes.ndim == 1 else alibi_slopes[batch_index]
+            )
+            query_positions = torch.arange(q_len, device=q.device).unsqueeze(1)
+            key_positions = torch.arange(k_len, device=q.device).unsqueeze(0)
+            distance = (query_positions + k_len - q_len - key_positions).abs()
+            scores += -slopes[:, None, None] * distance
+
         if mask is not None:
             scores.masked_fill_(~mask.unsqueeze(0), -math.inf)
         probabilities = torch.softmax(scores, dim=-1)
