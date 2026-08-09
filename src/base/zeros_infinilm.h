@@ -7,11 +7,10 @@
 
 namespace infini::ops {
 
-/// \deprecated Migrate to an open-source-aligned operator when available. This
-/// interface will be removed in a future release.
-class [[deprecated(
-    "Migrate to an open-source-aligned operator when available.")]]
-ZerosInfinilm : public Operator<ZerosInfinilm> {
+/// \deprecated Use `Fill` with a value of zero. This interface will be removed
+/// in a future release.
+class [[deprecated("Use `Fill` with a value of zero instead.")]] ZerosInfinilm
+    : public Operator<ZerosInfinilm> {
  public:
   ZerosInfinilm(const Tensor input, Tensor out)
       : input_shape_{input.shape()},

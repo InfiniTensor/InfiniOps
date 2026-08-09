@@ -10,10 +10,9 @@
 
 namespace infini::ops {
 
-/// \deprecated Migrate to an open-source-aligned operator when available. This
-/// interface will be removed in a future release.
-class [[deprecated(
-    "Migrate to an open-source-aligned operator when available.")]] ConvInfinilm
+/// \deprecated Use `Convolution`. This interface will be removed in a future
+/// release.
+class [[deprecated("Use `Convolution` instead.")]] ConvInfinilm
     : public Operator<ConvInfinilm> {
  public:
   ConvInfinilm(const Tensor input, const Tensor weight,

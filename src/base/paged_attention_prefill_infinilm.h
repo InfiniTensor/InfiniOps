@@ -11,10 +11,9 @@
 
 namespace infini::ops {
 
-/// \deprecated Migrate to an open-source-aligned operator when available. This
-/// interface will be removed in a future release.
-class [[deprecated(
-    "Migrate to an open-source-aligned operator when available.")]]
+/// \deprecated Use `FlashAttnVarlenFunc`. This interface will be removed in a
+/// future release.
+class [[deprecated("Use `FlashAttnVarlenFunc` instead.")]]
 PagedAttentionPrefillInfinilm : public Operator<PagedAttentionPrefillInfinilm> {
  public:
   PagedAttentionPrefillInfinilm(const Tensor q, const Tensor k_cache,

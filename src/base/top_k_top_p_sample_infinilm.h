@@ -11,10 +11,9 @@
 
 namespace infini::ops {
 
-/// \deprecated Migrate to an open-source-aligned operator when available. This
-/// interface will be removed in a future release.
-class [[deprecated(
-    "Migrate to an open-source-aligned operator when available.")]]
+/// \deprecated Use `TopKTopPSamplingFromLogits`. This interface will be removed
+/// in a future release.
+class [[deprecated("Use `TopKTopPSamplingFromLogits` instead.")]]
 TopKTopPSampleInfinilm : public Operator<TopKTopPSampleInfinilm> {
  public:
   TopKTopPSampleInfinilm(const Tensor logits, std::optional<Tensor> k,

@@ -7,11 +7,9 @@
 
 namespace infini::ops {
 
-/// \deprecated Migrate to an open-source-aligned operator when available. This
-/// interface will be removed in a future release.
-class [[deprecated(
-    "Migrate to an open-source-aligned operator when available.")]]
-RearrangeInfinilm : public Operator<RearrangeInfinilm> {
+/// \deprecated Use `Copy`. This interface will be removed in a future release.
+class [[deprecated("Use `Copy` instead.")]] RearrangeInfinilm
+    : public Operator<RearrangeInfinilm> {
  public:
   RearrangeInfinilm(const Tensor input, Tensor out)
       : input_shape_{input.shape()},
