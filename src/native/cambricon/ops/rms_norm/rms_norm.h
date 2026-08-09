@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "base/rms_norm.h"
@@ -21,15 +22,16 @@ void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
 template <>
 class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
  public:
-  Operator(const Tensor input, const Tensor weight, float eps, Tensor out)
+  Operator(const Tensor input, const std::optional<Tensor> weight, float eps,
+           Tensor out)
       : RmsNorm{input, weight, eps, out} {
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster,
                                 &cluster_count);
     cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
   }
 
-  void operator()(const Tensor input, const Tensor weight, float eps,
-                  Tensor out) const override {
+  void operator()(const Tensor input, const std::optional<Tensor> weight,
+                  float eps, Tensor out) const override {
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
     auto workspace{workspace_ ? workspace_ : default_workspace_};
 
@@ -37,15 +39,16 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
         Device::Type::kCambricon,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
-        {input.dtype(), weight.dtype()},
+        {input.dtype(), weight.has_value() ? weight->dtype() : input.dtype()},
         [&](auto input_tag, auto weight_tag) {
           using InputT = typename decltype(input_tag)::type;
           using WeightT = typename decltype(weight_tag)::type;
 
           RmsNormUnion<InputT, WeightT>(
               workspace, core_per_cluster, cluster_count, queue, out.data(),
-              input.data(), weight.data(), out_shape_.data(),
-              out_strides_.data(), input_strides_.data(), eps, ndim_);
+              input.data(), weight.has_value() ? weight->data() : nullptr,
+              out_shape_.data(), out_strides_.data(), input_strides_.data(),
+              eps, ndim_);
         },
         "CambriconRmsNorm::operator() - output dispatch");
   }
