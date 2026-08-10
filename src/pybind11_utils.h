@@ -221,8 +221,8 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
 
 namespace detail {
 
-inline Device DeviceFromPybind11HandleImpl(py::handle obj,
-                                           const InternedNames& names) {
+inline Device DeviceFromPybind11HandleImpl(py::handle obj) {
+  const auto& names{GetInternedNames()};
   auto device_obj{py::getattr(obj, names.device)};
   auto device_type_obj{py::getattr(device_obj, names.type)};
   std::string device_type_storage;
@@ -245,8 +245,8 @@ inline Device DeviceFromPybind11HandleImpl(py::handle obj,
   return Device{DeviceTypeFromString(device_type_str), device_index};
 }
 
-inline Tensor TensorFromPybind11HandleImpl(py::handle obj,
-                                           const InternedNames& names) {
+inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
+  const auto& names{GetInternedNames()};
   auto data{reinterpret_cast<void*>(
       detail::CallMethodNoArgs(obj, names.data_ptr).cast<std::uintptr_t>())};
 
@@ -255,7 +255,7 @@ inline Tensor TensorFromPybind11HandleImpl(py::handle obj,
 
   auto dtype{DataTypeFromPybind11HandleImpl(py::getattr(obj, names.dtype))};
 
-  auto device{DeviceFromPybind11HandleImpl(obj, names)};
+  auto device{DeviceFromPybind11HandleImpl(obj)};
 
   auto strides{detail::VectorFromSequence<typename Tensor::Strides>(
       detail::CallMethodNoArgs(obj, names.stride))};
@@ -268,13 +268,13 @@ inline Tensor TensorFromPybind11HandleImpl(py::handle obj,
 inline Device DeviceFromPybind11Handle(py::handle obj) {
   [[maybe_unused]] HostRangeScope host_range_device_conversion{
       HostRangeLayer::kDeviceConversion};
-  return detail::DeviceFromPybind11HandleImpl(obj, detail::GetInternedNames());
+  return detail::DeviceFromPybind11HandleImpl(obj);
 }
 
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
   [[maybe_unused]] HostRangeScope host_range_tensor_conversion{
       HostRangeLayer::kTensorConversion};
-  return detail::TensorFromPybind11HandleImpl(obj, detail::GetInternedNames());
+  return detail::TensorFromPybind11HandleImpl(obj);
 }
 
 inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
@@ -282,7 +282,7 @@ inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
   [[maybe_unused]] HostRangeScope host_range_tensor_conversion{
       HostRangeLayer::kTensorConversion};
   if (!obj.has_value() || obj->is_none()) return std::nullopt;
-  return detail::TensorFromPybind11HandleImpl(*obj, detail::GetInternedNames());
+  return detail::TensorFromPybind11HandleImpl(*obj);
 }
 
 inline std::vector<Tensor> VectorTensorFromPybind11Handle(
@@ -291,9 +291,8 @@ inline std::vector<Tensor> VectorTensorFromPybind11Handle(
       HostRangeLayer::kTensorConversion};
   std::vector<Tensor> result;
   result.reserve(objs.size());
-  const auto& names{detail::GetInternedNames()};
   for (const auto& obj : objs) {
-    result.push_back(detail::TensorFromPybind11HandleImpl(obj, names));
+    result.push_back(detail::TensorFromPybind11HandleImpl(obj));
   }
   return result;
 }
@@ -304,12 +303,11 @@ VectorOptionalTensorFromPybind11Handle(const std::vector<py::object>& objs) {
       HostRangeLayer::kTensorConversion};
   std::vector<std::optional<Tensor>> result;
   result.reserve(objs.size());
-  const auto& names{detail::GetInternedNames()};
   for (const auto& obj : objs) {
     if (obj.is_none()) {
       result.push_back(std::nullopt);
     } else {
-      result.push_back(detail::TensorFromPybind11HandleImpl(obj, names));
+      result.push_back(detail::TensorFromPybind11HandleImpl(obj));
     }
   }
   return result;
