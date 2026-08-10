@@ -1,100 +1,161 @@
 #ifndef INFINI_OPS_TRITON_JIT_H_
 #define INFINI_OPS_TRITON_JIT_H_
 
-#include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <string>
 #include <type_traits>
 #include <vector>
 
-#include "config.h"
+#include "cache.h"
 #include "data_type.h"
+#include "runtime.h"
 #include "tensor.h"
 
 namespace infini::ops {
 
-struct TritonConfig : Config {
-  TritonConfig() = default;
+// ---- device support ----
 
-  TritonConfig(unsigned num_warps, unsigned num_stages,
-               std::vector<std::pair<std::string, int>> constexprs)
-      : num_warps(num_warps),
-        num_stages(num_stages),
-        constexprs(std::move(constexprs)) {}
+template <Device::Type kDev>
+inline constexpr bool kJitSupported = false;
 
-  unsigned num_warps = 4;
+template <>
+inline constexpr bool kJitSupported<Device::Type::kNvidia> = true;
 
-  unsigned num_stages = 3;
+template <typename Op, Device::Type kDev, bool = kJitSupported<kDev>>
+struct JitOperatorBase : Op {
+  using Op::Op;
+};
 
-  std::vector<std::pair<std::string, int>> constexprs;
+template <typename Op, Device::Type kDev>
+struct JitOperatorBase<Op, kDev, false> {};
 
-  bool autotune = false;
+// ---- compilation & launch ----
 
-  std::vector<TritonConfig> configs;
+template <Device::Type kDev>
+TargetInfo CurrentTarget() {
+  TargetInfo target;
+  target.type = Device::StringFromType(kDev);
+  int dev_id = 0;
+  if (Runtime<kDev>::GetDevice(&dev_id) != Runtime<kDev>::kSuccess)
+    return target;
+  target.id = dev_id;
+  int major = 0, minor = 0;
+  Runtime<kDev>::DeviceGetAttribute(
+      &major, Runtime<kDev>::kDevAttrComputeCapabilityMajor, dev_id);
+  Runtime<kDev>::DeviceGetAttribute(
+      &minor, Runtime<kDev>::kDevAttrComputeCapabilityMinor, dev_id);
+  target.arch = major * 10 + minor;
+  Runtime<kDev>::DeviceGetAttribute(&target.warp_size,
+                                    Runtime<kDev>::kDevAttrWarpSize, dev_id);
+  return target;
+}
 
-  int warmup = 5;
+template <Device::Type kDev>
+bool Load(const TargetInfo& target, const char* binary_data, size_t binary_size,
+          const KernelMeta& meta, typename Driver<kDev>::Function& func,
+          typename Driver<kDev>::Module& mod) {
+  (void)binary_size;
 
-  int rep = 50;
+  if (Driver<kDev>::ModuleLoadData(&mod, binary_data) != Driver<kDev>::kSuccess)
+    return false;
 
-  bool IsAutotune() const { return autotune; }
-
-  int At(const std::string& key) const {
-    for (const auto& [k, v] : constexprs)
-      if (k == key) return v;
-    assert(false && "`constexpr` not found");
-    return 0;
+  if (Driver<kDev>::ModuleGetFunction(&func, mod, meta.name.c_str()) !=
+      Driver<kDev>::kSuccess) {
+    Driver<kDev>::ModuleUnload(mod);
+    return false;
   }
 
-  void ApplyDefaults(const TritonConfig& defaults) {
-    for (const auto& [dk, dv] : defaults.constexprs) {
-      bool found = false;
-      for (const auto& [k, v] : constexprs)
-        if (k == dk) {
-          found = true;
-          break;
-        }
-      if (!found) constexprs.push_back({dk, dv});
+  if (meta.shared > 49152) {
+    int optin = 0;
+    Runtime<kDev>::DeviceGetAttribute(
+        &optin, Runtime<kDev>::kDevAttrMaxSharedMemoryPerBlockOptin, target.id);
+    int st = 0;
+    Driver<kDev>::FuncGetAttribute(
+        &st, Driver<kDev>::kFuncAttributeSharedSizeBytes, func);
+    if (optin < st || meta.shared > static_cast<unsigned>(optin - st)) {
+      Driver<kDev>::ModuleUnload(mod);
+      return false;
+    }
+    Driver<kDev>::FuncSetCacheConfig(func,
+                                     Driver<kDev>::kFuncCachePreferShared);
+    if (Driver<kDev>::FuncSetAttribute(
+            func, Driver<kDev>::kFuncAttributeMaxDynamicSharedSizeBytes,
+            optin - st) != Driver<kDev>::kSuccess) {
+      Driver<kDev>::ModuleUnload(mod);
+      return false;
     }
   }
-};
 
-struct Grid {
-  unsigned x = 1;
+  return true;
+}
 
-  unsigned y = 1;
+template <Device::Type kDev>
+typename Driver<kDev>::Function GetKernel(const char* op_name,
+                                          const char* signature_str,
+                                          void* stream, const JitConfig& opts,
+                                          unsigned* out_shared) {
+  TargetInfo target = CurrentTarget<kDev>();
 
-  unsigned z = 1;
-};
+  auto r = CacheQuery<kDev>(op_name, signature_str, opts.num_warps,
+                            opts.num_stages, target.arch, target.id);
+  if (r.mem_hit) {
+    *out_shared = r.shared;
+    return r.func;
+  }
 
-struct DeviceInfo {
-  int id = 0;
+  KernelMeta meta;
+  std::string binary_data;
+  if (!ReadArtifacts(r.out_prefix, &meta, &binary_data)) {
+    int ret = CompileKernel(target, op_name, r.out_prefix.c_str(),
+                            opts.num_warps, opts.num_stages, signature_str);
+    if (ret != 0) return nullptr;
+    if (!ReadArtifacts(r.out_prefix, &meta, &binary_data)) return nullptr;
+  }
 
-  int arch = 0;
-};
+  if (meta.global_scratch_size > 0 || meta.profile_scratch_size > 0) {
+    fprintf(stderr, "triton jit: scratch not supported yet\n");
+    return nullptr;
+  }
 
-bool CompilerInit();
+  typename Driver<kDev>::Function func;
+  typename Driver<kDev>::Module mod;
+  if (!Load<kDev>(target, binary_data.data(), binary_data.size(), meta, func,
+                  mod))
+    return nullptr;
 
-int CompileKernel(const char* op_name, const char* out_prefix, int num_warps,
-                  int num_stages, int device_id, const char* signature);
+  unsigned shared = meta.shared;
+  KernelCacheEntry<kDev> mine{func, shared};
+  KernelCacheEntry<kDev> winner;
+  if (KernelCacheLookup<kDev>(r.mem_key, &winner)) {
+    Driver<kDev>::ModuleUnload(mod);
+    func = winner.func;
+    shared = winner.shared;
+  } else {
+    KernelCacheInsert<kDev>(r.mem_key, mine);
+  }
 
+  *out_shared = shared;
+  return func;
+}
+
+template <Device::Type kDev>
 int LaunchKernel(const char* op_name, const char* signature_str, void* stream,
-                 Grid grid, TritonConfig config, void** args);
+                 Grid grid, const JitConfig& config, void** args) {
+  unsigned shared = 0;
+  auto func = GetKernel<kDev>(op_name, signature_str, stream, config, &shared);
+  if (!func) return -1;
 
-void* GetKernel(const char* op_name, const char* signature_str, void* stream,
-                const TritonConfig& config, unsigned* out_shared);
+  TargetInfo target = CurrentTarget<kDev>();
+  return Driver<kDev>::LaunchKernel(
+      func, grid.x, grid.y, grid.z, config.num_warps * target.warp_size, 1, 1,
+      shared, static_cast<typename Driver<kDev>::Stream>(stream), args,
+      nullptr);
+}
 
-DeviceInfo CurrentDevice();
-
-TritonConfig AutotuneBench(const char* op_name,
-                           const std::vector<TritonConfig>& configs,
-                           const std::string& sig,
-                           const std::vector<void*>& ptrs,
-                           const std::vector<Grid>& grids, int warmup, int rep,
-                           const char* key, int device_id);
-
-// ---- specialization ----
+// ---- specialization helpers ----
 
 inline const char* SpecPtr(uintptr_t v) { return v % 16 == 0 ? ":16" : ""; }
 
@@ -151,7 +212,7 @@ const char* ScalarTypeToTritonType() {
     if constexpr (sizeof(T) == 1) return std::is_signed_v<T> ? "i8" : "u8";
     if constexpr (sizeof(T) == 2) return std::is_signed_v<T> ? "i16" : "u16";
     if constexpr (sizeof(T) == 4) return std::is_signed_v<T> ? "i32" : "u32";
-    if constexpr (sizeof(T) == 8) return std::is_signed_v<T> ? "i64" : "i32";
+    if constexpr (sizeof(T) == 8) return std::is_signed_v<T> ? "i64" : "u64";
   }
   return "i32";
 }
@@ -202,8 +263,8 @@ inline void PushArg(double v, ArgPack& pack) {
 
 // ---- launch wrapper ----
 
-template <typename... Args>
-int LaunchJit(const char* op, void* stream, Grid grid, TritonConfig config,
+template <Device::Type kDev, typename... Args>
+int LaunchJit(const char* op, void* stream, Grid grid, const JitConfig& config,
               Args&&... args) {
   ArgPack pack;
   pack.sig.reserve(256);
@@ -212,34 +273,39 @@ int LaunchJit(const char* op, void* stream, Grid grid, TritonConfig config,
     pack.sig += name + "=" + std::to_string(val) + ",";
   if (!pack.sig.empty()) pack.sig.pop_back();
 
-  // Triton needs two trailing scratch pointers.
   void* scratch = pack.Store<uint64_t>(0);
   pack.ptrs.push_back(scratch);
   pack.ptrs.push_back(scratch);
 
-  return LaunchKernel(op, pack.sig.c_str(), stream, grid, config,
-                      pack.ptrs.data());
+  return LaunchKernel<kDev>(op, pack.sig.c_str(), stream, grid, config,
+                            pack.ptrs.data());
 }
 
-template <typename GridFn, typename... Args>
-int LaunchJitAutotune(const char* op, void* stream, const TritonConfig& config,
-                      const std::vector<Tensor::Size>& key_dims, DataType dtype,
-                      GridFn grid_fn, Args&&... args) {
+template <Device::Type kDev, typename GridFn, typename... Args>
+int LaunchJitAutotune(const char* op, void* stream,
+                      const AutotuneConfig& config,
+                      const std::vector<Tensor::Size>& key,
+                      const std::vector<DataType>& dtype, GridFn grid_fn,
+                      Args&&... args) {
+  TargetInfo target = CurrentTarget<kDev>();
+
   std::string cache_key = op;
-  for (auto d : key_dims) cache_key += "|" + std::to_string(d);
-  cache_key += "|dt=" + std::to_string(static_cast<int>(dtype));
+  for (auto d : key) cache_key += "|" + std::to_string(d);
+  for (auto dt : dtype)
+    cache_key += "|" + std::string(DataTypeToTritonType(dt));
+  cache_key += "|sm" + std::to_string(target.arch);
 
   ArgPack pack;
   pack.sig.reserve(256);
   (PushArg(std::forward<Args>(args), pack), ...);
 
   std::vector<Grid> grids;
-  grids.reserve(config.configs.size());
-  for (const auto& c : config.configs) grids.push_back(grid_fn(c));
+  grids.reserve(config.candidates.size());
+  for (const auto& c : config.candidates) grids.push_back(grid_fn(c));
 
-  TritonConfig best = AutotuneBench(op, config.configs, pack.sig, pack.ptrs,
-                                    grids, config.warmup, config.rep,
-                                    cache_key.c_str(), CurrentDevice().id);
+  JitConfig best =
+      AutotuneBench(op, config.candidates, pack.sig, pack.ptrs, grids,
+                    config.warmup, config.rep, cache_key.c_str(), target);
 
   Grid grid = grid_fn(best);
 
@@ -251,8 +317,8 @@ int LaunchJitAutotune(const char* op, void* stream, const TritonConfig& config,
   pack.ptrs.push_back(scratch);
   pack.ptrs.push_back(scratch);
 
-  return LaunchKernel(op, pack.sig.c_str(), stream, grid, best,
-                      pack.ptrs.data());
+  return LaunchKernel<kDev>(op, pack.sig.c_str(), stream, grid, best,
+                            pack.ptrs.data());
 }
 
 }  // namespace infini::ops

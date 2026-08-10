@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <mutex>
 
-#include "cache.h"
 #include "jit.h"
 
 namespace infini::ops {
@@ -40,8 +39,9 @@ bool CompilerInit() {
   return ready;
 }
 
-int CompileKernel(const char* op_name, const char* out_prefix, int num_warps,
-                  int num_stages, int device_id, const char* signature) {
+int CompileKernel(const TargetInfo& target, const char* op_name,
+                  const char* out_prefix, int num_warps, int num_stages,
+                  const char* signature) {
   if (!CompilerInit()) return -1;
 
   namespace py = pybind11;
@@ -49,7 +49,8 @@ int CompileKernel(const char* op_name, const char* out_prefix, int num_warps,
   try {
     py::module_ mod = py::module_::import("infini.triton.jit.compile");
     mod.attr("_do_compile")(op_name, out_prefix, num_warps, num_stages,
-                            device_id, signature);
+                            target.id, signature, target.type, target.arch,
+                            target.warp_size);
     return 0;
   } catch (const py::error_already_set& e) {
     fprintf(stderr, "jit compile: %s\n", e.what());
@@ -57,22 +58,19 @@ int CompileKernel(const char* op_name, const char* out_prefix, int num_warps,
   }
 }
 
-TritonConfig AutotuneBench(const char* op_name,
-                           const std::vector<TritonConfig>& configs,
-                           const std::string& sig,
-                           const std::vector<void*>& ptrs,
-                           const std::vector<Grid>& grids, int warmup, int rep,
-                           const char* key, int device_id) {
-  TritonConfig cached;
+JitConfig AutotuneBench(const char* op_name,
+                        const std::vector<JitConfig>& configs,
+                        const std::string& sig, const std::vector<void*>& ptrs,
+                        const std::vector<Grid>& grids, int warmup, int rep,
+                        const char* key, const TargetInfo& target) {
+  JitConfig cached;
   if (AutotuneCacheLookup(key, &cached)) return cached;
 
   namespace py = pybind11;
-  if (!CompilerInit()) return configs.empty() ? TritonConfig{} : configs[0];
+  if (!CompilerInit()) return configs.empty() ? JitConfig{} : configs[0];
   py::gil_scoped_acquire gil;
   try {
     py::module_ mod = py::module_::import("infini.triton.jit.compile");
-
-    DeviceInfo dev = CurrentDevice();
 
     py::list cands;
     for (const auto& c : configs) {
@@ -95,7 +93,7 @@ TritonConfig AutotuneBench(const char* op_name,
       cd["full_sig"] = full_sig;
       cd["out_prefix"] = std::string(TRITON_JIT_CACHE_DIR) + "/" +
                          CacheFileKey(op_name, full_sig.c_str(), c.num_warps,
-                                      c.num_stages, dev.arch);
+                                      c.num_stages, target.arch);
 
       cands.append(cd);
     }
@@ -136,16 +134,17 @@ TritonConfig AutotuneBench(const char* op_name,
     }
 
     int best_idx = mod.attr("_do_autotune")(op_name, cands, args, grids_list,
-                                            warmup, rep, device_id)
+                                            warmup, rep, target.id, target.type,
+                                            target.arch, target.warp_size)
                        .cast<int>();
     if (best_idx < 0 || best_idx >= static_cast<int>(configs.size()))
       best_idx = 0;
-    TritonConfig winner = configs[best_idx];
+    JitConfig winner = configs[best_idx];
     AutotuneCacheInsert(key, winner);
     return winner;
   } catch (const py::error_already_set& e) {
     fprintf(stderr, "jit autotune: %s\n", e.what());
-    return configs.empty() ? TritonConfig{} : configs[0];
+    return configs.empty() ? JitConfig{} : configs[0];
   }
 }
 

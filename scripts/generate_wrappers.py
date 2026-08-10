@@ -586,7 +586,7 @@ def _is_data_type_spelling(spelling):
     return spelling.rsplit("::", maxsplit=1)[-1] == "DataType"
 
 def _uses_config_extension(impl_paths):
-    pattern = re.compile(r"\bTritonConfig\b")
+    pattern = re.compile(r"\bJitConfig\b")
     for path in impl_paths:
         try:
             if pattern.search(path.read_text()):
@@ -598,16 +598,19 @@ def _uses_config_extension(impl_paths):
 
 def _generate_triton_jit_config_parser():
     return textwrap.dedent("""\
-    inline std::shared_ptr<TritonConfig> ConfigFromPyDict(const py::dict& config_dict) {
-      auto config = std::make_shared<TritonConfig>();
+    inline std::shared_ptr<Config> ConfigFromPyDict(const py::dict& config_dict) {
       if (config_dict.contains("autotune")) {
-        config->autotune = true;
+        auto config = std::make_shared<AutotuneConfig>();
         py::dict autotune_dict = config_dict["autotune"].cast<py::dict>();
         if (autotune_dict.contains("warmup")) config->warmup = autotune_dict["warmup"].cast<unsigned>();
         if (autotune_dict.contains("rep")) config->rep = autotune_dict["rep"].cast<unsigned>();
+        if (autotune_dict.contains("key")) {
+          for (auto k : autotune_dict["key"].cast<py::list>())
+            config->key.push_back(k.cast<std::string>());
+        }
         if (autotune_dict.contains("configs")) {
           for (auto candidate : autotune_dict["configs"].cast<py::list>()) {
-            TritonConfig candidate_config;
+            JitConfig candidate_config;
             py::dict candidate_dict = candidate.cast<py::dict>();
             if (candidate_dict.contains("num_warps")) candidate_config.num_warps = candidate_dict["num_warps"].cast<unsigned>();
             if (candidate_dict.contains("num_stages")) candidate_config.num_stages = candidate_dict["num_stages"].cast<unsigned>();
@@ -616,17 +619,18 @@ def _generate_triton_jit_config_parser():
               if (key != "num_warps" && key != "num_stages")
                 candidate_config.constexprs.emplace_back(key, item.second.cast<int>());
             }
-            config->configs.push_back(std::move(candidate_config));
+            config->candidates.push_back(std::move(candidate_config));
           }
         }
-      } else {
-        if (config_dict.contains("num_warps")) config->num_warps = config_dict["num_warps"].cast<unsigned>();
-        if (config_dict.contains("num_stages")) config->num_stages = config_dict["num_stages"].cast<unsigned>();
-        for (auto item : config_dict) {
-          std::string key = item.first.cast<std::string>();
-          if (key != "num_warps" && key != "num_stages")
-            config->constexprs.emplace_back(key, item.second.cast<int>());
-        }
+        return config;
+      }
+      auto config = std::make_shared<JitConfig>();
+      if (config_dict.contains("num_warps")) config->num_warps = config_dict["num_warps"].cast<unsigned>();
+      if (config_dict.contains("num_stages")) config->num_stages = config_dict["num_stages"].cast<unsigned>();
+      for (auto item : config_dict) {
+        std::string key = item.first.cast<std::string>();
+        if (key != "num_warps" && key != "num_stages")
+          config->constexprs.emplace_back(key, item.second.cast<int>());
       }
       return config;
     }""")
