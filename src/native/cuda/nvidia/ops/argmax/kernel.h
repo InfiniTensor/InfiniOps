@@ -23,8 +23,7 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
                   const bool keepdim, Tensor out) const override;
 
  private:
-  static std::size_t DispatchWorkspaceSize(DataType dtype,
-                                           std::size_t numel);
+  static std::size_t DispatchWorkspaceSize(DataType dtype, std::size_t numel);
 
   std::size_t numel_{0};
 

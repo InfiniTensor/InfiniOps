@@ -25,8 +25,8 @@ std::size_t WorkspaceSize(std::size_t numel) {
 }
 
 template <typename T>
-__global__ void StoreIndex(
-    int64_t* out, const cub::KeyValuePair<int, T>* result) {
+__global__ void StoreIndex(int64_t* out,
+                           const cub::KeyValuePair<int, T>* result) {
   *out = static_cast<int64_t>(result->key);
 }
 
@@ -34,13 +34,13 @@ template <typename T>
 void Launch(void* workspace, std::size_t workspace_size, const T* input,
             std::size_t numel, int64_t* out, cudaStream_t stream) {
   auto* result = static_cast<cub::KeyValuePair<int, T>*>(workspace);
-  auto* cub_workspace = static_cast<char*>(workspace)
-                      + Align256(sizeof(cub::KeyValuePair<int, T>));
-  auto cub_workspace_size = workspace_size
-                          - Align256(sizeof(cub::KeyValuePair<int, T>));
-  auto error = cub::DeviceReduce::ArgMax(
-      cub_workspace, cub_workspace_size, input, result,
-      static_cast<int>(numel), stream);
+  auto* cub_workspace = static_cast<char*>(workspace) +
+                        Align256(sizeof(cub::KeyValuePair<int, T>));
+  auto cub_workspace_size =
+      workspace_size - Align256(sizeof(cub::KeyValuePair<int, T>));
+  auto error =
+      cub::DeviceReduce::ArgMax(cub_workspace, cub_workspace_size, input,
+                                result, static_cast<int>(numel), stream);
   assert(error == cudaSuccess && "`Argmax` CUB reduction failed");
   StoreIndex<<<1, 1, 0, stream>>>(out, result);
 }
