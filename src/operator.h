@@ -163,9 +163,9 @@ class OperatorBase {
 
   virtual std::size_t workspace_size_in_bytes() const { return 0; }
 
-  void set_handle(const Handle& handle) { handle_ = handle; }
+  void set_handle(const Handle& handle) { handle_ = handle.Clone(); }
 
-  void set_config(const Config& config) { config_ = config; }
+  void set_config(const Config& config) { config_ = config.Clone(); }
 
   void set_stream(void* stream) { stream_ = stream; }
 
@@ -176,9 +176,9 @@ class OperatorBase {
   }
 
  protected:
-  Handle handle_;
+  std::unique_ptr<Handle> handle_;
 
-  Config config_;
+  std::unique_ptr<Config> config_;
 
   void* stream_{nullptr};
 
