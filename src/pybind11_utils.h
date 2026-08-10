@@ -78,7 +78,7 @@ Integer IntegerFromPybind11Handle(py::handle obj) {
 }
 
 template <typename Vector>
-Vector VectorFromSequence(py::handle obj) {
+Vector VectorFromPybind11Handle(py::handle obj) {
   auto* sequence_ptr{PySequence_Fast(obj.ptr(), "expected a sequence")};
   if (sequence_ptr == nullptr) throw py::error_already_set();
   auto sequence{py::reinterpret_steal<py::object>(sequence_ptr)};
@@ -250,14 +250,14 @@ inline Tensor TensorFromPybind11HandleImpl(py::handle obj) {
   auto data{reinterpret_cast<void*>(
       detail::CallMethodNoArgs(obj, names.data_ptr).cast<std::uintptr_t>())};
 
-  auto shape{detail::VectorFromSequence<typename Tensor::Shape>(
+  auto shape{detail::VectorFromPybind11Handle<typename Tensor::Shape>(
       py::getattr(obj, names.shape))};
 
   auto dtype{DataTypeFromPybind11HandleImpl(py::getattr(obj, names.dtype))};
 
   auto device{DeviceFromPybind11HandleImpl(obj)};
 
-  auto strides{detail::VectorFromSequence<typename Tensor::Strides>(
+  auto strides{detail::VectorFromPybind11Handle<typename Tensor::Strides>(
       detail::CallMethodNoArgs(obj, names.stride))};
 
   return Tensor{data, std::move(shape), dtype, device, std::move(strides)};
