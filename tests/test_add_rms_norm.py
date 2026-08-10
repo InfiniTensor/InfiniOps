@@ -58,6 +58,27 @@ def test_add_rms_norm(
     rtol,
     atol,
 ):
+    device_type = device.type if isinstance(device, torch.device) else str(device)
+
+    if (
+        device_type == "npu"
+        and implementation_index == 0
+        and check_output == "out"
+        and out_strides is not None
+    ):
+        pytest.skip("Ascend decomposed `add_rms_norm` requires contiguous `out`.")
+
+    if (
+        device_type == "npu"
+        and implementation_index == 1
+        and (
+            input_strides is not None
+            or residual_strides is not None
+            or out_strides is not None
+        )
+    ):
+        pytest.skip("Ascend fused `add_rms_norm` requires contiguous tensors.")
+
     input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     residual = randn_strided(input_shape, residual_strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
