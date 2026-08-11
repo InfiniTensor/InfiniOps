@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_LINKED_TORCH_MOORE_OPS_SILU_AND_MUL_VLLM_H_
 #define INFINI_OPS_LINKED_TORCH_MOORE_OPS_SILU_AND_MUL_VLLM_H_
 
-#include "linked/torch/moore/c10.h"
 #include "linked/torch/ops/silu_and_mul.h"
+#include "torch/moore/c10.h"
 
 namespace infini::ops::linked::torch::moore {
 

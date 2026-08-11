@@ -3,8 +3,8 @@
 
 #include <ATen/core/Generator.h>
 
-#include "linked/torch/nvidia/c10.h"
 #include "linked/torch/ops/flash_attn_varlen_func.h"
+#include "torch/nvidia/c10.h"
 
 namespace infini::ops::linked::torch::nvidia {
 

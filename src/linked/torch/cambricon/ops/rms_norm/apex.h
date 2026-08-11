@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_LINKED_TORCH_CAMBRICON_OPS_RMS_NORM_APEX_H_
 #define INFINI_OPS_LINKED_TORCH_CAMBRICON_OPS_RMS_NORM_APEX_H_
 
-#include "linked/torch/cambricon/c10.h"
 #include "linked/torch/ops/rms_norm.h"
+#include "torch/cambricon/c10.h"
 
 namespace infini::ops::linked::torch::cambricon {
 

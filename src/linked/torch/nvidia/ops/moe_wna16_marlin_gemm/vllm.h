@@ -8,8 +8,8 @@
 #include <optional>
 #include <utility>
 
-#include "linked/torch/nvidia/c10.h"
 #include "linked/torch/ops/moe_wna16_marlin_gemm.h"
+#include "torch/nvidia/c10.h"
 
 namespace infini::ops::linked::torch::nvidia {
 

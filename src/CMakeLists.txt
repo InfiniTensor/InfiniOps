@@ -693,7 +693,7 @@ if(_infini_ops_linked_uses_torch)
     list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_SOURCES})
 endif()
 
-if(WITH_CAMBRICON AND _infini_ops_linked_uses_torch)
+if(WITH_CAMBRICON AND TORCH_SOURCES)
     execute_process(
         COMMAND "${_TORCH_PYTHON}" -c
             "import importlib.metadata, pathlib; root = pathlib.Path(importlib.metadata.distribution('torch-mlu').locate_file('')).resolve(); include = root / 'torch_mlu/csrc'; lib = include / 'lib'; print(include, lib, sep=';')"
@@ -808,32 +808,39 @@ if(TORCH_SOURCES)
 
         set(_torch_vendor_include_flags "")
         if(WITH_METAX)
-            list(APPEND _torch_vendor_include_flags "-I${MACA_PATH}/include")
+            list(APPEND _torch_vendor_include_flags
+                "-I${MACA_PATH}/include"
+                "-I${MACA_PATH}/include/mcr"
+                "-I${MACA_PATH}/tools/cu-bridge/include")
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
-            if(WITH_LINKED AND _infini_ops_linked_uses_torch)
-                execute_process(
-                    COMMAND "${_TORCH_PYTHON}" -c
-                        "import importlib.metadata, pathlib; root = pathlib.Path(importlib.metadata.distribution('torch-musa').locate_file('')).resolve(); compat = root / 'torch_musa/share/generated_cuda_compatible/include'; print(root, compat, sep=';')"
-                    OUTPUT_VARIABLE _torch_musa_include_dirs
-                    OUTPUT_STRIP_TRAILING_WHITESPACE
-                    RESULT_VARIABLE _torch_musa_include_result
-                )
-                if(NOT _torch_musa_include_result EQUAL 0 OR
-                   NOT _torch_musa_include_dirs)
-                    message(FATAL_ERROR
-                        "Could not determine `torch_musa` include directories.")
-                endif()
-                foreach(_dir IN LISTS _torch_musa_include_dirs)
-                    if(NOT IS_DIRECTORY "${_dir}")
-                        message(FATAL_ERROR
-                            "Could not find `torch_musa` include directory `${_dir}`.")
-                    endif()
-                    list(APPEND _torch_include_flags
-                        "-isystem" "${_dir}")
-                endforeach()
+            execute_process(
+                COMMAND "${_TORCH_PYTHON}" -c
+                    "import importlib.metadata, pathlib; root = pathlib.Path(importlib.metadata.distribution('torch-musa').locate_file('')).resolve(); compat = root / 'torch_musa/share/generated_cuda_compatible/include'; lib = root / 'torch_musa/lib'; print(root, compat, lib, sep=';')"
+                OUTPUT_VARIABLE _torch_musa_paths
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE _torch_musa_paths_result
+            )
+            if(NOT _torch_musa_paths_result EQUAL 0 OR NOT _torch_musa_paths)
+                message(FATAL_ERROR
+                    "Could not determine `torch_musa` include and library directories.")
             endif()
+            list(GET _torch_musa_paths 2 _torch_musa_library_dir)
+            list(REMOVE_AT _torch_musa_paths 2)
+            foreach(_dir IN LISTS _torch_musa_paths)
+                if(NOT IS_DIRECTORY "${_dir}")
+                    message(FATAL_ERROR
+                        "Could not find `torch_musa` include directory `${_dir}`.")
+                endif()
+                list(APPEND _torch_include_flags "-isystem" "${_dir}")
+            endforeach()
+
+            find_library(TORCH_MUSA_LIB musa_python
+                HINTS "${_torch_musa_library_dir}"
+                NO_DEFAULT_PATH REQUIRED)
+            target_link_libraries(infiniops PUBLIC "${TORCH_MUSA_LIB}")
+            list(APPEND TORCH_RUNTIME_DIRS "${_torch_musa_library_dir}")
         endif()
 
         # Vendor-specific defines required by forked `torch` headers.

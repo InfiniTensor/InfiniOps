@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_LINKED_TORCH_NVIDIA_OPS_FLASH_ATTN_WITH_KVCACHE_FLASH_ATTN_H_
 #define INFINI_OPS_LINKED_TORCH_NVIDIA_OPS_FLASH_ATTN_WITH_KVCACHE_FLASH_ATTN_H_
 
-#include "linked/torch/nvidia/c10.h"
 #include "linked/torch/ops/flash_attn_with_kvcache.h"
+#include "torch/nvidia/c10.h"
 
 namespace infini::ops::linked::torch::nvidia {
 

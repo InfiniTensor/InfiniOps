@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_LINKED_TORCH_CAMBRICON_OPS_SILU_AND_MUL_APEX_H_
 #define INFINI_OPS_LINKED_TORCH_CAMBRICON_OPS_SILU_AND_MUL_APEX_H_
 
-#include "linked/torch/cambricon/c10.h"
 #include "linked/torch/ops/silu_and_mul.h"
+#include "torch/cambricon/c10.h"
 
 namespace infini::ops::linked::torch::cambricon {
 
