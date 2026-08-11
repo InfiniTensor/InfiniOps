@@ -110,6 +110,66 @@ def test_cpp_polymorphic_context_smoke(tmp_path):
     _run([str(binary)])
 
 
+def test_cpp_top_k_top_p_sampling_uses_caller_workspace(tmp_path):
+    import infini.ops
+
+    op_class = getattr(infini.ops, "TopKTopPSamplingFromLogits", None)
+
+    if op_class is None or not op_class.active_implementation_indices("nvidia"):
+        pytest.skip("NVIDIA `TopKTopPSamplingFromLogits` is not active")
+
+    install_prefix = _install_prefix()
+    include_dir = install_prefix / "include"
+    library_dir = _library_dir(install_prefix)
+    source_include_dir = Path(__file__).resolve().parents[1] / "src"
+    cuda_home = Path(os.environ.get("CUDA_HOME", "/usr/local/cuda"))
+    cuda_include_dir = cuda_home / "include"
+    cuda_library_dir = next(
+        (
+            path
+            for path in (
+                cuda_home / "lib64",
+                cuda_home / "targets" / "x86_64-linux" / "lib",
+            )
+            if path.exists()
+        ),
+        None,
+    )
+
+    if not (cuda_include_dir / "cuda_runtime_api.h").exists():
+        pytest.skip("CUDA headers are not available")
+
+    if cuda_library_dir is None:
+        pytest.skip("CUDA runtime libraries are not available")
+
+    source = tmp_path / "top_k_top_p_sampling_workspace.cc"
+    binary = tmp_path / "top_k_top_p_sampling_workspace"
+    source.write_text(_TOP_K_TOP_P_SAMPLING_WORKSPACE_SOURCE)
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            "-Wno-error=deprecated-declarations",
+            f"-I{source_include_dir}",
+            f"-I{include_dir}",
+            f"-I{cuda_include_dir}",
+            str(source),
+            f"-L{library_dir}",
+            f"-L{cuda_library_dir}",
+            "-linfiniops",
+            "-linfinirt",
+            "-lcudart",
+            f"-Wl,-rpath,{library_dir}",
+            f"-Wl,-rpath,{cuda_library_dir}",
+            "-o",
+            str(binary),
+        ]
+    )
+    _run([str(binary)])
+
+
 @pytest.mark.parametrize(
     "header",
     (
@@ -172,6 +232,93 @@ def _run(command):
     except subprocess.CalledProcessError as error:
         output = "\n".join((error.stdout, error.stderr)).strip()
         raise AssertionError(output) from error
+
+
+_TOP_K_TOP_P_SAMPLING_WORKSPACE_SOURCE = textwrap.dedent(
+    r"""
+    #include <cuda_runtime_api.h>
+    #include <infini/ops.h>
+    #include <native/cuda/nvidia/ops/top_k_top_p_sampling_from_logits/kernel.h>
+
+    #include <array>
+    #include <cstdint>
+    #include <optional>
+    #include <string>
+
+    int main() {
+      using infini::ops::DataType;
+      using infini::ops::Device;
+      using infini::ops::Handle;
+      using infini::ops::Operator;
+      using infini::ops::Tensor;
+      using infini::ops::TopKTopPSamplingFromLogits;
+
+      const std::array<float, 8> host_logits{
+          0.0f, 5.0f, 1.0f, 2.0f, 0.0f, 1.0f, 2.0f, 5.0f};
+      std::array<int32_t, 2> host_top_k{1, 1};
+      std::array<double, 2> host_top_p{1.0, 1.0};
+      std::array<int32_t, 2> host_out{};
+      float* device_logits = nullptr;
+      int32_t* device_out = nullptr;
+
+      if (cudaMalloc(reinterpret_cast<void**>(&device_logits),
+                     sizeof(host_logits)) != cudaSuccess) {
+        return 1;
+      }
+      if (cudaMalloc(reinterpret_cast<void**>(&device_out), sizeof(host_out)) !=
+          cudaSuccess) {
+        return 2;
+      }
+      if (cudaMemcpy(device_logits, host_logits.data(), sizeof(host_logits),
+                     cudaMemcpyHostToDevice) != cudaSuccess) {
+        return 3;
+      }
+
+      const Device host{Device::Type::kCpu};
+      const Device nvidia{Device::Type::kNvidia};
+      const Tensor logits(device_logits, Tensor::Shape{2, 4},
+                          DataType::kFloat32, nvidia);
+      const Tensor top_k(host_top_k.data(), Tensor::Shape{2},
+                         DataType::kInt32, host);
+      const Tensor top_p(host_top_p.data(), Tensor::Shape{2},
+                         DataType::kFloat64, host);
+      const Tensor out(device_out, Tensor::Shape{2}, DataType::kInt32, nvidia);
+      const std::optional<Tensor> indices;
+      const std::string filter_apply_order{"top_k_first"};
+      const std::optional<int64_t> seed{1234};
+      const std::optional<int64_t> offset{0};
+
+      Operator<TopKTopPSamplingFromLogits, Device::Type::kNvidia, 0> op(
+          logits, top_k, top_p, indices, filter_apply_order, true, false, seed,
+          offset, out);
+      const auto workspace_size = op.workspace_size_in_bytes();
+      void* workspace = nullptr;
+      if (workspace_size == 0 || cudaMalloc(&workspace, workspace_size) !=
+                                     cudaSuccess) {
+        return 4;
+      }
+
+      Handle handle;
+      handle.set_workspace(workspace);
+      handle.set_workspace_size_in_bytes(workspace_size);
+      auto& callable = static_cast<Operator<TopKTopPSamplingFromLogits>&>(op);
+      callable(handle, logits, top_k, top_p, indices, filter_apply_order, true,
+               false, seed, offset, out);
+
+      if (cudaDeviceSynchronize() != cudaSuccess) return 5;
+      if (cudaMemcpy(host_out.data(), device_out, sizeof(host_out),
+                     cudaMemcpyDeviceToHost) != cudaSuccess) {
+        return 6;
+      }
+
+      cudaFree(workspace);
+      cudaFree(device_out);
+      cudaFree(device_logits);
+
+      return host_out == std::array<int32_t, 2>{1, 3} ? 0 : 7;
+    }
+    """
+).lstrip()
 
 
 _ADD_SMOKE_SOURCE = textwrap.dedent(
