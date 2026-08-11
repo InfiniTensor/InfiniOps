@@ -54,11 +54,6 @@ include(GNUInstallDirs)
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 list(FILTER BASE_SRCS EXCLUDE REGEX ".*tensor\\.cc$")
 
-# 添加调优管理器源文件（仅当 WITH_TUNING=ON 时需要编译）
-if(WITH_TUNING)
-    list(APPEND BASE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/tuning_manager.cc")
-endif()
-
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
 target_link_libraries(infiniops PUBLIC

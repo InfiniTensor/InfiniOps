@@ -20,17 +20,16 @@
 #include "host_range_profiler.h"
 #include "tensor.h"
 
-#ifdef WITH_TUNING
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
+
 #include "runtime.h"
-#include "tuning_manager.h"
-#include "tuning_signature.h"
-#endif
+#include "tuning.h"
+#include "tuning_utils.h"
 
 namespace infini::ops::detail {
 
@@ -89,6 +88,19 @@ std::vector<std::size_t> ListToVector(List<values...>) {
 template <typename ValueType, auto... values>
 bool ListContains(ValueType value, List<values...>) {
   return ((value == static_cast<ValueType>(values)) || ...);
+}
+
+inline void SyncDevice(Device::Type dev_type) {
+  if (!ListContains(dev_type, ActiveDevices<void>{})) {
+    return;
+  }
+  DispatchFunc<ActiveDevices<void>>(
+      dev_type,
+      [](auto device_tag) {
+        constexpr Device::Type kDev = decltype(device_tag)::value;
+        infini::rt::runtime::Runtime<kDev>::DeviceSynchronize();
+      },
+      "SyncDevice");
 }
 
 template <typename TensorLike, typename = void>
@@ -203,109 +215,6 @@ struct std::equal_to<infini::ops::detail::CacheKey> {
 
 namespace infini::ops {
 
-#ifdef WITH_TUNING
-namespace detail {
-
-// 通用提取算子名称：从模板类型 Key 中提取短名（如 "RmsNorm"）
-// 使用编译器内置宏 __PRETTY_FUNCTION__ 或 __FUNCSIG__
-template <typename Key>
-std::string ExtractOperatorName() {
-#if defined(__GNUC__) || defined(__clang__)
-  // GCC/Clang: __PRETTY_FUNCTION__ 包含完整函数签名
-  // 例如: "std::string infini::ops::detail::ExtractOperatorName() [Key = infini::ops::RmsNorm]"
-  std::string_view sig = __PRETTY_FUNCTION__;
-
-  // 查找 "Key = " 后的类型名
-  auto key_pos = sig.find("Key = ");
-  if (key_pos == std::string_view::npos) return "UnknownOp";
-
-  key_pos += 6;  // 跳过 "Key = "
-  auto end_pos = sig.find_first_of("]>;", key_pos);
-  std::string full_name(sig.substr(key_pos, end_pos - key_pos));
-
-  // 提取最后一个 "::" 之后的短名
-  auto last_colon = full_name.rfind("::");
-  if (last_colon != std::string::npos) {
-    return full_name.substr(last_colon + 2);
-  }
-  return full_name;
-#elif defined(_MSC_VER)
-  // MSVC: __FUNCSIG__ 类似
-  std::string_view sig = __FUNCSIG__;
-  auto key_pos = sig.find("Key=");
-  if (key_pos == std::string_view::npos) return "UnknownOp";
-  key_pos += 4;
-  auto end_pos = sig.find_first_of("]>,", key_pos);
-  std::string full_name(sig.substr(key_pos, end_pos - key_pos));
-  auto last_colon = full_name.rfind("::");
-  if (last_colon != std::string::npos) {
-    return full_name.substr(last_colon + 2);
-  }
-  return full_name;
-#else
-  return "UnknownOp";
-#endif
-}
-
-// 设备同步：等待该设备上此前提交的所有异步任务真正执行完毕，
-// 这样基于 CPU 计时器（std::chrono）的测速才准确（GPU 提交是异步的）。
-// 通过 DispatchFunc 把运行期 dev_type 派发到编译期的 Runtime<kDev>，
-// CPU 与各 GPU 后端都提供 DeviceSynchronize()（见 InfiniRT runtime_.h）。
-inline void SyncDevice(Device::Type dev_type) {
-  if (!ListContains(dev_type, ActiveDevices<void>{})) {
-    return;
-  }
-  DispatchFunc<ActiveDevices<void>>(
-      dev_type,
-      [](auto device_tag) {
-        constexpr Device::Type kDev = decltype(device_tag)::value;
-        infini::rt::runtime::Runtime<kDev>::DeviceSynchronize();
-      },
-      "SyncDevice");
-}
-
-// 读取整数型环境变量，缺省或非法时返回 fallback。
-inline int EnvInt(const char* name, int fallback) {
-  const char* v = std::getenv(name);
-  if (!v || !*v) return fallback;
-  int parsed = std::atoi(v);
-  return parsed > 0 ? parsed : fallback;
-}
-
-// 从参数列表中找出首个张量参数的设备类型（与 Operator::Make 的推断一致）。
-// 支持 Tensor 与 vector<Tensor>；其余参数跳过。找不到则返回 kCount。
-inline Device::Type FirstDeviceTypeHelper(bool& found) {
-  found = false;
-  return Device::Type::kCount;
-}
-
-template <typename First, typename... Rest>
-Device::Type FirstDeviceTypeHelper(bool& found, const First& first,
-                                   const Rest&... rest) {
-  if constexpr (std::is_same_v<std::decay_t<First>, Tensor>) {
-    found = true;
-    return first.device().type();
-  } else if constexpr (std::is_same_v<std::decay_t<First>,
-                                      std::vector<Tensor>>) {
-    if (!first.empty()) {
-      found = true;
-      return first.front().device().type();
-    }
-    return FirstDeviceTypeHelper(found, rest...);
-  } else {
-    return FirstDeviceTypeHelper(found, rest...);
-  }
-}
-
-template <typename... Args>
-Device::Type FirstDeviceType(const Args&... args) {
-  bool found = false;
-  return FirstDeviceTypeHelper(found, args...);
-}
-
-}  // namespace detail
-#endif
-
 template <typename Key>
 struct CacheKeyBuilder {
   template <typename... Args>
@@ -314,7 +223,6 @@ struct CacheKeyBuilder {
   }
 };
 
-// 声明函数：ResolveConfig / ResolveConfigOnline
 template <typename Key, typename... Args>
 Config ResolveConfig(const Config& config, Device::Type dev_type,
                      const Args&... args);
@@ -370,7 +278,6 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
                                         const Tensor tensor, Args&&... args) {
-    // 在构造算子前解析配置：如果启用自动选择，查询调优缓存
     Config resolved = ResolveConfig<Key>(config, tensor.device().type(), tensor, args...);
     return MakeWithDevice(resolved, tensor.device().type(), tensor,
                           std::forward<Args>(args)...);
@@ -388,7 +295,6 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    // 同样在构造前解析配置
     Config resolved = ResolveConfig<Key>(config, tensors.front().device().type(), tensors, args...);
     return MakeWithDevice(resolved, tensors.front().device().type(), tensors,
                           std::forward<Args>(args)...);
@@ -636,32 +542,25 @@ struct ActiveImplementations {
       Key, kDev, std::make_index_sequence<kMaxImplementations>>::type;
 };
 
-// 解析配置：如果启用自动选择且编译时启用了调优，则查询最优实现。
 template <typename Key, typename... Args>
 Config ResolveConfig(const Config& config, Device::Type dev_type,
                      const Args&... args) {
-#ifdef WITH_TUNING
-  // 仅当用户未显式指定实现时才启用自动选择
   if (config.auto_select()) {
     auto indices = Operator<Key>::active_implementation_indices(dev_type);
     if (!indices.empty()) {
-      // 通用地从参数中提取形状和类型，构建调优签名
       auto signature = TuningSignature::Build(args...);
 
-      // 从模板类型 Key 提取算子短名（如 "RmsNorm"），查询调优缓存
       auto op_name = detail::ExtractOperatorName<Key>();
       auto tuned_index =
           TuningManager::Instance().Lookup(op_name, dev_type, signature);
 
       Config resolved = config;
       if (tuned_index.has_value()) {
-        // 检查调优结果是否在当前编译的可用实现列表中
         bool is_valid = std::find(indices.begin(), indices.end(),
                                   *tuned_index) != indices.end();
         if (is_valid) {
           resolved.set_implementation_index(*tuned_index);
         } else {
-          // 警告：调优数据指向的实现在本次编译中不存在（如编译选项不同）
           std::cerr << "[Tuning] Warning: tuned implementation " << *tuned_index
                     << " for " << op_name << " on "
                     << Device::StringFromType(dev_type)
@@ -671,24 +570,17 @@ Config ResolveConfig(const Config& config, Device::Type dev_type,
           resolved.set_implementation_index(indices.front());
         }
       } else {
-        // 未找到调优数据，回退到第一个可用实现
         resolved.set_implementation_index(indices.front());
       }
       return resolved;
     }
   }
-#endif
-  // 未启用调优，或用户已显式指定实现（auto_select_=false），原样返回
   return config;
 }
 
-#ifdef WITH_TUNING
-// 基准测试单个实现：用固定的实现索引构造算子并运行若干次，返回最快耗时（秒）。
-// 预热 1 次让设备进入稳定状态，正式测 5 次取最小值（默认，可用环境变量覆盖）。
 template <typename Key, typename... Args>
 double BenchmarkImplementation(const Handle& handle, Device::Type dev_type,
                                std::size_t impl_index, const Args&... args) {
-  // 用显式索引构造该实现（set_implementation_index 会关闭 auto_select，因此不会递归触发调优）
   Config fixed;
   fixed.set_implementation_index(impl_index);
 
@@ -700,78 +592,65 @@ double BenchmarkImplementation(const Handle& handle, Device::Type dev_type,
   const int warmup = detail::EnvInt("INFINI_OPS_TUNING_WARMUP", 1);
   const int repeat = detail::EnvInt("INFINI_OPS_TUNING_REPEAT", 5);
 
-  // 预热
   for (int i = 0; i < warmup; ++i) {
     (*op)(handle, args...);
   }
   detail::SyncDevice(dev_type);
 
-  // 测速：逐次计时取最小，减少系统抖动干扰
   double best = std::numeric_limits<double>::infinity();
   for (int i = 0; i < repeat; ++i) {
     auto start = std::chrono::steady_clock::now();
     (*op)(handle, args...);
     detail::SyncDevice(dev_type);
     auto end = std::chrono::steady_clock::now();
-    double elapsed =
-        std::chrono::duration<double>(end - start).count();
+    double elapsed = std::chrono::duration<double>(end - start).count();
     best = std::min(best, elapsed);
   }
   return best;
 }
-#endif
 
-// 解析调优配置：
-//   1) 未开 WITH_TUNING 或用户已指定实现 → 原样返回；
-//   2) 查缓存命中 → 直接采用记录的最优实现；
-//   3) 未命中 → 现场基准测试所有候选实现，选最快者，写盘记录并采用。
 template <typename Key, typename... Args>
 Config ResolveConfigOnline(const Handle& handle, const Config& config,
                            const Args&... args) {
-
-#ifdef WITH_TUNING
   if (config.auto_select() && TuningManager::Instance().IsEnabled()) {
-    // 从首个张量参数推断设备类型
     Device::Type dev_type = detail::FirstDeviceType(args...);
     auto indices = Operator<Key>::active_implementation_indices(dev_type);
-
-    // 只有一个候选实现时无需测速，直接用它
-    if (indices.size() == 1) {
-      Config resolved = config;
-      resolved.set_implementation_index(indices.front());
-      return resolved;
-    }
 
     if (!indices.empty()) {
       auto signature = TuningSignature::Build(args...);
       auto op_name = detail::ExtractOperatorName<Key>();
 
-      // 先查已有记录
-      auto tuned = TuningManager::Instance().Lookup(op_name, dev_type, signature);
+      auto tuned =
+          TuningManager::Instance().Lookup(op_name, dev_type, signature);
 
       std::size_t chosen;
       if (tuned.has_value() &&
           std::find(indices.begin(), indices.end(), *tuned) != indices.end()) {
-        // 命中且有效
         chosen = *tuned;
       } else {
-        // 未命中（或记录失效）：现场基准测试所有候选实现
-        chosen = indices.front();
-        double best_time = std::numeric_limits<double>::infinity();
-        for (auto idx : indices) {
-          double t = BenchmarkImplementation<Key>(handle, dev_type, idx,
-                                                   args...);
-          if (t < best_time) {
-            best_time = t;
-            chosen = idx;
+        if (indices.size() == 1) {
+          chosen = indices.front();
+          TuningManager::Instance().Record(op_name, dev_type, signature, chosen);
+          std::cout << "[Tuning] " << op_name << " on "
+                    << Device::StringFromType(dev_type)
+                    << ": single impl, chose index " << chosen << std::endl;
+        } else {
+          chosen = indices.front();
+          double best_time = std::numeric_limits<double>::infinity();
+          for (auto idx : indices) {
+            double t =
+                BenchmarkImplementation<Key>(handle, dev_type, idx, args...);
+            if (t < best_time) {
+              best_time = t;
+              chosen = idx;
+            }
           }
+          TuningManager::Instance().Record(op_name, dev_type, signature, chosen);
+          std::cout << "[Tuning] " << op_name << " on "
+                    << Device::StringFromType(dev_type) << ": benchmarked "
+                    << indices.size() << " impls, chose index " << chosen << " ("
+                    << best_time * 1e6 << " us)" << std::endl;
         }
-        // 记录并立即写盘，供后续调用与后续进程复用
-        TuningManager::Instance().Record(op_name, dev_type, signature, chosen);
-        std::cout << "[Tuning] " << op_name << " on "
-                  << Device::StringFromType(dev_type) << ": benchmarked "
-                  << indices.size() << " impls, chose index " << chosen
-                  << " (" << best_time * 1e6 << " us)" << std::endl;
       }
 
       Config resolved = config;
@@ -779,7 +658,6 @@ Config ResolveConfigOnline(const Handle& handle, const Config& config,
       return resolved;
     }
   }
-#endif
   (void)handle;
   return config;
 }
