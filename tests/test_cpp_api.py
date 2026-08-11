@@ -511,21 +511,35 @@ _POLYMORPHIC_CONTEXT_SOURCE = textwrap.dedent(
 
     namespace infini::ops {
 
-    class DerivedConfig final : public Cloneable<Config, DerivedConfig> {
+    class IntermediateConfig
+        : public Cloneable<Config, IntermediateConfig> {
+     public:
+      virtual int value() const { return -1; }
+    };
+
+    class DerivedConfig
+        : public Cloneable<IntermediateConfig, DerivedConfig> {
      public:
       explicit DerivedConfig(int value) : value_{value} {}
 
-      int value() const { return value_; }
+      int value() const override { return value_; }
 
      private:
       int value_;
     };
 
-    class DerivedHandle final : public Cloneable<Handle, DerivedHandle> {
+    class IntermediateHandle
+        : public Cloneable<Handle, IntermediateHandle> {
+     public:
+      virtual int value() const { return -1; }
+    };
+
+    class DerivedHandle
+        : public Cloneable<IntermediateHandle, DerivedHandle> {
      public:
       explicit DerivedHandle(int value) : value_{value} {}
 
-      int value() const { return value_; }
+      int value() const override { return value_; }
 
      private:
       int value_;
@@ -534,18 +548,18 @@ _POLYMORPHIC_CONTEXT_SOURCE = textwrap.dedent(
     class PolymorphicOwner final : public OperatorBase {
      public:
       int config_value() const {
-        return static_cast<const DerivedConfig&>(*config_).value();
+        return static_cast<const IntermediateConfig&>(*config_ptr_).value();
       }
 
       std::size_t implementation_index() const {
-        return config_->implementation_index();
+        return config_ptr_->implementation_index();
       }
 
       int handle_value() const {
-        return static_cast<const DerivedHandle&>(*handle_).value();
+        return static_cast<const IntermediateHandle&>(*handle_ptr_).value();
       }
 
-      void* handle_stream() const { return handle_->stream(); }
+      void* handle_stream() const { return handle_ptr_->stream(); }
     };
 
     }  // namespace infini::ops
@@ -555,6 +569,10 @@ _POLYMORPHIC_CONTEXT_SOURCE = textwrap.dedent(
 
       static_assert(std::has_virtual_destructor_v<Config>);
       static_assert(std::has_virtual_destructor_v<Handle>);
+      static_assert(
+          std::is_same_v<DerivedConfig::Pointer, std::unique_ptr<Config>>);
+      static_assert(
+          std::is_same_v<DerivedHandle::Pointer, std::unique_ptr<Handle>>);
 
       PolymorphicOwner owner;
 
