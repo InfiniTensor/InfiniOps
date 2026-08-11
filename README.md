@@ -62,7 +62,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, commit conventions, PR wo
 ## Development Docs
 
 - [Adding ATen-backed operators](docs/aten-operators.md)
-- [Auto-tuning default implementation selection](docs/autotune.md)
 
 ## License
 
