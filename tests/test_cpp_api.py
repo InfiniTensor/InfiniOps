@@ -84,6 +84,32 @@ def test_cpp_configless_calls_use_first_active_implementation(tmp_path):
     _run([str(binary)])
 
 
+def test_cpp_polymorphic_context_smoke(tmp_path):
+    install_prefix = _install_prefix()
+    include_dir = install_prefix / "include"
+    library_dir = _library_dir(install_prefix)
+    source = tmp_path / "polymorphic_context.cc"
+    binary = tmp_path / "polymorphic_context"
+    source.write_text(_POLYMORPHIC_CONTEXT_SOURCE)
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            f"-I{include_dir}",
+            str(source),
+            f"-L{library_dir}",
+            "-linfiniops",
+            "-linfinirt",
+            f"-Wl,-rpath,{library_dir}",
+            "-o",
+            str(binary),
+        ]
+    )
+    _run([str(binary)])
+
+
 @pytest.mark.parametrize(
     "header",
     (
@@ -469,6 +495,107 @@ _CONFIGLESS_ACTIVE_IMPLEMENTATION_SOURCE = textwrap.dedent(
       if (std::fabs(abs_out_data - 4.0f) > 1e-6f) {
         return 6;
       }
+
+      return 0;
+    }
+    """
+).lstrip()
+
+
+_POLYMORPHIC_CONTEXT_SOURCE = textwrap.dedent(
+    r"""
+    #include <operator.h>
+
+    #include <cstddef>
+    #include <type_traits>
+
+    namespace infini::ops {
+
+    class IntermediateConfig
+        : public Cloneable<Config, IntermediateConfig> {
+     public:
+      virtual int value() const { return -1; }
+    };
+
+    class DerivedConfig
+        : public Cloneable<IntermediateConfig, DerivedConfig> {
+     public:
+      explicit DerivedConfig(int value) : value_{value} {}
+
+      int value() const override { return value_; }
+
+     private:
+      int value_;
+    };
+
+    class IntermediateHandle
+        : public Cloneable<Handle, IntermediateHandle> {
+     public:
+      virtual int value() const { return -1; }
+    };
+
+    class DerivedHandle
+        : public Cloneable<IntermediateHandle, DerivedHandle> {
+     public:
+      explicit DerivedHandle(int value) : value_{value} {}
+
+      int value() const override { return value_; }
+
+     private:
+      int value_;
+    };
+
+    class PolymorphicOwner final : public OperatorBase {
+     public:
+      int config_value() const {
+        return static_cast<const IntermediateConfig&>(*config_ptr_).value();
+      }
+
+      std::size_t implementation_index() const {
+        return config_ptr_->implementation_index();
+      }
+
+      int handle_value() const {
+        return static_cast<const IntermediateHandle&>(*handle_ptr_).value();
+      }
+
+      void* handle_stream() const { return handle_ptr_->stream(); }
+    };
+
+    }  // namespace infini::ops
+
+    int main() {
+      using namespace infini::ops;
+
+      static_assert(std::has_virtual_destructor_v<Config>);
+      static_assert(std::has_virtual_destructor_v<Handle>);
+      static_assert(
+          std::is_same_v<DerivedConfig::Pointer, std::unique_ptr<Config>>);
+      static_assert(
+          std::is_same_v<DerivedHandle::Pointer, std::unique_ptr<Handle>>);
+
+      PolymorphicOwner owner;
+
+      {
+        DerivedConfig config{17};
+        config.set_implementation_index(3);
+        owner.set_config(config);
+        config.set_implementation_index(9);
+      }
+
+      if (owner.config_value() != 17) return 1;
+      if (owner.implementation_index() != 3) return 2;
+
+      int stream;
+      {
+        DerivedHandle handle{23};
+        handle.set_stream(&stream);
+        owner.set_handle(handle);
+        handle.set_stream(nullptr);
+      }
+
+      if (owner.handle_value() != 23) return 3;
+      if (owner.handle_stream() != &stream) return 4;
 
       return 0;
     }

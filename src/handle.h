@@ -2,11 +2,20 @@
 #define INFINI_OPS_HANDLE_H_
 
 #include <cstddef>
+#include <memory>
+
+#include "cloneable.h"
 
 namespace infini::ops {
 
 class Handle {
  public:
+  virtual ~Handle() = default;
+
+  virtual std::unique_ptr<Handle> Clone() const {
+    return std::make_unique<Handle>(*this);
+  }
+
   void* stream() const { return stream_; }
 
   void* workspace() const { return workspace_; }
