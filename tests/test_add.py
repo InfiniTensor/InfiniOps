@@ -64,12 +64,31 @@ _ALPHA_ADD_CASES = tuple(
     for alpha in (0.0, 0.5, 1.0, 2.0)
 )
 
-_TEST_CASES = tuple(
-    (*case, *dtype_case) for case in _DEFAULT_ADD_CASES for dtype_case in _DTYPE_CASES
-) + tuple(
-    (*case, *dtype_case)
-    for case in _ALPHA_ADD_CASES
-    for dtype_case in _ALPHA_DTYPE_CASES
+_EMPTY_ADD_CASE = (
+    (0,),
+    (0,),
+    (0,),
+    None,
+    None,
+    None,
+    None,
+    torch.float32,
+    1e-7,
+    1e-7,
+)
+
+_TEST_CASES = (
+    tuple(
+        (*case, *dtype_case)
+        for case in _DEFAULT_ADD_CASES
+        for dtype_case in _DTYPE_CASES
+    )
+    + tuple(
+        (*case, *dtype_case)
+        for case in _ALPHA_ADD_CASES
+        for dtype_case in _ALPHA_DTYPE_CASES
+    )
+    + (_EMPTY_ADD_CASE,)
 )
 
 
@@ -134,6 +153,83 @@ def test_add(
         rtol=rtol,
         atol=atol,
     )
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize(
+    "config",
+    (
+        {
+            "num_warps": 4,
+            "num_stages": 3,
+            "constexprs": {"BLOCK_SIZE": 128},
+        },
+        {
+            "auto_tuning": {
+                "warmup_milliseconds": 0,
+                "repetition_milliseconds": 1,
+                "keys": ["n_elements"],
+                "candidates": [
+                    {
+                        "num_warps": 4,
+                        "num_stages": 3,
+                        "constexprs": {"BLOCK_SIZE": 128},
+                    },
+                    {
+                        "num_warps": 4,
+                        "num_stages": 3,
+                        "constexprs": {"BLOCK_SIZE": 64},
+                    },
+                ],
+            }
+        },
+    ),
+    ids=("compile-config", "auto-tuning"),
+)
+def test_add_triton_config(config, device, implementation_index):
+    if implementation_index != 10:
+        pytest.skip("requires Triton implementation 10")
+
+    input = torch.randn(257, device=device)
+    other = torch.randn_like(input)
+    out = torch.empty_like(input)
+    stream = torch.cuda.Stream(device=input.device)
+
+    with torch.cuda.stream(stream):
+        infini.ops.add(
+            input,
+            other,
+            out,
+            stream=get_stream(input.device),
+            implementation_index=implementation_index,
+            config=config,
+        )
+
+    stream.synchronize()
+
+    torch.testing.assert_close(out, input + other)
+
+
+@pytest.mark.smoke
+def test_add_triton_config_rejects_unknown_fields(device, implementation_index):
+    if implementation_index != 10:
+        pytest.skip("requires Triton implementation 10")
+
+    input = torch.randn(1, device=device)
+    other = torch.randn_like(input)
+    out = torch.empty_like(input)
+
+    with pytest.raises(
+        ValueError, match="Unknown Triton JIT config field `unexpected`"
+    ):
+        infini.ops.add(
+            input,
+            other,
+            out,
+            stream=get_stream(input.device),
+            implementation_index=implementation_index,
+            config={"unexpected": 1},
+        )
 
 
 def _add(input, other, out, *, alpha, implementation_index=0):

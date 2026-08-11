@@ -19,6 +19,7 @@ entry is `python -m pip install` with CMake options passed through
 | `WITH_TORCH` | Enable PyTorch C++ ATen-backed operators. | `OFF` |
 | `WITH_LINKED` | Enable operators linked from installed third-party libraries. | `OFF` |
 | `WITH_NINETOOTHED` | Enable NineToothed-generated kernels. | `OFF` |
+| `WITH_TRITON` | Enable the NVIDIA Triton JIT backend. Requires Python bindings and CUDA Toolkit 12.0 or newer. | `OFF` |
 | `AUTO_DETECT_DEVICES` | Auto-detect available device files. | `OFF` |
 | `AUTO_DETECT_BACKENDS` | Auto-detect available backend packages. | `OFF` |
 | `GENERATE_OPERATOR_CALL_INSTANTIATIONS` | Generate explicit C++ operator call instantiations. | `ON` |
@@ -50,6 +51,28 @@ python -m pip install .[dev] \
   --config-settings=cmake.define.WITH_CPU=ON \
   --config-settings=cmake.define.WITH_NVIDIA=ON
 ```
+
+Install the Triton JIT runtime dependencies, then enable the implementation:
+
+```bash
+python -m pip install torch "triton>=3.5,<3.6"
+python -m pip install . \
+  --config-settings=cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix \
+  --config-settings=cmake.define.WITH_NVIDIA=ON \
+  --config-settings=cmake.define.WITH_TRITON=ON
+```
+
+The InfiniOps JIT bridge and kernel sources are packaged only with the Python
+wheel. It requires CUDA Toolkit 12.0 or newer. Standalone C++ installations do
+not provide this runtime.
+
+Compiled kernels are cached in the platform cache directory. Set
+`INFINI_OPS_TRITON_CACHE_DIR` to override that location.
+
+Python calls with an explicit Triton config construct an operator for that
+call instead of entering the generic operator cache. The compiled kernel and
+auto-tuning result are still cached using the complete Triton config
+identity.
 
 Full builds with both `WITH_NVIDIA=ON` and `WITH_LINKED=ON` include
 `flash_attn_with_kvcache` and require a compatible FlashAttention Python
