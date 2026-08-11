@@ -39,9 +39,8 @@ struct CacheKey {
   bool Matches(const Args&... args) const {
     std::size_t tensor_index{0};
     std::size_t candidate_scalar_hash{0};
-    bool matches{true};
-    (Match(args, tensor_index, candidate_scalar_hash, matches), ...);
-    return matches && tensor_index == tensors.size() &&
+    return (Match(args, tensor_index, candidate_scalar_hash) && ...) &&
+           tensor_index == tensors.size() &&
            candidate_scalar_hash == scalar_hash;
   }
 
@@ -66,28 +65,27 @@ struct CacheKey {
     HashCombine(scalar_hash, v);
   }
 
-  void Match(const Tensor& tensor, std::size_t& tensor_index,
-             std::size_t& /*candidate_scalar_hash*/, bool& matches) const {
-    if (tensor_index >= tensors.size() ||
-        !std::equal_to<Tensor>{}(tensors[tensor_index], tensor)) {
-      matches = false;
-    }
-    ++tensor_index;
+  bool Match(const Tensor& tensor, std::size_t& tensor_index,
+             std::size_t&) const {
+    if (tensor_index >= tensors.size()) return false;
+    return std::equal_to<Tensor>{}(tensors[tensor_index++], tensor);
   }
 
-  void Match(const std::vector<Tensor>& candidate_tensors,
-             std::size_t& tensor_index, std::size_t& candidate_scalar_hash,
-             bool& matches) const {
+  bool Match(const std::vector<Tensor>& candidate_tensors,
+             std::size_t& tensor_index,
+             std::size_t& candidate_scalar_hash) const {
     HashCombine(candidate_scalar_hash, candidate_tensors.size());
     for (const auto& tensor : candidate_tensors) {
-      Match(tensor, tensor_index, candidate_scalar_hash, matches);
+      if (!Match(tensor, tensor_index, candidate_scalar_hash)) return false;
     }
+    return true;
   }
 
   template <typename T>
-  void Match(const T& value, std::size_t& /*tensor_index*/,
-             std::size_t& candidate_scalar_hash, bool& /*matches*/) const {
+  bool Match(const T& value, std::size_t&,
+             std::size_t& candidate_scalar_hash) const {
     HashCombine(candidate_scalar_hash, value);
+    return true;
   }
 };
 
@@ -289,24 +287,22 @@ class Operator : public OperatorBase {
     [[maybe_unused]] HostRangeScope host_range_operator_call{
         HostRangeLayer::kOperatorCall};
 
-    static thread_local std::unordered_map<detail::CacheKey,
-                                           std::unique_ptr<Operator>>
-        cache;
+    using Cache =
+        std::unordered_map<detail::CacheKey, std::unique_ptr<Operator>>;
+    using CacheEntry = typename Cache::value_type;
+    static thread_local Cache cache;
     static thread_local std::size_t generation{0};
-    static thread_local const detail::CacheKey* last_key{nullptr};
-    static thread_local Operator* last_operator{nullptr};
-    static thread_local const detail::CacheKey* previous_key{nullptr};
-    static thread_local Operator* previous_operator{nullptr};
+    // Insertions and rehashes preserve pointers to unordered_map elements.
+    static thread_local const CacheEntry* last_entry{nullptr};
+    static thread_local const CacheEntry* previous_entry{nullptr};
 
     const auto cache_generation =
         cache_generation_.load(std::memory_order_relaxed);
     if (generation != cache_generation) {
       cache.clear();
       generation = cache_generation;
-      last_key = nullptr;
-      last_operator = nullptr;
-      previous_key = nullptr;
-      previous_operator = nullptr;
+      last_entry = nullptr;
+      previous_entry = nullptr;
     }
 
     const auto key_builder{CacheKeyBuilder<Key>{}};
@@ -318,16 +314,16 @@ class Operator : public OperatorBase {
     const auto hot_operator = [&]() -> Operator* {
       [[maybe_unused]] HostRangeScope host_range_cache_match{
           HostRangeLayer::kCacheMatch};
-      if (last_key != nullptr &&
-          detail::CacheKeyMatches(0, key_builder, *last_key, config, args...)) {
-        return last_operator;
-      }
-      if (previous_key != nullptr &&
-          detail::CacheKeyMatches(0, key_builder, *previous_key, config,
+      if (last_entry != nullptr &&
+          detail::CacheKeyMatches(0, key_builder, last_entry->first, config,
                                   args...)) {
-        std::swap(last_key, previous_key);
-        std::swap(last_operator, previous_operator);
-        return last_operator;
+        return last_entry->second.get();
+      }
+      if (previous_entry != nullptr &&
+          detail::CacheKeyMatches(0, key_builder, previous_entry->first, config,
+                                  args...)) {
+        std::swap(last_entry, previous_entry);
+        return last_entry->second.get();
       }
       return nullptr;
     }();
@@ -342,28 +338,21 @@ class Operator : public OperatorBase {
       return key_builder(config, args...);
     }();
 
-    auto [it, inserted] = [&]() {
+    auto it = [&]() {
       [[maybe_unused]] HostRangeScope host_range_cache_lookup{
           HostRangeLayer::kCacheLookup};
-      return cache.try_emplace(std::move(key));
+      return cache.find(key);
     }();
 
-    if (inserted) {
+    if (it == cache.end()) {
       [[maybe_unused]] HostRangeScope host_range_cache_construct{
           HostRangeLayer::kCacheConstruct};
-      try {
-        it->second = Make(config, args...);
-      } catch (...) {
-        cache.erase(it);
-        throw;
-      }
+      it = cache.emplace(std::move(key), Make(config, args...)).first;
     }
 
-    previous_key = last_key;
-    previous_operator = last_operator;
-    last_key = &it->first;
-    last_operator = it->second.get();
-    return invoke(last_operator);
+    previous_entry = last_entry;
+    last_entry = std::addressof(*it);
+    return invoke(last_entry->second.get());
   }
 
   template <typename... Args>
