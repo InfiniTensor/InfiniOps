@@ -2063,13 +2063,21 @@ void BindHostRangeProfileControls(pybind11::module& m) {
             for bind_func_name in bind_func_names
         )
 
-    module_calls = "BindHostRangeProfileControls(m);"
+    module_calls = """const char* tuning_path =
+    std::getenv("INFINI_OPS_TUNING_PATH");
+if (!tuning_path) {
+  tuning_path = "tuning.json";
+}
+TuningManager::Instance().LoadTuningCache(tuning_path);
+BindHostRangeProfileControls(m);"""
     if bind_func_calls:
         module_calls = f"{module_calls}\n{bind_func_calls}"
 
-    return f"""#include <pybind11/pybind11.h>
+    return f"""#include <cstdlib>
+#include <pybind11/pybind11.h>
 
 #include "host_range_profiler.h"
+#include "tuning.h"
 
 {pre_namespace}
 

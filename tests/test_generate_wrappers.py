@@ -378,20 +378,13 @@ class Mul {
     assert "if (implementation_index.has_value())" in text
     assert "config.set_implementation_index(*implementation_index)" in text
     assert "auto converted_first_tensor{TensorFromPybind11Handle(input)};" in text
-    assert (
-        "DefaultImplementationIndexForMul(converted_first_tensor.device().type()))"
-    ) in text
     assert "std::move(converted_first_tensor)" not in text
     assert text.count("DeviceFromPybind11Handle(input)") == 1
-    assert (
-        "config.set_implementation_index("
-        "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
-    ) in text
     assert "implementation_index.value_or(" not in text
     assert 'py::arg("implementation_index") = py::none()' in text
 
 
-def test_pybind_default_implementation_reuses_first_vector_tensor(
+def test_pybind_reuses_first_vector_tensor_conversion(
     monkeypatch, tmp_path
 ):
     module = _load_generator_module()
@@ -424,7 +417,10 @@ class Cat {
     assert (
         "auto converted_first_tensor{VectorTensorFromPybind11Handle(inputs)};" in text
     )
-    assert "converted_first_tensor.at(0).device().type()" in text
+    assert (
+        "generated_dispatch::CallCat(handle, config, converted_first_tensor,"
+        in text
+    )
     assert "std::move(converted_first_tensor)" not in text
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
 
