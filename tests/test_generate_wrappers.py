@@ -164,15 +164,15 @@ class Mul {
     text = module._generate_pybind11(operator)
 
     assert "std::size_t DefaultImplementationIndexForMul" in text
+    # Constructor still uses DefaultImplementationIndex directly
     assert (
         "config.set_implementation_index("
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
     ) in text
     assert "std::optional<std::size_t> implementation_index" in text
-    assert (
-        "implementation_index.value_or("
-        "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
-    ) in text
+    # Free function now uses has_value() to support auto-tuning
+    assert "if (implementation_index.has_value())" in text
+    assert "config.set_implementation_index(*implementation_index)" in text
     assert 'py::arg("implementation_index") = py::none()' in text
 
 

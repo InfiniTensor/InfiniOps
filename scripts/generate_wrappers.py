@@ -614,8 +614,6 @@ def _generate_pybind11(operator):
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
                 f"    }}\n"
                 f"    Config config;\n"
-                f"    // 仅当用户显式传入 implementation_index 时才设置（会关闭自动选择）；\n"
-                f"    // 否则保持 auto_select_=true，交由自动调优在运行期选择最优实现。\n"
                 f"    if (implementation_index.has_value()) {{\n"
                 f"      config.set_implementation_index(*implementation_index);\n"
                 f"    }}\n"
@@ -1674,21 +1672,16 @@ if __name__ == "__main__":
 // Generated with `INFINI_OPS_MONOLITHIC_BINDINGS=1`.
 {op_includes}
 
-#ifdef WITH_TUNING
-#include "tuning_manager.h"
-#endif
+#include "tuning.h"
 
 namespace infini::ops {{
 
 PYBIND11_MODULE(ops, m) {{
-#ifdef WITH_TUNING
-  // 加载调优缓存：先尝试环境变量，否则尝试 ./tuning.json
   const char* tuning_path = std::getenv("INFINI_OPS_TUNING_PATH");
   if (!tuning_path) {{
-    tuning_path = "tuning.json";  // 默认路径（相对于工作目录）
+    tuning_path = "tuning.json";
   }}
   infini::ops::TuningManager::Instance().LoadTuningCache(tuning_path);
-#endif
 {textwrap.indent(bind_func_calls, _INDENTATION)}
 }}
 
@@ -1701,23 +1694,18 @@ PYBIND11_MODULE(ops, m) {{
         )
         ops_source = f"""#include <pybind11/pybind11.h>
 
-#ifdef WITH_TUNING
-#include "tuning_manager.h"
-#endif
+#include "tuning.h"
 
 namespace infini::ops {{
 
 {bind_func_declarations}
 
 PYBIND11_MODULE(ops, m) {{
-#ifdef WITH_TUNING
-  // 加载调优缓存：先尝试环境变量，否则尝试 ./tuning.json
   const char* tuning_path = std::getenv("INFINI_OPS_TUNING_PATH");
   if (!tuning_path) {{
-    tuning_path = "tuning.json";  // 默认路径（相对于工作目录）
+    tuning_path = "tuning.json";
   }}
   infini::ops::TuningManager::Instance().LoadTuningCache(tuning_path);
-#endif
 {textwrap.indent(bind_func_calls, _INDENTATION)}
 }}
 
