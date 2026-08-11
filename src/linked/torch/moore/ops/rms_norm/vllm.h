@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_LINKED_TORCH_MOORE_OPS_RMS_NORM_VLLM_H_
 #define INFINI_OPS_LINKED_TORCH_MOORE_OPS_RMS_NORM_VLLM_H_
 
-#include "linked/torch/moore/c10.h"
 #include "linked/torch/ops/rms_norm.h"
+#include "torch/moore/c10.h"
 
 namespace infini::ops::linked::torch::moore {
 

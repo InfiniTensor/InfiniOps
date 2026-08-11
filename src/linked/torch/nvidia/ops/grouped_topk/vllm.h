@@ -3,8 +3,8 @@
 
 #include <utility>
 
-#include "linked/torch/nvidia/c10.h"
 #include "linked/torch/ops/grouped_topk.h"
+#include "torch/nvidia/c10.h"
 
 namespace infini::ops::linked::torch::nvidia {
 

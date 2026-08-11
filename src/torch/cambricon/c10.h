@@ -1,13 +1,13 @@
-#ifndef INFINI_OPS_LINKED_TORCH_CAMBRICON_C10_H_
-#define INFINI_OPS_LINKED_TORCH_CAMBRICON_C10_H_
+#ifndef INFINI_OPS_TORCH_CAMBRICON_C10_H_
+#define INFINI_OPS_TORCH_CAMBRICON_C10_H_
 
 #include <c10/core/StreamGuard.h>
 #include <cnrt.h>
 #include <framework/core/MLUStream.h>
 
-#include "linked/torch/c10.h"
+#include "torch/c10.h"
 
-namespace infini::ops::linked::torch {
+namespace infini::ops {
 
 template <>
 struct C10<Device::Type::kCambricon> {
@@ -22,6 +22,6 @@ struct C10<Device::Type::kCambricon> {
   }
 };
 
-}  // namespace infini::ops::linked::torch
+}  // namespace infini::ops
 
-#endif  // INFINI_OPS_LINKED_TORCH_CAMBRICON_C10_H_
+#endif  // INFINI_OPS_TORCH_CAMBRICON_C10_H_

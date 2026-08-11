@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_LINKED_TORCH_NVIDIA_OPS_GPTQ_MARLIN_REPACK_VLLM_H_
 #define INFINI_OPS_LINKED_TORCH_NVIDIA_OPS_GPTQ_MARLIN_REPACK_VLLM_H_
 
-#include "linked/torch/nvidia/c10.h"
 #include "linked/torch/ops/gptq_marlin_repack.h"
+#include "torch/nvidia/c10.h"
 
 namespace infini::ops::linked::torch::nvidia {
 
