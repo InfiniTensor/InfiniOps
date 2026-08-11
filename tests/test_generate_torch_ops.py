@@ -96,6 +96,23 @@ def test_schema_self_param_renders_as_input_in_public_cpp_api():
     assert "at::_softmax_out(at_out, at_self" in source
 
 
+def test_torch_source_uses_existing_c10_stream_guards():
+    module = _load_generator_module()
+    op = module._parse_func("abs.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+
+    method = module._generate_torch_method_source("abs", op)
+    source = module._generate_torch_source("abs", [op])
+
+    assert "stream_ == nullptr" not in method
+    assert "C10<kDev>::GetStreamFromExternal(stream_, device_index)" in method
+
+    for device in ("nvidia", "cambricon", "metax", "moore"):
+        assert f'#include "torch/{device}/c10.h"' in source
+
+    for device in ("cpu", "ascend", "iluvatar", "hygon"):
+        assert f'#include "torch/{device}/c10.h"' not in source
+
+
 def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     op = module._parse_func(

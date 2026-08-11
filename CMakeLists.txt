@@ -276,6 +276,14 @@ if(WITH_TORCH OR WITH_LINKED)
             -Wl,--no-as-needed ${TORCH_CUDA_LIB} ${C10_CUDA_LIB} -Wl,--as-needed)
     endif()
 
+    if(WITH_METAX)
+        find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
+        find_library(MACA_TORCH_RUNTIME_LIB runtime_cu
+            HINTS "$ENV{MACA_PATH}/lib" REQUIRED)
+        list(APPEND TORCH_LIBRARIES
+            ${C10_CUDA_LIB} ${MACA_TORCH_RUNTIME_LIB})
+    endif()
+
     # `auditwheel`-repaired `torch` wheels bundle transitive dependencies
     # (e.g. `libgfortran-<hash>.so`, `libopenblasp-<hash>.so`) in a sibling
     # `torch.libs/` directory that `library_paths()` does not return.  When
