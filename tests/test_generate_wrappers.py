@@ -105,6 +105,22 @@ def test_operator_call_instantiations_externalize_default_implementation_lookup(
     assert f"template {signature}" in definitions
 
 
+def test_operator_call_instantiations_externalize_active_implementation_query():
+    module = _load_generator_module()
+    operator = module._Operator("add", constructors=[], calls=[])
+
+    declarations, definitions = module._generate_operator_call_instantiation_entries(
+        operator
+    )
+
+    signature = (
+        "std::vector<std::size_t> "
+        "Operator<::infini::ops::Add>::active_implementation_indices(Device::Type);"
+    )
+    assert f"extern template {signature}" in declarations
+    assert f"template {signature}" in definitions
+
+
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):

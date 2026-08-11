@@ -1535,6 +1535,13 @@ def _generate_operator_call_instantiation_entries(operator):
         definitions.append(definition)
 
     _append_unique(
+        f"extern template std::vector<std::size_t> "
+        f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
+        f"template std::vector<std::size_t> "
+        f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
+    )
+
+    _append_unique(
         f"extern template std::size_t "
         f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
         f"template std::size_t "
