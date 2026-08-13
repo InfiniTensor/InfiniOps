@@ -178,6 +178,7 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
     r"""
     #include <infini/ops.h>
 
+    #include <algorithm>
     #include <cmath>
 
     int main() {
@@ -194,6 +195,14 @@ _ADD_SMOKE_SOURCE = textwrap.dedent(
       infini::ops::Tensor output(output_data, shape, data_type, device);
       infini::ops::Handle handle;
       infini::ops::Config config;
+
+      const auto active_implementations =
+          infini::ops::Add::active_implementation_indices(
+              infini::ops::Device::Type::kCpu);
+      if (std::find(active_implementations.begin(), active_implementations.end(),
+                    0) == active_implementations.end()) {
+        return 1;
+      }
 
       infini::ops::Add::Call(handle, config, input, other, output);
 
