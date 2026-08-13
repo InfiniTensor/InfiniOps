@@ -13,6 +13,9 @@ import urllib.request
 
 import yaml
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ops_config  # noqa: E402
+
 _PROJECT_DIR = pathlib.Path(__file__).resolve().parents[1]
 _DEFAULT_SOURCE_ROOT = _PROJECT_DIR / "src" / "linked"
 _DEFAULT_OUTPUT_DIR = _PROJECT_DIR / "generated" / "linked"
@@ -139,9 +142,11 @@ def _find_platform_dirs(source_root, device):
     return platform_dirs
 
 
-def _load_libraries(platform_dir, device, transport):
+def _load_libraries(platform_dir, device, transport, selected_libraries=None):
     libraries = {}
     for path in sorted(platform_dir.glob("*.yaml")):
+        if selected_libraries is not None and path.stem not in selected_libraries:
+            continue
         data = _load_yaml_mapping(path, _LIBRARY_KEYS)
         libraries[path.stem] = LibraryConfig(
             device=device,
@@ -157,12 +162,59 @@ def _load_libraries(platform_dir, device, transport):
     return libraries
 
 
-def _load_bindings(platform_dir, device, transport, selected_ops):
+def _binding_is_selected(name, header, selected_ops, config):
+    if selected_ops is not None and name not in selected_ops:
+        return False
+
+    if config is not None:
+        selection = config.get(name)
+
+        if selection is None:
+            return False
+
+        headers = selection["headers"]
+
+        if headers is not None:
+            selected_headers = {
+                (
+                    _PROJECT_DIR / ops_config.implementation_path(selected_header)
+                ).resolve()
+                for selected_header in headers
+            }
+
+            return header.resolve() in selected_headers
+
+        slots = selection["implementations"]
+
+        return slots is None or ops_config.implementation_slot(header) in slots
+
+    return selected_ops is None or name in selected_ops
+
+
+def _load_bindings(platform_dir, device, transport, selected_ops, config):
     bindings = []
     for path in sorted((platform_dir / "ops").glob("*/*.yaml")):
         name = path.parent.name
-        if selected_ops is not None and name not in selected_ops:
+        header = path.with_suffix(".h")
+
+        if config is not None and name not in config:
             continue
+        if config is None and selected_ops is not None and name not in selected_ops:
+            continue
+        if not header.is_file():
+            raise ResolutionError(f"{path}: missing sibling {header.name}")
+
+        try:
+            selected = _binding_is_selected(name, header, selected_ops, config)
+        except ops_config.OpsConfigError as error:
+            raise ResolutionError(str(error)) from error
+
+        if not selected:
+            continue
+
+        source = path.with_suffix(".cc")
+        if not source.is_file():
+            raise ResolutionError(f"{path}: missing sibling {source.name}")
 
         data = _load_yaml_mapping(path, _BINDING_KEYS, {"library"})
         symbols = data.get("required_symbols")
@@ -198,13 +250,6 @@ def _load_bindings(platform_dir, device, transport, selected_ops):
             if dispatch_key is None:
                 raise ResolutionError(f"{path}: operator_schema requires dispatch_key")
             dispatch_key = _require_string(data, "dispatch_key", path)
-
-        header = path.with_suffix(".h")
-        source = path.with_suffix(".cc")
-        if not header.is_file():
-            raise ResolutionError(f"{path}: missing sibling {header.name}")
-        if not source.is_file():
-            raise ResolutionError(f"{path}: missing sibling {source.name}")
 
         bindings.append(
             BindingConfig(
@@ -533,6 +578,7 @@ def _normalize_values(values):
 def resolve_linked_ops(
     devices,
     ops=None,
+    config_path=None,
     *,
     source_root=_DEFAULT_SOURCE_ROOT,
     output_dir=_DEFAULT_OUTPUT_DIR,
@@ -546,16 +592,33 @@ def resolve_linked_ops(
     selected_ops = _normalize_values(ops)
     selected_op_set = set(selected_ops) if selected_ops is not None else None
 
+    try:
+        selection_config = (
+            ops_config.load_ops_config(config_path) if config_path is not None else None
+        )
+    except ops_config.OpsConfigError as error:
+        raise ResolutionError(str(error)) from error
+
     bindings = []
     library_configs = {}
     for device in devices:
         for transport, platform_dir in _find_platform_dirs(source_root, device):
-            libraries = _load_libraries(platform_dir, device, transport)
-            for name, config in libraries.items():
-                library_configs[(transport, device, name)] = config
-            bindings.extend(
-                _load_bindings(platform_dir, device, transport, selected_op_set)
+            platform_bindings = _load_bindings(
+                platform_dir,
+                device,
+                transport,
+                selected_op_set,
+                selection_config,
             )
+            bindings.extend(platform_bindings)
+            libraries = _load_libraries(
+                platform_dir,
+                device,
+                transport,
+                {binding.library for binding in platform_bindings},
+            )
+            for name, library_config in libraries.items():
+                library_configs[(transport, device, name)] = library_config
 
     bindings.sort(
         key=lambda binding: (
@@ -677,6 +740,7 @@ def _parse_args():
     )
     parser.add_argument("--devices", nargs="+", required=True)
     parser.add_argument("--ops", nargs="*")
+    parser.add_argument("--ops-config", type=pathlib.Path)
     parser.add_argument("--source-root", default=_DEFAULT_SOURCE_ROOT)
     parser.add_argument("--output-dir", default=_DEFAULT_OUTPUT_DIR)
     parser.add_argument("--nm", default=os.environ.get("CMAKE_NM", "nm"))
@@ -685,15 +749,28 @@ def _parse_args():
     return parser.parse_args()
 
 
+def _selection_from_environment(ops, config_path):
+    if ops is not None or config_path is not None:
+        return ops, config_path
+
+    value = os.environ.get("INFINI_OPS_OPS")
+
+    if value is None:
+        return ops, config_path
+    if pathlib.Path(value).suffix.lower() == ".json":
+        return None, pathlib.Path(value)
+
+    return [value], None
+
+
 def main():
     args = _parse_args()
-    ops = args.ops
-    if ops is None and "INFINI_OPS_OPS" in os.environ:
-        ops = [os.environ["INFINI_OPS_OPS"]]
+    ops, config_path = _selection_from_environment(args.ops, args.ops_config)
     try:
         resolve_linked_ops(
             args.devices,
             ops,
+            config_path,
             source_root=args.source_root,
             output_dir=args.output_dir,
             nm=args.nm,

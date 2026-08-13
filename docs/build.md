@@ -27,8 +27,59 @@ entry is `python -m pip install` with CMake options passed through
 | `INFINI_OPS_BUILD_DOCS` | Enable the Doxygen documentation target. | `OFF` |
 | `INFINI_RT_ROOT` | InfiniRT install prefix containing `include/` and `lib/`. | `$INFINI_RT_ROOT` |
 | `INFINI_OPS_SMOKE_BUILD` | Build only the smoke-test operator subset. | `OFF` |
-| `INFINI_OPS_OPS` | Comma- or semicolon-separated operator allowlist. | empty |
+| `INFINI_OPS_OPS` | Comma- or semicolon-separated operator allowlist, or a path to an `ops.json` implementation selection. | empty |
 | `INFINI_OPS_TORCH_OPS` | Comma- or semicolon-separated ATen operator allowlist. | empty |
+
+An `ops.json` file selects operators and implementation slots with a top-level
+operator mapping:
+
+```json
+{
+  "add": {
+    "implementations": "all"
+  },
+  "argmax": {
+    "implementations": [8]
+  },
+  "top_k_top_p_sampling_from_logits": {
+    "implementations": [16]
+  }
+}
+```
+
+`"all"` keeps every available implementation for the operator. An integer
+array keeps exactly those slots. Slots range from 0 through 31. The selection
+is a set, not a priority order; the default dispatch selects the smallest
+active slot. The selection controls generated wrappers, generated slot-8 ATen
+implementations, and linked
+provider resolution. Unselected linked providers do not require their external
+libraries to be installed.
+
+Pass the file explicitly with
+`-DINFINI_OPS_OPS=/path/to/ops.json`. For compatibility,
+`${PROJECT_SOURCE_DIR}/ops.json` is read automatically when present. Relative
+implementation header paths in legacy configurations are resolved from
+`${PROJECT_SOURCE_DIR}`. An explicit inline `INFINI_OPS_OPS` allowlist takes
+precedence over an implicit `${PROJECT_SOURCE_DIR}/ops.json`. When
+`INFINI_OPS_TORCH_OPS` and an explicit JSON selection are both set, generated
+ATen ops use their intersection. The string and string-array values supported
+by the current generator remain available for checked-in implementation
+headers. Structured descriptors preserve an explicit backend name, including
+for implementations outside the standard backend directory layout. Generated
+implementation header paths are not supported:
+
+```json
+{
+  "add": "src/native/cpu/ops/add/add.h",
+  "gemm": ["src/native/cpu/ops/gemm/gemm.h"],
+  "custom_add": [
+    {
+      "path": "custom/add.h",
+      "backend": "custom"
+    }
+  ]
+}
+```
 
 Only one GPU backend should be enabled in a build. CPU may be enabled with the
 selected accelerator backend.

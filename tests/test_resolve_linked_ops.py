@@ -226,6 +226,90 @@ def test_resolve_supports_multiple_implementations_for_one_operator(
     ]
 
 
+def test_resolve_filters_linked_dependencies_by_slot(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    platform, op_dir = _write_linked_config(source_root)
+    (op_dir / "vllm.h").write_text(
+        "class Operator<SiluAndMul, Device::Type::kMetax, 16> {};\n"
+    )
+    (platform / "unused.yaml").write_text(
+        "python_distribution_package: unused\nlibrary_glob: unused/_C*.so\n"
+    )
+    (op_dir / "unused.yaml").write_text(
+        "library: unused\nrequired_symbols:\n  - unused()\n"
+    )
+    (op_dir / "unused.h").write_text(
+        "class Operator<SiluAndMul, Device::Type::kMetax, 17> {};\n"
+    )
+    (op_dir / "unused.cc").write_text("// definition\n")
+    config_path = tmp_path / "ops.json"
+    config_path.write_text('{"silu_and_mul": {"implementations": [16]}}\n')
+    library_path = tmp_path / "vllm" / "_C.so"
+    library_path.parent.mkdir()
+    library_path.touch()
+    located = []
+
+    def locate(config):
+        located.append(config.name)
+        return library_path
+
+    monkeypatch.setattr(module, "_locate_distribution_library", locate)
+    exported = {"silu_and_mul(at::Tensor&, at::Tensor&)"}
+    monkeypatch.setattr(
+        module,
+        "_inspect_dynamic_symbols",
+        lambda *args: (exported, exported),
+    )
+
+    payload = module.resolve_linked_ops(
+        ["metax"],
+        config_path=config_path,
+        source_root=source_root,
+        output_dir=tmp_path / "generated",
+    )
+
+    assert located == ["vllm"]
+    assert [op["implementation"] for op in payload["operators"]] == ["vllm"]
+
+
+def test_resolve_matches_structured_implementation_descriptor(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    _, op_dir = _write_linked_config(source_root)
+    config_path = tmp_path / "ops.json"
+    config_path.write_text(
+        '{"silu_and_mul": [{"path": "'
+        + (op_dir / "vllm.h").relative_to(tmp_path).as_posix()
+        + '", "backend": "linked"}]}\n'
+    )
+    library_path = tmp_path / "vllm" / "_C.so"
+    library_path.parent.mkdir()
+    library_path.touch()
+
+    monkeypatch.setattr(module, "_PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(
+        module,
+        "_locate_distribution_library",
+        lambda _config: library_path,
+    )
+    exported = {"silu_and_mul(at::Tensor&, at::Tensor&)"}
+    monkeypatch.setattr(
+        module,
+        "_inspect_dynamic_symbols",
+        lambda *args: (exported, exported),
+    )
+
+    payload = module.resolve_linked_ops(
+        ["metax"],
+        config_path=config_path,
+        source_root=source_root,
+        output_dir=tmp_path / "generated",
+    )
+
+    assert [op["implementation"] for op in payload["operators"]] == ["vllm"]
+
+
 @pytest.mark.parametrize(
     ("binding", "message"),
     (
@@ -699,3 +783,31 @@ def test_locate_editable_distribution_root_ignores_unsupported_metadata(
             return json.dumps({"url": url, "dir_info": {"editable": editable}})
 
     assert module._locate_editable_distribution_root(FakeDistribution()) is None
+
+
+def test_environment_selection_recognizes_ops_json(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    config_path = tmp_path / "ops.JSON"
+    monkeypatch.setenv("INFINI_OPS_OPS", str(config_path))
+
+    assert module._selection_from_environment(None, None) == (None, config_path)
+
+
+def test_environment_selection_keeps_inline_allowlist(monkeypatch):
+    module = _load_resolver_module()
+    monkeypatch.setenv("INFINI_OPS_OPS", "add,gemm")
+
+    assert module._selection_from_environment(None, None) == (["add,gemm"], None)
+
+
+def test_explicit_selection_precedes_environment(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    env_config = tmp_path / "environment.json"
+    explicit_config = tmp_path / "explicit.json"
+    monkeypatch.setenv("INFINI_OPS_OPS", str(env_config))
+
+    assert module._selection_from_environment(["add"], None) == (["add"], None)
+    assert module._selection_from_environment(None, explicit_config) == (
+        None,
+        explicit_config,
+    )

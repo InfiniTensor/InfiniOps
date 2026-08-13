@@ -2,13 +2,16 @@ import argparse
 import concurrent.futures
 import dataclasses
 import functools
-import json
 import os
 import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import textwrap
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ops_config  # noqa: E402
 
 try:
     import clang.cindex
@@ -1848,6 +1851,52 @@ def _filter_ops(ops, op_allowlist, *, strict=False):
     return {op_name: ops[op_name] for op_name in op_allowlist if op_name in ops}
 
 
+def _select_ops_from_config(ops, config, config_path):
+    selected = {}
+
+    for op_name, selection in config.items():
+        headers = selection["headers"]
+
+        if headers is not None:
+            selected[op_name] = [
+                _implementation_from_json(header) for header in headers
+            ]
+            continue
+
+        if op_name not in ops:
+            raise ValueError(
+                f"{config_path}: operator {op_name!r} is not available for "
+                "the active devices"
+            )
+
+        slots = selection["implementations"]
+
+        if slots is None:
+            selected[op_name] = ops[op_name]
+            continue
+
+        headers_by_slot = {}
+
+        for implementation in ops[op_name]:
+            slot = ops_config.implementation_slot(implementation.path)
+            headers_by_slot.setdefault(slot, []).append(implementation)
+
+        missing = [slot for slot in slots if slot not in headers_by_slot]
+
+        if missing:
+            formatted = ", ".join(str(slot) for slot in missing)
+            raise ValueError(
+                f"{config_path}: operator {op_name!r} has no active "
+                f"implementation at slot(s) {formatted}"
+            )
+
+        selected[op_name] = [
+            implementation for slot in slots for implementation in headers_by_slot[slot]
+        ]
+
+    return selected
+
+
 def _get_all_ops(
     devices,
     with_torch=False,
@@ -2085,6 +2134,11 @@ if __name__ == "__main__":
         help="Operator allowlist to generate. Accepts names separated by spaces or commas.",
     )
     parser.add_argument(
+        "--ops-config",
+        type=pathlib.Path,
+        help="Path to an `ops.json` operator and implementation selection.",
+    )
+    parser.add_argument(
         "--strict-ops",
         action="store_true",
         help="Fail if `--ops` contains operators unavailable for the active devices.",
@@ -2101,25 +2155,18 @@ if __name__ == "__main__":
     for directory in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
-    ops_json = pathlib.Path("ops.json")
+    config_path = args.ops_config
+    ops = _get_all_ops(
+        args.devices,
+        with_torch=args.with_torch,
+        with_ninetoothed=args.with_ninetoothed,
+        with_linked=args.with_linked,
+        with_triton=args.with_triton,
+    )
 
-    if ops_json.exists():
-        raw_ops = json.loads(ops_json.read_text())
-        ops = {
-            op_name: [
-                _implementation_from_json(implementation)
-                for implementation in implementations
-            ]
-            for op_name, implementations in raw_ops.items()
-        }
-    else:
-        ops = _get_all_ops(
-            args.devices,
-            with_torch=args.with_torch,
-            with_ninetoothed=args.with_ninetoothed,
-            with_linked=args.with_linked,
-            with_triton=args.with_triton,
-        )
+    if config_path is not None:
+        config = ops_config.load_ops_config(config_path)
+        ops = _select_ops_from_config(ops, config, config_path)
 
     ops = _filter_ops(
         ops,
