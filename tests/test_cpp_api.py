@@ -18,6 +18,7 @@ def test_cpp_operator_call_instantiation_smoke(tmp_path):
         [
             _compiler("CXX", "c++"),
             "-std=c++17",
+            "-O3",
             "-Werror",
             f"-I{include_dir}",
             str(source),

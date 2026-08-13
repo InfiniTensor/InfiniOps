@@ -1534,18 +1534,36 @@ def _generate_operator_call_instantiation_entries(operator):
         declarations.append(declaration)
         definitions.append(definition)
 
-    _append_unique(
-        f"extern template std::vector<std::size_t> "
-        f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
-        f"template std::vector<std::size_t> "
-        f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
+    active_implementation_declaration = (
+        "template <>\n"
+        "std::vector<std::size_t>\n"
+        f"Operator<{op_type}>::active_implementation_indices(Device::Type);"
     )
+    active_implementation_definition = (
+        "template <>\n"
+        "std::vector<std::size_t>\n"
+        f"Operator<{op_type}>::active_implementation_indices("
+        "Device::Type dev_type) {\n"
+        f"  return detail::ActiveImplementationIndices<{op_type}>(dev_type);\n"
+        "}"
+    )
+    _append_unique(active_implementation_declaration, active_implementation_definition)
 
+    default_implementation_declaration = (
+        "template <>\n"
+        "std::size_t\n"
+        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);"
+    )
+    default_implementation_definition = (
+        "template <>\n"
+        "std::size_t\n"
+        f"Operator<{op_type}>::DefaultImplementationIndex("
+        "Device::Type dev_type) {\n"
+        f"  return detail::DefaultImplementationIndex<{op_type}>(dev_type);\n"
+        "}"
+    )
     _append_unique(
-        f"extern template std::size_t "
-        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
-        f"template std::size_t "
-        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
+        default_implementation_declaration, default_implementation_definition
     )
 
     for call in operator.calls:

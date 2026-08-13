@@ -97,12 +97,22 @@ def test_operator_call_instantiations_externalize_default_implementation_lookup(
         operator
     )
 
-    signature = (
-        "std::size_t "
+    declaration = (
+        "template <>\n"
+        "std::size_t\n"
         "Operator<::infini::ops::Abs>::DefaultImplementationIndex(Device::Type);"
     )
-    assert f"extern template {signature}" in declarations
-    assert f"template {signature}" in definitions
+    definition = (
+        "template <>\n"
+        "std::size_t\n"
+        "Operator<::infini::ops::Abs>::DefaultImplementationIndex("
+        "Device::Type dev_type) {\n"
+        "  return detail::DefaultImplementationIndex<::infini::ops::Abs>("
+        "dev_type);\n"
+        "}"
+    )
+    assert declaration in declarations
+    assert definition in definitions
 
 
 def test_operator_call_instantiations_externalize_active_implementation_query():
@@ -113,12 +123,22 @@ def test_operator_call_instantiations_externalize_active_implementation_query():
         operator
     )
 
-    signature = (
-        "std::vector<std::size_t> "
+    declaration = (
+        "template <>\n"
+        "std::vector<std::size_t>\n"
         "Operator<::infini::ops::Add>::active_implementation_indices(Device::Type);"
     )
-    assert f"extern template {signature}" in declarations
-    assert f"template {signature}" in definitions
+    definition = (
+        "template <>\n"
+        "std::vector<std::size_t>\n"
+        "Operator<::infini::ops::Add>::active_implementation_indices("
+        "Device::Type dev_type) {\n"
+        "  return detail::ActiveImplementationIndices<::infini::ops::Add>("
+        "dev_type);\n"
+        "}"
+    )
+    assert declaration in declarations
+    assert definition in definitions
 
 
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
