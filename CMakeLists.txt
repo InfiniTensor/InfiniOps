@@ -26,6 +26,8 @@ option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
+option(WITH_TRITON "Enable the Triton JIT backend" OFF)
+
 # Custom `AscendC` kernels under `src/native/ascend/custom/`. `ON` by default
 # so CI and routine dev builds always exercise `implementation_index=1/2`
 # for `RmsNorm` / `AddRmsNorm`. Gated by `WITH_ASCEND` in
@@ -344,10 +346,29 @@ if(WITH_NINETOOTHED)
     set(NINETOOTHED_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run NineToothed code generation")
 endif()
 
+if(WITH_TRITON)
+    if(NOT WITH_NVIDIA)
+        message(
+            FATAL_ERROR
+            "`WITH_TRITON` requires `WITH_NVIDIA=ON` because NVIDIA is the only implemented Triton JIT backend."
+        )
+    endif()
+    if(NOT GENERATE_PYTHON_BINDINGS)
+        message(
+            FATAL_ERROR
+            "`WITH_TRITON` requires `GENERATE_PYTHON_BINDINGS=ON` because the runtime compiler is shipped in the Python package."
+        )
+    endif()
+endif()
+
 if(WITH_NVIDIA)
     add_compile_definitions(WITH_NVIDIA=1)
     enable_language(CUDA)
-    find_package(CUDAToolkit REQUIRED)
+    if(WITH_TRITON)
+        find_package(CUDAToolkit 12.0 REQUIRED)
+    else()
+        find_package(CUDAToolkit REQUIRED)
+    endif()
 endif()
 
 # Iluvatar: CUDA-compatible device. CoreX clang++ works for `-x ivcore`

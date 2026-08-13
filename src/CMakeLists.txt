@@ -146,7 +146,6 @@ if(WITH_NVIDIA)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
     target_link_libraries(infiniops PRIVATE nvidia::cutlass::cutlass)
 
-    find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cublasLt CUDA::cuda_driver)
 
     list(APPEND DEVICE_LIST "nvidia")
@@ -187,6 +186,34 @@ if(WITH_NINETOOTHED)
     target_include_directories(infiniops PRIVATE
         ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     target_sources(infiniops PRIVATE ${INFINI_OPS_NINETOOTHED_SOURCES})
+endif()
+
+if(WITH_TRITON OR GENERATE_PYTHON_BINDINGS)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
+    if(NOT pybind11_DIR)
+        execute_process(
+            COMMAND ${Python_EXECUTABLE} -m pybind11 --cmakedir
+            OUTPUT_VARIABLE _pybind11_cmake_dir
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _pybind11_result
+        )
+
+        if(_pybind11_result EQUAL 0)
+            set(pybind11_DIR "${_pybind11_cmake_dir}" CACHE PATH "pybind11 CMake directory")
+        endif()
+    endif()
+
+    find_package(pybind11 CONFIG REQUIRED)
+endif()
+
+if(WITH_TRITON)
+    target_link_libraries(infiniops PRIVATE
+        Python::Python
+        pybind11::headers)
+    target_sources(infiniops PRIVATE
+        triton/jit/cache.cc
+        triton/jit/compiler.cc)
 endif()
 
 if(WITH_ILUVATAR)
@@ -974,6 +1001,10 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)
     endif()
 
+    if(WITH_TRITON)
+        list(APPEND GENERATOR_ARGS --with-triton)
+    endif()
+
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
                 INFINI_RT_INCLUDE_DIRS=${INFINI_RT_INCLUDE_DIRS_ENV}
@@ -1261,23 +1292,6 @@ if(GENERATE_PYTHON_BINDINGS)
         list(APPEND PYBIND11_COMPILE_SOURCES ${ILUVATAR_DISPATCH_OBJECTS})
     endif()
 
-    find_package(Python COMPONENTS Interpreter Development)
-
-    if(NOT pybind11_DIR)
-        execute_process(
-            COMMAND ${Python_EXECUTABLE} -m pybind11 --cmakedir
-            OUTPUT_VARIABLE _pybind11_cmake_dir
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE _pybind11_result
-        )
-
-        if(_pybind11_result EQUAL 0)
-            set(pybind11_DIR "${_pybind11_cmake_dir}" CACHE PATH "pybind11 CMake directory")
-        endif()
-    endif()
-
-    find_package(pybind11 CONFIG)
-
     if(PYBIND11_ENABLE_EXTRAS)
         pybind11_add_module(ops ${PYBIND11_COMPILE_SOURCES})
     else()
@@ -1324,6 +1338,7 @@ if(GENERATE_PYTHON_BINDINGS)
         target_include_directories(ops PRIVATE
             ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
     endif()
+
     target_link_libraries(ops PRIVATE infiniops)
 
     # Cambricon generated dispatch is compiled into the Python extension and
@@ -1382,6 +1397,18 @@ if(GENERATE_PYTHON_BINDINGS)
         # torch op test can discover what to exercise at runtime.
         install(FILES "${PROJECT_SOURCE_DIR}/generated/torch_ops_metadata.json"
             DESTINATION .)
+    endif()
+
+    if(WITH_TRITON)
+        # Ship the JIT compiler and kernel sources so Triton JIT operators
+        # can compile kernels at runtime. `compile.py` uses `__file__` to
+        # locate `ops/` relative to itself; both must live under `triton/`.
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/triton/jit/compile.py"
+                DESTINATION triton/jit)
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/triton/ops/"
+                DESTINATION triton/ops
+                FILES_MATCHING
+                PATTERN "*.py")
     endif()
 endif()
 
