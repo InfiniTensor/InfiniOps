@@ -214,8 +214,6 @@ if(WITH_TRITON)
     target_sources(infiniops PRIVATE
         triton/jit/cache.cc
         triton/jit/compiler.cc)
-    file(GLOB_RECURSE TRITON_SOURCES CONFIGURE_DEPENDS "triton/ops/*/*.cc")
-    target_sources(infiniops PRIVATE ${TRITON_SOURCES})
 endif()
 
 if(WITH_ILUVATAR)

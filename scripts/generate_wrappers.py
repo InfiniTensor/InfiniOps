@@ -1744,26 +1744,35 @@ def _to_include_path(path):
     return text
 
 
-def _matches_scan_dir(impl_path, scan_dirs):
-    linked_root = _SRC_DIR / "linked"
+def _matches_provider_platform(impl_path, provider, scan_dirs):
+    provider_root = _SRC_DIR / provider
     try:
-        linked_path = impl_path.relative_to(linked_root)
+        provider_path = impl_path.relative_to(provider_root)
     except ValueError:
-        linked_path = None
+        return None
 
-    if linked_path is not None:
-        if "linked" not in scan_dirs:
-            return False
+    if provider not in scan_dirs:
+        return False
 
-        try:
-            ops_index = linked_path.parts.index("ops")
-        except ValueError:
-            return False
-        platform_parts = linked_path.parts[:ops_index]
-        if not platform_parts:
-            return False
-        active_devices = scan_dirs - {"linked", "ninetoothed", "torch"}
-        return any(part in active_devices for part in platform_parts)
+    try:
+        ops_index = provider_path.parts.index("ops")
+    except ValueError:
+        return False
+
+    platform_parts = provider_path.parts[:ops_index]
+    if not platform_parts:
+        return False
+
+    provider_names = {"linked", "ninetoothed", "torch", "triton"}
+    active_devices = scan_dirs - provider_names
+    return any(part in active_devices for part in platform_parts)
+
+
+def _matches_scan_dir(impl_path, scan_dirs):
+    for provider in ("linked", "triton"):
+        matches = _matches_provider_platform(impl_path, provider, scan_dirs)
+        if matches is not None:
+            return matches
 
     return any(part in scan_dirs for part in impl_path.parts)
 
