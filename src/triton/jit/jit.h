@@ -24,9 +24,6 @@ namespace infini::ops::triton::jit {
 
 namespace detail {
 
-template <typename>
-inline constexpr bool kAlwaysFalse = false;
-
 struct ScalarTypeDescriptor {
   const char* name;
 
@@ -66,6 +63,10 @@ inline const char* TritonTypeName(::infini::ops::DataType data_type) {
 template <typename T>
 constexpr ScalarTypeDescriptor ScalarDescriptor() {
   using Value = std::remove_cv_t<T>;
+  static_assert(std::is_integral_v<Value> &&
+                    (sizeof(Value) == 1 || sizeof(Value) == 2 ||
+                     sizeof(Value) == 4 || sizeof(Value) == 8),
+                "Triton JIT does not support this scalar argument type.");
   if constexpr (std::is_same_v<Value, bool>) {
     return {"i32", DataType::kInt32};
   } else if constexpr (std::is_integral_v<Value> && sizeof(Value) == 1) {
@@ -80,13 +81,10 @@ constexpr ScalarTypeDescriptor ScalarDescriptor() {
     return std::is_signed_v<Value>
                ? ScalarTypeDescriptor{"i32", DataType::kInt32}
                : ScalarTypeDescriptor{"u32", DataType::kUInt32};
-  } else if constexpr (std::is_integral_v<Value> && sizeof(Value) == 8) {
+  } else {
     return std::is_signed_v<Value>
                ? ScalarTypeDescriptor{"i64", DataType::kInt64}
                : ScalarTypeDescriptor{"u64", DataType::kUInt64};
-  } else {
-    static_assert(kAlwaysFalse<Value>,
-                  "unsupported `Triton` scalar argument type");
   }
 }
 
