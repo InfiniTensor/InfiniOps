@@ -1,258 +1,121 @@
 #ifndef INFINI_OPS_TRITON_JIT_CACHE_H_
 #define INFINI_OPS_TRITON_JIT_CACHE_H_
 
-#include <cstdio>
-#include <cstdlib>
+#include <cstdint>
+#include <memory>
 #include <mutex>
-#include <sstream>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
-#include "base.h"
+#include "triton/jit/backend.h"
+#include "triton/jit/config_.h"
 
-namespace infini::ops {
+namespace infini::ops::triton::jit {
 
-// ---- file helpers ----
+namespace detail {
 
-inline bool FileExists(const char* path) {
-  FILE* f = fopen(path, "rb");
-  if (f != nullptr) {
-    fclose(f);
-    return true;
-  }
-  return false;
-}
+struct KernelArtifact {
+  KernelMetadata metadata;
 
-inline std::string ReadFile(const char* path) {
-  FILE* f = fopen(path, "rb");
-  if (f == nullptr) return {};
-  fseek(f, 0, SEEK_END);
-  long sz = ftell(f);
-  if (sz < 0) {
-    fclose(f);
-    return {};
-  }
-  fseek(f, 0, SEEK_SET);
-  std::string buf(static_cast<size_t>(sz), '\0');
-  size_t nread = fread(buf.data(), 1, static_cast<size_t>(sz), f);
-  fclose(f);
-  buf.resize(nread);
-  return buf;
-}
-
-// ---- JSON field extraction ----
-
-inline int JsonGetInt(const std::string& json, const char* key,
-                      int fallback = 0) {
-  std::string pat = std::string("\"") + key + "\":";
-  auto pos = json.find(pat);
-  if (pos == std::string::npos) return fallback;
-  pos += pat.size();
-  while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-  return std::atoi(json.c_str() + pos);
-}
-
-inline std::string JsonGetString(const std::string& json, const char* key,
-                                 const char* fallback) {
-  std::string pat = std::string("\"") + key + "\":";
-  auto pos = json.find(pat);
-  if (pos == std::string::npos) return fallback;
-  pos += pat.size();
-  while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-  if (pos >= json.size() || json[pos] != '"') return fallback;
-  pos++;
-  auto end = json.find('"', pos);
-  if (end == std::string::npos) return fallback;
-  return json.substr(pos, end - pos);
-}
-
-// ---- key generation ----
-
-inline std::string GenerateDesc(const char* op, const char* sig,
-                                unsigned num_warps, unsigned num_stages,
-                                int arch) {
-  return std::string(op) + "|" + sig + "|" + std::to_string(num_warps) + "|" +
-         std::to_string(num_stages) + "|sm" + std::to_string(arch);
-}
-
-inline std::string CacheMemKey(const char* op_name, const char* signature_str,
-                               unsigned num_warps, unsigned num_stages,
-                               int arch, int dev_id) {
-  return GenerateDesc(op_name, signature_str, num_warps, num_stages, arch) +
-         "|dev" + std::to_string(dev_id);
-}
-
-inline std::string CacheFileKey(const char* op_name, const char* signature_str,
-                                unsigned num_warps, unsigned num_stages,
-                                int arch) {
-  return std::to_string(std::hash<std::string>{}(
-      GenerateDesc(op_name, signature_str, num_warps, num_stages, arch)));
-}
-
-// ---- artifact reader ----
-
-inline bool ReadArtifacts(const std::string& out_prefix, KernelMeta* meta,
-                          std::string* binary_data) {
-  std::string meta_path = out_prefix + ".json";
-  std::string meta_json = ReadFile(meta_path.c_str());
-  if (meta_json.empty()) return false;
-
-  meta->name = JsonGetString(meta_json, "name", "");
-  meta->binary_ext = JsonGetString(meta_json, "binary_ext", "");
-  if (meta->binary_ext.empty()) meta->binary_ext = "cubin";
-  meta->shared = JsonGetInt(meta_json, "shared");
-  meta->num_warps = JsonGetInt(meta_json, "num_warps");
-  meta->global_scratch_size = JsonGetInt(meta_json, "global_scratch_size");
-  meta->profile_scratch_size = JsonGetInt(meta_json, "profile_scratch_size");
-
-  std::string binary_path = out_prefix + "." + meta->binary_ext;
-  *binary_data = ReadFile(binary_path.c_str());
-  return !binary_data->empty();
-}
-
-// ---- kernel cache ----
-
-template <Device::Type kDev>
-struct KernelCacheEntry {
-  typename Driver<kDev>::Function func;
-
-  unsigned shared;
+  std::string binary;
 };
 
-template <Device::Type kDev>
-struct KernelCache {
-  std::mutex mutex;
+class KernelCacheKey {
+ public:
+  static KernelCacheKey Build(const Target& target, int device_id,
+                              const std::string& compilation_fingerprint,
+                              const std::string& operator_name,
+                              const std::string& signature,
+                              const Config& config);
 
-  std::unordered_map<std::string, KernelCacheEntry<kDev>> map;
+  const std::string& identity() const { return identity_; }
+
+  const std::string& memory_identity() const { return memory_identity_; }
+
+  std::string ArtifactPrefix() const;
+
+ private:
+  KernelCacheKey(std::string identity, std::string memory_identity)
+      : identity_(std::move(identity)),
+        memory_identity_(std::move(memory_identity)) {}
+
+  std::string identity_;
+
+  std::string memory_identity_;
 };
 
-template <Device::Type kDev>
-KernelCache<kDev>& GetKernelCache() {
-  static KernelCache<kDev> c;
-  return c;
-}
+class AutoTuningCacheKey {
+ public:
+  static AutoTuningCacheKey Build(
+      const Target& target, const std::string& compilation_fingerprint,
+      const std::string& operator_name, const std::string& signature,
+      const std::vector<std::string>& key_names,
+      const std::vector<std::uint64_t>& key_values,
+      const std::vector<Config>& candidates, const std::vector<Grid>& grids,
+      int warmup_milliseconds, int repetition_milliseconds);
 
-template <Device::Type kDev>
-bool KernelCacheLookup(const std::string& key, KernelCacheEntry<kDev>* out) {
-  auto& c = GetKernelCache<kDev>();
-  std::lock_guard<std::mutex> lk(c.mutex);
-  auto it = c.map.find(key);
-  if (it == c.map.end()) return false;
-  *out = it->second;
-  return true;
-}
+  const std::string& identity() const { return identity_; }
 
-template <Device::Type kDev>
-void KernelCacheInsert(const std::string& key, KernelCacheEntry<kDev> entry) {
-  auto& c = GetKernelCache<kDev>();
-  std::lock_guard<std::mutex> lk(c.mutex);
-  c.map[key] = entry;
-}
+ private:
+  explicit AutoTuningCacheKey(std::string identity)
+      : identity_(std::move(identity)) {}
 
-template <Device::Type kDev>
-struct CacheQueryResult {
-  bool mem_hit;
-
-  typename Driver<kDev>::Function func;
-
-  unsigned shared;
-
-  std::string out_prefix;
-
-  std::string mem_key;
+  std::string identity_;
 };
 
+std::optional<KernelArtifact> ReadKernelArtifact(
+    const std::string& output_prefix, const std::string& expected_identity);
+
 template <Device::Type kDev>
-CacheQueryResult<kDev> CacheQuery(const char* op, const char* sig,
-                                  unsigned num_warps, unsigned num_stages,
-                                  int arch, int dev_id) {
-  auto mem_key = CacheMemKey(op, sig, num_warps, num_stages, arch, dev_id);
-  KernelCacheEntry<kDev> entry;
-  if (KernelCacheLookup<kDev>(mem_key, &entry))
-    return {true, entry.func, entry.shared, "", mem_key};
-  auto desc = GenerateDesc(op, sig, num_warps, num_stages, arch);
-  return {false, nullptr, 0,
-          std::string(TRITON_JIT_CACHE_DIR) + "/" +
-              std::to_string(std::hash<std::string>{}(desc)),
-          mem_key};
-}
+class KernelCache {
+ public:
+  using Entry = std::unique_ptr<Kernel<kDev>>;
 
-// ---- autotune cache ----
+  static KernelCache& Instance() {
+    // Backend contexts may already be gone during static destruction.
+    static auto* cache_ptr = new KernelCache;
+    return *cache_ptr;
+  }
 
-struct AutotuneCache {
-  std::mutex mutex;
+  const Kernel<kDev>* Find(const KernelCacheKey& key) const {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = entries_.find(key.memory_identity());
+    return it == entries_.end() ? nullptr : it->second.get();
+  }
 
-  std::unordered_map<std::string, JitConfig> map;
+  const Kernel<kDev>* InsertOrGet(const KernelCacheKey& key, Entry candidate) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const auto result =
+        entries_.try_emplace(key.memory_identity(), std::move(candidate));
+    return result.first->second.get();
+  }
+
+ private:
+  mutable std::mutex mutex_;
+
+  // There is no erase path, so returned pointee addresses remain stable.
+  std::unordered_map<std::string, Entry> entries_;
 };
 
-inline AutotuneCache& GetAutotuneCache() {
-  static AutotuneCache c;
-  return c;
-}
+class AutoTuningCache {
+ public:
+  static AutoTuningCache& Instance();
 
-inline std::string AutotuneCacheFilePath(const std::string& key) {
-  return std::string{TRITON_JIT_CACHE_DIR} + "/" +
-         std::to_string(std::hash<std::string>{}(key)) + ".autotune";
-}
+  std::optional<Config> Find(const AutoTuningCacheKey& key);
 
-inline std::string SerializeConfig(const JitConfig& config) {
-  std::string s = std::to_string(config.num_warps) + " " +
-                  std::to_string(config.num_stages);
-  for (const auto& [name, val] : config.constexprs)
-    s += "\n" + name + " " + std::to_string(val);
-  return s;
-}
+  void Insert(const AutoTuningCacheKey& key, const Config& config);
 
-inline bool DeserializeConfig(const std::string& content, JitConfig* out) {
-  std::istringstream iss(content);
-  std::string line;
-  if (!std::getline(iss, line)) return false;
-  std::istringstream head(line);
-  if (!(head >> out->num_warps >> out->num_stages)) return false;
-  out->constexprs.clear();
-  while (std::getline(iss, line)) {
-    std::istringstream ls(line);
-    std::string name;
-    int val;
-    if (ls >> name >> val) out->constexprs.push_back({name, val});
-  }
-  return true;
-}
+ private:
+  std::mutex mutex_;
 
-inline bool AutotuneCacheLookup(const std::string& key, JitConfig* out) {
-  auto& c = GetAutotuneCache();
-  std::lock_guard<std::mutex> lk(c.mutex);
-  auto it = c.map.find(key);
-  if (it != c.map.end()) {
-    *out = it->second;
-    return true;
-  }
-  std::string path = AutotuneCacheFilePath(key);
-  if (FileExists(path.c_str())) {
-    JitConfig parsed;
-    if (DeserializeConfig(ReadFile(path.c_str()), &parsed)) {
-      c.map[key] = parsed;
-      *out = parsed;
-      return true;
-    }
-  }
-  return false;
-}
+  std::unordered_map<std::string, Config> entries_;
+};
 
-inline void AutotuneCacheInsert(const std::string& key,
-                                const JitConfig& config) {
-  auto& c = GetAutotuneCache();
-  std::lock_guard<std::mutex> lk(c.mutex);
-  c.map[key] = config;
-  std::string path = AutotuneCacheFilePath(key);
-  std::string content = SerializeConfig(config);
-  FILE* f = fopen(path.c_str(), "w");
-  if (f) {
-    fwrite(content.data(), 1, content.size(), f);
-    fclose(f);
-  }
-}
+}  // namespace detail
 
-}  // namespace infini::ops
+}  // namespace infini::ops::triton::jit
 
 #endif

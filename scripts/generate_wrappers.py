@@ -1,5 +1,6 @@
 import argparse
 import concurrent.futures
+import dataclasses
 import functools
 import json
 import os
@@ -411,15 +412,34 @@ def _strip_default_argument(param):
     return parts[0].strip()
 
 
+@dataclasses.dataclass(frozen=True)
+class _Implementation:
+    path: pathlib.Path
+    backend: str
+
+
 class _Operator:
-    def __init__(self, name, constructors, calls):
+    def __init__(self, name, constructors, calls, implementations=()):
         self.name = name
 
         self.constructors = constructors
 
         self.calls = calls
 
-        self.impl_paths = []
+        self.implementations = tuple(implementations)
+
+    def has_backend(self, backend):
+        return any(
+            implementation.backend == backend for implementation in self.implementations
+        )
+
+
+def _parameter_type_signature(node):
+    return tuple(
+        " ".join(arg.type.spelling.split())
+        for arg in node.get_arguments()
+        if arg.spelling != "stream"
+    )
 
 
 def _find_optional_tensor_params(op_name):
@@ -585,56 +605,6 @@ def _is_data_type_spelling(spelling):
 
     return spelling.rsplit("::", maxsplit=1)[-1] == "DataType"
 
-def _uses_config_extension(impl_paths):
-    pattern = re.compile(r"\bJitConfig\b")
-    for path in impl_paths:
-        try:
-            if pattern.search(path.read_text()):
-                return True
-        except (OSError, UnicodeDecodeError):
-            pass
-    return False
-
-
-def _generate_triton_jit_config_parser():
-    return textwrap.dedent("""\
-    inline std::shared_ptr<Config> ConfigFromPyDict(const py::dict& config_dict) {
-      if (config_dict.contains("autotune")) {
-        auto config = std::make_shared<AutotuneConfig>();
-        py::dict autotune_dict = config_dict["autotune"].cast<py::dict>();
-        if (autotune_dict.contains("warmup")) config->warmup = autotune_dict["warmup"].cast<unsigned>();
-        if (autotune_dict.contains("rep")) config->rep = autotune_dict["rep"].cast<unsigned>();
-        if (autotune_dict.contains("key")) {
-          for (auto k : autotune_dict["key"].cast<py::list>())
-            config->key.push_back(k.cast<std::string>());
-        }
-        if (autotune_dict.contains("configs")) {
-          for (auto candidate : autotune_dict["configs"].cast<py::list>()) {
-            JitConfig candidate_config;
-            py::dict candidate_dict = candidate.cast<py::dict>();
-            if (candidate_dict.contains("num_warps")) candidate_config.num_warps = candidate_dict["num_warps"].cast<unsigned>();
-            if (candidate_dict.contains("num_stages")) candidate_config.num_stages = candidate_dict["num_stages"].cast<unsigned>();
-            for (auto item : candidate_dict) {
-              std::string key = item.first.cast<std::string>();
-              if (key != "num_warps" && key != "num_stages")
-                candidate_config.constexprs.emplace_back(key, item.second.cast<int>());
-            }
-            config->candidates.push_back(std::move(candidate_config));
-          }
-        }
-        return config;
-      }
-      auto config = std::make_shared<JitConfig>();
-      if (config_dict.contains("num_warps")) config->num_warps = config_dict["num_warps"].cast<unsigned>();
-      if (config_dict.contains("num_stages")) config->num_stages = config_dict["num_stages"].cast<unsigned>();
-      for (auto item : config_dict) {
-        std::string key = item.first.cast<std::string>();
-        if (key != "num_warps" && key != "num_stages")
-          config->constexprs.emplace_back(key, item.second.cast<int>());
-      }
-      return config;
-    }""")
-
 
 def _generate_pybind11(operator):
     optional_tensor_params = _find_optional_tensor_params(operator.name)
@@ -739,7 +709,7 @@ def _generate_pybind11(operator):
                 preconverted_tensor_arg is not None
                 and arg.spelling == preconverted_tensor_arg.spelling
             ):
-                args.append(f"std::move({preconverted_tensor_name})")
+                args.append(preconverted_tensor_name)
             elif _is_optional_vector_tensor(arg):
                 args.append(f"VectorOptionalTensorFromPybind11Handle({arg.spelling})")
             elif _is_optional_tensor(arg):
@@ -829,7 +799,7 @@ def _generate_pybind11(operator):
 
         return ", ".join(parts)
 
-    def _generate_call(op_name, call, method=True, uses_config=False):
+    def _generate_call(op_name, call, method=True, supports_triton_config=False):
         call_params = _generate_params(call)
         call_args = _generate_arguments(call)
 
@@ -851,11 +821,15 @@ def _generate_pybind11(operator):
             extra_params = ""
             extra_config_init = ""
             extra_pybind = ""
-            if uses_config:
+            if supports_triton_config:
                 extra_params = ", std::optional<py::dict> config_dict"
                 extra_config_init = (
+                    "    std::unique_ptr<Config> triton_config_ptr;\n"
                     "    if (config_dict.has_value()) {\n"
-                    "      config.set_extension(ConfigFromPyDict(*config_dict));\n"
+                    "      triton_config_ptr = "
+                    "triton::jit::ConfigFromPyDict(*config_dict);\n"
+                    "      triton_config_ptr->set_implementation_index(\n"
+                    "          config.implementation_index());\n"
                     "    }\n"
                 )
                 extra_pybind = ', py::arg("config") = py::none()'
@@ -872,10 +846,13 @@ def _generate_pybind11(operator):
                 call, converted_first_tensor_name
             )
 
-            if uses_config:
+            if supports_triton_config:
                 dispatch = (
-                    f"    auto op = generated_dispatch::Make{symbol_name}(config, {call_args});\n"
-                    f"    (*op)(handle, {call_args});"
+                    "    if (triton_config_ptr) {\n"
+                    f"      auto op = generated_dispatch::Make{symbol_name}(*triton_config_ptr, {call_args});\n"
+                    f"      return (*op)(handle, {call_args});\n"
+                    "    }\n"
+                    f"    return generated_dispatch::Call{symbol_name}(handle, config, {call_args});"
                 )
             else:
                 dispatch = f"    return generated_dispatch::Call{symbol_name}(handle, config, {call_args});"
@@ -946,34 +923,40 @@ def _generate_pybind11(operator):
     inits = "\n".join(_generate_init(constructor) for constructor in constructors)
     calls = "\n".join(_generate_call(operator.name, call) for call in operator_calls)
 
-    supports_triton = _uses_config_extension(operator.impl_paths)
-    callers = "\n".join(
-        _generate_call(operator.name, call, method=False, uses_config=supports_triton)
+    supports_triton = operator.has_backend("triton")
+    constructor_signatures = {
+        _parameter_type_signature(constructor) for constructor in constructors
+    }
+    configurable_calls = [
+        supports_triton and _parameter_type_signature(call) in constructor_signatures
         for call in operator_calls
-    )
-    if supports_triton:
-        jit_include = (
-            '\n#include "triton/jit/jit.h"\n\n'
-            "namespace infini::ops {\n\n"
-            + _generate_triton_jit_config_parser()
-            + "\n\n}  // namespace infini::ops\n"
+    ]
+    callers = "\n".join(
+        _generate_call(
+            operator.name,
+            call,
+            method=False,
+            supports_triton_config=supports_config,
         )
-    else:
-        jit_include = ""
+        for call, supports_config in zip(operator_calls, configurable_calls)
+    )
+    triton_config_include = (
+        '\n#include "triton/jit/pybind11_config.h"' if any(configurable_calls) else ""
+    )
 
     return f"""#ifndef INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 #define INFINI_OPS_BINDINGS_{op_name.upper()}_H_
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <utility>
+#include <memory>
 
 #include "base/{op_name}.h"
 #include "config.h"
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
 #include "host_range_profiler.h"
-#include "pybind11_utils.h"{jit_include}
+#include "pybind11_utils.h"{triton_config_include}
 
 namespace py = pybind11;
 
@@ -1339,10 +1322,7 @@ void ClearCacheFor{symbol_name}() {{
 
     emitted_make_params = set()
 
-    make_nodes = list(operator.constructors)
-    if _uses_config_extension(operator.impl_paths):
-        make_nodes.extend(operator.calls)
-    for node in make_nodes:
+    for node in operator.constructors:
         params = _generate_params(node)
         args = _generate_arguments(node)
         make_params = _append_optional_params("const Config& config", params)
@@ -1779,13 +1759,33 @@ def _matches_scan_dir(impl_path, scan_dirs):
             ops_index = linked_path.parts.index("ops")
         except ValueError:
             return False
+
         platform_parts = linked_path.parts[:ops_index]
         if not platform_parts:
             return False
+
         active_devices = scan_dirs - {"linked", "ninetoothed", "torch"}
         return any(part in active_devices for part in platform_parts)
 
     return any(part in scan_dirs for part in impl_path.parts)
+
+
+def _implementation_backend(path):
+    for backend in ("triton", "torch", "ninetoothed"):
+        if backend in path.parts:
+            return backend
+
+    return "native"
+
+
+def _implementation_from_json(implementation):
+    if isinstance(implementation, str):
+        path = pathlib.Path(implementation)
+        return _Implementation(path, _implementation_backend(path))
+
+    return _Implementation(
+        pathlib.Path(implementation["path"]), implementation["backend"]
+    )
 
 
 _OPERATOR_DECL_RE = re.compile(
@@ -1811,7 +1811,10 @@ def _index_impl_headers(impl_roots, scan_dirs):
             text = impl_path.read_text()
 
             for match in _OPERATOR_DECL_RE.finditer(text):
-                by_operator.setdefault(match.group(1), []).append(impl_path)
+                implementation = _Implementation(
+                    impl_path, _implementation_backend(impl_path)
+                )
+                by_operator.setdefault(match.group(1), []).append(implementation)
 
     return by_operator
 
@@ -1894,23 +1897,30 @@ def _get_all_ops(
             if op_name in ops:
                 continue
 
-            impl_paths = list(
+            implementations = list(
                 impl_headers_by_operator.get(_op_relative_type(op_name), ())
             )
 
-            if not impl_paths:
+            if not implementations:
                 continue
 
-            ops[op_name] = impl_paths
+            ops[op_name] = implementations
 
     return ops
 
 
 def _generate_op_artifacts(item):
-    op_name, impl_paths = item
+    op_name, implementations = item
+    implementations = tuple(implementations)
+    impl_paths = [implementation.path for implementation in implementations]
     extractor = _OperatorExtractor()
-    operator = extractor(op_name)
-    operator.impl_paths = impl_paths
+    parsed_operator = extractor(op_name)
+    operator = _Operator(
+        parsed_operator.name,
+        parsed_operator.constructors,
+        parsed_operator.calls,
+        implementations,
+    )
     header_name = f"{op_name}.h"
     legacy_c_source, legacy_c_header = _generate_legacy_c(operator, impl_paths)
     dispatch_declarations, dispatch_definitions = _generate_generated_dispatch_entries(
@@ -2094,7 +2104,14 @@ if __name__ == "__main__":
     ops_json = pathlib.Path("ops.json")
 
     if ops_json.exists():
-        ops = json.loads(ops_json.read_text())
+        raw_ops = json.loads(ops_json.read_text())
+        ops = {
+            op_name: [
+                _implementation_from_json(implementation)
+                for implementation in implementations
+            ]
+            for op_name, implementations in raw_ops.items()
+        }
     else:
         ops = _get_all_ops(
             args.devices,

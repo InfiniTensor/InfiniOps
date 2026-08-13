@@ -3,6 +3,8 @@ import pathlib
 import re
 import sys
 
+import pytest
+
 
 def _load_generator_module():
     path = (
@@ -379,7 +381,7 @@ class Mul {
     assert (
         "DefaultImplementationIndexForMul(converted_first_tensor.device().type()))"
     ) in text
-    assert "std::move(converted_first_tensor)" in text
+    assert "std::move(converted_first_tensor)" not in text
     assert text.count("DeviceFromPybind11Handle(input)") == 1
     assert (
         "config.set_implementation_index("
@@ -423,7 +425,7 @@ class Cat {
         "auto converted_first_tensor{VectorTensorFromPybind11Handle(inputs)};" in text
     )
     assert "converted_first_tensor.at(0).device().type()" in text
-    assert "std::move(converted_first_tensor)" in text
+    assert "std::move(converted_first_tensor)" not in text
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
 
 
@@ -721,7 +723,7 @@ def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path
     assert "silu_and_mul" not in module._get_all_ops(["metax"])
     assert "silu_and_mul" not in module._get_all_ops(["moore"], with_linked=True)
     linked_ops = module._get_all_ops(["metax"], with_linked=True)
-    assert set(linked_ops["silu_and_mul"]) == {
+    assert {implementation.path for implementation in linked_ops["silu_and_mul"]} == {
         vllm_header,
         apex_header,
     }
@@ -855,3 +857,195 @@ class MhaFwdKvcache : public Operator<MhaFwdKvcache> {
     assert 'py::arg("out") = py::none()' not in text
     assert "std::optional<py::object> out" not in text
     assert "OptionalTensorFromPybind11Handle(out)" not in text
+
+
+_TRITON_ADD_SOURCE = """
+
+
+namespace infini::ops {
+
+struct Tensor {};
+
+class Add {
+ public:
+  Add(const Tensor input, const Tensor other, const double alpha, Tensor out) {}
+  Add(const Tensor input, const Tensor other, Tensor out) {}
+
+  virtual void operator()(const Tensor input, const Tensor other,
+                          const double alpha, Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const Tensor other,
+                          Tensor out) const = 0;
+};
+
+}  // namespace infini::ops
+"""
+
+
+def _make_backend_add(module, tmp_path, monkeypatch, backend):
+    base_header = tmp_path / "base" / "add.h"
+    base_header.parent.mkdir()
+    base_header.write_text(_TRITON_ADD_SOURCE)
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    parsed = module._OperatorExtractor()("add")
+    implementation_path = tmp_path / backend / "ops" / "add" / "jit.h"
+    implementation_path.parent.mkdir(parents=True)
+    implementation_path.write_text("// JitConfig is intentionally irrelevant.\n")
+
+    return module._Operator(
+        parsed.name,
+        parsed.constructors,
+        parsed.calls,
+        implementations=[
+            module._Implementation(implementation_path, backend),
+        ],
+    )
+
+
+def test_triton_binding_uses_backend_metadata_and_shared_config_parser(
+    tmp_path, monkeypatch
+):
+    module = _load_generator_module()
+    operator = _make_backend_add(module, tmp_path, monkeypatch, "triton")
+
+    binding = module._generate_pybind11(operator)
+
+    assert '#include "triton/jit/pybind11_config.h"' in binding
+    assert "std::unique_ptr<Config> triton_config_ptr;" in binding
+    assert "triton::jit::ConfigFromPyDict(*config_dict)" in binding
+    assert "triton_config_ptr->set_implementation_index(" in binding
+    assert "config.implementation_index()" in binding
+    assert "if (triton_config_ptr)" in binding
+    assert "generated_dispatch::MakeAdd(*triton_config_ptr," in binding
+    assert "return (*op)(handle," in binding
+    assert "generated_dispatch::CallAdd(handle, config," in binding
+    assert "std::move(converted_first_tensor)" not in binding
+    assert "ValidateConfigFields" not in binding
+
+    declarations, _ = module._generate_generated_dispatch_entries(operator)
+    make_declarations = [
+        declaration for declaration in declarations if " MakeAdd(" in declaration
+    ]
+    assert len(make_declarations) == len(operator.constructors)
+
+
+def test_native_binding_does_not_scan_implementation_source_for_config_support(
+    tmp_path, monkeypatch
+):
+    module = _load_generator_module()
+    operator = _make_backend_add(module, tmp_path, monkeypatch, "native")
+
+    binding = module._generate_pybind11(operator)
+
+    assert "triton/jit/pybind11_config.h" not in binding
+    assert "config_dict" not in binding
+    assert "triton::jit::ConfigFromPyDict" not in binding
+
+
+def test_implementation_index_records_structured_backend_metadata(tmp_path):
+    module = _load_generator_module()
+    implementation_path = tmp_path / "triton" / "ops" / "add" / "jit.h"
+    implementation_path.parent.mkdir(parents=True)
+    implementation_path.write_text("class Operator<Add, Device::Type::kNvidia>;\n")
+
+    index = module._index_impl_headers([tmp_path], {"triton"})
+
+    assert index["Add"] == [
+        module._Implementation(implementation_path, "triton"),
+    ]
+
+
+def test_triton_config_is_only_exposed_for_constructor_shaped_calls():
+    module = _load_generator_module()
+    parsed = module._OperatorExtractor()("add_rms_norm")
+    operator = module._Operator(
+        parsed.name,
+        parsed.constructors,
+        parsed.calls,
+        implementations=[
+            module._Implementation(
+                pathlib.Path("triton/ops/add_rms_norm/jit.h"),
+                "triton",
+            )
+        ],
+    )
+    assert len(operator.constructors) == 1
+    assert len(operator.calls) == 2
+
+    binding = module._generate_pybind11(operator)
+
+    declarations, _ = module._generate_generated_dispatch_entries(operator)
+    make_declarations = [
+        declaration for declaration in declarations if " MakeAddRmsNorm(" in declaration
+    ]
+
+    assert binding.count('py::arg("config") = py::none()') == 1
+    assert binding.count("triton::jit::ConfigFromPyDict(*config_dict)") == 1
+    assert len(make_declarations) == len(operator.constructors)
+
+
+@pytest.mark.parametrize(
+    "serialized, expected_path, expected_backend",
+    (
+        (
+            "src/triton/ops/add/jit.h",
+            pathlib.Path("src/triton/ops/add/jit.h"),
+            "triton",
+        ),
+        (
+            {"path": "custom/add.h", "backend": "custom"},
+            pathlib.Path("custom/add.h"),
+            "custom",
+        ),
+    ),
+)
+def test_implementation_json_accepts_legacy_and_structured_entries(
+    serialized, expected_path, expected_backend
+):
+    module = _load_generator_module()
+
+    implementation = module._implementation_from_json(serialized)
+
+    assert implementation.path == expected_path
+    assert implementation.backend == expected_backend
+
+
+def test_triton_operator_discovery_uses_combined_operator_header(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    src_dir = pathlib.Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setattr(module, "_SRC_DIR", src_dir)
+    monkeypatch.setattr(module, "_BASE_DIR", src_dir / "base")
+    monkeypatch.setattr(module, "_GENERATION_DIR", tmp_path / "generated")
+
+    ops = module._get_all_ops(["nvidia"], with_triton=True)
+
+    assert {
+        implementation.path.relative_to(src_dir).as_posix()
+        for implementation in ops["add"]
+        if implementation.backend == "triton"
+    } == {"triton/ops/add/jit.h"}
+
+
+def test_shared_triton_config_parser_has_one_explicit_schema():
+    parser_header = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "src"
+        / "triton"
+        / "jit"
+        / "pybind11_config.h"
+    ).read_text()
+
+    for field in (
+        "auto_tuning",
+        "num_warps",
+        "num_stages",
+        "constexprs",
+        "warmup_milliseconds",
+        "repetition_milliseconds",
+        "keys",
+        "candidates",
+    ):
+        assert f'"{field}"' in parser_header
+
+    assert "namespace infini::ops::triton::jit" in parser_header
+    assert "namespace detail" in parser_header
