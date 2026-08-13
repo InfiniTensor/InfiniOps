@@ -564,11 +564,15 @@ if(INFINI_OPS_OPS AND NOT INFINI_OPS_OPS MATCHES "\\.json$")
 endif()
 
 set(INFINI_OPS_LINKED_SOURCES "")
+set(INFINI_OPS_LINKED_TORCH_SOURCES "")
+set(INFINI_OPS_LINKED_TVM_FFI_SOURCES "")
 set(INFINI_OPS_LINKED_LIBRARIES "")
 set(INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES "")
 set(INFINI_OPS_LINKED_RUNTIME_DIRS "")
+set(INFINI_OPS_LINKED_INCLUDE_DIRS "")
 set(INFINI_OPS_LINKED_TRANSPORTS "")
 set(_infini_ops_linked_uses_torch FALSE)
+set(_infini_ops_linked_uses_tvm_ffi FALSE)
 
 if(WITH_LINKED)
     if(NOT DEVICE_LIST)
@@ -578,6 +582,7 @@ if(WITH_LINKED)
 
     file(GLOB_RECURSE _linked_resolution_inputs CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/src/linked/*.cc"
+        "${PROJECT_SOURCE_DIR}/src/linked/*.cu"
         "${PROJECT_SOURCE_DIR}/src/linked/*.h"
         "${PROJECT_SOURCE_DIR}/src/linked/*.yaml")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -631,6 +636,8 @@ if(WITH_LINKED)
     foreach(_linked_transport IN LISTS INFINI_OPS_LINKED_TRANSPORTS)
         if(_linked_transport STREQUAL "torch")
             set(_infini_ops_linked_uses_torch TRUE)
+        elseif(_linked_transport STREQUAL "tvm_ffi")
+            set(_infini_ops_linked_uses_tvm_ffi TRUE)
         else()
             message(FATAL_ERROR
                 "Unsupported linked operator transport `${_linked_transport}`.")
@@ -755,9 +762,15 @@ if(WITH_TORCH)
 endif()
 
 if(_infini_ops_linked_uses_torch)
-    list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_SOURCES})
+    list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_TORCH_SOURCES})
 endif()
 
+
+if(_infini_ops_linked_uses_tvm_ffi)
+    target_sources(infiniops PRIVATE ${INFINI_OPS_LINKED_TVM_FFI_SOURCES})
+    target_include_directories(infiniops PRIVATE
+        ${INFINI_OPS_LINKED_INCLUDE_DIRS})
+endif()
 if(WITH_CAMBRICON AND TORCH_SOURCES)
     execute_process(
         COMMAND "${_TORCH_PYTHON}" -c
