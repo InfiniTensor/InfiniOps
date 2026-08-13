@@ -13,8 +13,6 @@
 
 namespace infini::ops::triton::jit {
 
-struct AutoTuningOptions;
-
 class Config : public Cloneable<infini::ops::Config, Config> {
  public:
   using Constexprs = std::map<std::string, int, std::less<>>;
@@ -25,8 +23,6 @@ class Config : public Cloneable<infini::ops::Config, Config> {
       : num_warps_(num_warps),
         num_stages_(num_stages),
         constexprs_(std::move(constexprs)) {}
-
-  virtual const AutoTuningOptions* auto_tuning_options() const;
 
   unsigned num_warps() const { return num_warps_; }
 
@@ -71,7 +67,7 @@ class AutoTuningConfig : public Cloneable<Config, AutoTuningConfig> {
   explicit AutoTuningConfig(AutoTuningOptions options)
       : options_(std::move(options)) {}
 
-  const AutoTuningOptions* auto_tuning_options() const override;
+  const AutoTuningOptions& options() const { return options_; }
 
  private:
   AutoTuningOptions options_;

@@ -15,6 +15,7 @@ namespace infini::ops {
 
 namespace {
 
+using triton::jit::AutoTuningConfig;
 using triton::jit::AutoTuningOptions;
 using triton::jit::Config;
 using triton::jit::Grid;
@@ -252,10 +253,12 @@ void Operator<Add, kDev, 10>::operator()(const Tensor input, const Tensor other,
 
   const auto& default_config = DefaultConfig();
   const auto& config = this->config(default_config);
-  const auto* auto_tuning_options_ptr = config.auto_tuning_options();
-  if (auto_tuning_options_ptr != nullptr) {
+  const auto* auto_tuning_config_ptr =
+      dynamic_cast<const AutoTuningConfig*>(&config);
+  if (auto_tuning_config_ptr != nullptr) {
     const auto options =
-        NormalizeAutoTuningOptions(*auto_tuning_options_ptr, default_config);
+        NormalizeAutoTuningOptions(auto_tuning_config_ptr->options(),
+                                   default_config);
     assert(options.warmup_milliseconds >= 0 &&
            options.repetition_milliseconds > 0 &&
            "Triton JIT `Add` auto-tuning durations are invalid.");

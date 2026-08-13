@@ -213,8 +213,7 @@ if(WITH_TRITON)
         pybind11::headers)
     target_sources(infiniops PRIVATE
         triton/jit/cache.cc
-        triton/jit/compiler.cc
-        triton/jit/config_.cc)
+        triton/jit/compiler.cc)
     file(GLOB_RECURSE TRITON_SOURCES CONFIGURE_DEPENDS "triton/ops/*/*.cc")
     target_sources(infiniops PRIVATE ${TRITON_SOURCES})
 endif()
