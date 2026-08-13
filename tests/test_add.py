@@ -122,6 +122,19 @@ def test_add(
     rtol,
     atol,
 ):
+    if implementation_index == 10 and (
+        input_shape != out_shape
+        or other_shape != out_shape
+        or input_strides is not None
+        or other_strides is not None
+        or out_strides is not None
+        or alpha not in (None, 1.0)
+    ):
+        pytest.skip(
+            "Triton `Add` only supports contiguous tensors with identical shapes "
+            "and alpha equal to one."
+        )
+
     if device == "musa" and dtype in _UINT_DTYPES:
         pytest.skip(
             "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
@@ -168,7 +181,7 @@ def test_add(
             "auto_tuning": {
                 "warmup_milliseconds": 0,
                 "repetition_milliseconds": 1,
-                "keys": ["n_elements"],
+                "keys": ["num_elements"],
                 "candidates": [
                     {
                         "num_warps": 4,

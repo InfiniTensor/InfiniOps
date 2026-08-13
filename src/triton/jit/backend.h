@@ -21,6 +21,8 @@ struct Grid {
   unsigned z{1};
 };
 
+namespace detail {
+
 struct Target {
   std::string backend;
 
@@ -101,8 +103,6 @@ class Kernel {
   unsigned shared_memory_size_;
 };
 
-namespace detail {
-
 template <Device::Type kDev>
 struct BackendTraits;
 
@@ -111,10 +111,8 @@ struct BackendTraits<Device::Type::kNvidia> {
   static constexpr const char* kName = "cuda";
 };
 
-}  // namespace detail
-
 template <Device::Type kDev,
-          typename = std::void_t<decltype(detail::BackendTraits<kDev>::kName)>>
+          typename = std::void_t<decltype(BackendTraits<kDev>::kName)>>
 class Backend {
  public:
   using Driver = ::infini::rt::driver::Driver<kDev>;
@@ -148,8 +146,8 @@ class Backend {
            "Triton JIT failed to get the warp size.");
     if (status != Runtime::kSuccess) return {};
 
-    return {detail::BackendTraits<kDev>::kName,
-            std::to_string(major * 10 + minor), warp_size};
+    return {BackendTraits<kDev>::kName, std::to_string(major * 10 + minor),
+            warp_size};
   }
 
   static int CurrentDevice() {
@@ -299,6 +297,8 @@ class ScopedDevice {
 
   bool restore_{false};
 };
+
+}  // namespace detail
 
 }  // namespace infini::ops::triton::jit
 

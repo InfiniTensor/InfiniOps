@@ -2,17 +2,16 @@
 #define INFINI_OPS_TRITON_OPS_ADD_JIT_H_
 
 #include "base/add.h"
-#include "triton/jit/jit.h"
 
 namespace infini::ops {
 
-template <Device::Type kDev>
-class Operator<Add, kDev, 10> : public triton::jit::OperatorBase<Add, kDev> {
+template <>
+class Operator<Add, Device::Type::kNvidia, 10> : public Add {
  public:
-  using triton::jit::OperatorBase<Add, kDev>::OperatorBase;
+  using Add::Add;
 
   void operator()(const Tensor input, const Tensor other, const double alpha,
-                  Tensor out) const;
+                  Tensor out) const override;
 };
 
 }  // namespace infini::ops

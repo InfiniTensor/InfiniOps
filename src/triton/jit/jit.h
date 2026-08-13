@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <initializer_list>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -19,26 +21,6 @@
 #include "triton/jit/config_.h"
 
 namespace infini::ops::triton::jit {
-
-template <typename Op, Device::Type kDev, typename = void>
-class OperatorBase {};
-
-template <typename Op, Device::Type kDev>
-class OperatorBase<Op, kDev,
-                   std::void_t<decltype(Backend<kDev>::CurrentTarget())>>
-    : public Op {
- public:
-  using Op::Op;
-
- protected:
-  const Config& config(const Config& default_config) const {
-    if (!this->config_ptr_) return default_config;
-
-    const auto* config_ptr =
-        dynamic_cast<const Config*>(this->config_ptr_.get());
-    return config_ptr == nullptr ? default_config : *config_ptr;
-  }
-};
 
 namespace detail {
 
@@ -222,7 +204,7 @@ const Kernel<kDev>* GetOrLoadKernel(const Target& target, int device_id,
                                     const std::string& operator_name,
                                     const std::string& signature,
                                     const Config& config) {
-  using Backend = jit::Backend<kDev>;
+  using CurrentBackend = Backend<kDev>;
   auto key = KernelCacheKey::Build(target, device_id, compilation_fingerprint,
                                    operator_name, signature, config);
   auto& cache = KernelCache<kDev>::Instance();
@@ -249,79 +231,48 @@ const Kernel<kDev>* GetOrLoadKernel(const Target& target, int device_id,
          "Triton JIT scratch memory is not supported.");
   if (!scratch_memory_supported) return nullptr;
 
-  auto kernel_ptr = Backend::LoadKernel(artifact->binary, artifact->metadata);
+  auto kernel_ptr =
+      CurrentBackend::LoadKernel(artifact->binary, artifact->metadata);
   assert(kernel_ptr != nullptr && "Triton JIT failed to load a kernel.");
   if (kernel_ptr == nullptr) return nullptr;
 
   return cache.InsertOrGet(key, std::move(kernel_ptr));
 }
 
-}  // namespace detail
-
-template <Device::Type kDev, typename... Args>
-void Launch(const std::string& operator_name, void* stream, Grid grid,
-            const Config& config, Args&&... args) {
-  using Backend = jit::Backend<kDev>;
-
-  const Target target = Backend::CurrentTarget();
-  const int device_id = Backend::CurrentDevice();
-  const std::string compilation_fingerprint =
-      CompilationFingerprint(operator_name);
-  const bool context_valid = !target.backend.empty() &&
-                             !target.architecture.empty() &&
-                             target.warp_size > 0 && device_id >= 0 &&
-                             !compilation_fingerprint.empty();
-  assert(context_valid && "Triton JIT launch context is unavailable.");
-  if (!context_valid) return;
-
-  detail::ArgumentPack arguments;
-  (arguments.Push(std::forward<Args>(args)), ...);
+template <Device::Type kDev, typename GridFunction>
+void LaunchConfigured(const Target& target, int device_id,
+                      const std::string& compilation_fingerprint,
+                      const std::string& operator_name, void* stream,
+                      const Config& config, GridFunction& grid_function,
+                      ArgumentPack& arguments) {
+  using CurrentBackend = Backend<kDev>;
+  const auto grid = grid_function(config);
+  assert(grid.has_value() && "Triton JIT grid is invalid.");
+  if (!grid.has_value()) return;
 
   const std::string signature = arguments.RuntimeSignature();
-  assert(arguments.valid() && "Triton JIT arguments are invalid.");
-  if (!arguments.valid()) return;
   const auto* kernel_ptr =
-      detail::GetOrLoadKernel<kDev>(target, device_id, compilation_fingerprint,
-                                    operator_name, signature, config);
+      GetOrLoadKernel<kDev>(target, device_id, compilation_fingerprint,
+                            operator_name, signature, config);
   assert(kernel_ptr != nullptr && "Triton JIT failed to load a kernel.");
   if (kernel_ptr == nullptr) return;
 
   arguments.AddScratchArguments();
-  Backend::Launch(*kernel_ptr, grid, target.warp_size, stream,
-                  arguments.launch_arguments());
+  CurrentBackend::Launch(*kernel_ptr, *grid, target.warp_size, stream,
+                         arguments.launch_arguments());
 }
 
-template <Device::Type kDev, typename GridFunction, typename... Args>
-void LaunchWithAutoTuning(const std::string& operator_name, void* stream,
-                          const AutoTuningOptions& options,
-                          const std::vector<Tensor::Size>& key_values,
-                          GridFunction grid_function, Args&&... args) {
-  using Backend = jit::Backend<kDev>;
-  assert(!options.candidates.empty() &&
-         options.keys.size() == key_values.size() &&
-         "Triton JIT auto-tuning options are invalid.");
-  if (options.candidates.empty() || options.keys.size() != key_values.size()) {
-    return;
-  }
-
-  const Target target = Backend::CurrentTarget();
-  const int device_id = Backend::CurrentDevice();
-  const std::string compilation_fingerprint =
-      CompilationFingerprint(operator_name);
-  const bool context_valid = !target.backend.empty() &&
-                             !target.architecture.empty() &&
-                             target.warp_size > 0 && device_id >= 0 &&
-                             !compilation_fingerprint.empty();
-  assert(context_valid && "Triton JIT launch context is unavailable.");
-  if (!context_valid) return;
-
-  detail::ArgumentPack arguments;
-  (arguments.Push(std::forward<Args>(args)), ...);
-
+template <Device::Type kDev, typename GridFunction>
+void LaunchAutoTuned(const Target& target, int device_id,
+                     const std::string& compilation_fingerprint,
+                     const std::string& operator_name, void* stream,
+                     const AutoTuningOptions& options,
+                     const std::vector<std::string>& key_names,
+                     const std::vector<std::uint64_t>& key_values,
+                     GridFunction& grid_function, ArgumentPack& arguments) {
+  using CurrentBackend = Backend<kDev>;
   std::vector<Grid> grids;
   grids.reserve(options.candidates.size());
-  assert(arguments.valid() && "Triton JIT arguments are invalid.");
-  if (!arguments.valid()) return;
   for (const auto& candidate : options.candidates) {
     const auto grid = grid_function(candidate);
     assert(grid.has_value() && "Triton JIT grid is invalid.");
@@ -329,16 +280,10 @@ void LaunchWithAutoTuning(const std::string& operator_name, void* stream,
     grids.push_back(*grid);
   }
 
-  std::vector<std::uint64_t> unsigned_key_values;
-  unsigned_key_values.reserve(key_values.size());
-  for (const auto value : key_values) {
-    unsigned_key_values.push_back(static_cast<std::uint64_t>(value));
-  }
-
+  const std::string signature = arguments.RuntimeSignature();
   const auto auto_tuning_key = AutoTuningCacheKey::Build(
-      target, compilation_fingerprint, operator_name,
-      arguments.RuntimeSignature(), options.keys, unsigned_key_values,
-      options.candidates, grids, options.warmup_milliseconds,
+      target, compilation_fingerprint, operator_name, signature, key_names,
+      key_values, options.candidates, grids, options.warmup_milliseconds,
       options.repetition_milliseconds);
 
   auto& auto_tuning_cache = AutoTuningCache::Instance();
@@ -348,7 +293,6 @@ void LaunchWithAutoTuning(const std::string& operator_name, void* stream,
     candidates.reserve(options.candidates.size());
     for (std::size_t index = 0; index < options.candidates.size(); ++index) {
       const auto& config = options.candidates[index];
-      const std::string signature = arguments.RuntimeSignature();
       const auto kernel_key =
           KernelCacheKey::Build(target, device_id, compilation_fingerprint,
                                 operator_name, signature, config);
@@ -371,16 +315,114 @@ void LaunchWithAutoTuning(const std::string& operator_name, void* stream,
   const auto grid = grid_function(*best_config);
   assert(grid.has_value() && "Triton JIT grid is invalid.");
   if (!grid.has_value()) return;
-  const std::string signature = arguments.RuntimeSignature();
   const auto* kernel_ptr =
-      detail::GetOrLoadKernel<kDev>(target, device_id, compilation_fingerprint,
-                                    operator_name, signature, *best_config);
+      GetOrLoadKernel<kDev>(target, device_id, compilation_fingerprint,
+                            operator_name, signature, *best_config);
   assert(kernel_ptr != nullptr && "Triton JIT failed to load a kernel.");
   if (kernel_ptr == nullptr) return;
 
   arguments.AddScratchArguments();
-  Backend::Launch(*kernel_ptr, *grid, target.warp_size, stream,
-                  arguments.launch_arguments());
+  CurrentBackend::Launch(*kernel_ptr, *grid, target.warp_size, stream,
+                         arguments.launch_arguments());
+}
+
+}  // namespace detail
+
+template <Device::Type kDev, typename GridFunction, typename... Args>
+void Launch(
+    const std::string& operator_name, int device_id, void* stream,
+    const ::infini::ops::Config* config_ptr, const Config& default_config,
+    std::initializer_list<std::pair<std::string_view, std::uint64_t>>
+        tuning_values,
+    GridFunction grid_function, Args&&... args) {
+  using CurrentBackend = detail::Backend<kDev>;
+
+  auto device_guard = detail::ScopedDevice<kDev>::Create(device_id);
+  assert(device_guard.has_value() &&
+         "Triton JIT failed to select a device.");
+  if (!device_guard.has_value()) return;
+
+  const detail::Target target = CurrentBackend::CurrentTarget();
+  const std::string compilation_fingerprint =
+      detail::CompilationFingerprint(operator_name);
+  const bool context_valid = !target.backend.empty() &&
+                             !target.architecture.empty() &&
+                             target.warp_size > 0 &&
+                             !compilation_fingerprint.empty();
+  assert(context_valid && "Triton JIT launch context is unavailable.");
+  if (!context_valid) return;
+
+  detail::ArgumentPack arguments;
+  (arguments.Push(std::forward<Args>(args)), ...);
+  assert(arguments.valid() && "Triton JIT arguments are invalid.");
+  if (!arguments.valid()) return;
+
+  const auto* auto_tuning_config_ptr =
+      dynamic_cast<const detail::AutoTuningConfig*>(config_ptr);
+  if (auto_tuning_config_ptr != nullptr) {
+    detail::AutoTuningOptions options = auto_tuning_config_ptr->options();
+    for (auto& candidate : options.candidates) {
+      candidate = candidate.WithDefaultConstexprs(default_config);
+    }
+
+    const bool options_valid =
+        !options.candidates.empty() && options.warmup_milliseconds >= 0 &&
+        options.repetition_milliseconds > 0;
+    assert(options_valid && "Triton JIT auto-tuning options are invalid.");
+    if (!options_valid) return;
+
+    std::vector<std::string> key_names;
+    std::vector<std::uint64_t> key_values;
+    if (options.keys.empty()) {
+      key_names.reserve(tuning_values.size());
+      key_values.reserve(tuning_values.size());
+      for (const auto& [name, value] : tuning_values) {
+        key_names.emplace_back(name);
+        key_values.push_back(value);
+      }
+    } else {
+      key_names.reserve(options.keys.size());
+      key_values.reserve(options.keys.size());
+      for (const auto& requested_name : options.keys) {
+        bool requested_twice = false;
+        for (const auto& name : key_names) {
+          if (name == requested_name) requested_twice = true;
+        }
+
+        std::size_t matches = 0;
+        std::uint64_t matched_value = 0;
+        for (const auto& [name, value] : tuning_values) {
+          if (name == requested_name) {
+            ++matches;
+            matched_value = value;
+          }
+        }
+
+        const bool key_valid = !requested_twice && matches == 1;
+        assert(key_valid &&
+               "Triton JIT auto-tuning keys must identify exactly one "
+               "tuning value.");
+        if (!key_valid) return;
+
+        key_names.push_back(requested_name);
+        key_values.push_back(matched_value);
+      }
+    }
+
+    detail::LaunchAutoTuned<kDev>(
+        target, device_id, compilation_fingerprint, operator_name, stream,
+        options, key_names, key_values, grid_function, arguments);
+    return;
+  }
+
+  const auto* jit_config_ptr = dynamic_cast<const Config*>(config_ptr);
+  const Config& config =
+      jit_config_ptr == nullptr ? default_config : *jit_config_ptr;
+  const Config effective_config =
+      config.WithDefaultConstexprs(default_config);
+  detail::LaunchConfigured<kDev>(target, device_id, compilation_fingerprint,
+                                 operator_name, stream, effective_config,
+                                 grid_function, arguments);
 }
 
 }  // namespace infini::ops::triton::jit

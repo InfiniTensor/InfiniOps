@@ -15,6 +15,8 @@
 
 namespace infini::ops::triton::jit {
 
+namespace detail {
+
 struct KernelArtifact {
   KernelMetadata metadata;
 
@@ -111,6 +113,8 @@ class AutoTuningCache {
 
   std::unordered_map<std::string, Config> entries_;
 };
+
+}  // namespace detail
 
 }  // namespace infini::ops::triton::jit
 

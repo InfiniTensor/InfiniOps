@@ -52,6 +52,8 @@ class Config : public Cloneable<infini::ops::Config, Config> {
   Constexprs constexprs_;
 };
 
+namespace detail {
+
 struct AutoTuningOptions {
   std::vector<std::string> keys;
 
@@ -72,6 +74,8 @@ class AutoTuningConfig : public Cloneable<Config, AutoTuningConfig> {
  private:
   AutoTuningOptions options_;
 };
+
+}  // namespace detail
 
 }  // namespace infini::ops::triton::jit
 

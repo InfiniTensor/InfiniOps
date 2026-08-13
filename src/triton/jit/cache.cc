@@ -12,7 +12,7 @@
 
 namespace py = pybind11;
 
-namespace infini::ops::triton::jit {
+namespace infini::ops::triton::jit::detail {
 namespace {
 
 class IdentityBuilder {
@@ -229,4 +229,4 @@ void AutoTuningCache::Insert(const AutoTuningCacheKey& key,
   assert(written.has_value() && "Triton JIT auto-tuning cache write failed.");
 }
 
-}  // namespace infini::ops::triton::jit
+}  // namespace infini::ops::triton::jit::detail

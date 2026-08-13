@@ -10,6 +10,8 @@
 
 namespace infini::ops::triton::jit {
 
+namespace detail {
+
 struct AutoTuningCandidate {
   Config config;
 
@@ -33,6 +35,8 @@ std::optional<Config> AutoTune(
     const std::vector<AutoTuningCandidate>& candidates,
     const std::vector<Argument>& arguments, void* stream,
     int warmup_milliseconds, int repetition_milliseconds);
+
+}  // namespace detail
 
 }  // namespace infini::ops::triton::jit
 

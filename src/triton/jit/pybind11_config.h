@@ -112,7 +112,7 @@ inline std::unique_ptr<infini::ops::Config> ConfigFromPyDict(
   auto options = detail::ParseAutoTuningOptions(
       config_dict["auto_tuning"].cast<pybind11::dict>());
 
-  return std::make_unique<AutoTuningConfig>(std::move(options));
+  return std::make_unique<detail::AutoTuningConfig>(std::move(options));
 }
 
 }  // namespace infini::ops::triton::jit

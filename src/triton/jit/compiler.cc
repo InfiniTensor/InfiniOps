@@ -15,7 +15,7 @@
 
 namespace py = pybind11;
 
-namespace infini::ops::triton::jit {
+namespace infini::ops::triton::jit::detail {
 namespace {
 
 bool PythonIsReady() {
@@ -209,4 +209,4 @@ std::optional<Config> AutoTune(
   return candidates[static_cast<std::size_t>(*best_index)].config;
 }
 
-}  // namespace infini::ops::triton::jit
+}  // namespace infini::ops::triton::jit::detail
