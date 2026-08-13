@@ -600,6 +600,34 @@ def test_torch_system_compiler_receives_host_range_profile_definition():
     ) in cmake
 
 
+def test_explicit_op_allowlist_precedes_implicit_ops_json():
+    cmake = (pathlib.Path(__file__).parents[1] / "src" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+    wrapper = (
+        pathlib.Path(__file__).parents[1] / "scripts" / "generate_wrappers.py"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'elseif(NOT INFINI_OPS_OPS AND EXISTS "${PROJECT_SOURCE_DIR}/ops.json")'
+        in cmake
+    )
+    assert 'if(INFINI_OPS_OPS AND NOT INFINI_OPS_OPS MATCHES "\\\\.json$")' in cmake
+    assert "implicit_config_path" not in wrapper
+
+
+def test_operator_selection_tracks_implementation_header_changes():
+    cmake = (pathlib.Path(__file__).parents[1] / "src" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+
+    for root in ("native", "torch", "ninetoothed", "linked", "triton"):
+        assert f'"${{PROJECT_SOURCE_DIR}}/src/{root}/*.h"' in cmake
+    assert "${_infini_ops_implementation_headers}" in cmake
+    assert '"${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py"' in cmake
+    assert '"${PROJECT_SOURCE_DIR}/scripts/torch_ops.yaml"' in cmake
+
+
 def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
     tmp_path, monkeypatch
 ):
@@ -702,6 +730,62 @@ def test_filter_ops_strict_rejects_unavailable_ops():
         assert "missing" in str(exc)
     else:
         raise AssertionError("strict unknown ops should fail")
+
+
+def test_select_ops_from_config_filters_implementation_slots(tmp_path):
+    module = _load_generator_module()
+    slot_0 = tmp_path / "slot_0.h"
+    slot_16 = tmp_path / "slot_16.h"
+    slot_0.write_text("class Operator<Add, Device::Type::kCpu> : public Add {};")
+    slot_16.write_text("class Operator<Add, Device::Type::kCpu, 16> : public Add {};")
+    implementation_0 = module._Implementation(slot_0, "native")
+    implementation_16 = module._Implementation(slot_16, "native")
+    config = {
+        "add": {"headers": None, "implementations": (16,)},
+    }
+
+    assert module._select_ops_from_config(
+        {"add": [implementation_0, implementation_16]}, config, "ops.json"
+    ) == {"add": [implementation_16]}
+
+
+def test_select_ops_from_config_rejects_missing_slot(tmp_path):
+    module = _load_generator_module()
+    slot_0 = tmp_path / "slot_0.h"
+    slot_0.write_text("class Operator<Add, Device::Type::kCpu> : public Add {};")
+    implementation_0 = module._Implementation(slot_0, "native")
+    config = {
+        "add": {"headers": None, "implementations": (16,)},
+    }
+
+    try:
+        module._select_ops_from_config({"add": [implementation_0]}, config, "ops.json")
+    except ValueError as exc:
+        assert "slot(s) 16" in str(exc)
+    else:
+        raise AssertionError("unavailable implementation slot should fail")
+
+
+def test_select_ops_from_config_preserves_path_and_backend_descriptors():
+    module = _load_generator_module()
+    config = {
+        "add": {
+            "headers": [
+                "src/native/cpu/ops/add/add.h",
+                {"path": "custom/add.h", "backend": "custom"},
+            ],
+            "implementations": None,
+        },
+    }
+
+    assert module._select_ops_from_config({}, config, "ops.json") == {
+        "add": [
+            module._Implementation(
+                pathlib.Path("src/native/cpu/ops/add/add.h"), "native"
+            ),
+            module._Implementation(pathlib.Path("custom/add.h"), "custom"),
+        ]
+    }
 
 
 def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path):

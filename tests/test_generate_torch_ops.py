@@ -21,6 +21,41 @@ def _load_generator_module():
     return module
 
 
+def test_select_op_names_honors_slot_8_and_legacy_headers():
+    module = _load_generator_module()
+    config = {
+        "default_all": {"headers": None, "implementations": None},
+        "default_native": {"headers": None, "implementations": (0,)},
+        "explicit_torch": {"headers": None, "implementations": (8,)},
+        "legacy": {"headers": ["legacy.h"], "implementations": None},
+    }
+
+    assert module._select_op_names(
+        None,
+        ["default_all", "default_native"],
+        config,
+    ) == ["default_all", "explicit_torch"]
+    assert module._select_op_names(
+        ["explicit_torch"],
+        ["default_all", "default_native"],
+        config,
+    ) == ["explicit_torch"]
+
+
+def test_select_op_names_maps_public_names_to_aten_names():
+    module = _load_generator_module()
+    config = {
+        "div": {"headers": None, "implementations": (8,)},
+        "internal_log_softmax": {"headers": None, "implementations": (8,)},
+    }
+
+    assert module._select_op_names(
+        None,
+        ["div", "div_", "_log_softmax"],
+        config,
+    ) == ["div", "div_", "_log_softmax"]
+
+
 def test_load_aten_entries_uses_packaged_torchgen(monkeypatch):
     module = _load_generator_module()
     entries = [{"func": "relu.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)"}]

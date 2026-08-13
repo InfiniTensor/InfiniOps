@@ -36,6 +36,9 @@ import sys
 import yaml
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPTS_DIR))
+import ops_config  # noqa: E402
+
 _REPO_ROOT = _SCRIPTS_DIR.parent
 _OPS_YAML_PATH = _SCRIPTS_DIR / "torch_ops.yaml"
 _BASE_DIR = _REPO_ROOT / "src" / "base"
@@ -1644,12 +1647,41 @@ def _emit(name: str, ops: list[Op], *, emit_base: bool) -> set[pathlib.Path]:
     return emitted_paths
 
 
+def _select_op_names(cli_ops, default_ops, config):
+    if config is None:
+        return cli_ops or default_ops
+
+    aten_names_by_public_name = collections.defaultdict(list)
+    for op_name in default_ops:
+        aten_names_by_public_name[_public_op_name(op_name)].append(op_name)
+
+    selected_public_names = ops_config.torch_op_names(
+        config, aten_names_by_public_name, _PYTORCH_SLOT
+    )
+    selected = [
+        aten_name
+        for public_name in selected_public_names
+        for aten_name in aten_names_by_public_name.get(public_name, (public_name,))
+    ]
+
+    if cli_ops:
+        allowed = set(cli_ops)
+        selected = [op_name for op_name in selected if op_name in allowed]
+
+    return selected
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--ops",
         nargs="*",
         help="Override the op allowlist. If omitted, reads `scripts/torch_ops.yaml`.",
+    )
+    parser.add_argument(
+        "--ops-config",
+        type=pathlib.Path,
+        help="Path to an `ops.json` operator and implementation selection.",
     )
     parser.add_argument(
         "--pytorch-version",
@@ -1666,7 +1698,9 @@ def main() -> int:
     global _CLANG_FORMAT
     _CLANG_FORMAT = _find_clang_format()
 
-    op_names = args.ops or yaml.safe_load(_OPS_YAML_PATH.read_text())
+    default_ops = yaml.safe_load(_OPS_YAML_PATH.read_text())
+    config = ops_config.load_ops_config(args.ops_config) if args.ops_config else None
+    op_names = _select_op_names(args.ops, default_ops, config)
     aten_entries = _load_aten_entries(args.pytorch_version)
 
     skipped: list[tuple[str, str]] = []

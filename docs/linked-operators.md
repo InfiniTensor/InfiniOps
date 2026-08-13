@@ -86,6 +86,12 @@ cmake -S . -B build \
   -DINFINI_OPS_OPS=silu_and_mul
 ```
 
+To resolve only selected linked implementation slots, pass an `ops.json` file
+through `INFINI_OPS_OPS`. The resolver reads each linked provider's slot from
+its sibling C++ header before locating external libraries, so an unselected
+provider does not add a package or shared-library dependency. See
+[Build configuration](build.md) for the file format.
+
 The `torch` transport uses the installed PyTorch C++ headers and libraries for
 `at::Tensor`, but it does not enable the standard `src/torch` operator backend.
 Provider and PyTorch C++ ABIs must match. Configuration fails before compilation
