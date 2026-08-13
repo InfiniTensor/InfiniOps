@@ -1,12 +1,17 @@
 #ifndef INFINI_OPS_OPERATOR_H_
 #define INFINI_OPS_OPERATOR_H_
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -18,16 +23,8 @@
 #include "dispatcher.h"
 #include "handle.h"
 #include "host_range_profiler.h"
-#include "tensor.h"
-
-#include <algorithm>
-#include <chrono>
-#include <cstdlib>
-#include <iostream>
-#include <limits>
-#include <string>
-
 #include "runtime.h"
+#include "tensor.h"
 #include "tuning.h"
 #include "tuning_utils.h"
 
@@ -278,7 +275,8 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
                                         const Tensor tensor, Args&&... args) {
-    Config resolved = ResolveConfig<Key>(config, tensor.device().type(), tensor, args...);
+    Config resolved =
+        ResolveConfig<Key>(config, tensor.device().type(), tensor, args...);
     return MakeWithDevice(resolved, tensor.device().type(), tensor,
                           std::forward<Args>(args)...);
   }
@@ -295,7 +293,8 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    Config resolved = ResolveConfig<Key>(config, tensors.front().device().type(), tensors, args...);
+    Config resolved = ResolveConfig<Key>(
+        config, tensors.front().device().type(), tensors, args...);
     return MakeWithDevice(resolved, tensors.front().device().type(), tensors,
                           std::forward<Args>(args)...);
   }
@@ -630,7 +629,8 @@ Config ResolveConfigOnline(const Handle& handle, const Config& config,
       } else {
         if (indices.size() == 1) {
           chosen = indices.front();
-          TuningManager::Instance().Record(op_name, dev_type, signature, chosen);
+          TuningManager::Instance().Record(op_name, dev_type, signature,
+                                           chosen);
           std::cout << "[Tuning] " << op_name << " on "
                     << Device::StringFromType(dev_type)
                     << ": single impl, chose index " << chosen << std::endl;
@@ -645,11 +645,12 @@ Config ResolveConfigOnline(const Handle& handle, const Config& config,
               chosen = idx;
             }
           }
-          TuningManager::Instance().Record(op_name, dev_type, signature, chosen);
+          TuningManager::Instance().Record(op_name, dev_type, signature,
+                                           chosen);
           std::cout << "[Tuning] " << op_name << " on "
                     << Device::StringFromType(dev_type) << ": benchmarked "
-                    << indices.size() << " impls, chose index " << chosen << " ("
-                    << best_time * 1e6 << " us)" << std::endl;
+                    << indices.size() << " impls, chose index " << chosen
+                    << " (" << best_time * 1e6 << " us)" << std::endl;
         }
       }
 
