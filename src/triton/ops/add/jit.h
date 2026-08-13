@@ -33,9 +33,8 @@ class Add : public ::infini::ops::Add {
            "Triton JIT `Add` requires input and output shapes to match.");
     if (!shapes_match) return;
 
-    const bool tensors_are_contiguous = input.IsContiguous() &&
-                                        other.IsContiguous() &&
-                                        out.IsContiguous();
+    const bool tensors_are_contiguous =
+        input.IsContiguous() && other.IsContiguous() && out.IsContiguous();
     assert(tensors_are_contiguous &&
            "Triton JIT `Add` requires contiguous tensors.");
     if (!tensors_are_contiguous) return;

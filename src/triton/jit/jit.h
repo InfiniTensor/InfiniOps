@@ -63,10 +63,10 @@ inline const char* TritonTypeName(::infini::ops::DataType data_type) {
 template <typename T>
 constexpr ScalarTypeDescriptor ScalarDescriptor() {
   using Value = std::remove_cv_t<T>;
-  static_assert(std::is_integral_v<Value> &&
-                    (sizeof(Value) == 1 || sizeof(Value) == 2 ||
-                     sizeof(Value) == 4 || sizeof(Value) == 8),
-                "Triton JIT does not support this scalar argument type.");
+  static_assert(
+      std::is_integral_v<Value> && (sizeof(Value) == 1 || sizeof(Value) == 2 ||
+                                    sizeof(Value) == 4 || sizeof(Value) == 8),
+      "Triton JIT does not support this scalar argument type.");
   if constexpr (std::is_same_v<Value, bool>) {
     return {"i32", DataType::kInt32};
   } else if constexpr (std::is_integral_v<Value> && sizeof(Value) == 1) {
@@ -327,26 +327,24 @@ void LaunchAutoTuned(const Target& target, int device_id,
 }  // namespace detail
 
 template <Device::Type kDev, typename GridFunction, typename... Args>
-void Launch(
-    const std::string& operator_name, int device_id, void* stream,
-    const ::infini::ops::Config* config_ptr, const Config& default_config,
-    std::initializer_list<std::pair<std::string_view, std::uint64_t>>
-        tuning_values,
-    GridFunction grid_function, Args&&... args) {
+void Launch(const std::string& operator_name, int device_id, void* stream,
+            const ::infini::ops::Config* config_ptr,
+            const Config& default_config,
+            std::initializer_list<std::pair<std::string_view, std::uint64_t>>
+                tuning_values,
+            GridFunction grid_function, Args&&... args) {
   using CurrentBackend = detail::Backend<kDev>;
 
   auto device_guard = detail::ScopedDevice<kDev>::Create(device_id);
-  assert(device_guard.has_value() &&
-         "Triton JIT failed to select a device.");
+  assert(device_guard.has_value() && "Triton JIT failed to select a device.");
   if (!device_guard.has_value()) return;
 
   const detail::Target target = CurrentBackend::CurrentTarget();
   const std::string compilation_fingerprint =
       detail::CompilationFingerprint(operator_name);
-  const bool context_valid = !target.backend.empty() &&
-                             !target.architecture.empty() &&
-                             target.warp_size > 0 &&
-                             !compilation_fingerprint.empty();
+  const bool context_valid =
+      !target.backend.empty() && !target.architecture.empty() &&
+      target.warp_size > 0 && !compilation_fingerprint.empty();
   assert(context_valid && "Triton JIT launch context is unavailable.");
   if (!context_valid) return;
 
@@ -363,9 +361,9 @@ void Launch(
       candidate = candidate.WithDefaultConstexprs(default_config);
     }
 
-    const bool options_valid =
-        !options.candidates.empty() && options.warmup_milliseconds >= 0 &&
-        options.repetition_milliseconds > 0;
+    const bool options_valid = !options.candidates.empty() &&
+                               options.warmup_milliseconds >= 0 &&
+                               options.repetition_milliseconds > 0;
     assert(options_valid && "Triton JIT auto-tuning options are invalid.");
     if (!options_valid) return;
 
@@ -407,17 +405,16 @@ void Launch(
       }
     }
 
-    detail::LaunchAutoTuned<kDev>(
-        target, device_id, compilation_fingerprint, operator_name, stream,
-        options, key_names, key_values, grid_function, arguments);
+    detail::LaunchAutoTuned<kDev>(target, device_id, compilation_fingerprint,
+                                  operator_name, stream, options, key_names,
+                                  key_values, grid_function, arguments);
     return;
   }
 
   const auto* jit_config_ptr = dynamic_cast<const Config*>(config_ptr);
   const Config& config =
       jit_config_ptr == nullptr ? default_config : *jit_config_ptr;
-  const Config effective_config =
-      config.WithDefaultConstexprs(default_config);
+  const Config effective_config = config.WithDefaultConstexprs(default_config);
   detail::LaunchConfigured<kDev>(target, device_id, compilation_fingerprint,
                                  operator_name, stream, effective_config,
                                  grid_function, arguments);
