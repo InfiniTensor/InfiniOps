@@ -46,8 +46,8 @@ struct TuningSignature {
       for (auto dim : t.shape) {
         h ^= std::hash<int64_t>{}(dim) + 0x9e3779b9 + (h << 6) + (h >> 2);
       }
-      h ^= std::hash<int>{}(static_cast<int>(t.dtype)) + 0x9e3779b9 +
-           (h << 6) + (h >> 2);
+      h ^= std::hash<int>{}(static_cast<int>(t.dtype)) + 0x9e3779b9 + (h << 6) +
+           (h >> 2);
     }
     for (auto s : scalars) {
       h ^= std::hash<double>{}(s) + 0x9e3779b9 + (h << 6) + (h >> 2);
