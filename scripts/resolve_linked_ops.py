@@ -10,6 +10,8 @@ import subprocess
 import sys
 import urllib.parse
 import urllib.request
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 import yaml
 
@@ -21,15 +23,18 @@ _DEFAULT_SOURCE_ROOT = _PROJECT_DIR / "src" / "linked"
 _DEFAULT_OUTPUT_DIR = _PROJECT_DIR / "generated" / "linked"
 _LIBRARY_KEYS = {
     "python_distribution_package",
+    "python_distribution_version",
     "library_glob",
+    "include_glob",
 }
 _BINDING_KEYS = {
     "library",
+    "link_libraries",
     "required_symbols",
     "operator_schema",
     "dispatch_key",
 }
-_SUPPORTED_TRANSPORTS = {"torch"}
+_SUPPORTED_TRANSPORTS = {"torch", "tvm_ffi"}
 
 
 class ResolutionError(RuntimeError):
@@ -69,6 +74,8 @@ class LibraryConfig:
     path: pathlib.Path
     python_distribution_package: str
     library_glob: str
+    include_glob: str | None = None
+    python_distribution_version: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -83,6 +90,7 @@ class BindingConfig:
     required_symbols: tuple[str, ...]
     operator_schema: str | None
     dispatch_key: str | None
+    link_libraries: tuple[str, ...] = ()
 
 
 def _load_yaml_mapping(path, expected_keys, required_keys=None):
@@ -147,7 +155,11 @@ def _load_libraries(platform_dir, device, transport, selected_libraries=None):
     for path in sorted(platform_dir.glob("*.yaml")):
         if selected_libraries is not None and path.stem not in selected_libraries:
             continue
-        data = _load_yaml_mapping(path, _LIBRARY_KEYS)
+        data = _load_yaml_mapping(
+            path,
+            _LIBRARY_KEYS,
+            {"python_distribution_package", "library_glob"},
+        )
         libraries[path.stem] = LibraryConfig(
             device=device,
             transport=transport,
@@ -157,6 +169,16 @@ def _load_libraries(platform_dir, device, transport, selected_libraries=None):
                 data, "python_distribution_package", path
             ),
             library_glob=_require_relative_glob(data, "library_glob", path),
+            python_distribution_version=(
+                _require_string(data, "python_distribution_version", path)
+                if "python_distribution_version" in data
+                else None
+            ),
+            include_glob=(
+                _require_relative_glob(data, "include_glob", path)
+                if "include_glob" in data
+                else None
+            ),
         )
 
     return libraries
@@ -213,14 +235,34 @@ def _load_bindings(platform_dir, device, transport, selected_ops, config):
             continue
 
         source = path.with_suffix(".cc")
+        cuda_source = path.with_suffix(".cu")
         if not source.is_file():
-            raise ResolutionError(f"{path}: missing sibling {source.name}")
+            if not cuda_source.is_file():
+                raise ResolutionError(
+                    f"{path}: missing sibling {source.name} or {cuda_source.name}"
+                )
+            source = cuda_source
+        elif cuda_source.is_file():
+            raise ResolutionError(
+                f"{path}: both {source.name} and {cuda_source.name} are present"
+            )
 
         data = _load_yaml_mapping(path, _BINDING_KEYS, {"library"})
         symbols = data.get("required_symbols")
         operator_schema = data.get("operator_schema")
         dispatch_key = data.get("dispatch_key")
 
+        link_libraries = data.get("link_libraries", [])
+        if not isinstance(link_libraries, list) or any(
+            not isinstance(library, str) or not library.strip()
+            for library in link_libraries
+        ):
+            raise ResolutionError(
+                f"{path}: link_libraries must be a list of non-empty strings"
+            )
+        link_libraries = tuple(library.strip() for library in link_libraries)
+        if len(link_libraries) != len(set(link_libraries)):
+            raise ResolutionError(f"{path}: link_libraries contains duplicates")
         if (symbols is None) == (operator_schema is None):
             raise ResolutionError(
                 f"{path} must define exactly one of required_symbols or operator_schema"
@@ -263,6 +305,7 @@ def _load_bindings(platform_dir, device, transport, selected_ops, config):
                 required_symbols=symbols,
                 operator_schema=operator_schema,
                 dispatch_key=dispatch_key,
+                link_libraries=link_libraries,
             )
         )
 
@@ -315,7 +358,7 @@ def _locate_editable_distribution_root(distribution):
     return root if root.is_dir() else None
 
 
-def _locate_distribution_library(config):
+def _load_distribution(config):
     try:
         distribution = importlib.metadata.distribution(
             config.python_distribution_package
@@ -326,6 +369,26 @@ def _locate_distribution_library(config):
             f"{config.python_distribution_package!r} required by "
             f"{config.path} is not installed"
         ) from error
+    if config.python_distribution_version is not None:
+        try:
+            constraint = SpecifierSet(config.python_distribution_version)
+            version = Version(distribution.version)
+        except (InvalidSpecifier, InvalidVersion) as error:
+            raise ResolutionError(
+                f"{config.path}: invalid Python distribution version constraint"
+            ) from error
+        if version not in constraint:
+            raise ResolutionError(
+                f"{config.path}: {config.python_distribution_package!r} version "
+                f"{distribution.version!r} does not satisfy "
+                f"{config.python_distribution_version!r}"
+            )
+
+    return distribution
+
+
+def _locate_distribution_library(config):
+    distribution = _load_distribution(config)
 
     matches = []
     distribution_root = pathlib.Path(distribution.locate_file("")).resolve()
@@ -359,6 +422,37 @@ def _locate_distribution_library(config):
         raise ResolutionError(
             f"{config.path}: library_glob {config.library_glob!r} matched "
             f"{len(matches)} files in "
+            f"{config.python_distribution_package!r}: {formatted}"
+        )
+
+    return matches[0]
+
+
+def _locate_distribution_include(config):
+
+    if config.include_glob is None:
+        return None
+
+    distribution = _load_distribution(config)
+
+    roots = [pathlib.Path(distribution.locate_file("")).resolve()]
+    editable_root = _locate_editable_distribution_root(distribution)
+    if editable_root is not None:
+        roots.append(editable_root)
+
+    matches = []
+    for root in roots:
+        for candidate in root.glob(config.include_glob):
+            candidate = candidate.resolve()
+            if candidate.is_dir() and candidate.is_relative_to(root):
+                matches.append(candidate)
+
+    matches = sorted(set(matches))
+    if len(matches) != 1:
+        formatted = ", ".join(str(path) for path in matches) or "none"
+        raise ResolutionError(
+            f"{config.path}: include_glob {config.include_glob!r} matched "
+            f"{len(matches)} directories in "
             f"{config.python_distribution_package!r}: {formatted}"
         )
 
@@ -531,6 +625,16 @@ def _render_cmake_manifest(payload):
         "INFINI_OPS_LINKED_SOURCES": [
             operator["source"] for operator in payload["operators"]
         ],
+        "INFINI_OPS_LINKED_TORCH_SOURCES": [
+            operator["source"]
+            for operator in payload["operators"]
+            if operator["transport"] == "torch"
+        ],
+        "INFINI_OPS_LINKED_TVM_FFI_SOURCES": [
+            operator["source"]
+            for operator in payload["operators"]
+            if operator["transport"] == "tvm_ffi"
+        ],
         "INFINI_OPS_LINKED_LIBRARIES": [
             library["path"] for library in payload["libraries"]
         ],
@@ -539,6 +643,11 @@ def _render_cmake_manifest(payload):
         ],
         "INFINI_OPS_LINKED_RUNTIME_DIRS": [
             library["runtime_dir"] for library in payload["libraries"]
+        ],
+        "INFINI_OPS_LINKED_INCLUDE_DIRS": [
+            library["include_dir"]
+            for library in payload["libraries"]
+            if "include_dir" in library
         ],
         "INFINI_OPS_LINKED_TRANSPORTS": [
             library["transport"] for library in payload["libraries"]
@@ -611,11 +720,16 @@ def resolve_linked_ops(
                 selection_config,
             )
             bindings.extend(platform_bindings)
+            selected_libraries = {
+                library
+                for binding in platform_bindings
+                for library in (binding.library, *binding.link_libraries)
+            }
             libraries = _load_libraries(
                 platform_dir,
                 device,
                 transport,
-                {binding.library for binding in platform_bindings},
+                selected_libraries,
             )
             for name, library_config in libraries.items():
                 library_configs[(transport, device, name)] = library_config
@@ -632,17 +746,19 @@ def resolve_linked_ops(
     inspected_symbols = {}
     dispatcher_contracts = []
     for binding in bindings:
+        for library_name in (binding.library, *binding.link_libraries):
+            dependency_key = (binding.transport, binding.device, library_name)
+            library_config = library_configs.get(dependency_key)
+            if library_config is None:
+                raise ResolutionError(
+                    f"{binding.path}: unknown library {library_name!r} for "
+                    f"device {binding.device}"
+                )
+            if dependency_key not in resolved_libraries:
+                resolved_libraries[dependency_key] = _locate_distribution_library(
+                    library_config
+                )
         key = (binding.transport, binding.device, binding.library)
-        library_config = library_configs.get(key)
-        if library_config is None:
-            raise ResolutionError(
-                f"{binding.path}: unknown library {binding.library!r} for "
-                f"device {binding.device}"
-            )
-
-        if key not in resolved_libraries:
-            library_path = _locate_distribution_library(library_config)
-            resolved_libraries[key] = library_path
 
         library_path = resolved_libraries[key]
         if binding.required_symbols:
@@ -691,6 +807,7 @@ def resolve_linked_ops(
     for key in sorted(resolved_libraries):
         config = library_configs[key]
         library_path = resolved_libraries[key]
+        include_dir = _locate_distribution_include(config)
         libraries.append(
             {
                 "device": config.device,
@@ -702,6 +819,8 @@ def resolve_linked_ops(
                 "transport": config.transport,
             }
         )
+        if include_dir is not None:
+            libraries[-1]["include_dir"] = str(include_dir)
 
     operators = []
     for binding in bindings:
@@ -713,6 +832,8 @@ def resolve_linked_ops(
             "name": binding.name,
             "source": str(binding.source),
         }
+        if binding.link_libraries:
+            operator["link_libraries"] = list(binding.link_libraries)
         if binding.required_symbols:
             operator["required_symbols"] = list(binding.required_symbols)
         else:
