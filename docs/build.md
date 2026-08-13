@@ -55,7 +55,7 @@ python -m pip install .[dev] \
 Install the Triton JIT runtime dependencies, then enable the implementation:
 
 ```bash
-python -m pip install torch "triton>=3.5,<3.6"
+python -m pip install torch triton
 python -m pip install . \
   --config-settings=cmake.define.INFINI_RT_ROOT=/path/to/infini-rt-prefix \
   --config-settings=cmake.define.WITH_NVIDIA=ON \
