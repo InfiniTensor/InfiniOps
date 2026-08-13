@@ -988,8 +988,8 @@ def test_triton_config_is_only_exposed_for_constructor_shaped_calls():
     "serialized, expected_path, expected_backend",
     (
         (
-            "src/triton/nvidia/ops/add/jit.h",
-            pathlib.Path("src/triton/nvidia/ops/add/jit.h"),
+            "src/triton/ops/add/jit.h",
+            pathlib.Path("src/triton/ops/add/jit.h"),
             "triton",
         ),
         (
@@ -1010,24 +1010,7 @@ def test_implementation_json_accepts_legacy_and_structured_entries(
     assert implementation.backend == expected_backend
 
 
-def test_triton_platform_implementations_follow_active_devices():
-    module = _load_generator_module()
-    generic = module._SRC_DIR / "triton" / "ops" / "add" / "jit.h"
-    nvidia = module._SRC_DIR / "triton" / "nvidia" / "ops" / "add" / "jit.h"
-    hygon = module._SRC_DIR / "triton" / "hygon" / "ops" / "add" / "jit.h"
-
-    assert not module._matches_scan_dir(generic, {"triton", "nvidia"})
-    assert module._matches_scan_dir(nvidia, {"triton", "nvidia"})
-    assert not module._matches_scan_dir(hygon, {"triton", "nvidia"})
-
-    assert not module._matches_scan_dir(generic, {"triton", "hygon"})
-    assert module._matches_scan_dir(hygon, {"triton", "hygon"})
-    assert not module._matches_scan_dir(nvidia, {"triton", "hygon"})
-
-
-def test_triton_operator_discovery_uses_platform_registration_header(
-    monkeypatch, tmp_path
-):
+def test_triton_operator_discovery_uses_combined_operator_header(monkeypatch, tmp_path):
     module = _load_generator_module()
     src_dir = pathlib.Path(__file__).resolve().parents[1] / "src"
     monkeypatch.setattr(module, "_SRC_DIR", src_dir)
@@ -1040,7 +1023,7 @@ def test_triton_operator_discovery_uses_platform_registration_header(
         implementation.path.relative_to(src_dir).as_posix()
         for implementation in ops["add"]
         if implementation.backend == "triton"
-    } == {"triton/nvidia/ops/add/jit.h"}
+    } == {"triton/ops/add/jit.h"}
 
 
 def test_shared_triton_config_parser_has_one_explicit_schema():

@@ -87,4 +87,15 @@ class Add : public ::infini::ops::Add {
 
 }  // namespace infini::ops::triton::jit
 
+namespace infini::ops {
+
+template <>
+class Operator<Add, Device::Type::kNvidia, 10>
+    : public triton::jit::Add<Device::Type::kNvidia> {
+ public:
+  using triton::jit::Add<Device::Type::kNvidia>::Add;
+};
+
+}  // namespace infini::ops
+
 #endif
