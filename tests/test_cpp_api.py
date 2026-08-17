@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import textwrap
@@ -30,6 +31,44 @@ def test_cpp_operator_call_instantiation_smoke(tmp_path):
         ]
     )
     _run([str(binary)])
+
+
+def test_cpp_operator_call_trace_is_json(tmp_path):
+    install_prefix = _install_prefix()
+    include_dir = install_prefix / "include"
+    library_dir = _library_dir(install_prefix)
+    source = tmp_path / "add_trace.cc"
+    binary = tmp_path / "add_trace"
+    source.write_text(_ADD_SMOKE_SOURCE)
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            f"-I{include_dir}",
+            str(source),
+            f"-L{library_dir}",
+            "-linfiniops",
+            "-linfinirt",
+            f"-Wl,-rpath,{library_dir}",
+            "-o",
+            str(binary),
+        ]
+    )
+    env = os.environ.copy()
+    env["INFINI_OPS_TRACE_CALLS"] = "1"
+    result = _run([str(binary)], env=env)
+
+    prefix = "[INFINI_OPS_TRACE_CALLS] "
+    trace_lines = [
+        line for line in result.stderr.splitlines() if line.startswith(prefix)
+    ]
+    assert len(trace_lines) == 2
+    assert [json.loads(line.removeprefix(prefix)) for line in trace_lines] == [
+        {"operator_name": "Add", "device_type": "cpu", "implementation": 0},
+        {"operator_name": "Add", "device_type": "cpu", "implementation": 0},
+    ]
 
 
 def test_cpp_returning_call_smoke(tmp_path):
@@ -164,9 +203,11 @@ def _compiler(env_name, default):
     return compiler
 
 
-def _run(command):
+def _run(command, **kwargs):
     try:
-        subprocess.run(command, check=True, text=True, capture_output=True)
+        return subprocess.run(
+            command, check=True, text=True, capture_output=True, **kwargs
+        )
     except FileNotFoundError as error:
         pytest.skip(f"`{command[0]}` is not available: {error}")
     except subprocess.CalledProcessError as error:

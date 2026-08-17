@@ -64,6 +64,19 @@ isolation.
 Code that changes tensor geometry, backend implementation selection, or
 workspace assumptions should account for this caching behavior.
 
+## Tracing Calls
+
+Set `INFINI_OPS_TRACE_CALLS=1` to print each call that reaches the InfiniOps
+dispatcher. Each line starts with the triggering environment variable and is
+followed by a JSON object containing the operator, device, and implementation
+index:
+
+```text
+[INFINI_OPS_TRACE_CALLS] {"operator_name": "Gemm", "device_type": "iluvatar", "implementation": 0}
+```
+
+Tracing is disabled by default.
+
 ## Adding an Operator
 
 The standard path for a native operator is:
