@@ -269,7 +269,7 @@ if(WITH_TORCH OR WITH_LINKED)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
-    if(WITH_NVIDIA)
+    if(WITH_NVIDIA OR WITH_ILUVATAR)
         find_library(TORCH_CUDA_LIB torch_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         # `torch_cuda` registers CUDA kernels through static initializers, so
@@ -378,7 +378,7 @@ endif()
 # clang++ commands.
 # Reference: `InfiniCore` `xmake/iluvatar.lua`.
 if(WITH_ILUVATAR)
-    add_compile_definitions(WITH_ILUVATAR=1)
+    add_compile_definitions(WITH_ILUVATAR=1 __ILUVATAR__=1)
     set(ILUVATAR_ARCH "ivcore20" CACHE STRING "Iluvatar GPU architecture")
     find_program(ILUVATAR_CUDA_COMPILER NAMES clang++ HINTS /usr/local/corex/bin)
     if(NOT ILUVATAR_CUDA_COMPILER)
