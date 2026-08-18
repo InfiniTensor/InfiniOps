@@ -112,7 +112,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
 
         float batch_sum = 0.0f;
         if (current_batch >= 128) {
-          infini::ops::reduce::SumInternal(reduction_buffer, float_buffer,
+          infini::ops::reduce::SumInternal(float_buffer, reduction_buffer,
                                            current_batch);
           batch_sum = reduction_buffer[0];
         } else {
