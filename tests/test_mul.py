@@ -70,6 +70,69 @@ def test_mul(
     return Payload(_mul, _torch_mul, (input, other, out), {}, rtol=rtol, atol=atol)
 
 
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "input_shape, other_shape, out_shape",
+    (
+        ((1, 151936), (1, 1), (1, 151936)),
+        ((1, 1), (1, 151936), (1, 151936)),
+        ((3, 1), (1, 5), (3, 5)),
+        ((1, 5), (3, 1), (3, 5)),
+        ((5,), (2, 3, 5), (2, 3, 5)),
+        ((2, 3, 5), (5,), (2, 3, 5)),
+        ((), (2, 3), (2, 3)),
+        ((2, 3), (), (2, 3)),
+        ((0, 4), (1, 4), (0, 4)),
+        ((1, 4), (0, 4), (0, 4)),
+    ),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+def test_mul_broadcast(input_shape, other_shape, out_shape, dtype, device, rtol, atol):
+    input = torch.randn(input_shape, dtype=dtype, device=device)
+    other = torch.randn(other_shape, dtype=dtype, device=device)
+    out = torch.empty(out_shape, dtype=dtype, device=device)
+
+    return Payload(
+        _mul,
+        _torch_mul,
+        (input, other, out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+def test_mul_broadcast_strided(dtype, device, rtol, atol):
+    input = randn_strided((3, 1), (2, 1), dtype=dtype, device=device)
+    other = randn_strided((1, 5), (10, 2), dtype=dtype, device=device)
+    out = empty_strided((3, 5), (10, 2), dtype=dtype, device=device)
+
+    return Payload(
+        _mul,
+        _torch_mul,
+        (input, other, out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
 def _mul(input, other, out):
     infini.ops.mul(input, other, out, stream=get_stream(input.device))
 
