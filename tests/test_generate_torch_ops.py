@@ -106,10 +106,10 @@ def test_torch_source_uses_existing_c10_stream_guards():
     assert "stream_ == nullptr" not in method
     assert "C10<kDev>::GetStreamFromExternal(stream_, device_index)" in method
 
-    for device in ("nvidia", "cambricon", "metax", "moore"):
+    for device in ("nvidia", "cambricon", "metax", "moore", "iluvatar"):
         assert f'#include "torch/{device}/c10.h"' in source
 
-    for device in ("cpu", "ascend", "iluvatar", "hygon"):
+    for device in ("cpu", "ascend", "hygon"):
         assert f'#include "torch/{device}/c10.h"' not in source
 
 
