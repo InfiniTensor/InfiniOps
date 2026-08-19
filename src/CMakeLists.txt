@@ -248,6 +248,8 @@ if(WITH_HYGON)
     )
 
     file(GLOB_RECURSE HYGON_SOURCES CONFIGURE_DEPENDS ${HYGON_PATTERNS})
+    list(FILTER HYGON_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(iluvatar|metax|moore|nvidia)/.*")
 
     enable_language(CUDA)
 

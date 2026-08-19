@@ -63,6 +63,10 @@ class CudaAdd : public Add {
 
   void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
+    if (output_size_ == 0) {
+      return;
+    }
+
     [[maybe_unused]] HostRangeScope host_range_backend_submit{
         HostRangeLayer::kBackendSubmit};
 
