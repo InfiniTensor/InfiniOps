@@ -291,6 +291,38 @@ if(WITH_METAX)
     list(APPEND DEVICE_LIST "metax")
 endif()
 
+if(WITH_MARS)
+    set(MARS_PATTERNS
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/mars/*.cc"
+        "native/cuda/mars/*.cu"
+    )
+
+    file(GLOB_RECURSE MARS_SOURCES CONFIGURE_DEPENDS ${MARS_PATTERNS})
+
+    set_source_files_properties(${MARS_SOURCES} PROPERTIES LANGUAGE CXX)
+
+    target_compile_definitions(infiniops PRIVATE WITH_MARS=1)
+    target_sources(infiniops PRIVATE ${MARS_SOURCES})
+
+    target_include_directories(infiniops PUBLIC
+        "${HPCC_PATH}/include"
+        "${HPCC_PATH}/tools/cu-bridge/include")
+    target_link_libraries(infiniops PUBLIC
+        ${HPCC_RUNTIME_LIB}
+        ${HPCC_DNN_LIB}
+        ${HPCC_BLAS_LIB}
+        ${HPCC_OMP_LIB}
+    )
+    set_property(TARGET infiniops APPEND PROPERTY
+        INSTALL_RPATH "${HPCC_PATH}/htgpu_llvm/lib")
+    set_property(TARGET infiniops APPEND PROPERTY
+        BUILD_RPATH "${HPCC_PATH}/htgpu_llvm/lib")
+
+    list(APPEND DEVICE_LIST "mars")
+endif()
+
 if(WITH_MOORE)
     set(MOORE_PATTERNS
         "native/cuda/*.cc"
