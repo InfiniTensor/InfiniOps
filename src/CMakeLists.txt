@@ -505,7 +505,7 @@ if(WITH_ASCEND)
 endif()
 
 set(INFINI_OPS_OPS "" CACHE STRING
-    "Semicolon- or comma-separated operator allowlist for generated wrappers and bindings")
+    "Operator allowlist or path to an ops.json implementation selection")
 set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infini_ops_smoke_ops
@@ -532,7 +532,33 @@ if(INFINI_OPS_SMOKE_BUILD)
     endif()
 endif()
 
-if(INFINI_OPS_OPS)
+set(_infini_ops_ops_config "")
+if(INFINI_OPS_OPS MATCHES "\\.json$")
+    get_filename_component(_infini_ops_ops_config "${INFINI_OPS_OPS}"
+        ABSOLUTE BASE_DIR "${PROJECT_SOURCE_DIR}")
+    if(NOT EXISTS "${_infini_ops_ops_config}")
+        message(FATAL_ERROR
+            "Operator selection `${_infini_ops_ops_config}` does not exist.")
+    endif()
+elseif(NOT INFINI_OPS_OPS AND EXISTS "${PROJECT_SOURCE_DIR}/ops.json")
+    set(_infini_ops_ops_config "${PROJECT_SOURCE_DIR}/ops.json")
+endif()
+
+if(_infini_ops_ops_config)
+    file(GLOB_RECURSE _infini_ops_implementation_headers CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/src/native/*.h"
+        "${PROJECT_SOURCE_DIR}/src/torch/*.h"
+        "${PROJECT_SOURCE_DIR}/src/ninetoothed/*.h"
+        "${PROJECT_SOURCE_DIR}/src/linked/*.h"
+        "${PROJECT_SOURCE_DIR}/src/triton/*.h")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${_infini_ops_ops_config}"
+        "${PROJECT_SOURCE_DIR}/scripts/ops_config.py"
+        ${_infini_ops_implementation_headers})
+    message(STATUS "Operator selection: ${_infini_ops_ops_config}")
+endif()
+
+if(INFINI_OPS_OPS AND NOT INFINI_OPS_OPS MATCHES "\\.json$")
     string(REPLACE "," ";" _infini_ops_op_allowlist "${INFINI_OPS_OPS}")
     message(STATUS "Wrapper op allowlist: ${_infini_ops_op_allowlist}")
 endif()
@@ -581,7 +607,11 @@ if(WITH_LINKED)
         --nm "${_linked_nm}"
         --readelf "${_linked_readelf}"
         --cxxfilt "${_linked_cxxfilt}")
-    if(INFINI_OPS_OPS)
+    if(_infini_ops_ops_config)
+        list(APPEND _linked_resolver_args
+            --ops-config "${_infini_ops_ops_config}")
+    endif()
+    if(_infini_ops_op_allowlist)
         list(APPEND _linked_resolver_args --ops ${_infini_ops_op_allowlist})
     endif()
 
@@ -665,6 +695,10 @@ if(WITH_TORCH)
     # which we then glob below alongside any hand-written torch sources.
     find_package(Python COMPONENTS Interpreter REQUIRED)
 
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py"
+        "${PROJECT_SOURCE_DIR}/scripts/torch_ops.yaml")
+
     # Pin codegen to the locally installed torch version so vendor
     # forks (Cambricon's `torch_mlu` 2.1.0, etc.) get a schema whose
     # `at::<op>_out` overloads match the headers they ship.  Without
@@ -688,6 +722,10 @@ if(WITH_TORCH)
     set(_torch_codegen_args
         ${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py
         --pytorch-version ${_torch_version_tag})
+    if(_infini_ops_ops_config)
+        list(APPEND _torch_codegen_args
+            --ops-config "${_infini_ops_ops_config}")
+    endif()
     if(INFINI_OPS_TORCH_OPS)
         string(REPLACE "," ";" _torch_op_allowlist "${INFINI_OPS_TORCH_OPS}")
         list(APPEND _torch_codegen_args --ops ${_torch_op_allowlist})
@@ -988,7 +1026,11 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
-    if(INFINI_OPS_OPS)
+    if(_infini_ops_ops_config)
+        list(APPEND GENERATOR_ARGS
+            --ops-config "${_infini_ops_ops_config}")
+    endif()
+    if(_infini_ops_op_allowlist)
         list(APPEND GENERATOR_ARGS --ops ${_infini_ops_op_allowlist})
     endif()
     if(WITH_TORCH)
