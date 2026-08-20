@@ -1,0 +1,162 @@
+#include <cmath>
+#include <cstddef>
+#include <type_traits>
+
+#include "kernel.h"
+
+namespace infini::ops {
+namespace {
+
+__nram__ char silu_and_mul_nram_buffer[NRAM_MAX_SIZE]
+    __attribute__((aligned(128)));
+
+__mlu_device__ ptrdiff_t LogicalToOffset(size_t logical_index, int ndim,
+                                         const size_t* shape,
+                                         const ptrdiff_t* strides) {
+  ptrdiff_t offset = 0;
+  for (int d = ndim - 1; d >= 0; --d) {
+    const size_t coordinate = logical_index % shape[d];
+    logical_index /= shape[d];
+    offset += static_cast<ptrdiff_t>(coordinate) * strides[d];
+  }
+  return offset;
+}
+
+template <typename T>
+__mlu_device__ void ComputeSiluAndMul(const T* gate, const T* up, T* output,
+                                      size_t count) {
+  if constexpr (std::is_same_v<T, float>) {
+    for (size_t i = 0; i < count; ++i) {
+      const float gate_value = gate[i];
+      output[i] = gate_value * up[i] / (1.0F + expf(-gate_value));
+    }
+  } else if constexpr (std::is_same_v<T, __half>) {
+    auto* output_half = reinterpret_cast<half*>(output);
+    const auto* gate_half = reinterpret_cast<const half*>(gate);
+    const auto* up_half = reinterpret_cast<const half*>(up);
+    __bang_active_sigmoid(output_half, gate_half, count);
+    __bang_mul(output_half, output_half, gate_half, count);
+    __bang_mul(output_half, output_half, up_half, count);
+  } else {
+    __bang_active_sigmoid(output, gate, count);
+    __bang_mul(output, output, gate, count);
+    __bang_mul(output, output, up, count);
+  }
+}
+
+template <typename T>
+__mlu_global__ void SiluAndMulKernel(
+    const T* input, T* output, const size_t* input_shape,
+    const ptrdiff_t* input_strides, const size_t* out_shape,
+    const ptrdiff_t* out_strides, size_t output_size, size_t hidden_size,
+    int ndim, bool input_contiguous, bool out_contiguous) {
+  const size_t elements_per_task = (output_size + taskDim - 1) / taskDim;
+  const size_t start = taskId * elements_per_task;
+  const size_t end = start + elements_per_task < output_size
+                         ? start + elements_per_task
+                         : output_size;
+  if (start >= end) {
+    return;
+  }
+
+  size_t block_size = NRAM_MAX_SIZE / (3 * sizeof(T));
+  block_size = block_size / 64 * 64;
+  if (block_size == 0) {
+    block_size = 1;
+  }
+  auto* gate_buffer = reinterpret_cast<T*>(silu_and_mul_nram_buffer);
+  auto* up_buffer = gate_buffer + block_size;
+  auto* output_buffer = up_buffer + block_size;
+
+  size_t processed = start;
+  while (processed < end) {
+    size_t current =
+        block_size < end - processed ? block_size : end - processed;
+    const size_t column = processed % hidden_size;
+    const size_t row_remaining = hidden_size - column;
+    if (current > row_remaining) {
+      current = row_remaining;
+    }
+
+    const size_t row = processed / hidden_size;
+    const size_t gate_logical = row * 2 * hidden_size + column;
+    const size_t up_logical = gate_logical + hidden_size;
+    if (input_contiguous) {
+      __memcpy(gate_buffer, input + gate_logical, current * sizeof(T),
+               GDRAM2NRAM);
+      __memcpy(up_buffer, input + up_logical, current * sizeof(T), GDRAM2NRAM);
+    } else {
+      for (size_t i = 0; i < current; ++i) {
+        gate_buffer[i] = input[LogicalToOffset(gate_logical + i, ndim,
+                                               input_shape, input_strides)];
+        up_buffer[i] = input[LogicalToOffset(up_logical + i, ndim, input_shape,
+                                             input_strides)];
+      }
+    }
+
+    ComputeSiluAndMul(gate_buffer, up_buffer, output_buffer, current);
+    if (out_contiguous) {
+      __memcpy(output + processed, output_buffer, current * sizeof(T),
+               NRAM2GDRAM);
+    } else {
+      for (size_t i = 0; i < current; ++i) {
+        output[LogicalToOffset(processed + i, ndim, out_shape, out_strides)] =
+            output_buffer[i];
+      }
+    }
+    processed += current;
+  }
+}
+
+}  // namespace
+
+template <typename T>
+void SiluAndMulUnion(void* workspace, int core_per_cluster, int cluster_count,
+                     cnrtQueue_t queue, const void* input, void* out,
+                     const size_t* input_shape, const ptrdiff_t* input_strides,
+                     const size_t* out_shape, const ptrdiff_t* out_strides,
+                     size_t output_size, size_t hidden_size, int ndim,
+                     bool input_contiguous, bool out_contiguous) {
+  auto* workspace_bytes = static_cast<char*>(workspace);
+  auto* device_input_shape = reinterpret_cast<size_t*>(workspace_bytes);
+  auto* device_out_shape = device_input_shape + ndim;
+  auto* device_input_strides =
+      reinterpret_cast<ptrdiff_t*>(device_out_shape + ndim);
+  auto* device_out_strides = device_input_strides + ndim;
+
+  CNRT_CHECK(
+      cnrtMemcpyAsync(device_input_shape, const_cast<size_t*>(input_shape),
+                      ndim * sizeof(size_t), queue, cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(device_out_shape, const_cast<size_t*>(out_shape),
+                             ndim * sizeof(size_t), queue,
+                             cnrtMemcpyHostToDev));
+  CNRT_CHECK(cnrtMemcpyAsync(
+      device_input_strides, const_cast<ptrdiff_t*>(input_strides),
+      ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  CNRT_CHECK(
+      cnrtMemcpyAsync(device_out_strides, const_cast<ptrdiff_t*>(out_strides),
+                      ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+
+  cnrtDim3_t kernel_dim;
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+  SiluAndMulKernel<T><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+      static_cast<const T*>(input), static_cast<T*>(out), device_input_shape,
+      device_input_strides, device_out_shape, device_out_strides, output_size,
+      hidden_size, ndim, input_contiguous, out_contiguous);
+}
+
+#define INSTANTIATE_SILU_AND_MUL(T)                                           \
+  template void SiluAndMulUnion<T>(void*, int, int, cnrtQueue_t, const void*, \
+                                   void*, const size_t*, const ptrdiff_t*,    \
+                                   const size_t*, const ptrdiff_t*, size_t,   \
+                                   size_t, int, bool, bool)
+
+INSTANTIATE_SILU_AND_MUL(__half);
+INSTANTIATE_SILU_AND_MUL(__bang_bfloat16);
+INSTANTIATE_SILU_AND_MUL(float);
+
+#undef INSTANTIATE_SILU_AND_MUL
+
+}  // namespace infini::ops
