@@ -1,0 +1,152 @@
+#include <algorithm>
+#include <type_traits>
+
+#include "kernel.h"
+
+__nram__ char nram_buffer[NRAM_MAX_SIZE];
+
+namespace infini::ops {
+namespace fused_add_rms_norm_detail {
+
+template <typename T>
+__mlu_device__ void LoadAsFloat(float* dst, T* cache, const T* src,
+                                size_t count) {
+  __memcpy(cache, src, count * sizeof(T), GDRAM2NRAM);
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float(dst, reinterpret_cast<half*>(cache), count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float(dst, cache, count);
+  } else {
+    __memcpy(dst, cache, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+template <typename T>
+__mlu_device__ void ConvertFromFloat(T* dst, const float* src, size_t count) {
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_float2half(reinterpret_cast<half*>(dst), const_cast<float*>(src),
+                      count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_float2bfloat16(dst, const_cast<float*>(src), count);
+  } else {
+    __memcpy(dst, const_cast<float*>(src), count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+template <typename T>
+__mlu_device__ void ConvertToFloat(float* dst, T* src, size_t count) {
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float(dst, reinterpret_cast<half*>(src), count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float(dst, src, count);
+  } else {
+    __memcpy(dst, src, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+__mlu_device__ float Sum(float* reduction, float* values, size_t count) {
+  constexpr size_t kReductionWidth = reduce::batch_size;
+  size_t aligned = count >= 4 * kReductionWidth
+                       ? count / kReductionWidth * kReductionWidth
+                       : 0;
+  float result = 0.0f;
+  if (aligned != 0) {
+    reduce::SumInternal(reduction, values, aligned);
+    result = reduction[0];
+  }
+  for (size_t i = aligned; i < count; ++i) {
+    result += values[i];
+  }
+  return result;
+}
+
+template <typename T>
+__mlu_global__ void FusedAddRmsNormKernel(
+    T* input, T* residual, const T* weight, size_t num_tokens, size_t dim,
+    ptrdiff_t input_row_stride, ptrdiff_t residual_row_stride, float epsilon) {
+  constexpr size_t kReductionBytes = 128;
+  constexpr size_t kReservedBytes = 256;
+  size_t chunk_size = (NRAM_MAX_SIZE - kReservedBytes - kReductionBytes) /
+                      (2 * sizeof(T) + 2 * sizeof(float));
+  chunk_size = std::min(chunk_size, dim);
+  if (chunk_size >= 64) {
+    chunk_size = chunk_size / 64 * 64;
+  }
+  chunk_size = std::max<size_t>(chunk_size, 1);
+
+  float* reduction = reinterpret_cast<float*>(nram_buffer);
+  T* input_cache = reinterpret_cast<T*>(nram_buffer + kReductionBytes);
+  T* residual_cache = input_cache + chunk_size;
+  float* input_float = reinterpret_cast<float*>(residual_cache + chunk_size);
+  float* residual_float = input_float + chunk_size;
+
+  for (size_t row = taskId; row < num_tokens; row += taskDim) {
+    T* input_row = input + row * input_row_stride;
+    T* residual_row = residual + row * residual_row_stride;
+    float sum_squared = 0.0f;
+
+    for (size_t offset = 0; offset < dim; offset += chunk_size) {
+      size_t count = std::min(chunk_size, dim - offset);
+      LoadAsFloat(input_float, input_cache, input_row + offset, count);
+      LoadAsFloat(residual_float, residual_cache, residual_row + offset, count);
+      __bang_add(input_float, input_float, residual_float, count);
+
+      // The public reference rounds the sum to the input dtype before RMSNorm.
+      ConvertFromFloat(input_cache, input_float, count);
+      __memcpy(residual_row + offset, input_cache, count * sizeof(T),
+               NRAM2GDRAM);
+      ConvertToFloat(input_float, input_cache, count);
+      __bang_mul(input_float, input_float, input_float, count);
+      sum_squared += Sum(reduction, input_float, count);
+    }
+
+    float inv_rms =
+        1.0f / sqrtf(sum_squared / static_cast<float>(dim) + epsilon);
+    for (size_t offset = 0; offset < dim; offset += chunk_size) {
+      size_t count = std::min(chunk_size, dim - offset);
+      LoadAsFloat(input_float, input_cache, residual_row + offset, count);
+      if (weight != nullptr) {
+        LoadAsFloat(residual_float, residual_cache, weight + offset, count);
+        __bang_mul(input_float, input_float, residual_float, count);
+      }
+      __bang_mul_scalar(input_float, input_float, inv_rms, count);
+      ConvertFromFloat(input_cache, input_float, count);
+      __memcpy(input_row + offset, input_cache, count * sizeof(T), NRAM2GDRAM);
+    }
+  }
+}
+
+}  // namespace fused_add_rms_norm_detail
+
+template <typename T>
+void FusedAddRmsNormUnion(int core_per_cluster, int cluster_count,
+                          cnrtQueue_t queue, void* input, void* residual,
+                          const void* weight, size_t num_tokens, size_t dim,
+                          ptrdiff_t input_row_stride,
+                          ptrdiff_t residual_row_stride, float epsilon) {
+  cnrtDim3_t kernel_dim;
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+
+  (void)cnrtGetLastError();
+  fused_add_rms_norm_detail::FusedAddRmsNormKernel<T>
+      <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+          reinterpret_cast<T*>(input), reinterpret_cast<T*>(residual),
+          reinterpret_cast<const T*>(weight), num_tokens, dim, input_row_stride,
+          residual_row_stride, epsilon);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+template void FusedAddRmsNormUnion<__half>(int, int, cnrtQueue_t, void*, void*,
+                                           const void*, size_t, size_t,
+                                           ptrdiff_t, ptrdiff_t, float);
+template void FusedAddRmsNormUnion<__bang_bfloat16>(int, int, cnrtQueue_t,
+                                                    void*, void*, const void*,
+                                                    size_t, size_t, ptrdiff_t,
+                                                    ptrdiff_t, float);
+template void FusedAddRmsNormUnion<float>(int, int, cnrtQueue_t, void*, void*,
+                                          const void*, size_t, size_t,
+                                          ptrdiff_t, ptrdiff_t, float);
+
+}  // namespace infini::ops
