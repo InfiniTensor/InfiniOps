@@ -1,0 +1,296 @@
+#include <cmath>
+#include <type_traits>
+
+#include "dispatcher.h"
+#include "kernel.h"
+#include "native/cambricon/data_type_.h"
+
+namespace infini::ops {
+namespace embedding_detail {
+
+struct WorkspaceLayout {
+  std::size_t* input_shape;
+  std::ptrdiff_t* input_strides;
+  std::ptrdiff_t* output_strides;
+  std::int32_t* visited;
+};
+
+static WorkspaceLayout GetWorkspaceLayout(void* workspace,
+                                          std::size_t input_ndim) {
+  auto* base = static_cast<std::byte*>(workspace);
+  auto* input_shape = reinterpret_cast<std::size_t*>(base);
+  auto* input_strides = reinterpret_cast<std::ptrdiff_t*>(
+      base + input_ndim * sizeof(std::size_t));
+  auto* output_strides = reinterpret_cast<std::ptrdiff_t*>(
+      reinterpret_cast<std::byte*>(input_strides) +
+      input_ndim * sizeof(std::ptrdiff_t));
+  auto* visited =
+      reinterpret_cast<std::int32_t*>(base + VisitedOffset(input_ndim));
+
+  return {input_shape, input_strides, output_strides, visited};
+}
+
+static void CopyMetadataAsync(const WorkspaceLayout& layout, cnrtQueue_t queue,
+                              std::size_t input_ndim,
+                              const std::size_t* input_shape,
+                              const std::ptrdiff_t* input_strides,
+                              const std::ptrdiff_t* output_strides,
+                              bool copy_output_strides) {
+  if (input_ndim > 0) {
+    CNRT_CHECK(cnrtMemcpyAsync(
+        layout.input_shape, const_cast<std::size_t*>(input_shape),
+        input_ndim * sizeof(std::size_t), queue, cnrtMemcpyHostToDev));
+
+    CNRT_CHECK(cnrtMemcpyAsync(
+        layout.input_strides, const_cast<std::ptrdiff_t*>(input_strides),
+        input_ndim * sizeof(std::ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  }
+
+  if (copy_output_strides) {
+    CNRT_CHECK(cnrtMemcpyAsync(
+        layout.output_strides, const_cast<std::ptrdiff_t*>(output_strides),
+        (input_ndim + 1) * sizeof(std::ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  }
+}
+
+__mlu_func__ ptrdiff_t LogicalOffset(size_t logical_index, size_t ndim,
+                                     const size_t* shape,
+                                     const ptrdiff_t* strides) {
+  ptrdiff_t offset = 0;
+
+  for (size_t dim = ndim; dim > 0; --dim) {
+    const size_t axis = dim - 1;
+    const size_t coordinate = logical_index % shape[axis];
+    logical_index /= shape[axis];
+    offset += static_cast<ptrdiff_t>(coordinate) * strides[axis];
+  }
+
+  return offset;
+}
+
+template <typename T>
+__mlu_func__ float LoadFloat(const T* source) {
+  if constexpr (std::is_same<T, __half>::value) {
+    return __half2float(*source);
+  } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
+    return __bfloat162float(*source);
+  } else {
+    return *source;
+  }
+}
+
+template <typename T>
+__mlu_func__ void StoreFloat(T* destination, float value) {
+  *destination = value;
+}
+
+__mlu_global__ void EmbeddingClearVisitedKernel(int32_t* visited,
+                                                size_t vocab_size) {
+  if (__is_mpu()) {
+    return;
+  }
+
+  for (size_t row = taskId; row < vocab_size; row += taskDim) {
+    visited[row] = 0;
+  }
+}
+
+template <typename IndexT>
+__mlu_global__ void EmbeddingMarkVisitedKernel(
+    const IndexT* indices, int32_t* visited, size_t num_indices,
+    size_t input_ndim, const size_t* input_shape,
+    const ptrdiff_t* input_strides, size_t vocab_size) {
+  if (__is_mpu()) {
+    return;
+  }
+
+  for (size_t logical_index = taskId; logical_index < num_indices;
+       logical_index += taskDim) {
+    const ptrdiff_t input_offset =
+        LogicalOffset(logical_index, input_ndim, input_shape, input_strides);
+    const IndexT index = indices[input_offset];
+
+    if (index < static_cast<IndexT>(0) ||
+        index >= static_cast<IndexT>(vocab_size)) {
+      continue;
+    }
+
+    __bang_atomic_reduce_or(visited + static_cast<size_t>(index), 1);
+  }
+}
+
+template <typename T>
+__mlu_global__ void EmbeddingRenormKernel(T* weight, const int32_t* visited,
+                                          ptrdiff_t weight_row_stride,
+                                          ptrdiff_t weight_col_stride,
+                                          size_t embedding_dim,
+                                          size_t vocab_size, float max_norm,
+                                          float norm_type) {
+  if (__is_mpu()) {
+    return;
+  }
+
+  for (size_t row = taskId; row < vocab_size; row += taskDim) {
+    if (visited[row] == 0) {
+      continue;
+    }
+
+    float accumulator = 0.0f;
+
+    if (isinf(norm_type) && norm_type < 0.0f) {
+      accumulator = INFINITY;
+    }
+
+    for (size_t column = 0; column < embedding_dim; ++column) {
+      const ptrdiff_t weight_offset =
+          static_cast<ptrdiff_t>(row) * weight_row_stride +
+          static_cast<ptrdiff_t>(column) * weight_col_stride;
+      const float value = LoadFloat(weight + weight_offset);
+      const float absolute = fabsf(value);
+
+      if (isinf(norm_type) && norm_type > 0.0f) {
+        accumulator = fmaxf(accumulator, absolute);
+      } else if (isinf(norm_type)) {
+        accumulator = fminf(accumulator, absolute);
+      } else if (norm_type == 0.0f) {
+        accumulator += absolute == 0.0f ? 0.0f : 1.0f;
+      } else if (norm_type == 1.0f) {
+        accumulator += absolute;
+      } else if (norm_type == 2.0f) {
+        accumulator += value * value;
+      } else {
+        accumulator += powf(absolute, norm_type);
+      }
+    }
+
+    const float norm = norm_type == 0.0f || isinf(norm_type)
+                           ? accumulator
+                           : powf(accumulator, 1.0f / norm_type);
+
+    if (norm <= max_norm) {
+      continue;
+    }
+
+    const float factor = max_norm / (norm + 1e-7f);
+    for (size_t column = 0; column < embedding_dim; ++column) {
+      const ptrdiff_t weight_offset =
+          static_cast<ptrdiff_t>(row) * weight_row_stride +
+          static_cast<ptrdiff_t>(column) * weight_col_stride;
+      const float value = LoadFloat(weight + weight_offset);
+      StoreFloat(weight + weight_offset, value * factor);
+    }
+  }
+}
+
+template <typename T, typename IndexT>
+__mlu_global__ void EmbeddingForwardKernel(
+    T* output, const IndexT* indices, const T* weight, size_t num_indices,
+    size_t input_ndim, const size_t* input_shape,
+    const ptrdiff_t* input_strides, const ptrdiff_t* output_strides,
+    ptrdiff_t weight_row_stride, ptrdiff_t weight_col_stride,
+    size_t embedding_dim, size_t vocab_size) {
+  if (__is_mpu()) {
+    return;
+  }
+
+  const size_t element_count = num_indices * embedding_dim;
+
+  for (size_t logical_element = taskId; logical_element < element_count;
+       logical_element += taskDim) {
+    const size_t logical_index = logical_element / embedding_dim;
+    const size_t column = logical_element % embedding_dim;
+    const ptrdiff_t input_offset =
+        LogicalOffset(logical_index, input_ndim, input_shape, input_strides);
+    const IndexT index = indices[input_offset];
+
+    const ptrdiff_t output_offset =
+        LogicalOffset(logical_index, input_ndim, input_shape, output_strides) +
+        static_cast<ptrdiff_t>(column) * output_strides[input_ndim];
+
+    if (index < static_cast<IndexT>(0) ||
+        index >= static_cast<IndexT>(vocab_size)) {
+      output[output_offset] = static_cast<T>(0.0f);
+    } else {
+      const ptrdiff_t weight_offset =
+          static_cast<ptrdiff_t>(index) * weight_row_stride +
+          static_cast<ptrdiff_t>(column) * weight_col_stride;
+      output[output_offset] = weight[weight_offset];
+    }
+  }
+}
+
+}  // namespace embedding_detail
+
+void EmbeddingKernelLaunch(
+    void* workspace, DataType input_dtype, DataType weight_dtype,
+    int core_per_cluster, int cluster_count, cnrtQueue_t queue, void* output,
+    const void* input, void* weight, std::size_t num_indices,
+    std::size_t input_ndim, const std::size_t* input_shape,
+    const std::ptrdiff_t* input_strides, const std::ptrdiff_t* output_strides,
+    std::ptrdiff_t weight_row_stride, std::ptrdiff_t weight_col_stride,
+    std::size_t embedding_dim, std::size_t vocab_size, bool apply_max_norm,
+    float max_norm, float norm_type, bool launch_custom_forward) {
+  if (!apply_max_norm && !launch_custom_forward) {
+    return;
+  }
+
+  const auto layout =
+      embedding_detail::GetWorkspaceLayout(workspace, input_ndim);
+  embedding_detail::CopyMetadataAsync(layout, queue, input_ndim, input_shape,
+                                      input_strides, output_strides,
+                                      launch_custom_forward);
+
+  const cnrtDim3_t kernel_dim = {static_cast<unsigned int>(core_per_cluster),
+                                 static_cast<unsigned int>(cluster_count), 1};
+
+  if (apply_max_norm && vocab_size > 0) {
+    (void)cnrtGetLastError();
+    embedding_detail::
+        EmbeddingClearVisitedKernel<<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+            layout.visited, vocab_size);
+    CNRT_CHECK(cnrtGetLastError());
+  }
+
+  DispatchFunc<
+      Device::Type::kCambricon, List<DataType::kInt32, DataType::kInt64>,
+      List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
+      {input_dtype, weight_dtype},
+      [&](auto input_tag, auto weight_tag) {
+        using IndexT = typename decltype(input_tag)::type;
+        using T = typename decltype(weight_tag)::type;
+
+        if (apply_max_norm && vocab_size > 0) {
+          (void)cnrtGetLastError();
+          embedding_detail::EmbeddingMarkVisitedKernel<IndexT>
+              <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+                  reinterpret_cast<const IndexT*>(input), layout.visited,
+                  num_indices, input_ndim, layout.input_shape,
+                  layout.input_strides, vocab_size);
+          CNRT_CHECK(cnrtGetLastError());
+
+          (void)cnrtGetLastError();
+          embedding_detail::EmbeddingRenormKernel<T>
+              <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+                  reinterpret_cast<T*>(weight), layout.visited,
+                  weight_row_stride, weight_col_stride, embedding_dim,
+                  vocab_size, max_norm, norm_type);
+          CNRT_CHECK(cnrtGetLastError());
+        }
+
+        if (launch_custom_forward) {
+          (void)cnrtGetLastError();
+          embedding_detail::EmbeddingForwardKernel<T, IndexT>
+              <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+                  reinterpret_cast<T*>(output),
+                  reinterpret_cast<const IndexT*>(input),
+                  reinterpret_cast<const T*>(weight), num_indices, input_ndim,
+                  layout.input_shape, layout.input_strides,
+                  layout.output_strides, weight_row_stride, weight_col_stride,
+                  embedding_dim, vocab_size);
+          CNRT_CHECK(cnrtGetLastError());
+        }
+      },
+      "CambriconEmbeddingKernelLaunch");
+}
+
+}  // namespace infini::ops

@@ -17,6 +17,7 @@ from tests.utils import (
 _TEST_CASES = tuple(
     (*case, None)
     for case in (
+        ((), (8, 4), None, None, None, torch.int64),
         ((1, 5), (32000, 4), None, None, None, torch.int64),
         ((2, 10), (32000, 2048), None, None, None, torch.int32),
         ((1, 5), (10, 10), None, None, None, torch.int64),
