@@ -1,0 +1,97 @@
+#include "kernel.h"
+
+namespace infini::ops {
+namespace reshape_and_cache_flash_detail {
+
+template <typename T>
+__mlu_global__ void ReshapeAndCacheFlashKernel(
+    const T* key, const T* value, const int64_t* slot_mapping, T* key_cache,
+    T* value_cache, std::size_t num_tokens, std::size_t num_heads,
+    std::size_t head_size, std::size_t block_size,
+    std::ptrdiff_t key_token_stride, std::ptrdiff_t value_token_stride,
+    std::ptrdiff_t key_head_stride, std::ptrdiff_t value_head_stride,
+    std::ptrdiff_t key_cache_block_stride,
+    std::ptrdiff_t value_cache_block_stride,
+    std::ptrdiff_t key_cache_page_stride,
+    std::ptrdiff_t value_cache_page_stride,
+    std::ptrdiff_t key_cache_head_stride,
+    std::ptrdiff_t value_cache_head_stride) {
+  const std::size_t task_count = num_tokens * num_heads;
+  for (std::size_t task = taskId; task < task_count; task += taskDim) {
+    const std::size_t token_idx = task / num_heads;
+    const std::size_t head_idx = task % num_heads;
+    const int64_t slot = slot_mapping[token_idx];
+    if (slot < 0) {
+      continue;
+    }
+
+    const auto physical_block = static_cast<std::size_t>(slot) / block_size;
+    const auto block_offset = static_cast<std::size_t>(slot) % block_size;
+    const T* key_src =
+        key + token_idx * key_token_stride + head_idx * key_head_stride;
+    const T* value_src =
+        value + token_idx * value_token_stride + head_idx * value_head_stride;
+    T* key_dst = key_cache + physical_block * key_cache_block_stride +
+                 block_offset * key_cache_page_stride +
+                 head_idx * key_cache_head_stride;
+    T* value_dst = value_cache + physical_block * value_cache_block_stride +
+                   block_offset * value_cache_page_stride +
+                   head_idx * value_cache_head_stride;
+
+    for (std::size_t i = 0; i < head_size; ++i) {
+      key_dst[i] = key_src[i];
+      value_dst[i] = value_src[i];
+    }
+  }
+}
+
+}  // namespace reshape_and_cache_flash_detail
+
+template <typename T>
+void ReshapeAndCacheFlashUnion(
+    int core_per_cluster, int cluster_count, cnrtQueue_t queue, const void* key,
+    const void* value, const void* slot_mapping, void* key_cache,
+    void* value_cache, std::size_t num_tokens, std::size_t num_heads,
+    std::size_t head_size, std::size_t block_size,
+    std::ptrdiff_t key_token_stride, std::ptrdiff_t value_token_stride,
+    std::ptrdiff_t key_head_stride, std::ptrdiff_t value_head_stride,
+    std::ptrdiff_t key_cache_block_stride,
+    std::ptrdiff_t value_cache_block_stride,
+    std::ptrdiff_t key_cache_page_stride,
+    std::ptrdiff_t value_cache_page_stride,
+    std::ptrdiff_t key_cache_head_stride,
+    std::ptrdiff_t value_cache_head_stride) {
+  cnrtDim3_t kernel_dim;
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+
+  (void)cnrtGetLastError();
+  reshape_and_cache_flash_detail::ReshapeAndCacheFlashKernel<T>
+      <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+          reinterpret_cast<const T*>(key), reinterpret_cast<const T*>(value),
+          reinterpret_cast<const int64_t*>(slot_mapping),
+          reinterpret_cast<T*>(key_cache), reinterpret_cast<T*>(value_cache),
+          num_tokens, num_heads, head_size, block_size, key_token_stride,
+          value_token_stride, key_head_stride, value_head_stride,
+          key_cache_block_stride, value_cache_block_stride,
+          key_cache_page_stride, value_cache_page_stride, key_cache_head_stride,
+          value_cache_head_stride);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+#define INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(T)                      \
+  template void ReshapeAndCacheFlashUnion<T>(                              \
+      int, int, cnrtQueue_t, const void*, const void*, const void*, void*, \
+      void*, std::size_t, std::size_t, std::size_t, std::size_t,           \
+      std::ptrdiff_t, std::ptrdiff_t, std::ptrdiff_t, std::ptrdiff_t,      \
+      std::ptrdiff_t, std::ptrdiff_t, std::ptrdiff_t, std::ptrdiff_t,      \
+      std::ptrdiff_t, std::ptrdiff_t)
+
+INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(__half);
+INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(__bang_bfloat16);
+INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(float);
+
+#undef INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH
+
+}  // namespace infini::ops
