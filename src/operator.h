@@ -3,9 +3,11 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -120,6 +122,49 @@ template <typename Key, typename TensorLike, typename... Args>
 class HasMakeReturnValue
     : public HasMakeReturnValueImpl<Key, std::decay_t<TensorLike>,
                                     std::tuple<Args...>> {};
+
+inline bool TraceOperatorCallsEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("INFINI_OPS_TRACE_CALLS");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+  }();
+  return enabled;
+}
+
+template <typename Key>
+constexpr std::string_view OperatorName() {
+#if defined(__clang__) || defined(__GNUC__)
+  std::string_view name{__PRETTY_FUNCTION__};
+  constexpr std::string_view marker{"Key = "};
+  const auto start = name.find(marker) + marker.size();
+  const auto end = name.find_first_of(";]", start);
+  name = name.substr(start, end - start);
+#else
+  std::string_view name{"unknown"};
+#endif
+  constexpr std::string_view namespace_prefix{"infini::ops::"};
+  if (name.rfind(namespace_prefix, 0) == 0) {
+    name.remove_prefix(namespace_prefix.size());
+  }
+  return name;
+}
+
+template <typename Key>
+void TraceOperatorCall(const CacheKey& key, const Config& config) {
+  if (!TraceOperatorCallsEnabled()) return;
+
+  const auto device =
+      key.tensors.empty()
+          ? std::string_view{"unknown"}
+          : Device::StringFromType(key.tensors.front().device().type());
+  constexpr auto operator_name = OperatorName<Key>();
+  std::fprintf(stderr,
+               "[INFINI_OPS_TRACE_CALLS] {\"operator_name\": \"%.*s\", "
+               "\"device_type\": \"%.*s\", \"implementation\": %zu}\n",
+               static_cast<int>(operator_name.size()), operator_name.data(),
+               static_cast<int>(device.size()), device.data(),
+               config.implementation_index());
+}
 
 }  // namespace infini::ops::detail
 
@@ -253,6 +298,7 @@ class Operator : public OperatorBase {
       HostRangeScope host_range_cache_key{HostRangeLayer::kCacheKey};
       return CacheKeyBuilder<Key>{}(config, args...);
     }();
+    detail::TraceOperatorCall<Key>(key, config);
 
     auto it = [&]() {
       HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
@@ -267,6 +313,7 @@ class Operator : public OperatorBase {
     }
 #else
     auto key = CacheKeyBuilder<Key>{}(config, args...);
+    detail::TraceOperatorCall<Key>(key, config);
 
     auto it{cache.find(key)};
 
