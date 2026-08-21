@@ -20,6 +20,57 @@ namespace infini::ops {
 
 namespace detail {
 
+// Thread-local cache for tensor conversions to avoid repeated Python attribute access.
+// Design follows the same pattern as Operator Cache (cache.key in operator.h).
+// Key = data_ptr + shape + strides + dtype (all metadata that affects TensorView).
+class TensorCache {
+ public:
+  struct Key {
+    void* data_ptr;
+    std::vector<std::size_t> shape;
+    std::vector<std::ptrdiff_t> strides;
+    DataType dtype;
+
+    bool operator==(const Key& other) const {
+      return data_ptr == other.data_ptr && shape == other.shape &&
+             strides == other.strides && dtype == other.dtype;
+    }
+  };
+
+  struct KeyHash {
+    std::size_t operator()(const Key& k) const {
+      std::size_t seed = std::hash<void*>{}(k.data_ptr);
+      for (auto d : k.shape) {
+        seed ^= std::hash<std::size_t>{}(d) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+      }
+      for (auto s : k.strides) {
+        seed ^= std::hash<std::ptrdiff_t>{}(s) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+      }
+      seed ^= std::hash<int>{}(static_cast<int>(k.dtype)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+      return seed;
+    }
+  };
+
+  static TensorCache& Instance() {
+    thread_local TensorCache cache;
+    return cache;
+  }
+
+  const Tensor* Find(const Key& key) const {
+    auto it = cache_.find(key);
+    return (it != cache_.end()) ? it->second.get() : nullptr;
+  }
+
+  void Insert(const Key& key, Tensor tensor) {
+    cache_[key] = std::make_unique<Tensor>(std::move(tensor));
+  }
+
+  void Clear() { cache_.clear(); }
+
+ private:
+  std::unordered_map<Key, std::unique_ptr<Tensor>, KeyHash> cache_;
+};
+
 inline py::handle InternedName(const char* value) {
   // Keep one reference for the process lifetime; Python objects must not be
   // decref'd by a static destructor after interpreter finalization.
@@ -274,7 +325,33 @@ inline Device DeviceFromPybind11Handle(py::handle obj) {
 inline Tensor TensorFromPybind11Handle(py::handle obj) {
   [[maybe_unused]] HostRangeScope host_range_tensor_conversion{
       HostRangeLayer::kTensorConversion};
-  return detail::TensorFromPybind11HandleImpl(obj);
+
+  const auto& names{detail::GetInternedNames()};
+  auto data_ptr{reinterpret_cast<void*>(
+      detail::CallMethodNoArgs(obj, names.data_ptr).cast<std::uintptr_t>())};
+
+  auto shape{detail::VectorFromPybind11Handle<typename Tensor::Shape>(
+      py::getattr(obj, names.shape))};
+
+  auto dtype{detail::DataTypeFromPybind11HandleImpl(py::getattr(obj, names.dtype))};
+
+  auto strides{detail::VectorFromPybind11Handle<typename Tensor::Strides>(
+      detail::CallMethodNoArgs(obj, names.stride))};
+
+  detail::TensorCache::Key key{data_ptr, {shape.begin(), shape.end()},
+                               {strides.begin(), strides.end()}, dtype};
+
+  const Tensor* cached = detail::TensorCache::Instance().Find(key);
+  if (cached != nullptr) {
+    return *cached;
+  }
+
+  // Cache miss: full conversion.
+  auto device = detail::DeviceFromPybind11HandleImpl(obj);
+  Tensor result{data_ptr, std::move(shape), dtype, device, std::move(strides)};
+  detail::TensorCache::Instance().Insert(key, std::move(result));
+
+  return *detail::TensorCache::Instance().Find(key);
 }
 
 inline std::optional<Tensor> OptionalTensorFromPybind11Handle(
