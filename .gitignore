@@ -262,3 +262,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# htcc_wrapper sibling symlinks for device compilation
+*.cc.cu
+*.cpp.cu
+*.cxx.cu

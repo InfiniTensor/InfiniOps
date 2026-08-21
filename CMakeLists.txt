@@ -17,6 +17,7 @@ option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
 option(WITH_HYGON "Enable Hygon GPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
+option(WITH_MARS "Enable Mars backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
 option(WITH_ASCEND "Enable Ascend backend" OFF)
@@ -114,7 +115,10 @@ if(AUTO_DETECT_DEVICES)
         message(STATUS "Auto-detected Hygon environment.")
     endif()
 
-    if(DEFINED ENV{MACA_PATH})
+    if(DEFINED ENV{HPCC_PATH})
+        set(WITH_MARS ON)
+        message(STATUS "Auto-detected Mars environment from HPCC_PATH")
+    elseif(DEFINED ENV{MACA_PATH})
         set(WITH_METAX ON)
         message(STATUS "Auto-detected MetaX environment from MACA_PATH")
     else()
@@ -156,7 +160,7 @@ if(AUTO_DETECT_DEVICES)
 
     if(WITH_NVIDIA)
         set(_non_nvidia_gpu_detected FALSE)
-        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_CAMBRICON WITH_MOORE WITH_ASCEND)
+        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND)
             if(${_gpu_backend})
                 set(_non_nvidia_gpu_detected TRUE)
             endif()
@@ -328,14 +332,14 @@ endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MOORE WITH_ASCEND)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
 endforeach()
 
 if(_gpu_backend_count GREATER 1)
-    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_METAX`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_METAX`, `WITH_MARS`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NINETOOTHED AND NOT WITH_NVIDIA)
@@ -472,6 +476,30 @@ if(WITH_METAX)
     find_library(MACA_BLAS_LIB    NAMES mcblas    HINTS "${MACA_PATH}/lib" REQUIRED)
 endif()
 
+if(WITH_MARS)
+    add_compile_definitions(WITH_MARS=1)
+
+    # Normally can be found at: `/opt/hpcc/`.
+    set(HPCC_PATH $ENV{HPCC_PATH})
+    if(NOT HPCC_PATH)
+        set(HPCC_PATH "/opt/hpcc")
+    endif()
+    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/htcc_wrapper.sh)
+    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/htcc_wrapper.sh)
+
+    include_directories("${HPCC_PATH}/include")
+    include_directories("${HPCC_PATH}/tools/cu-bridge/include")
+    link_directories("${HPCC_PATH}/lib")
+    link_directories("${HPCC_PATH}/htgpu_llvm/lib")
+
+    # Libraries: hcruntime / hcdnn / hcblas. HPCC is the toolkit; Mars is the device.
+    find_library(HPCC_RUNTIME_LIB NAMES hcruntime HINTS "${HPCC_PATH}/lib" REQUIRED)
+    find_library(HPCC_DNN_LIB     NAMES hcdnn     HINTS "${HPCC_PATH}/lib" REQUIRED)
+    find_library(HPCC_BLAS_LIB    NAMES hcblas    HINTS "${HPCC_PATH}/lib" REQUIRED)
+    # htcc emits LLVM OpenMP (__kmpc_*), not GNU libgomp.
+    find_library(HPCC_OMP_LIB NAMES omp iomp5 HINTS "${HPCC_PATH}/htgpu_llvm/lib" REQUIRED)
+endif()
+
 if(WITH_MOORE)
     add_compile_definitions(WITH_MOORE=1)
 
@@ -539,11 +567,11 @@ if(WITH_ASCEND)
 endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_METAX AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
     add_compile_definitions(WITH_CPU=1)
 endif()
 
-if(WITH_TORCH OR WITH_METAX OR WITH_MOORE)
+if(WITH_TORCH OR WITH_METAX OR WITH_MARS OR WITH_MOORE)
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 

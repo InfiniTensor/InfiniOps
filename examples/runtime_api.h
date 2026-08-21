@@ -14,6 +14,9 @@
 #elif WITH_METAX
 #include "native/cuda/metax/ops/gemm/mcblas.h"
 #include "native/cuda/metax/runtime_.h"
+#elif WITH_MARS
+#include "native/cuda/mars/ops/gemm/hcblas.h"
+#include "native/cuda/mars/runtime_.h"
 #elif WITH_CAMBRICON
 #include "native/cambricon/ops/gemm/cnblas.h"
 #include "native/cambricon/runtime_.h"
@@ -39,6 +42,8 @@ using DefaultRuntimeUtils = Runtime<Device::Type::kNvidia>;
 using DefaultRuntimeUtils = Runtime<Device::Type::kIluvatar>;
 #elif WITH_METAX
 using DefaultRuntimeUtils = Runtime<Device::Type::kMetax>;
+#elif WITH_MARS
+using DefaultRuntimeUtils = Runtime<Device::Type::kMars>;
 #elif WITH_CAMBRICON
 using DefaultRuntimeUtils = Runtime<Device::Type::kCambricon>;
 #elif WITH_MOORE

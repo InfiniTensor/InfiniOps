@@ -203,6 +203,7 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
       {"cambricon", Device::Type::kCambricon},
       {"ascend", Device::Type::kAscend},
       {"metax", Device::Type::kMetax},
+      {"mars", Device::Type::kMars},
       {"moore", Device::Type::kMoore},
       {"iluvatar", Device::Type::kIluvatar},
       {"hygon", Device::Type::kHygon},
