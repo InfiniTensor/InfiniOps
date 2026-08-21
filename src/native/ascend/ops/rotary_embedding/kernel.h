@@ -1,0 +1,250 @@
+#ifndef INFINI_OPS_ASCEND_ROTARY_EMBEDDING_KERNEL_H_
+#define INFINI_OPS_ASCEND_ROTARY_EMBEDDING_KERNEL_H_
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstring>
+#include <vector>
+
+#include "acl/acl.h"
+#include "aclnn/aclnn_base.h"
+#include "aclnnop/aclnn_apply_rotary_pos_emb_v2.h"
+#include "aclnnop/aclnn_index_select.h"
+#include "base/rotary_embedding.h"
+#include "native/ascend/common.h"
+#include "native/ascend/workspace_pool_.h"
+#include "operator.h"
+
+namespace infini::ops {
+
+// Llama-style full-dimension NeoX RoPE. Positions select rows from the packed
+// [cos, sin] cache, then CANN rotates query and key together in place.
+template <>
+class Operator<RotaryEmbedding, Device::Type::kAscend>
+    : public RotaryEmbedding {
+ public:
+  Operator(const Tensor positions, Tensor query, std::optional<Tensor> key,
+           const Tensor cos_sin_cache, int64_t head_size, bool is_neox,
+           int64_t rope_dim_offset = 0, bool inverse = false)
+      : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
+                        is_neox, rope_dim_offset, inverse),
+        max_seq_len_(static_cast<int64_t>(cos_sin_cache.size(0))),
+        element_size_(cos_sin_cache.element_size()) {
+    assert(key.has_value() && "Ascend `RotaryEmbedding` requires a key tensor");
+    assert(is_neox_ && rope_dim_offset_ == 0 && !inverse_ &&
+           rot_dim_ == head_size_ &&
+           "Ascend `RotaryEmbedding` supports full-dimension forward NeoX "
+           "rotation; use another implementation for partial, inverse, or "
+           "interleaved rotation");
+    assert(cos_sin_cache_type_ == query_type_ &&
+           "Ascend `RotaryEmbedding` requires cache and query dtypes to "
+           "match");
+    assert(query.IsContiguous() && key->IsContiguous() &&
+           cos_sin_cache.IsContiguous() &&
+           "Ascend `RotaryEmbedding` requires contiguous query, key, and "
+           "cache tensors");
+
+    const auto num_tokens = static_cast<int64_t>(num_tokens_);
+    const auto head_dim = head_size_;
+    const auto acl_dtype = ascend::ToAclDtype(query.dtype());
+    const auto table_bytes =
+        static_cast<size_t>(max_seq_len_ * head_dim) * element_size_;
+    auto ret =
+        aclrtMalloc(&cos_table_data_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to allocate cosine table");
+    ret =
+        aclrtMalloc(&sin_table_data_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to allocate sine table");
+
+    UploadCosSinCache(cos_sin_cache);
+    cos_sin_cache_data_ = cos_sin_cache.data();
+
+    const auto gathered_bytes =
+        static_cast<size_t>(num_tokens * head_dim) * element_size_;
+    ret = aclrtMalloc(&cos_data_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to allocate gathered cosine");
+    ret = aclrtMalloc(&sin_data_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to allocate gathered sine");
+
+    cos_table_cache_ = ascend::AclTensorCache({max_seq_len_, head_dim},
+                                              acl_dtype, cos_table_data_);
+    sin_table_cache_ = ascend::AclTensorCache({max_seq_len_, head_dim},
+                                              acl_dtype, sin_table_data_);
+    positions_cache_ = ascend::AclTensorCache(
+        {num_tokens}, ACL_INT64, const_cast<void*>(positions.data()));
+    cos_out_cache_ =
+        ascend::AclTensorCache({num_tokens, head_dim}, acl_dtype, cos_data_);
+    sin_out_cache_ =
+        ascend::AclTensorCache({num_tokens, head_dim}, acl_dtype, sin_data_);
+    cos_rotary_cache_ =
+        ascend::AclTensorCache({num_tokens, 1, head_dim}, acl_dtype, cos_data_);
+    sin_rotary_cache_ =
+        ascend::AclTensorCache({num_tokens, 1, head_dim}, acl_dtype, sin_data_);
+    query_cache_ = ascend::AclTensorCache(
+        {num_tokens, static_cast<int64_t>(num_heads_), head_dim}, acl_dtype,
+        query.data());
+    key_cache_ = ascend::AclTensorCache(
+        {num_tokens, static_cast<int64_t>(num_kv_heads_), head_dim}, acl_dtype,
+        key->data());
+  }
+
+  ~Operator() {
+    if (!ascend::IsAclRuntimeAlive()) return;
+
+    cos_table_cache_.release();
+    sin_table_cache_.release();
+    positions_cache_.release();
+    cos_out_cache_.release();
+    sin_out_cache_.release();
+    cos_rotary_cache_.release();
+    sin_rotary_cache_.release();
+    query_cache_.release();
+    key_cache_.release();
+    if (cos_table_data_) aclrtFree(cos_table_data_);
+    if (sin_table_data_) aclrtFree(sin_table_data_);
+    if (cos_data_) aclrtFree(cos_data_);
+    if (sin_data_) aclrtFree(sin_data_);
+  }
+
+  void operator()(const Tensor positions, Tensor query,
+                  std::optional<Tensor> key, const Tensor cos_sin_cache,
+                  int64_t head_size, bool is_neox, int64_t rope_dim_offset = 0,
+                  bool inverse = false) const override {
+    assert(key.has_value());
+    auto stream = static_cast<aclrtStream>(stream_);
+
+    if (cos_sin_cache.data() != cos_sin_cache_data_) {
+      UploadCosSinCache(cos_sin_cache);
+      cos_sin_cache_data_ = cos_sin_cache.data();
+    }
+
+    auto t_cos_table = cos_table_cache_.get(cos_table_data_);
+    auto t_sin_table = sin_table_cache_.get(sin_table_data_);
+    auto t_positions =
+        positions_cache_.get(const_cast<void*>(positions.data()));
+    auto t_cos_out = cos_out_cache_.get(cos_data_);
+    auto t_sin_out = sin_out_cache_.get(sin_data_);
+
+    if (!cos_index_executor_) {
+      aclnnIndexSelectGetWorkspaceSize(t_cos_table, 0, t_positions, t_cos_out,
+                                       &cos_index_ws_size_,
+                                       &cos_index_executor_);
+      aclSetAclOpExecutorRepeatable(cos_index_executor_);
+    } else {
+      aclSetInputTensorAddr(cos_index_executor_, 1, t_positions,
+                            const_cast<void*>(positions.data()));
+    }
+
+    if (!sin_index_executor_) {
+      aclnnIndexSelectGetWorkspaceSize(t_sin_table, 0, t_positions, t_sin_out,
+                                       &sin_index_ws_size_,
+                                       &sin_index_executor_);
+      aclSetAclOpExecutorRepeatable(sin_index_executor_);
+    } else {
+      aclSetInputTensorAddr(sin_index_executor_, 1, t_positions,
+                            const_cast<void*>(positions.data()));
+    }
+
+    auto index_ws_size = std::max(cos_index_ws_size_, sin_index_ws_size_);
+    auto& index_arena =
+        ascend::GetWorkspacePool().Ensure(stream, index_ws_size);
+    aclnnIndexSelect(index_arena.buf, cos_index_ws_size_, cos_index_executor_,
+                     stream);
+    aclnnIndexSelect(index_arena.buf, sin_index_ws_size_, sin_index_executor_,
+                     stream);
+
+    auto t_cos = cos_rotary_cache_.get(cos_data_);
+    auto t_sin = sin_rotary_cache_.get(sin_data_);
+    auto t_query = query_cache_.get(query.data());
+    auto t_key = key_cache_.get(key->data());
+    if (!rotary_executor_) {
+      aclnnApplyRotaryPosEmbV2GetWorkspaceSize(
+          t_query, t_key, t_cos, t_sin, 4, const_cast<char*>("half"),
+          &rotary_ws_size_, &rotary_executor_);
+      aclSetAclOpExecutorRepeatable(rotary_executor_);
+    } else {
+      aclSetInputTensorAddr(rotary_executor_, 0, t_query, query.data());
+      aclSetInputTensorAddr(rotary_executor_, 1, t_key, key->data());
+      aclSetInputTensorAddr(rotary_executor_, 2, t_cos, cos_data_);
+      aclSetInputTensorAddr(rotary_executor_, 3, t_sin, sin_data_);
+    }
+
+    auto& rotary_arena =
+        ascend::GetWorkspacePool().Ensure(stream, rotary_ws_size_);
+    aclnnApplyRotaryPosEmbV2(rotary_arena.buf, rotary_ws_size_,
+                             rotary_executor_, stream);
+  }
+
+ private:
+  void UploadCosSinCache(const Tensor cos_sin_cache) const {
+    const auto half_dim = head_size_ / 2;
+    const auto table_bytes =
+        static_cast<size_t>(max_seq_len_ * head_size_) * element_size_;
+    std::vector<uint8_t> packed(table_bytes);
+    std::vector<uint8_t> cosine(table_bytes);
+    std::vector<uint8_t> sine(table_bytes);
+
+    auto ret = aclrtMemcpy(packed.data(), table_bytes, cos_sin_cache.data(),
+                           table_bytes, ACL_MEMCPY_DEVICE_TO_HOST);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to read cos/sin cache");
+    for (int64_t position = 0; position < max_seq_len_; ++position) {
+      for (int64_t index = 0; index < half_dim; ++index) {
+        const auto cos_source =
+            packed.data() + (position * head_size_ + index) * element_size_;
+        const auto sin_source =
+            packed.data() +
+            (position * head_size_ + half_dim + index) * element_size_;
+        for (int64_t half = 0; half < 2; ++half) {
+          const auto destination_index =
+              position * head_size_ + half * half_dim + index;
+          std::memcpy(cosine.data() + destination_index * element_size_,
+                      cos_source, element_size_);
+          std::memcpy(sine.data() + destination_index * element_size_,
+                      sin_source, element_size_);
+        }
+      }
+    }
+
+    ret = aclrtMemcpy(cos_table_data_, table_bytes, cosine.data(), table_bytes,
+                      ACL_MEMCPY_HOST_TO_DEVICE);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to upload cosine table");
+    ret = aclrtMemcpy(sin_table_data_, table_bytes, sine.data(), table_bytes,
+                      ACL_MEMCPY_HOST_TO_DEVICE);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to upload sine table");
+  }
+
+  int64_t max_seq_len_{0};
+  size_t element_size_{0};
+  mutable const void* cos_sin_cache_data_{nullptr};
+  void* cos_table_data_{nullptr};
+  void* sin_table_data_{nullptr};
+  void* cos_data_{nullptr};
+  void* sin_data_{nullptr};
+  mutable ascend::AclTensorCache cos_table_cache_;
+  mutable ascend::AclTensorCache sin_table_cache_;
+  mutable ascend::AclTensorCache positions_cache_;
+  mutable ascend::AclTensorCache cos_out_cache_;
+  mutable ascend::AclTensorCache sin_out_cache_;
+  mutable ascend::AclTensorCache cos_rotary_cache_;
+  mutable ascend::AclTensorCache sin_rotary_cache_;
+  mutable ascend::AclTensorCache query_cache_;
+  mutable ascend::AclTensorCache key_cache_;
+  mutable aclOpExecutor* cos_index_executor_{nullptr};
+  mutable uint64_t cos_index_ws_size_{0};
+  mutable aclOpExecutor* sin_index_executor_{nullptr};
+  mutable uint64_t sin_index_ws_size_{0};
+  mutable aclOpExecutor* rotary_executor_{nullptr};
+  mutable uint64_t rotary_ws_size_{0};
+};
+
+}  // namespace infini::ops
+
+#endif
