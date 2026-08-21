@@ -501,6 +501,9 @@ if(WITH_ASCEND)
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
         # them via the generated launch functions.
         target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
+        target_link_libraries(infiniops PRIVATE
+            -Wl,--whole-archive $<TARGET_FILE:no_workspace_kernel> -Wl,--no-whole-archive)
+        add_dependencies(infiniops no_workspace_kernel_build)
     endif()
 endif()
 
@@ -510,8 +513,9 @@ set(INFINI_OPS_SMOKE_BUILD OFF CACHE BOOL
     "Build only the smoke-test operator subset")
 set(_infini_ops_smoke_ops
     add mul relu cast cat gemm matmul linear rms_norm swiglu silu_and_mul
-    causal_softmax causal_softmax_infinilm abs clamp exp)
-set(_infini_ops_smoke_torch_ops abs clamp exp relu)
+    fused_add_rms_norm rotary_embedding causal_softmax
+    causal_softmax_infinilm abs clamp exp argmax)
+set(_infini_ops_smoke_torch_ops abs clamp exp relu argmax)
 
 if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
@@ -1394,9 +1398,9 @@ if(GENERATE_PYTHON_BINDINGS)
     # Custom `AscendC` kernel objects must be linked directly into ops
     # because the `AscendC` toolchain compiles host stubs with hidden
     # visibility — `libinfiniops.so` cannot re-export those symbols.
-    # The `Operator<..., 1>` template instantiations that call
-    # `aclrtlaunch_*` live in `ops.cc`, so link here with
-    # `--whole-archive` to ensure all launch functions are available.
+    # The Python extension can compile generated instantiations that call
+    # `aclrtlaunch_*` directly, so link here with `--whole-archive`
+    # to ensure all launch functions are available.
     # `$<TARGET_FILE>` works for both real `ascendc_library()` targets and
     # `IMPORTED` targets pointing at a pre-built `.a`.  The
     # `no_workspace_kernel` target is only created inside the
