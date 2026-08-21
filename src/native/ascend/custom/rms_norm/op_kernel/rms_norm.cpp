@@ -200,8 +200,8 @@ class KernelRmsNorm {
 extern "C" __global__ __aicore__ void rms_norm(
     GM_ADDR x, GM_ADDR weight, GM_ADDR y, int64_t totalRows, int64_t dimLength,
     int64_t dimLengthAlign, int64_t formerNum, int64_t formerLength,
-    int64_t tailLength, float eps, int64_t dtypeSize) {
-  if (dtypeSize == 2) {
+    int64_t tailLength, float eps, int64_t isHalf) {
+  if (isHalf != 0) {
     KernelRmsNorm<half> op;
     op.Init(x, weight, y, totalRows, dimLength, dimLengthAlign, formerNum,
             formerLength, tailLength, eps);
