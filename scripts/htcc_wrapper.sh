@@ -1,6 +1,9 @@
 #!/bin/bash
 # HPCC analog of mxcc_wrapper.sh.
 # htcc only enables device compilation for `.cu`. Rewrite compile inputs.
+# Place the `.cu` symlink next to the source so same-directory `#include`
+# resolution (e.g. bindings `mul.h` vs C-API `generated/include/mul.h`) still
+# works — unlike rewriting into `/tmp`.
 ARGS=()
 skip_next=0
 has_compile=0
@@ -30,14 +33,12 @@ done
 
 if [ "$has_compile" -eq 1 ]; then
     rewritten=()
-    mkdir -p /tmp/htcc-wrap
     for arg in "${ARGS[@]}"; do
         case "$arg" in
             *.cc|*.cpp|*.cxx)
                 if [ -f "$arg" ]; then
                     abs=$(readlink -f "$arg")
-                    key=$(printf '%s' "$abs" | md5sum | awk '{print $1}')
-                    cu="/tmp/htcc-wrap/${key}.cu"
+                    cu="${abs}.cu"
                     ln -sfn "$abs" "$cu"
                     rewritten+=("$cu")
                 else

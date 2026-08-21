@@ -78,5 +78,6 @@ template class Operator<ScaledDotProductAttention, Device::Type::kMetax, 1>;
 template class Operator<ScaledDotProductAttention, Device::Type::kMoore, 1>;
 template class Operator<ScaledDotProductAttention, Device::Type::kIluvatar, 1>;
 template class Operator<ScaledDotProductAttention, Device::Type::kHygon, 1>;
+template class Operator<ScaledDotProductAttention, Device::Type::kMars, 1>;
 
 }  // namespace infini::ops

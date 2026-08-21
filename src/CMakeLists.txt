@@ -889,9 +889,10 @@ if(TORCH_SOURCES)
             torch_compile=${INFINI_OPS_TORCH_COMPILE_JOBS})
     endif()
 
-    if(WITH_METAX OR WITH_MOORE)
-        # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
-        # headers. Compile `torch` sources with the system C++ compiler instead.
+    if(WITH_METAX OR WITH_MOORE OR WITH_MARS)
+        # Vendor compilers (`mxcc`/`mcc`/`htcc`) cannot compile vendor-forked
+        # `torch` headers. Compile `torch` sources with the system C++ compiler
+        # instead.
         find_program(SYSTEM_CXX NAMES g++ c++)
 
         if(NOT SYSTEM_CXX)
@@ -909,6 +910,11 @@ if(TORCH_SOURCES)
                 "-I${MACA_PATH}/include"
                 "-I${MACA_PATH}/include/mcr"
                 "-I${MACA_PATH}/tools/cu-bridge/include")
+        endif()
+        if(WITH_MARS)
+            list(APPEND _torch_vendor_include_flags
+                "-I${HPCC_PATH}/include"
+                "-I${HPCC_PATH}/tools/cu-bridge/include")
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
@@ -944,6 +950,9 @@ if(TORCH_SOURCES)
         set(_torch_extra_flags "")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
+        endif()
+        if(WITH_MARS)
+            list(APPEND _torch_extra_flags "-DUSE_HPCC=1" "-DWITH_MARS=1")
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_extra_flags "-DWITH_MOORE=1")

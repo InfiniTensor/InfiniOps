@@ -75,6 +75,7 @@ _DEVICE_TYPES = (
     "kMoore",
     "kIluvatar",
     "kHygon",
+    "kMars",
 )
 
 _C10_DEVICE_TYPES = (
@@ -83,6 +84,7 @@ _C10_DEVICE_TYPES = (
     "kMetax",
     "kMoore",
     "kIluvatar",
+    "kMars",
 )
 
 # YAML scalar-type tokens → C++ types. Reference types (e.g. `const Scalar&`)
