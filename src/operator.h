@@ -202,6 +202,15 @@ struct CacheKeyBuilder {
 template <typename Key, Device::Type kDev>
 struct ActiveImplementations;
 
+namespace detail {
+
+template <typename Key>
+std::vector<std::size_t> ActiveImplementationIndices(Device::Type dev_type);
+template <typename Key>
+std::size_t DefaultImplementationIndex(Device::Type dev_type);
+
+}  // namespace detail
+
 class OperatorBase {
  public:
   virtual ~OperatorBase() = default;
@@ -344,20 +353,7 @@ class Operator : public OperatorBase {
 
   static std::vector<std::size_t> active_implementation_indices(
       Device::Type dev_type) {
-    if (!detail::ListContains(dev_type, ActiveDevices<Key>{})) {
-      return {};
-    }
-
-    std::vector<std::size_t> result;
-    DispatchFunc<ActiveDevices<Key>>(
-        dev_type,
-        [&](auto device_tag) {
-          constexpr Device::Type kDev = decltype(device_tag)::value;
-          result = detail::ListToVector(
-              typename ActiveImplementations<Key, kDev>::type{});
-        },
-        "Operator::active_implementation_indices");
-    return result;
+    return detail::ActiveImplementationIndices<Key>(dev_type);
   }
 
   template <typename... Args>
@@ -381,30 +377,8 @@ class Operator : public OperatorBase {
   static constexpr std::size_t implementation_index_{implementation_index};
 
  private:
-  template <auto first, auto... rest>
-  static constexpr std::size_t FirstActiveImplementationIndex(
-      List<first, rest...>) {
-    return static_cast<std::size_t>(first);
-  }
-
-  static std::size_t FirstActiveImplementationIndex(List<>) {
-    assert(false && "operator has no active implementation for this device");
-    std::abort();
-  }
-
   static std::size_t DefaultImplementationIndex(Device::Type dev_type) {
-    std::size_t default_index{0};
-
-    DispatchFunc<ActiveDevices<Key>>(
-        dev_type,
-        [&](auto device_tag) {
-          constexpr Device::Type kDev = decltype(device_tag)::value;
-          default_index = FirstActiveImplementationIndex(
-              typename ActiveImplementations<Key, kDev>::type{});
-        },
-        "Operator::DefaultImplementationIndex");
-
-    return default_index;
+    return detail::DefaultImplementationIndex<Key>(dev_type);
   }
 
   static Config DefaultConfig(Device::Type dev_type) {
@@ -504,6 +478,54 @@ struct ActiveImplementations {
   using type = typename detail::ActiveImplementationsHelper<
       Key, kDev, std::make_index_sequence<kMaxImplementations>>::type;
 };
+
+namespace detail {
+
+template <auto first, auto... rest>
+constexpr std::size_t FirstActiveImplementationIndex(List<first, rest...>) {
+  return static_cast<std::size_t>(first);
+}
+
+inline std::size_t FirstActiveImplementationIndex(List<>) {
+  assert(false && "operator has no active implementation for this device");
+  std::abort();
+}
+
+template <typename Key>
+std::size_t DefaultImplementationIndex(Device::Type dev_type) {
+  std::size_t default_index{0};
+
+  DispatchFunc<ActiveDevices<Key>>(
+      dev_type,
+      [&](auto device_tag) {
+        constexpr Device::Type kDev = decltype(device_tag)::value;
+        default_index = FirstActiveImplementationIndex(
+            typename ActiveImplementations<Key, kDev>::type{});
+      },
+      "Operator::DefaultImplementationIndex");
+
+  return default_index;
+}
+
+template <typename Key>
+std::vector<std::size_t> ActiveImplementationIndices(Device::Type dev_type) {
+  if (!ListContains(dev_type, ActiveDevices<Key>{})) {
+    return {};
+  }
+
+  std::vector<std::size_t> result;
+  DispatchFunc<ActiveDevices<Key>>(
+      dev_type,
+      [&](auto device_tag) {
+        constexpr Device::Type kDev = decltype(device_tag)::value;
+        result =
+            ListToVector(typename ActiveImplementations<Key, kDev>::type{});
+      },
+      "Operator::active_implementation_indices");
+  return result;
+}
+
+}  // namespace detail
 
 }  // namespace infini::ops
 
