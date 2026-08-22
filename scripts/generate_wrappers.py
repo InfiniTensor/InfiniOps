@@ -1001,6 +1001,8 @@ void Bind{symbol_name}(py::module& m) {{
 def _generate_legacy_c(operator, paths):
     op_type = _op_cpp_type(operator.name)
     symbol_name = _op_symbol_name(operator.name)
+    optional_tensor_params = _find_optional_tensor_params(operator.name)
+    optional_non_tensor_params = _find_optional_non_tensor_params(operator.name)
 
     def _generate_source(operator):
         impl_includes = "\n".join(
@@ -1130,6 +1132,25 @@ __C __export {_generate_destroy_func_decl(operator)};
     def _generate_destroy_func_decl(operator):
         return f"infiniStatus_t infiniopDestroy{symbol_name}Descriptor(infiniop{symbol_name}Descriptor_t desc)"
 
+    def _is_optional_tensor(arg):
+        spelling = _strip_top_level_const(arg.type.spelling)
+
+        if spelling.startswith("std::optional<"):
+            return (
+                "Tensor" in spelling or "TensorView" in spelling
+            ) and "std::vector" not in spelling
+
+        if "Tensor" in spelling or "TensorView" in spelling:
+            return False
+
+        if _is_known_non_tensor_type(spelling):
+            return False
+
+        if arg.spelling in optional_non_tensor_params:
+            return False
+
+        return arg.spelling in optional_tensor_params
+
     def _generate_params(node, call=False):
         arguments = tuple(node.get_arguments())
 
@@ -1157,6 +1178,11 @@ __C __export {_generate_destroy_func_decl(operator)};
 
             return spelling.replace("Tensor", "infiniopTensorDescriptor_t")
 
+        def _handle_optional_tensor(arg):
+            prefix = "const " if arg.type.spelling.strip().startswith("const ") else ""
+            tensor_type = "void *" if call else "infiniopTensorDescriptor_t"
+            return f"{prefix}{tensor_type}"
+
         def _handle_std_optional(spelling):
             return _unwrap_std_optional(spelling)
 
@@ -1169,7 +1195,11 @@ __C __export {_generate_destroy_func_decl(operator)};
             return f"{prefix}infiniDtype_t"
 
         return ", ".join(
-            f"{_handle_data_type(_handle_std_optional(_handle_tensor(arg.type.spelling)))} {arg.spelling}"
+            (
+                f"{_handle_optional_tensor(arg)} {arg.spelling}"
+                if _is_optional_tensor(arg)
+                else f"{_handle_data_type(_handle_std_optional(_handle_tensor(arg.type.spelling)))} {arg.spelling}"
+            )
             for arg in arguments
         )
 
@@ -1178,7 +1208,9 @@ __C __export {_generate_destroy_func_decl(operator)};
             f"DataTypeFromInfiniDType({arg.spelling})"
             if _is_data_type_spelling(arg.type.spelling)
             else (
-                _generate_tensor_caster(arg.spelling, is_data=is_data)
+                _generate_optional_tensor_caster(arg.spelling, is_data=is_data)
+                if _is_optional_tensor(arg)
+                else _generate_tensor_caster(arg.spelling, is_data=is_data)
                 if "Tensor" in arg.type.spelling
                 else arg.spelling
             )
@@ -1191,6 +1223,14 @@ __C __export {_generate_destroy_func_decl(operator)};
             return f"infini::ops::Tensor(const_cast<void *>({name}), infini::ops::Tensor::Shape{{}})"
 
         return f"infini::ops::Tensor{{nullptr, {name}->shape(), DataTypeFromInfiniDType({name}->dtype()), infini::ops::Device{{DeviceTypeFromInfiniDevice(handle->device), handle->device_id}}, {name}->strides()}}"
+
+    def _generate_optional_tensor_caster(name, is_data=False):
+        tensor = _generate_tensor_caster(name, is_data=is_data)
+
+        return (
+            f"{name} == nullptr ? std::optional<infini::ops::Tensor>{{}} : "
+            f"std::optional<infini::ops::Tensor>{{{tensor}}}"
+        )
 
     return _generate_source(operator), _generate_header(operator)
 

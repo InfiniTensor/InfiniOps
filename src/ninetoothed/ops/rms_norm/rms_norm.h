@@ -3,6 +3,8 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
+#include <optional>
 #include <vector>
 
 #include "base/rms_norm.h"
@@ -18,15 +20,23 @@ class Operator<RmsNorm, Device::Type::kNvidia, 9> : public RmsNorm {
   using RmsNorm::RmsNorm;
   using RmsNorm::operator();
 
-  void operator()(const Tensor input, const Tensor weight, float eps,
-                  Tensor out) const override {
-    assert(input.dtype() == out.dtype() && out.dtype() == weight.dtype() &&
+  void operator()(const Tensor input, const std::optional<Tensor> weight,
+                  float eps, Tensor out) const override {
+    if (!weight.has_value()) {
+      assert(false && "NineToothed `RmsNorm` does not support `weight=None`");
+      std::abort();
+    }
+    const Tensor& affine_weight = *weight;
+
+    assert(input.dtype() == out.dtype() &&
+           out.dtype() == affine_weight.dtype() &&
            "operator `RmsNorm` requires all input and output tensors to have "
            "the same dtype");
     assert(input.shape() == out.shape() &&
            "NineToothed `RmsNorm` requires input and output tensors with the "
            "same shape");
-    assert(weight.ndim() == 1 && weight.size(-1) == out.size(-1) &&
+    assert(affine_weight.ndim() == 1 &&
+           affine_weight.size(-1) == out.size(-1) &&
            "NineToothed `RmsNorm` requires a 1D weight matching the last "
            "dimension");
     assert(
@@ -45,7 +55,7 @@ class Operator<RmsNorm, Device::Type::kNvidia, 9> : public RmsNorm {
     weight_sizes.assign(out.shape().begin(), out.shape().end());
     weight_strides.assign(out.ndim(), 0);
     weight_strides.back() =
-        weight.strides().empty() ? 1 : weight.strides().back();
+        affine_weight.strides().empty() ? 1 : affine_weight.strides().back();
 
     const int dtype_index = ninetoothed::DataTypeIndex(out.dtype());
     assert(
@@ -53,7 +63,7 @@ class Operator<RmsNorm, Device::Type::kNvidia, 9> : public RmsNorm {
         "NineToothed `RmsNorm` supports only float16, bfloat16, and float32");
 
     ninetoothed::Tensor input_tensor(input);
-    ninetoothed::Tensor weight_tensor(const_cast<void*>(weight.data()),
+    ninetoothed::Tensor weight_tensor(const_cast<void*>(affine_weight.data()),
                                       weight_sizes.data(),
                                       weight_strides.data());
     ninetoothed::Tensor eps_tensor(eps_value, empty_shape, empty_strides);

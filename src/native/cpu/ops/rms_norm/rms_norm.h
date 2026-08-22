@@ -17,8 +17,8 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
  public:
   using RmsNorm::RmsNorm;
 
-  void operator()(const Tensor input, const Tensor weight, float eps,
-                  Tensor out) const override {
+  void operator()(const Tensor input, const std::optional<Tensor> weight,
+                  float eps, Tensor out) const override {
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(
         out.dtype(),
         [&](auto tag) {
@@ -30,11 +30,12 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
 
  private:
   template <typename T>
-  void Compute(const Tensor input, const Tensor weight, float eps,
-               Tensor out) const {
+  void Compute(const Tensor input, const std::optional<Tensor> weight,
+               float eps, Tensor out) const {
     auto* out_ptr = static_cast<T*>(out.data());
     const auto* input_ptr = static_cast<const T*>(input.data());
-    const auto* weight_ptr = static_cast<const T*>(weight.data());
+    const auto* weight_ptr =
+        weight.has_value() ? static_cast<const T*>(weight->data()) : nullptr;
 
     auto stride_input_batch = input_strides_.size() > 1 ? input_strides_[0] : 0;
     auto stride_input_nhead =
@@ -57,8 +58,11 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
         float rms = 1.f / std::sqrt(ss / static_cast<float>(dim_) + eps);
 
         for (Tensor::Size k = 0; k < dim_; ++k) {
-          out_row[k] = Cast<T>(Cast<float>(input_row[k]) *
-                               Cast<float>(weight_ptr[k]) * rms);
+          float value = Cast<float>(input_row[k]) * rms;
+          if (weight_ptr != nullptr) {
+            value *= Cast<float>(weight_ptr[k]);
+          }
+          out_row[k] = Cast<T>(value);
         }
       }
     }
