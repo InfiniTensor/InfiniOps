@@ -1,0 +1,182 @@
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
+#include "kernel.h"
+
+namespace infini::ops {
+namespace {
+
+__nram__ char rotary_embedding_nram_buffer[NRAM_MAX_SIZE];
+
+template <typename T>
+__mlu_device__ void ToFloat(float* output, const T* input, size_t count) {
+  if constexpr (std::is_same<T, __half>::value) {
+    __bang_half2float(output, reinterpret_cast<const half*>(input), count);
+  } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
+    __bang_bfloat162float(output, input, count);
+  } else {
+    __memcpy(output, input, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+template <typename T>
+__mlu_device__ void FromFloat(T* output, const float* input, size_t count) {
+  if constexpr (std::is_same<T, __half>::value) {
+    __bang_float2half(reinterpret_cast<half*>(output), input, count);
+  } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
+    __bang_float2bfloat16(output, input, count);
+  } else {
+    __memcpy(output, input, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+template <typename T, typename TCache>
+__mlu_global__ void RotaryEmbeddingCambriconKernel(
+    const int64_t* positions, T* data, const TCache* cos_sin_cache,
+    size_t num_tokens, size_t sequence_length, size_t num_heads, size_t rot_dim,
+    size_t rope_dim_offset, ptrdiff_t batch_stride, ptrdiff_t token_stride,
+    ptrdiff_t head_stride, ptrdiff_t cache_token_stride, bool is_neox,
+    bool inverse) {
+  const size_t embed_dim = rot_dim / 2;
+  const size_t task_count = num_tokens * num_heads;
+  const size_t tasks_per_core = task_count / taskDim;
+  const size_t extra_tasks = task_count % taskDim;
+  const size_t first_task =
+      taskId * tasks_per_core + std::min<size_t>(taskId, extra_tasks);
+  const size_t local_task_count = tasks_per_core + (taskId < extra_tasks);
+
+  constexpr size_t kAlignment = 128;
+  constexpr size_t kBytesPerPair =
+      4 * sizeof(T) + sizeof(TCache) + 6 * sizeof(float);
+  const size_t usable_bytes = NRAM_MAX_SIZE - kAlignment;
+  size_t max_pairs = usable_bytes / kBytesPerPair;
+  if (max_pairs >= 64) {
+    max_pairs = max_pairs / 64 * 64;
+  }
+
+  char* buffer = reinterpret_cast<char*>(
+      (reinterpret_cast<uintptr_t>(rotary_embedding_nram_buffer) + kAlignment -
+       1) &
+      ~(kAlignment - 1));
+  T* rotary_cache = reinterpret_cast<T*>(buffer);
+  T* x_native = rotary_cache + 2 * max_pairs;
+  T* y_native = x_native + max_pairs;
+  TCache* cache_native = reinterpret_cast<TCache*>(y_native + max_pairs);
+  float* x = reinterpret_cast<float*>(cache_native + max_pairs);
+  float* y = x + max_pairs;
+  float* cos = y + max_pairs;
+  float* sin = cos + max_pairs;
+  float* result_x = sin + max_pairs;
+  float* result_y = result_x + max_pairs;
+
+  for (size_t local_task = 0; local_task < local_task_count; ++local_task) {
+    const size_t task = first_task + local_task;
+    const size_t token = task / num_heads;
+    const size_t head = task % num_heads;
+    const size_t batch = token / sequence_length;
+    const size_t sequence = token % sequence_length;
+    const ptrdiff_t data_offset =
+        static_cast<ptrdiff_t>(batch) * batch_stride +
+        static_cast<ptrdiff_t>(sequence) * token_stride +
+        static_cast<ptrdiff_t>(head) * head_stride +
+        static_cast<ptrdiff_t>(rope_dim_offset);
+    const TCache* cache = cos_sin_cache + positions[token] * cache_token_stride;
+
+    for (size_t processed = 0; processed < embed_dim; processed += max_pairs) {
+      const size_t current = std::min(max_pairs, embed_dim - processed);
+
+      if (is_neox) {
+        __memcpy(x_native, data + data_offset + processed, current * sizeof(T),
+                 GDRAM2NRAM);
+        __memcpy(y_native, data + data_offset + embed_dim + processed,
+                 current * sizeof(T), GDRAM2NRAM);
+      } else {
+        __memcpy(rotary_cache, data + data_offset + 2 * processed,
+                 2 * current * sizeof(T), GDRAM2NRAM);
+        __memcpy(x_native, rotary_cache, sizeof(T), NRAM2NRAM, sizeof(T),
+                 2 * sizeof(T), current - 1);
+        __memcpy(y_native, rotary_cache + 1, sizeof(T), NRAM2NRAM, sizeof(T),
+                 2 * sizeof(T), current - 1);
+      }
+
+      ToFloat(x, x_native, current);
+      ToFloat(y, y_native, current);
+      __memcpy(cache_native, cache + processed, current * sizeof(TCache),
+               GDRAM2NRAM);
+      ToFloat(cos, cache_native, current);
+      __memcpy(cache_native, cache + embed_dim + processed,
+               current * sizeof(TCache), GDRAM2NRAM);
+      ToFloat(sin, cache_native, current);
+      if (inverse) {
+        __bang_mul_scalar(sin, sin, -1.0f, current);
+      }
+
+      __bang_mul(result_x, x, cos, current);
+      __bang_mul(result_y, y, sin, current);
+      __bang_sub(result_x, result_x, result_y, current);
+
+      __bang_mul(result_y, y, cos, current);
+      __bang_mul(x, x, sin, current);
+      __bang_add(result_y, result_y, x, current);
+
+      FromFloat(x_native, result_x, current);
+      FromFloat(y_native, result_y, current);
+      if (is_neox) {
+        __memcpy(data + data_offset + processed, x_native, current * sizeof(T),
+                 NRAM2GDRAM);
+        __memcpy(data + data_offset + embed_dim + processed, y_native,
+                 current * sizeof(T), NRAM2GDRAM);
+      } else {
+        __memcpy(rotary_cache, x_native, sizeof(T), NRAM2NRAM, 2 * sizeof(T),
+                 sizeof(T), current - 1);
+        __memcpy(rotary_cache + 1, y_native, sizeof(T), NRAM2NRAM,
+                 2 * sizeof(T), sizeof(T), current - 1);
+        __memcpy(data + data_offset + 2 * processed, rotary_cache,
+                 2 * current * sizeof(T), NRAM2GDRAM);
+      }
+    }
+  }
+}
+
+}  // namespace
+
+template <typename T, typename TCache>
+void LaunchRotaryEmbeddingCambricon(
+    cnrtQueue_t queue, int core_per_cluster, int cluster_count,
+    const int64_t* positions, T* data, const TCache* cos_sin_cache,
+    size_t num_tokens, size_t sequence_length, size_t num_heads, size_t rot_dim,
+    size_t rope_dim_offset, ptrdiff_t batch_stride, ptrdiff_t token_stride,
+    ptrdiff_t head_stride, ptrdiff_t cache_token_stride, bool is_neox,
+    bool inverse) {
+  cnrtDim3_t kernel_dim;
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+  RotaryEmbeddingCambriconKernel<T, TCache>
+      <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+          positions, data, cos_sin_cache, num_tokens, sequence_length,
+          num_heads, rot_dim, rope_dim_offset, batch_stride, token_stride,
+          head_stride, cache_token_stride, is_neox, inverse);
+}
+
+#define INSTANTIATE_ROTARY_EMBEDDING(T, TCACHE)                         \
+  template void LaunchRotaryEmbeddingCambricon<T, TCACHE>(              \
+      cnrtQueue_t, int, int, const int64_t*, T*, const TCACHE*, size_t, \
+      size_t, size_t, size_t, size_t, ptrdiff_t, ptrdiff_t, ptrdiff_t,  \
+      ptrdiff_t, bool, bool)
+
+INSTANTIATE_ROTARY_EMBEDDING(__half, __half);
+INSTANTIATE_ROTARY_EMBEDDING(__half, __bang_bfloat16);
+INSTANTIATE_ROTARY_EMBEDDING(__half, float);
+INSTANTIATE_ROTARY_EMBEDDING(__bang_bfloat16, __half);
+INSTANTIATE_ROTARY_EMBEDDING(__bang_bfloat16, __bang_bfloat16);
+INSTANTIATE_ROTARY_EMBEDDING(__bang_bfloat16, float);
+INSTANTIATE_ROTARY_EMBEDDING(float, __half);
+INSTANTIATE_ROTARY_EMBEDDING(float, __bang_bfloat16);
+INSTANTIATE_ROTARY_EMBEDDING(float, float);
+
+#undef INSTANTIATE_ROTARY_EMBEDDING
+
+}  // namespace infini::ops
