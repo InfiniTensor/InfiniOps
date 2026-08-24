@@ -5,6 +5,7 @@ INFINI_OPS_SUPPORTED_PLATFORMS=(
     nvidia
     iluvatar
     hygon
+    thead
     metax
     moore
     cambricon
@@ -80,6 +81,12 @@ _infini_ops_detect_hygon() {
     _infini_ops_find_hygon_cuda_root "${dtk_root}" > /dev/null
 }
 
+_infini_ops_detect_thead() {
+    local cuda_root="${CUDA_SDK:-/usr/local/PPU_SDK/CUDA_SDK}"
+
+    [[ -x "${cuda_root}/bin/nvcc" ]]
+}
+
 _infini_ops_detect_metax() {
     if [[ -n "${MACA_PATH:-}" ]]; then
         return 0
@@ -114,6 +121,10 @@ infini_ops_detect_platforms() {
 
     if _infini_ops_detect_hygon; then
         detected+=("hygon")
+    fi
+
+    if _infini_ops_detect_thead; then
+        detected+=("thead")
     fi
 
     if _infini_ops_detect_metax; then

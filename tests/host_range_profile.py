@@ -22,6 +22,7 @@ _PLATFORM_TO_TORCH_DEVICE = {
     "metax": "cuda",
     "iluvatar": "cuda",
     "hygon": "cuda",
+    "thead": "cuda",
     "moore": "musa",
     "cambricon": "mlu",
     "ascend": "npu",

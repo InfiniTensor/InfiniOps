@@ -44,6 +44,7 @@ InfiniOps extension so `import infini.ops` can load its runtime dependency.
 | `-DWITH_METAX=[ON\|OFF]` | Compile the MetaX implementation | OFF |
 | `-DWITH_ILUVATAR=[ON\|OFF]` | Compile the Iluvatar implementation | OFF |
 | `-DWITH_HYGON=[ON\|OFF]` | Compile the Hygon implementation | OFF |
+| `-DWITH_THEAD=[ON\|OFF]` | Compile the T-Head PPU implementation | OFF |
 | `-DWITH_MOORE=[ON\|OFF]` | Compile the Moore implementation | OFF |
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
 | `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |

@@ -1046,7 +1046,8 @@ static infini::ops::Device::Type DeviceTypeFromInfiniDevice(
             {{INFINI_DEVICE_METAX, infini::ops::Device::Type::kMetax}},
             {{INFINI_DEVICE_MOORE, infini::ops::Device::Type::kMoore}},
             {{INFINI_DEVICE_ILUVATAR, infini::ops::Device::Type::kIluvatar}},
-            {{INFINI_DEVICE_HYGON, infini::ops::Device::Type::kHygon}}}}}}}};
+            {{INFINI_DEVICE_HYGON, infini::ops::Device::Type::kHygon}},
+            {{INFINI_DEVICE_ALI, infini::ops::Device::Type::kThead}}}}}}}};
 
   return kInfiniDeviceToDeviceType.at(device);
 }}
@@ -2110,7 +2111,7 @@ if __name__ == "__main__":
         nargs="+",
         default="cpu",
         type=str,
-        help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `mars`, `moore`, `iluvatar`, and `hygon`. (default: `cpu`)",
+        help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `mars`, `moore`, `iluvatar`, `hygon`, and `thead`. (default: `cpu`)",
     )
 
     parser.add_argument(
