@@ -303,6 +303,17 @@ def _is_smoke_mul_case(params):
         ((13, 4), (10, 1), (10, 1), (10, 1)),
     }
 
+    if "input_shape" in params:
+        return _is_float32(params) and (
+            params.get("input_shape"),
+            params.get("other_shape"),
+            params.get("out_shape"),
+        ) == (
+            (1, 151936),
+            (1, 1),
+            (1, 151936),
+        )
+
     return (
         _is_float32(params)
         and _shape_case(
