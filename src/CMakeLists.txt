@@ -248,6 +248,8 @@ if(WITH_HYGON)
     )
 
     file(GLOB_RECURSE HYGON_SOURCES CONFIGURE_DEPENDS ${HYGON_PATTERNS})
+    list(FILTER HYGON_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(iluvatar|metax|moore|nvidia)/.*")
 
     enable_language(CUDA)
 
@@ -1056,6 +1058,9 @@ if(WITH_LINKED)
     list(APPEND _INFINI_OPS_LINKED_INSTALL_RPATH
         ${INFINI_OPS_LINKED_RUNTIME_DIRS})
     list(REMOVE_DUPLICATES _INFINI_OPS_LINKED_INSTALL_RPATH)
+endif()
+
+if(WITH_LINKED OR NOT GENERATE_PYTHON_BINDINGS)
     set_target_properties(infiniops PROPERTIES
         INSTALL_RPATH "${_INFINI_OPS_LINKED_INSTALL_RPATH}")
 endif()
