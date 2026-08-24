@@ -9,28 +9,26 @@ import pytest
 
 def test_cpp_operator_call_instantiation_smoke(tmp_path):
     install_prefix = _install_prefix()
-    include_dir = install_prefix / "include"
-    library_dir = _library_dir(install_prefix)
-    source = tmp_path / "add_smoke.cc"
-    binary = tmp_path / "add_smoke"
+    source_dir = tmp_path / "source"
+    build_dir = tmp_path / "build"
+    source_dir.mkdir()
+    source = source_dir / "add_smoke.cc"
     source.write_text(_ADD_SMOKE_SOURCE)
+    (source_dir / "CMakeLists.txt").write_text(_CMAKE_PACKAGE_SMOKE_PROJECT)
 
     _run(
         [
-            _compiler("CXX", "c++"),
-            "-std=c++17",
-            "-Werror",
-            f"-I{include_dir}",
-            str(source),
-            f"-L{library_dir}",
-            "-linfiniops",
-            "-linfinirt",
-            f"-Wl,-rpath,{library_dir}",
-            "-o",
-            str(binary),
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={install_prefix}",
+            f"-DCMAKE_CXX_COMPILER={_compiler('CXX', 'c++')}",
         ]
     )
-    _run([str(binary)])
+    _run(["cmake", "--build", str(build_dir)])
+    _run([str(build_dir / "add_smoke")])
 
 
 def test_cpp_operator_call_trace_is_json(tmp_path):
@@ -213,6 +211,21 @@ def _run(command, **kwargs):
     except subprocess.CalledProcessError as error:
         output = "\n".join((error.stdout, error.stderr)).strip()
         raise AssertionError(output) from error
+
+
+_CMAKE_PACKAGE_SMOKE_PROJECT = textwrap.dedent(
+    """\
+    cmake_minimum_required(VERSION 3.18)
+    project(infiniops_cpp_smoke LANGUAGES CXX)
+
+    find_package(InfiniOps CONFIG REQUIRED)
+
+    add_executable(add_smoke add_smoke.cc)
+    target_compile_features(add_smoke PRIVATE cxx_std_17)
+    target_compile_options(add_smoke PRIVATE -Werror)
+    target_link_libraries(add_smoke PRIVATE InfiniOps::infiniops)
+    """
+)
 
 
 _ADD_SMOKE_SOURCE = textwrap.dedent(

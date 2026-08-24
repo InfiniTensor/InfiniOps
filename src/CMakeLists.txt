@@ -1,4 +1,5 @@
 add_library(infiniops SHARED operator.h)
+add_library(InfiniOps::infiniops ALIAS infiniops)
 set_target_properties(infiniops PROPERTIES LINKER_LANGUAGE CXX)
 
 # Compatibility implementations must reference deprecated public classes.
@@ -54,7 +55,10 @@ file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 list(FILTER BASE_SRCS EXCLUDE REGEX ".*tensor\\.cc$")
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
-target_link_libraries(infiniops PUBLIC infinirt)
+target_link_libraries(infiniops PUBLIC
+    $<BUILD_INTERFACE:infinirt>
+    $<INSTALL_INTERFACE:InfiniRT::infinirt>
+)
 
 set(INFINI_RT_INCLUDE_FLAGS "")
 foreach(_include_dir IN LISTS INFINI_RT_INCLUDE_DIRS)
@@ -913,12 +917,14 @@ if(TORCH_SOURCES)
     endif()
 
     if(WITH_TORCH)
-        target_compile_definitions(infiniops PUBLIC WITH_TORCH=1)
+        target_compile_definitions(infiniops PUBLIC
+            $<BUILD_INTERFACE:WITH_TORCH=1>)
     endif()
-    target_link_libraries(infiniops PUBLIC ${TORCH_LIBRARIES})
+    target_link_libraries(infiniops PUBLIC
+        "$<BUILD_INTERFACE:${TORCH_LIBRARIES}>")
     target_include_directories(infiniops PUBLIC
-        ${TORCH_INCLUDE_DIRS}
-        ${PROJECT_SOURCE_DIR}/generated
+        "$<BUILD_INTERFACE:${TORCH_INCLUDE_DIRS}>"
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated>
     )
 
     # Each generated `<op>.cc` instantiates `at::<op>_out(...)`, which
@@ -988,7 +994,8 @@ if(TORCH_SOURCES)
             find_library(TORCH_MUSA_LIB musa_python
                 HINTS "${_torch_musa_library_dir}"
                 NO_DEFAULT_PATH REQUIRED)
-            target_link_libraries(infiniops PUBLIC "${TORCH_MUSA_LIB}")
+            target_link_libraries(infiniops PUBLIC
+                $<BUILD_INTERFACE:${TORCH_MUSA_LIB}>)
             list(APPEND TORCH_RUNTIME_DIRS "${_torch_musa_library_dir}")
         endif()
 
@@ -1545,9 +1552,28 @@ if(GENERATE_PYTHON_BINDINGS)
 endif()
 
 install(TARGETS infiniops
+    EXPORT InfiniOpsTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+set(INFINI_OPS_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps")
+
+install(EXPORT InfiniOpsTargets
+    FILE InfiniOpsTargets.cmake
+    NAMESPACE InfiniOps::
+    DESTINATION ${INFINI_OPS_INSTALL_CMAKEDIR}
+)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${PROJECT_SOURCE_DIR}/cmake/InfiniOpsConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfig.cmake
+    INSTALL_DESTINATION ${INFINI_OPS_INSTALL_CMAKEDIR}
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/InfiniOpsConfig.cmake
+    DESTINATION ${INFINI_OPS_INSTALL_CMAKEDIR}
 )
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/
