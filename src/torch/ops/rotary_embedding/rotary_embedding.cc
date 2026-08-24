@@ -83,5 +83,6 @@ template class Operator<RotaryEmbedding, Device::Type::kMetax, 1>;
 template class Operator<RotaryEmbedding, Device::Type::kMoore, 1>;
 template class Operator<RotaryEmbedding, Device::Type::kIluvatar, 1>;
 template class Operator<RotaryEmbedding, Device::Type::kHygon, 1>;
+template class Operator<RotaryEmbedding, Device::Type::kMars, 1>;
 
 }  // namespace infini::ops

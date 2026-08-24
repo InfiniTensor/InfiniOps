@@ -40,5 +40,6 @@ template class Operator<Add, Device::Type::kMetax, 1>;
 template class Operator<Add, Device::Type::kMoore, 1>;
 template class Operator<Add, Device::Type::kIluvatar, 1>;
 template class Operator<Add, Device::Type::kHygon, 1>;
+template class Operator<Add, Device::Type::kMars, 1>;
 
 }  // namespace infini::ops
