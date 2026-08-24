@@ -291,6 +291,38 @@ if(WITH_METAX)
     list(APPEND DEVICE_LIST "metax")
 endif()
 
+if(WITH_MARS)
+    set(MARS_PATTERNS
+        "native/cuda/*.cc"
+        "native/cuda/*.cpp"
+        "native/cuda/mars/*.cc"
+        "native/cuda/mars/*.cu"
+    )
+
+    file(GLOB_RECURSE MARS_SOURCES CONFIGURE_DEPENDS ${MARS_PATTERNS})
+
+    set_source_files_properties(${MARS_SOURCES} PROPERTIES LANGUAGE CXX)
+
+    target_compile_definitions(infiniops PRIVATE WITH_MARS=1)
+    target_sources(infiniops PRIVATE ${MARS_SOURCES})
+
+    target_include_directories(infiniops PUBLIC
+        "${HPCC_PATH}/include"
+        "${HPCC_PATH}/tools/cu-bridge/include")
+    target_link_libraries(infiniops PUBLIC
+        ${HPCC_RUNTIME_LIB}
+        ${HPCC_DNN_LIB}
+        ${HPCC_BLAS_LIB}
+        ${HPCC_OMP_LIB}
+    )
+    set_property(TARGET infiniops APPEND PROPERTY
+        INSTALL_RPATH "${HPCC_PATH}/htgpu_llvm/lib")
+    set_property(TARGET infiniops APPEND PROPERTY
+        BUILD_RPATH "${HPCC_PATH}/htgpu_llvm/lib")
+
+    list(APPEND DEVICE_LIST "mars")
+endif()
+
 if(WITH_MOORE)
     set(MOORE_PATTERNS
         "native/cuda/*.cc"
@@ -857,9 +889,10 @@ if(TORCH_SOURCES)
             torch_compile=${INFINI_OPS_TORCH_COMPILE_JOBS})
     endif()
 
-    if(WITH_METAX OR WITH_MOORE)
-        # Vendor compilers (`mxcc`/`mcc`) cannot compile vendor-forked `torch`
-        # headers. Compile `torch` sources with the system C++ compiler instead.
+    if(WITH_METAX OR WITH_MOORE OR WITH_MARS)
+        # Vendor compilers (`mxcc`/`mcc`/`htcc`) cannot compile vendor-forked
+        # `torch` headers. Compile `torch` sources with the system C++ compiler
+        # instead.
         find_program(SYSTEM_CXX NAMES g++ c++)
 
         if(NOT SYSTEM_CXX)
@@ -877,6 +910,11 @@ if(TORCH_SOURCES)
                 "-I${MACA_PATH}/include"
                 "-I${MACA_PATH}/include/mcr"
                 "-I${MACA_PATH}/tools/cu-bridge/include")
+        endif()
+        if(WITH_MARS)
+            list(APPEND _torch_vendor_include_flags
+                "-I${HPCC_PATH}/include"
+                "-I${HPCC_PATH}/tools/cu-bridge/include")
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_vendor_include_flags "-I${MUSA_ROOT}/include")
@@ -912,6 +950,9 @@ if(TORCH_SOURCES)
         set(_torch_extra_flags "")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
+        endif()
+        if(WITH_MARS)
+            list(APPEND _torch_extra_flags "-DUSE_HPCC=1" "-DWITH_MARS=1")
         endif()
         if(WITH_MOORE)
             list(APPEND _torch_extra_flags "-DWITH_MOORE=1")

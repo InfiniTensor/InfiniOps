@@ -85,5 +85,6 @@ template class Operator<ReshapeAndCache, Device::Type::kMetax, 1>;
 template class Operator<ReshapeAndCache, Device::Type::kMoore, 1>;
 template class Operator<ReshapeAndCache, Device::Type::kIluvatar, 1>;
 template class Operator<ReshapeAndCache, Device::Type::kHygon, 1>;
+template class Operator<ReshapeAndCache, Device::Type::kMars, 1>;
 
 }  // namespace infini::ops
