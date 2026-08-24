@@ -3,13 +3,18 @@
 
 #include <cassert>
 #include <cstdint>
-#include <limits>
 #include <memory>
-#include <type_traits>
 #include <vector>
 
 #include "native/cambricon/common.h"
 #include "tensor.h"
+
+#define INFINI_OPS_CNNL_CHECK(call)                                      \
+  do {                                                                   \
+    const auto cnnl_status = (call);                                     \
+    assert(cnnl_status == CNNL_STATUS_SUCCESS && "`" #call "` failed."); \
+    (void)cnnl_status;                                                   \
+  } while (false)
 
 namespace infini::ops::cnnl_utils {
 
@@ -28,8 +33,7 @@ using Handle =
 
 inline Handle CreateHandle() {
   cnnlHandle_t handle{nullptr};
-  [[maybe_unused]] const auto status = cnnlCreate(&handle);
-  assert(status == CNNL_STATUS_SUCCESS && "`cnnlCreate` failed.");
+  INFINI_OPS_CNNL_CHECK(cnnlCreate(&handle));
 
   return Handle{handle};
 }
@@ -50,68 +54,33 @@ using TensorDescriptor =
 
 inline TensorDescriptor CreateTensorDescriptor() {
   cnnlTensorDescriptor_t desc{nullptr};
-  [[maybe_unused]] const auto status = cnnlCreateTensorDescriptor(&desc);
-  assert(status == CNNL_STATUS_SUCCESS &&
-         "`cnnlCreateTensorDescriptor` failed.");
+  INFINI_OPS_CNNL_CHECK(cnnlCreateTensorDescriptor(&desc));
 
   return TensorDescriptor{desc};
 }
 
-namespace detail {
-
-template <typename Integer>
-int CheckedInt(Integer value) {
-  static_assert(std::is_integral_v<Integer>);
-
-  [[maybe_unused]] bool out_of_range{false};
-  if constexpr (std::is_signed_v<Integer>) {
-    const auto wide = static_cast<std::intmax_t>(value);
-    out_of_range = wide < std::numeric_limits<int>::min() ||
-                   wide > std::numeric_limits<int>::max();
-  } else {
-    const auto wide = static_cast<std::uintmax_t>(value);
-    out_of_range =
-        wide > static_cast<std::uintmax_t>(std::numeric_limits<int>::max());
-  }
-
-  assert(!out_of_range &&
-         "`CNNL tensor descriptor` value does not fit in `int`.");
-
-  return static_cast<int>(value);
-}
-
-template <typename Values>
-std::vector<int> CheckedIntVector(const Values& values) {
-  std::vector<int> result;
-  result.reserve(values.size());
-  for (const auto value : values) {
-    result.push_back(CheckedInt(value));
-  }
-  return result;
-}
-
-}  // namespace detail
-
 inline void SetTensorDescriptor(cnnlTensorDescriptor_t desc, DataType dtype,
                                 const Tensor::Shape& shape,
                                 const Tensor::Strides& strides) {
-  assert(!shape.empty() && shape.size() == strides.size() &&
-         "`CNNL tensor descriptor` requires matching non-empty shape and "
-         "strides.");
+  assert(shape.size() == strides.size() &&
+         "`CNNL tensor descriptor` requires matching shape and strides.");
 
   const auto cnnl_dtype = GetDataType(dtype);
   assert(cnnl_dtype != CNNL_DTYPE_INVALID &&
          "`CNNL tensor descriptor` does not support this data type.");
 
-  const auto cnnl_shape = detail::CheckedIntVector(shape);
-  const auto cnnl_strides = detail::CheckedIntVector(strides);
-  const auto ndim = detail::CheckedInt(shape.size());
+  const auto cnnl_shape =
+      shape.empty() ? std::vector<std::int64_t>{1}
+                    : std::vector<std::int64_t>(shape.begin(), shape.end());
+  const auto cnnl_strides =
+      strides.empty()
+          ? std::vector<std::int64_t>{1}
+          : std::vector<std::int64_t>(strides.begin(), strides.end());
+  const auto ndim = static_cast<int>(cnnl_shape.size());
 
-  [[maybe_unused]] const auto status =
-      cnnlSetTensorDescriptorEx(desc, CNNL_LAYOUT_ARRAY, cnnl_dtype, ndim,
-                                cnnl_shape.data(), cnnl_strides.data());
-  assert(status == CNNL_STATUS_SUCCESS &&
-         "`cnnlSetTensorDescriptorEx` failed.");
+  INFINI_OPS_CNNL_CHECK(
+      cnnlSetTensorDescriptorEx_v2(desc, CNNL_LAYOUT_ARRAY, cnnl_dtype, ndim,
+                                   cnnl_shape.data(), cnnl_strides.data()));
 }
 
 inline TensorDescriptor MakeTensorDescriptor(DataType dtype,
@@ -119,6 +88,7 @@ inline TensorDescriptor MakeTensorDescriptor(DataType dtype,
                                              const Tensor::Strides& strides) {
   auto desc = CreateTensorDescriptor();
   SetTensorDescriptor(desc.get(), dtype, shape, strides);
+
   return desc;
 }
 
