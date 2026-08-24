@@ -7,7 +7,7 @@ source "${repo_root}/scripts/dev/platforms.sh"
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/dev/test.sh [cpu|nvidia|iluvatar|hygon|metax|moore|cambricon|ascend|auto] [--report PATH] [--no-build] [--smoke] [-- pytest-args...]
+  scripts/dev/test.sh [cpu|nvidia|iluvatar|hygon|thead|metax|moore|cambricon|ascend|auto] [--report PATH] [--no-build] [--smoke] [-- pytest-args...]
 
 Examples:
   scripts/dev/test.sh cambricon

@@ -12,6 +12,7 @@ entry is `python -m pip install` with CMake options passed through
 | `WITH_NVIDIA` | Enable the NVIDIA CUDA backend. | `OFF` |
 | `WITH_ILUVATAR` | Enable the Iluvatar CUDA-compatible backend. | `OFF` |
 | `WITH_HYGON` | Enable the Hygon backend. | `OFF` |
+| `WITH_THEAD` | Enable the T-Head CUDA-compatible backend. | `OFF` |
 | `WITH_METAX` | Enable the MetaX backend. | `OFF` |
 | `WITH_CAMBRICON` | Enable the Cambricon backend. | `OFF` |
 | `WITH_MOORE` | Enable the Moore backend. | `OFF` |

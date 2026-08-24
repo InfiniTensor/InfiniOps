@@ -16,6 +16,7 @@ option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
 option(WITH_HYGON "Enable Hygon GPU backend" OFF)
+option(WITH_THEAD "Enable T-Head PPU backend" OFF)
 option(WITH_METAX "Enable MetaX backend" OFF)
 option(WITH_MARS "Enable Mars backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
@@ -115,6 +116,20 @@ if(AUTO_DETECT_DEVICES)
         message(STATUS "Auto-detected Hygon environment.")
     endif()
 
+    if(DEFINED ENV{CUDA_SDK} AND NOT "$ENV{CUDA_SDK}" STREQUAL "")
+        set(_thead_cuda_detect_root "$ENV{CUDA_SDK}")
+    else()
+        set(_thead_cuda_detect_root "/usr/local/PPU_SDK/CUDA_SDK")
+    endif()
+
+    file(GLOB _thead_ppu_devices "/dev/alixpu_ppu*")
+
+    if(_thead_ppu_devices
+    AND EXISTS "${_thead_cuda_detect_root}/bin/nvcc")
+        set(WITH_THEAD ON)
+        message(STATUS "Auto-detected T-Head PPU environment.")
+    endif()
+
     if(DEFINED ENV{HPCC_PATH})
         set(WITH_MARS ON)
         message(STATUS "Auto-detected Mars environment from HPCC_PATH")
@@ -160,7 +175,7 @@ if(AUTO_DETECT_DEVICES)
 
     if(WITH_NVIDIA)
         set(_non_nvidia_gpu_detected FALSE)
-        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND)
+        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND)
             if(${_gpu_backend})
                 set(_non_nvidia_gpu_detected TRUE)
             endif()
@@ -332,14 +347,14 @@ endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
 endforeach()
 
 if(_gpu_backend_count GREATER 1)
-    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_METAX`, `WITH_MARS`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_THEAD`, `WITH_METAX`, `WITH_MARS`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NINETOOTHED AND NOT WITH_NVIDIA)
@@ -459,6 +474,41 @@ if(WITH_HYGON)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
+if(WITH_THEAD)
+    add_compile_definitions(WITH_THEAD=1)
+
+    if(DEFINED ENV{CUDA_SDK} AND NOT "$ENV{CUDA_SDK}" STREQUAL "")
+        set(_thead_cuda_root "$ENV{CUDA_SDK}")
+    else()
+        set(_thead_cuda_root "/usr/local/PPU_SDK/CUDA_SDK")
+    endif()
+
+    if(NOT EXISTS "${_thead_cuda_root}/bin/nvcc")
+        message(FATAL_ERROR
+            "`WITH_THEAD` is `ON` but the T-Head PPU CUDA SDK was not found. "
+            "Set `CUDA_SDK` or install it at `/usr/local/PPU_SDK/CUDA_SDK`.")
+    endif()
+
+    set(CMAKE_CUDA_COMPILER "${_thead_cuda_root}/bin/nvcc"
+        CACHE FILEPATH "T-Head PPU CUDA compiler" FORCE)
+    set(CUDAToolkit_ROOT "${_thead_cuda_root}"
+        CACHE PATH "T-Head PPU CUDA toolkit root" FORCE)
+    if(NOT CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES 80 CACHE STRING
+            "T-Head PPU CUDA architecture" FORCE)
+    endif()
+
+    set(ENV{CUDA_PATH} "${_thead_cuda_root}")
+    set(ENV{CUDA_HOME} "${_thead_cuda_root}")
+    set(ENV{PATH} "${_thead_cuda_root}/bin:$ENV{PATH}")
+    include_directories("${_thead_cuda_root}/include")
+    link_directories("${_thead_cuda_root}/lib64")
+
+    message(STATUS "T-Head PPU: CUDA toolkit ${_thead_cuda_root}")
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+endif()
+
 if(WITH_METAX)
     add_compile_definitions(WITH_METAX=1)
 
@@ -567,7 +617,7 @@ if(WITH_ASCEND)
 endif()
 
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_THEAD AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
     add_compile_definitions(WITH_CPU=1)
 endif()
 

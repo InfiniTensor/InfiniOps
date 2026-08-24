@@ -12,6 +12,7 @@ available implementations differ by backend.
 | NVIDIA | `WITH_NVIDIA` | Requires CUDA Toolkit. |
 | Iluvatar | `WITH_ILUVATAR` | CUDA-compatible backend using the CoreX toolchain. |
 | Hygon | `WITH_HYGON` | Requires DTK. `DTK_ROOT` defaults to `/opt/dtk` when unset. |
+| T-Head | `WITH_THEAD` | Uses the T-Head CUDA-compatible SDK from `CUDA_SDK`, defaulting to `/usr/local/PPU_SDK/CUDA_SDK`. |
 | MetaX | `WITH_METAX` | Requires the MetaX runtime and SDK paths. |
 | Cambricon | `WITH_CAMBRICON` | Requires Cambricon Neuware. |
 | Moore | `WITH_MOORE` | Requires MUSA Toolkit through `MUSA_ROOT`, `MUSA_HOME`, `MUSA_PATH`, or `/usr/local/musa`. |
@@ -40,6 +41,7 @@ Supported selector names include:
 - `metax`
 - `iluvatar`
 - `hygon`
+- `thead`
 - `moore`
 - `cambricon`
 - `ascend`
