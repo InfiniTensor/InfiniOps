@@ -11,8 +11,7 @@ template <>
 class Operator<RotaryEmbedding, Device::Type::kHygon>
     : public CudaRotaryEmbedding<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaRotaryEmbedding<
-      Runtime<Device::Type::kHygon>>::CudaRotaryEmbedding;
+  using CudaRotaryEmbedding<Runtime<Device::Type::kHygon>>::CudaRotaryEmbedding;
 };
 
 }  // namespace infini::ops
