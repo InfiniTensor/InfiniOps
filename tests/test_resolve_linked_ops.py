@@ -391,6 +391,44 @@ def test_resolve_requires_matching_implementation_sources(tmp_path, missing_suff
         )
 
 
+def test_resolve_rejects_both_cpp_and_cuda_sources(tmp_path):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    _, op_dir = _write_linked_config(source_root)
+    (op_dir / "vllm.cu").write_text("// duplicate definition\n")
+
+    with pytest.raises(
+        module.ResolutionError,
+        match=r"both vllm\.cc and vllm\.cu are present",
+    ):
+        module.resolve_linked_ops(
+            ["metax"],
+            source_root=source_root,
+            output_dir=tmp_path / "generated",
+        )
+
+
+def test_resolve_rejects_unknown_link_library(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    _write_linked_config(
+        source_root,
+        binding_extra="link_libraries:\n  - missing\n",
+    )
+    monkeypatch.setattr(
+        module,
+        "_locate_distribution_library",
+        lambda config: tmp_path / "_C.so",
+    )
+
+    with pytest.raises(module.ResolutionError, match="unknown library 'missing'"):
+        module.resolve_linked_ops(
+            ["metax"],
+            source_root=source_root,
+            output_dir=tmp_path / "generated",
+        )
+
+
 def test_resolve_rejects_symbol_missing_from_either_tool(monkeypatch, tmp_path):
     module = _load_resolver_module()
     source_root = tmp_path / "linked"
@@ -766,6 +804,94 @@ def test_locate_distribution_library_supports_editable_install(monkeypatch, tmp_
     assert module._locate_distribution_library(config) == library.resolve()
 
 
+def test_locate_distribution_include_matches_installed_directory(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    site_packages = tmp_path / "site-packages"
+    include_dir = site_packages / "tvm_ffi" / "include"
+    include_dir.mkdir(parents=True)
+
+    class FakeDistribution:
+        def locate_file(self, entry):
+            return site_packages / entry
+
+        def read_text(self, filename):
+            return None
+
+    monkeypatch.setattr(
+        module.importlib.metadata, "distribution", lambda name: FakeDistribution()
+    )
+    config = module.LibraryConfig(
+        device="nvidia",
+        name="tvm_ffi",
+        path=tmp_path / "tvm_ffi.yaml",
+        transport="tvm_ffi",
+        python_distribution_package="apache-tvm-ffi",
+        library_glob="tvm_ffi/lib/libtvm_ffi.so",
+        include_glob="tvm_ffi/include",
+    )
+
+    assert module._locate_distribution_include(config) == include_dir.resolve()
+
+
+@pytest.mark.parametrize(
+    "version, succeeds",
+    (("0.6.6", False), ("0.6.7.post3", True), ("0.6.16", True)),
+)
+def test_load_distribution_enforces_version_constraint(
+    monkeypatch, tmp_path, version, succeeds
+):
+    module = _load_resolver_module()
+
+    class FakeDistribution:
+        pass
+
+    distribution = FakeDistribution()
+    distribution.version = version
+    monkeypatch.setattr(
+        module.importlib.metadata, "distribution", lambda name: distribution
+    )
+    config = module.LibraryConfig(
+        device="nvidia",
+        name="sampling",
+        path=tmp_path / "sampling.yaml",
+        transport="tvm_ffi",
+        python_distribution_package="flashinfer-jit-cache",
+        python_distribution_version=">=0.6.7,<0.7",
+        library_glob="sampling.so",
+    )
+
+    if succeeds:
+        assert module._load_distribution(config) is distribution
+    else:
+        with pytest.raises(module.ResolutionError, match="does not satisfy"):
+            module._load_distribution(config)
+
+
+def test_load_distribution_rejects_invalid_version_constraint(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+
+    class FakeDistribution:
+        version = "0.6.7.post3"
+
+    monkeypatch.setattr(
+        module.importlib.metadata,
+        "distribution",
+        lambda name: FakeDistribution(),
+    )
+    config = module.LibraryConfig(
+        device="nvidia",
+        name="sampling",
+        path=tmp_path / "sampling.yaml",
+        transport="tvm_ffi",
+        python_distribution_package="flashinfer-jit-cache",
+        python_distribution_version="not-a-specifier",
+        library_glob="sampling.so",
+    )
+
+    with pytest.raises(module.ResolutionError, match="invalid.*constraint"):
+        module._load_distribution(config)
+
+
 @pytest.mark.parametrize(
     "editable, url",
     ((False, None), (True, "https://example.com/vllm")),
@@ -811,3 +937,99 @@ def test_explicit_selection_precedes_environment(monkeypatch, tmp_path):
         None,
         explicit_config,
     )
+
+
+def test_resolve_tvm_ffi_cuda_source_with_link_dependency(monkeypatch, tmp_path):
+    module = _load_resolver_module()
+    source_root = tmp_path / "linked"
+    platform = source_root / "tvm_ffi" / "nvidia"
+    op_dir = platform / "ops" / "sampling"
+    op_dir.mkdir(parents=True)
+    (platform / "sampling.yaml").write_text(
+        "python_distribution_package: flashinfer-jit-cache\n"
+        "library_glob: flashinfer_jit_cache/jit_cache/sampling/sampling.so\n"
+    )
+    (platform / "tvm_ffi.yaml").write_text(
+        "python_distribution_package: apache-tvm-ffi\n"
+        "library_glob: tvm_ffi/lib/libtvm_ffi.so\n"
+        "include_glob: tvm_ffi/include\n"
+    )
+    (op_dir / "flashinfer.yaml").write_text(
+        "library: sampling\n"
+        "link_libraries:\n"
+        "  - tvm_ffi\n"
+        "required_symbols:\n"
+        "  - __tvm_ffi_softmax\n"
+    )
+    (op_dir / "flashinfer.h").write_text("// declaration\n")
+    (op_dir / "flashinfer.cu").write_text("// definition\n")
+
+    libraries = {
+        "sampling": tmp_path / "sampling.so",
+        "tvm_ffi": tmp_path / "libtvm_ffi.so",
+    }
+    for library in libraries.values():
+        library.touch()
+    include_dir = tmp_path / "include"
+    include_dir.mkdir()
+    monkeypatch.setattr(
+        module,
+        "_locate_distribution_library",
+        lambda config: libraries[config.name],
+    )
+    monkeypatch.setattr(
+        module,
+        "_locate_distribution_include",
+        lambda config: include_dir if config.name == "tvm_ffi" else None,
+    )
+    exported = {"__tvm_ffi_softmax"}
+    monkeypatch.setattr(
+        module,
+        "_inspect_dynamic_symbols",
+        lambda *args: (exported, exported),
+    )
+
+    output_dir = tmp_path / "generated"
+    payload = module.resolve_linked_ops(
+        ["nvidia"],
+        ["sampling"],
+        source_root=source_root,
+        output_dir=output_dir,
+    )
+
+    assert {entry["name"] for entry in payload["libraries"]} == {
+        "sampling",
+        "tvm_ffi",
+    }
+    libraries_by_name = {entry["name"]: entry for entry in payload["libraries"]}
+    assert libraries_by_name["sampling"]["force_load"] is False
+    assert libraries_by_name["tvm_ffi"]["force_load"] is True
+    assert payload["operators"] == [
+        {
+            "device": "nvidia",
+            "transport": "tvm_ffi",
+            "implementation": "flashinfer",
+            "library": "sampling",
+            "link_libraries": ["tvm_ffi"],
+            "name": "sampling",
+            "required_symbols": ["__tvm_ffi_softmax"],
+            "source": str((op_dir / "flashinfer.cu").resolve()),
+        }
+    ]
+    manifest = (output_dir / "manifest.cmake").read_text()
+    tvm_sources = manifest.split("set(INFINI_OPS_LINKED_TVM_FFI_SOURCES", maxsplit=1)[
+        1
+    ].split(")", maxsplit=1)[0]
+    torch_sources = manifest.split("set(INFINI_OPS_LINKED_TORCH_SOURCES", maxsplit=1)[
+        1
+    ].split(")", maxsplit=1)[0]
+    include_dirs = manifest.split("set(INFINI_OPS_LINKED_INCLUDE_DIRS", maxsplit=1)[
+        1
+    ].split(")", maxsplit=1)[0]
+    force_load_libraries = manifest.split(
+        "set(INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES", maxsplit=1
+    )[1].split(")", maxsplit=1)[0]
+    assert "flashinfer.cu" in tvm_sources
+    assert "flashinfer.cu" not in torch_sources
+    assert str(include_dir).replace("\\", "/") in include_dirs
+    assert "libtvm_ffi.so" in force_load_libraries
