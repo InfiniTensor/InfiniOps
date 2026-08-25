@@ -40,8 +40,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     assert(cos_sin_cache_type_ == query_type_ &&
            "Ascend `RotaryEmbedding` requires cache and query dtypes to "
            "match");
-    assert(query.IsContiguous() &&
-           (!key.has_value() || key->IsContiguous()) &&
+    assert(query.IsContiguous() && (!key.has_value() || key->IsContiguous()) &&
            cos_sin_cache.IsContiguous() &&
            "Ascend `RotaryEmbedding` requires contiguous query, optional "
            "key, and cache tensors");
@@ -91,8 +90,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
         query.data());
 
     query_bytes_ = static_cast<size_t>(query.numel()) * element_size_;
-    ret = aclrtMalloc(&query_out_data_, query_bytes_,
-                      ACL_MEM_MALLOC_NORMAL_ONLY);
+    ret =
+        aclrtMalloc(&query_out_data_, query_bytes_, ACL_MEM_MALLOC_NORMAL_ONLY);
     assert(ret == ACL_SUCCESS &&
            "Ascend `RotaryEmbedding` failed to allocate query output");
     query_out_cache_ = ascend::AclTensorCache(
