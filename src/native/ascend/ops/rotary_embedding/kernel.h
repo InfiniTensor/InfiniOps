@@ -9,8 +9,8 @@
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
-#include "aclnnop/aclnn_apply_rotary_pos_emb_v2.h"
 #include "aclnnop/aclnn_index_select.h"
+#include "aclnnop/aclnn_rotary_position_embedding.h"
 #include "base/rotary_embedding.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -19,7 +19,7 @@
 namespace infini::ops {
 
 // Llama-style full-dimension NeoX RoPE. Positions select rows from the packed
-// [cos, sin] cache, then CANN rotates query and key together in place.
+// [cos, sin] cache, then CANN rotates query and an optional key in place.
 template <>
 class Operator<RotaryEmbedding, Device::Type::kAscend>
     : public RotaryEmbedding {
@@ -30,8 +30,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       : RotaryEmbedding(positions, query, key, cos_sin_cache, head_size,
                         is_neox, rope_dim_offset, inverse),
         max_seq_len_(static_cast<int64_t>(cos_sin_cache.size(0))),
-        element_size_(cos_sin_cache.element_size()) {
-    assert(key.has_value() && "Ascend `RotaryEmbedding` requires a key tensor");
+        element_size_(cos_sin_cache.element_size()),
+        has_key_(key.has_value()) {
     assert(is_neox_ && rope_dim_offset_ == 0 && !inverse_ &&
            rot_dim_ == head_size_ &&
            "Ascend `RotaryEmbedding` supports full-dimension forward NeoX "
@@ -40,10 +40,11 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     assert(cos_sin_cache_type_ == query_type_ &&
            "Ascend `RotaryEmbedding` requires cache and query dtypes to "
            "match");
-    assert(query.IsContiguous() && key->IsContiguous() &&
+    assert(query.IsContiguous() &&
+           (!key.has_value() || key->IsContiguous()) &&
            cos_sin_cache.IsContiguous() &&
-           "Ascend `RotaryEmbedding` requires contiguous query, key, and "
-           "cache tensors");
+           "Ascend `RotaryEmbedding` requires contiguous query, optional "
+           "key, and cache tensors");
 
     const auto num_tokens = static_cast<int64_t>(num_tokens_);
     const auto head_dim = head_size_;
@@ -88,9 +89,28 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     query_cache_ = ascend::AclTensorCache(
         {num_tokens, static_cast<int64_t>(num_heads_), head_dim}, acl_dtype,
         query.data());
-    key_cache_ = ascend::AclTensorCache(
-        {num_tokens, static_cast<int64_t>(num_kv_heads_), head_dim}, acl_dtype,
-        key->data());
+
+    query_bytes_ = static_cast<size_t>(query.numel()) * element_size_;
+    ret = aclrtMalloc(&query_out_data_, query_bytes_,
+                      ACL_MEM_MALLOC_NORMAL_ONLY);
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `RotaryEmbedding` failed to allocate query output");
+    query_out_cache_ = ascend::AclTensorCache(
+        {num_tokens, static_cast<int64_t>(num_heads_), head_dim}, acl_dtype,
+        query_out_data_);
+
+    if (key.has_value()) {
+      key_cache_ = ascend::AclTensorCache(
+          {num_tokens, static_cast<int64_t>(num_kv_heads_), head_dim},
+          acl_dtype, key->data());
+      key_bytes_ = static_cast<size_t>(key->numel()) * element_size_;
+      ret = aclrtMalloc(&key_out_data_, key_bytes_, ACL_MEM_MALLOC_NORMAL_ONLY);
+      assert(ret == ACL_SUCCESS &&
+             "Ascend `RotaryEmbedding` failed to allocate key output");
+      key_out_cache_ = ascend::AclTensorCache(
+          {num_tokens, static_cast<int64_t>(num_kv_heads_), head_dim},
+          acl_dtype, key_out_data_);
+    }
   }
 
   ~Operator() {
@@ -105,17 +125,22 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     sin_rotary_cache_.release();
     query_cache_.release();
     key_cache_.release();
+    query_out_cache_.release();
+    key_out_cache_.release();
     if (cos_table_data_) aclrtFree(cos_table_data_);
     if (sin_table_data_) aclrtFree(sin_table_data_);
     if (cos_data_) aclrtFree(cos_data_);
     if (sin_data_) aclrtFree(sin_data_);
+    if (query_out_data_) aclrtFree(query_out_data_);
+    if (key_out_data_) aclrtFree(key_out_data_);
   }
 
   void operator()(const Tensor positions, Tensor query,
                   std::optional<Tensor> key, const Tensor cos_sin_cache,
                   int64_t head_size, bool is_neox, int64_t rope_dim_offset = 0,
                   bool inverse = false) const override {
-    assert(key.has_value());
+    assert(key.has_value() == has_key_ &&
+           "Ascend `RotaryEmbedding` key presence changed after planning");
     auto stream = static_cast<aclrtStream>(stream_);
 
     if (cos_sin_cache.data() != cos_sin_cache_data_) {
@@ -161,26 +186,47 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     auto t_cos = cos_rotary_cache_.get(cos_data_);
     auto t_sin = sin_rotary_cache_.get(sin_data_);
     auto t_query = query_cache_.get(query.data());
-    auto t_key = key_cache_.get(key->data());
-    if (!rotary_executor_) {
-      aclnnApplyRotaryPosEmbV2GetWorkspaceSize(
-          t_query, t_key, t_cos, t_sin, 4, const_cast<char*>("half"),
-          &rotary_ws_size_, &rotary_executor_);
-      aclSetAclOpExecutorRepeatable(rotary_executor_);
-    } else {
-      aclSetInputTensorAddr(rotary_executor_, 0, t_query, query.data());
-      aclSetInputTensorAddr(rotary_executor_, 1, t_key, key->data());
-      aclSetInputTensorAddr(rotary_executor_, 2, t_cos, cos_data_);
-      aclSetInputTensorAddr(rotary_executor_, 3, t_sin, sin_data_);
-    }
+    RunOne(t_query, t_cos, t_sin, query.data(), query_out_cache_,
+           query_out_data_, query_bytes_, query_rotary_executor_,
+           query_rotary_ws_size_, stream);
 
-    auto& rotary_arena =
-        ascend::GetWorkspacePool().Ensure(stream, rotary_ws_size_);
-    aclnnApplyRotaryPosEmbV2(rotary_arena.buf, rotary_ws_size_,
-                             rotary_executor_, stream);
+    if (key.has_value()) {
+      auto t_key = key_cache_.get(key->data());
+      RunOne(t_key, t_cos, t_sin, key->data(), key_out_cache_, key_out_data_,
+             key_bytes_, key_rotary_executor_, key_rotary_ws_size_, stream);
+    }
   }
 
  private:
+  void RunOne(aclTensor* input, aclTensor* cos, aclTensor* sin,
+              void* input_data, ascend::AclTensorCache& output_cache,
+              void* output_data, size_t bytes, aclOpExecutor*& executor,
+              uint64_t& workspace_size, aclrtStream stream) const {
+    auto output = output_cache.get(output_data);
+    if (!executor) {
+      auto ret = aclnnRotaryPositionEmbeddingGetWorkspaceSize(
+          input, cos, sin, /*mode=*/0, output, &workspace_size, &executor);
+      assert(ret == ACL_SUCCESS &&
+             "`aclnnRotaryPositionEmbeddingGetWorkspaceSize` failed");
+      aclSetAclOpExecutorRepeatable(executor);
+    } else {
+      aclSetInputTensorAddr(executor, 0, input, input_data);
+      aclSetInputTensorAddr(executor, 1, cos, cos_data_);
+      aclSetInputTensorAddr(executor, 2, sin, sin_data_);
+      aclSetOutputTensorAddr(executor, 0, output, output_data);
+    }
+
+    auto& rotary_arena =
+        ascend::GetWorkspacePool().Ensure(stream, workspace_size);
+    auto ret = aclnnRotaryPositionEmbedding(rotary_arena.buf, workspace_size,
+                                            executor, stream);
+    assert(ret == ACL_SUCCESS && "`aclnnRotaryPositionEmbedding` failed");
+    ret = aclrtMemcpyAsync(input_data, bytes, output_data, bytes,
+                           ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
+    assert(ret == ACL_SUCCESS &&
+           "Copying Ascend `RotaryEmbedding` output failed");
+  }
+
   void UploadCosSinCache(const Tensor cos_sin_cache) const {
     const auto half_dim = head_size_ / 2;
     const auto table_bytes =
@@ -223,11 +269,16 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
 
   int64_t max_seq_len_{0};
   size_t element_size_{0};
+  bool has_key_{false};
+  size_t query_bytes_{0};
+  size_t key_bytes_{0};
   mutable const void* cos_sin_cache_data_{nullptr};
   void* cos_table_data_{nullptr};
   void* sin_table_data_{nullptr};
   void* cos_data_{nullptr};
   void* sin_data_{nullptr};
+  void* query_out_data_{nullptr};
+  void* key_out_data_{nullptr};
   mutable ascend::AclTensorCache cos_table_cache_;
   mutable ascend::AclTensorCache sin_table_cache_;
   mutable ascend::AclTensorCache positions_cache_;
@@ -237,12 +288,16 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
   mutable ascend::AclTensorCache sin_rotary_cache_;
   mutable ascend::AclTensorCache query_cache_;
   mutable ascend::AclTensorCache key_cache_;
+  mutable ascend::AclTensorCache query_out_cache_;
+  mutable ascend::AclTensorCache key_out_cache_;
   mutable aclOpExecutor* cos_index_executor_{nullptr};
   mutable uint64_t cos_index_ws_size_{0};
   mutable aclOpExecutor* sin_index_executor_{nullptr};
   mutable uint64_t sin_index_ws_size_{0};
-  mutable aclOpExecutor* rotary_executor_{nullptr};
-  mutable uint64_t rotary_ws_size_{0};
+  mutable aclOpExecutor* query_rotary_executor_{nullptr};
+  mutable uint64_t query_rotary_ws_size_{0};
+  mutable aclOpExecutor* key_rotary_executor_{nullptr};
+  mutable uint64_t key_rotary_ws_size_{0};
 };
 
 }  // namespace infini::ops
