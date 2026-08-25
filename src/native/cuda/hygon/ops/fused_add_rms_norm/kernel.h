@@ -11,8 +11,7 @@ template <>
 class Operator<FusedAddRmsNorm, Device::Type::kHygon>
     : public CudaFusedAddRmsNorm<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaFusedAddRmsNorm<
-      Runtime<Device::Type::kHygon>>::CudaFusedAddRmsNorm;
+  using CudaFusedAddRmsNorm<Runtime<Device::Type::kHygon>>::CudaFusedAddRmsNorm;
 };
 
 }  // namespace infini::ops

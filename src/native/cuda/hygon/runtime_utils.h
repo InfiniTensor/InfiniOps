@@ -10,8 +10,8 @@ template <>
 struct RuntimeUtils<Device::Type::kHygon>
     : CudaRuntimeUtils<QueryMaxThreadsPerBlock> {
   static int GetOptimalBlockSize() {
-    const int block_size = CudaRuntimeUtils<
-        QueryMaxThreadsPerBlock>::GetOptimalBlockSize();
+    const int block_size =
+        CudaRuntimeUtils<QueryMaxThreadsPerBlock>::GetOptimalBlockSize();
     return block_size > 256 ? 256 : block_size;
   }
 };
