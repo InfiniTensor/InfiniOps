@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include "acl/acl.h"
@@ -55,18 +54,19 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend, 2>
         dtype_(input.dtype()),
         weight_dtype_(weight.has_value() ? weight->dtype()
                                          : DataType::kFloat32) {
+    assert((dtype_ == DataType::kFloat16 || dtype_ == DataType::kFloat32) &&
+           "`FusedAddRmsNorm` AscendC kernel supports fp16 and fp32");
+    assert(input.IsContiguous() && residual.IsContiguous() &&
+           (!weight.has_value() || weight->IsContiguous()) &&
+           "`FusedAddRmsNorm` AscendC kernel requires contiguous tensors");
+
     auto align_elements = 32 / static_cast<int64_t>(kDataTypeToSize.at(dtype_));
-    const bool custom_supported =
-        (dtype_ == DataType::kFloat16 || dtype_ == DataType::kFloat32) &&
-        input.IsContiguous() && residual.IsContiguous() &&
-        (!weight.has_value() || weight->IsContiguous()) &&
-        static_cast<int64_t>(dim_) % align_elements == 0 && dim_ <= 4096;
-    if (!custom_supported) {
-      fallback_ =
-          std::make_unique<Operator<FusedAddRmsNorm, Device::Type::kAscend>>(
-              input, residual, weight, epsilon);
-      return;
-    }
+    assert(static_cast<int64_t>(dim_) % align_elements == 0 &&
+           "`FusedAddRmsNorm` AscendC kernel requires a 32-byte aligned "
+           "last dimension");
+    assert(dim_ <= 4096 &&
+           "`FusedAddRmsNorm` AscendC kernel exceeds the conservative UB "
+           "capacity bound; use index 0");
 
     total_rows_ = static_cast<int64_t>(input.numel() / dim_);
     if (!weight.has_value()) {
@@ -97,12 +97,6 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend, 2>
   void operator()(Tensor input, Tensor residual,
                   const std::optional<Tensor> weight,
                   float epsilon) const override {
-    if (fallback_) {
-      fallback_->set_stream(stream_);
-      (*fallback_)(input, residual, weight, epsilon);
-      return;
-    }
-
     auto stream = static_cast<aclrtStream>(stream_);
     void* weight_fp32 = weight_fp32_data_;
 
@@ -141,8 +135,6 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend, 2>
   }
 
  private:
-  std::unique_ptr<Operator<FusedAddRmsNorm, Device::Type::kAscend>> fallback_;
-
   DataType dtype_;
 
   DataType weight_dtype_;

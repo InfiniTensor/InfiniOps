@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include "acl/acl.h"
@@ -67,15 +66,14 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
         ((static_cast<int64_t>(dim_) + align_elems - 1) / align_elems) *
         align_elems;
 
-    const bool custom_supported =
-        dtype_ != DataType::kBFloat16 && input.IsContiguous() &&
-        weight.IsContiguous() && out.IsContiguous() &&
-        static_cast<int64_t>(dim_) == dim_length_align_;
-    if (!custom_supported) {
-      fallback_ = std::make_unique<Operator<RmsNorm, Device::Type::kAscend>>(
-          input, weight, eps, out);
-      return;
-    }
+    assert(dtype_ != DataType::kBFloat16 &&
+           "`RmsNorm` custom kernel does not support `bf16`; use index 0");
+    assert(input.IsContiguous() && weight.IsContiguous() &&
+           out.IsContiguous() &&
+           "`RmsNorm` custom kernel requires contiguous tensors");
+    assert(static_cast<int64_t>(dim_) == dim_length_align_ &&
+           "`RmsNorm` custom kernel requires a 32-byte aligned last "
+           "dimension");
 
     total_rows_ = static_cast<int64_t>(input.numel() / dim_);
     // The custom kernel always reads `weight` as fp32, so fp16 / bf16
@@ -105,12 +103,6 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
 
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
-    if (fallback_) {
-      fallback_->set_stream(stream_);
-      (*fallback_)(input, weight, eps, out);
-      return;
-    }
-
     auto stream = static_cast<aclrtStream>(stream_);
 
     void* weight_fp32;
@@ -153,8 +145,6 @@ class Operator<RmsNorm, Device::Type::kAscend, 1> : public RmsNorm {
   }
 
  private:
-  std::unique_ptr<Operator<RmsNorm, Device::Type::kAscend>> fallback_;
-
   DataType dtype_;
 
   DataType weight_dtype_;
