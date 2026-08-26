@@ -40,7 +40,10 @@ def test_rotary_embedding(
     atol,
 ):
     num_heads, num_kv_heads = 4, 2
-    head_size, rot_dim = 12, 8
+    is_ascend = torch.device(device).type == "npu"
+    if is_ascend and (not is_neox or rope_dim_offset != 0 or inverse):
+        pytest.skip("Ascend supports forward full-dimension NeoX RoPE")
+    head_size, rot_dim = (8, 8) if is_ascend else (12, 8)
     positions = torch.tensor((0, 3, 5, 7), dtype=torch.int64, device=device).view(
         positions_shape
     )
