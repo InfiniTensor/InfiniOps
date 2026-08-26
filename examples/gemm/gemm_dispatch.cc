@@ -61,9 +61,9 @@ int main() {
   DefaultRuntimeUtils::Malloc(&workspace_ptr, workspace_size_in_bytes);
 
   DefaultRuntimeUtils::Memcpy(a_ptr, a_vec.data(), a_size,
-                              DefaultRuntimeUtils::MemcpyHostToDevice);
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
   DefaultRuntimeUtils::Memcpy(b_ptr, b_vec.data(), b_size,
-                              DefaultRuntimeUtils::MemcpyHostToDevice);
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
   DefaultRuntimeUtils::Memset(c0_ptr, 0, c_size);
   DefaultRuntimeUtils::Memset(c1_ptr, 0, c_size);
 
@@ -97,9 +97,9 @@ int main() {
   Gemm::Call(handle, cublaslt_config, a_device, b_device, c1_device);
 
   DefaultRuntimeUtils::Memcpy(c0_vec.data(), c0_ptr, c_size,
-                              DefaultRuntimeUtils::MemcpyDeviceToHost);
+                              DefaultRuntimeUtils::kMemcpyDeviceToHost);
   DefaultRuntimeUtils::Memcpy(c1_vec.data(), c1_ptr, c_size,
-                              DefaultRuntimeUtils::MemcpyDeviceToHost);
+                              DefaultRuntimeUtils::kMemcpyDeviceToHost);
 
   DefaultRuntimeUtils::Free(workspace_ptr);
   DefaultRuntimeUtils::Free(c1_ptr);

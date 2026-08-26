@@ -48,9 +48,9 @@ int main() {
   DefaultRuntimeUtils::Malloc(&c_ptr, c_size);
 
   DefaultRuntimeUtils::Memcpy(a_ptr, a_vec.data(), a_size,
-                              DefaultRuntimeUtils::MemcpyHostToDevice);
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
   DefaultRuntimeUtils::Memcpy(b_ptr, b_vec.data(), b_size,
-                              DefaultRuntimeUtils::MemcpyHostToDevice);
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
   DefaultRuntimeUtils::Memset(c_ptr, 0, c_size);
 
   Tensor a_device{a_ptr, a_host.shape(), a_host.dtype(), device_dev,
@@ -63,7 +63,7 @@ int main() {
   Gemm::Call(a_device, b_device, c_device);
 
   DefaultRuntimeUtils::Memcpy(c_vec.data(), c_ptr, c_size,
-                              DefaultRuntimeUtils::MemcpyDeviceToHost);
+                              DefaultRuntimeUtils::kMemcpyDeviceToHost);
   DefaultRuntimeUtils::Free(a_ptr);
   DefaultRuntimeUtils::Free(b_ptr);
   DefaultRuntimeUtils::Free(c_ptr);
