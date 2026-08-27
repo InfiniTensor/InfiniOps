@@ -75,6 +75,7 @@ _DEVICE_TYPES = (
     "kMoore",
     "kIluvatar",
     "kHygon",
+    "kThead",
     "kMars",
 )
 
@@ -84,6 +85,7 @@ _C10_DEVICE_TYPES = (
     "kMetax",
     "kMoore",
     "kIluvatar",
+    "kThead",
     "kMars",
 )
 
