@@ -7,7 +7,10 @@ import torch
 from tests.utils import get_stream
 
 
-flash_attn = pytest.importorskip("flash_attn")
+try:
+    import flash_attn
+except ImportError:
+    flash_attn = None
 
 
 if not hasattr(infini.ops, "FlashAttnWithKvcache"):
@@ -37,6 +40,10 @@ def test_flash_attn_with_kvcache_dense(
 ):
     if device not in ("cuda", "mlu"):
         pytest.skip("FlashAttention FA2 requires the NVIDIA or Cambricon backend")
+    if device == "cuda" and implementation_index == 0:
+        pytest.skip("Iluvatar native provider supports paged decode only")
+    if device == "cuda" and flash_attn is None:
+        pytest.skip("flash_attn is required as the dense reference")
 
     batch_size, cache_size = 2, 16
     num_heads, num_kv_heads, head_size = 4, 2, 64
@@ -136,6 +143,7 @@ def test_flash_attn_with_kvcache_dense(
     torch.testing.assert_close(actual_v_cache, expected_v_cache, rtol=0, atol=0)
 
 
+@pytest.mark.smoke
 def test_flash_attn_with_kvcache_paged(device, implementation_index):
     if device not in ("cuda", "mlu"):
         pytest.skip("FlashAttention FA2 requires the NVIDIA or Cambricon backend")
@@ -155,7 +163,7 @@ def test_flash_attn_with_kvcache_paged(device, implementation_index):
     v_cache = torch.randn_like(k_cache)
     cache_seqlens = torch.tensor((130, 300), dtype=torch.int32, device=device)
     block_table = torch.tensor(((0, 1), (2, 3)), dtype=torch.int32, device=device)
-    if device == "mlu":
+    if device == "mlu" or (device == "cuda" and implementation_index == 0):
         expected, _ = _reference_flash_attn_with_kvcache(
             q,
             k_cache,
@@ -165,6 +173,8 @@ def test_flash_attn_with_kvcache_paged(device, implementation_index):
             causal=True,
         )
     else:
+        if flash_attn is None:
+            pytest.skip("flash_attn is required as the paged reference")
         expected = flash_attn.flash_attn_with_kvcache(
             q,
             k_cache,
@@ -209,6 +219,10 @@ def test_flash_attn_with_kvcache_scalar_seqlens_with_cache_batch_idx(
 ):
     if device not in ("cuda", "mlu"):
         pytest.skip("FlashAttention FA2 requires the NVIDIA or Cambricon backend")
+    if device == "cuda" and implementation_index == 0:
+        pytest.skip("Iluvatar native provider requires tensor cache lengths")
+    if device == "cuda" and flash_attn is None:
+        pytest.skip("flash_attn is required as the dense reference")
 
     q = torch.randn((2, 1, 4, 60), dtype=torch.float16, device=device)
     k_cache = torch.randn((3, 8, 2, 60), dtype=torch.float16, device=device)
@@ -266,6 +280,10 @@ def test_flash_attn_with_kvcache_scalar_seqlens_with_cache_batch_idx(
 def test_flash_attn_with_kvcache_defaults(device, implementation_index):
     if device not in ("cuda", "mlu"):
         pytest.skip("FlashAttention FA2 requires the NVIDIA or Cambricon backend")
+    if device == "cuda" and implementation_index == 0:
+        pytest.skip("Iluvatar native provider supports paged decode only")
+    if device == "cuda" and flash_attn is None:
+        pytest.skip("flash_attn is required as the dense reference")
 
     q = torch.randn((2, 1, 4, 64), dtype=torch.float16, device=device)
     k_cache = torch.randn((2, 8, 2, 64), dtype=torch.float16, device=device)
@@ -297,6 +315,10 @@ def test_flash_attn_with_kvcache_non_default_stream(device, implementation_index
         stream_attribute = "mlu_stream"
     else:
         pytest.skip("stream coverage requires an accelerator backend")
+    if device == "cuda" and implementation_index == 0:
+        pytest.skip("Iluvatar native provider supports paged decode only")
+    if device == "cuda" and flash_attn is None:
+        pytest.skip("flash_attn is required as the dense reference")
 
     q = torch.randn((2, 1, 4, 64), dtype=torch.float16, device=device)
     k_cache = torch.randn((2, 8, 2, 64), dtype=torch.float16, device=device)

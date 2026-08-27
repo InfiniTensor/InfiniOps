@@ -10,6 +10,13 @@
 
 namespace op::paged_attention::cuda {
 
+// Standalone InfiniOps defines WITH_ILUVATAR; the legacy InfiniCore xmake
+// integration defines ENABLE_ILUVATAR_API. Keep both build paths on the
+// Iluvatar-safe warp and shared-memory implementation.
+#if defined(WITH_ILUVATAR) || defined(ENABLE_ILUVATAR_API)
+#define INFINI_OPS_PAGED_ATTENTION_ILUVATAR 1
+#endif
+
 struct OnlineSoftmaxState {
   float m = -INFINITY;
 
@@ -25,7 +32,7 @@ struct OnlineSoftmaxState {
 };
 
 __device__ __forceinline__ float WarpReduceSum(float x) {
-#if defined(ENABLE_ILUVATAR_API)
+#if defined(INFINI_OPS_PAGED_ATTENTION_ILUVATAR)
   // Iluvatar may use warp size 64; __shfl_sync(0xffffffff) only covers 32
   // threads. Use shared-memory tree reduce for portability across warp sizes.
   constexpr int kMaxWarps = 16;
@@ -51,7 +58,7 @@ __device__ __forceinline__ float WarpReduceSum(float x) {
 }
 
 __device__ __forceinline__ float WarpBroadcast(float x, int src_lane) {
-#if defined(ENABLE_ILUVATAR_API)
+#if defined(INFINI_OPS_PAGED_ATTENTION_ILUVATAR)
   __shared__ float _bcast_buf[16];
   const int warp_id = threadIdx.x / 32;
   if ((threadIdx.x & 31) == src_lane) {
@@ -65,7 +72,7 @@ __device__ __forceinline__ float WarpBroadcast(float x, int src_lane) {
 }
 
 __device__ __forceinline__ float WarpReduceMax(float x) {
-#if defined(ENABLE_ILUVATAR_API)
+#if defined(INFINI_OPS_PAGED_ATTENTION_ILUVATAR)
   __shared__ float _reduce_buf[16 * 32];
   const int lane = threadIdx.x & 31;
   const int warp_id = threadIdx.x / 32;
@@ -89,7 +96,7 @@ __device__ __forceinline__ float WarpReduceMax(float x) {
 }
 
 __device__ __forceinline__ unsigned int CvtaToShared(const void* ptr) {
-#if defined(ENABLE_ILUVATAR_API)
+#if defined(INFINI_OPS_PAGED_ATTENTION_ILUVATAR)
   return static_cast<unsigned int>(reinterpret_cast<uintptr_t>(ptr));
 #else
   return static_cast<unsigned int>(__cvta_generic_to_shared(ptr));

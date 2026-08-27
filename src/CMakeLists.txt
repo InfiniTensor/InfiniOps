@@ -585,8 +585,12 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
-if((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH)
+if(((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH) OR WITH_ILUVATAR)
     list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
+endif()
+
+if(WITH_ILUVATAR)
+    list(APPEND _infini_ops_smoke_ops flash_attn_with_kvcache)
 endif()
 
 if(INFINI_OPS_SMOKE_BUILD)
