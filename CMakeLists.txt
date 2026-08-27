@@ -288,7 +288,7 @@ if(WITH_TORCH OR WITH_LINKED)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
-    if(WITH_NVIDIA OR WITH_ILUVATAR)
+    if(WITH_NVIDIA OR WITH_ILUVATAR OR WITH_THEAD)
         find_library(TORCH_CUDA_LIB torch_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         # `torch_cuda` registers CUDA kernels through static initializers, so
