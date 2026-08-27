@@ -236,7 +236,9 @@ if(WITH_ILUVATAR)
     target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+    # CoreX does not provide FindCUDAToolkit's CUDA::cuda_driver target. The
+    # Iluvatar backend uses the runtime and BLAS APIs directly.
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
 
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
