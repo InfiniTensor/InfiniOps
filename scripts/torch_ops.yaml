@@ -276,6 +276,11 @@
 - mish
 - mkldnn_adaptive_avg_pool2d
 - mm
+- mul
+- slice_copy
+- permute_copy
+- expand_copy
+- convolution
 - mode
 - mse_loss
 - mse_loss_backward

@@ -1,3 +1,4 @@
+
 add_library(infiniops SHARED operator.h)
 add_library(InfiniOps::infiniops ALIAS infiniops)
 set_target_properties(infiniops PROPERTIES LINKER_LANGUAGE CXX)
@@ -424,6 +425,9 @@ if(WITH_CAMBRICON)
         )
     endif()
 
+    if(COMMAND target_link_options)
+        target_link_options(infiniops PRIVATE -Wl,--allow-multiple-definition)
+    endif()
     list(APPEND DEVICE_LIST "cambricon")
 endif()
 
@@ -1302,6 +1306,8 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             set_source_files_properties(${ILUVATAR_OPERATOR_DISPATCH_OBJECTS}
                 PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
             target_sources(infiniops PRIVATE ${ILUVATAR_OPERATOR_DISPATCH_OBJECTS})
+    else()
+        target_sources(infiniops PRIVATE ${OPERATOR_DISPATCH_SOURCES})
         endif()
     endif()
 endif()

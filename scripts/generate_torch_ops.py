@@ -1391,16 +1391,16 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         )
         conversion_lines.append(
             f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
-            f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
-            f"      {api_name}_type_, device_index);"
+            f"      {data_expr}, {api_name}.shape(), {api_name}.strides(),\n"
+            f"      {api_name}.dtype(), {api_name}.device().index());"
         )
 
     if op.explicit_inplace_out is not None:
         out_name = op.explicit_inplace_out.api_name
         conversion_lines.append(
             f"  auto at_{out_name} = ToAtenTensor<kDev>(\n"
-            f"      {out_name}.data(), {out_name}_shape_, {out_name}_strides_,\n"
-            f"      {out_name}_type_, device_index);"
+            f"      {out_name}.data(), {out_name}.shape(), {out_name}.strides(),\n"
+            f"      {out_name}.dtype(), {out_name}.device().index());"
         )
 
     for schema_index, param in enumerate(op.params):
