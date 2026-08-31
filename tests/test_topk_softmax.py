@@ -20,9 +20,11 @@ from tests.utils import get_stream
         (torch.bfloat16, 1e-6, 1e-6),
     ),
 )
-def test_topk_softmax(dtype, index_dtype, has_bias, renormalize, rtol, atol):
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax(
+    dtype, index_dtype, has_bias, renormalize, rtol, atol, device
+):
+    if device == "mlu" and index_dtype == torch.uint32:
+        pytest.skip("torch_mlu cannot construct uint32 test outputs")
 
     gating_output = torch.tensor(
         (
@@ -31,7 +33,7 @@ def test_topk_softmax(dtype, index_dtype, has_bias, renormalize, rtol, atol):
             (0.125, 0.75, 2.5, 1.0, -0.75),
         ),
         dtype=dtype,
-        device="cuda",
+        device=device,
     )
     bias = None
     if has_bias:
@@ -58,12 +60,12 @@ def test_topk_softmax(dtype, index_dtype, has_bias, renormalize, rtol, atol):
     torch.testing.assert_close(outputs[2], expected[2], rtol=0, atol=0)
 
 
-def test_topk_softmax_bias_only_changes_selection():
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_bias_only_changes_selection(device):
 
-    gating_output = torch.tensor(((3.0, 2.0, 1.0),), dtype=torch.float32, device="cuda")
-    bias = torch.tensor((-4.0, 0.0, 3.0), dtype=torch.float32, device="cuda")
+    gating_output = torch.tensor(
+        ((3.0, 2.0, 1.0),), dtype=torch.float32, device=device
+    )
+    bias = torch.tensor((-4.0, 0.0, 3.0), dtype=torch.float32, device=device)
     outputs = _make_outputs(gating_output, topk=1, index_dtype=torch.int32)
 
     infini.ops.topk_softmax(
@@ -81,14 +83,12 @@ def test_topk_softmax_bias_only_changes_selection():
 
 
 @pytest.mark.parametrize("bias_value", (float("nan"), float("-inf")))
-def test_topk_softmax_nonfinite_bias_selects_valid_experts(bias_value):
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_nonfinite_bias_selects_valid_experts(bias_value, device):
 
     gating_output = torch.tensor(
-        ((1.0, 2.0, 3.0, 4.0),), dtype=torch.float32, device="cuda"
+        ((1.0, 2.0, 3.0, 4.0),), dtype=torch.float32, device=device
     )
-    bias = torch.full((4,), bias_value, dtype=torch.float32, device="cuda")
+    bias = torch.full((4,), bias_value, dtype=torch.float32, device=device)
     first = _make_outputs(gating_output, topk=3, index_dtype=torch.int32)
     second = _make_outputs(gating_output, topk=3, index_dtype=torch.int32)
 
@@ -108,9 +108,7 @@ def test_topk_softmax_nonfinite_bias_selects_valid_experts(bias_value):
     assert torch.unique(first[1]).numel() == 3
 
 
-def test_topk_softmax_padding_and_token_expert_indices():
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_padding_and_token_expert_indices(device):
 
     gating_output = torch.tensor(
         (
@@ -119,9 +117,9 @@ def test_topk_softmax_padding_and_token_expert_indices():
             (-1.0, 0.5, 2.25, 1.25),
         ),
         dtype=torch.float16,
-        device="cuda",
+        device=device,
     )
-    is_padding = torch.tensor((False, True, False), dtype=torch.bool, device="cuda")
+    is_padding = torch.tensor((False, True, False), dtype=torch.bool, device=device)
     outputs = _make_outputs(gating_output, topk=3, index_dtype=torch.int64)
 
     infini.ops.topk_softmax(
@@ -135,18 +133,24 @@ def test_topk_softmax_padding_and_token_expert_indices():
 
     expected = _reference(gating_output, None, is_padding, 3, False)
     torch.testing.assert_close(outputs[0], expected[0])
-    torch.testing.assert_close(outputs[1], expected[1], rtol=0, atol=0)
+    torch.testing.assert_close(
+        outputs[1].cpu(), expected[1].cpu(), rtol=0, atol=0
+    )
     torch.testing.assert_close(outputs[2], expected[2], rtol=0, atol=0)
 
 
-def test_topk_softmax_non_default_stream():
-    if not torch.cuda.is_available():
-        pytest.skip("non-default CUDA streams require the NVIDIA backend")
+def test_topk_softmax_non_default_stream(device):
+    if device == "cuda":
+        accelerator = torch.cuda
+        stream_attribute = "cuda_stream"
+    else:
+        accelerator = torch.mlu
+        stream_attribute = "mlu_stream"
 
-    gating_output = torch.randn((7, 13), dtype=torch.bfloat16, device="cuda")
+    gating_output = torch.randn((7, 13), dtype=torch.bfloat16, device=device)
     outputs = _make_outputs(gating_output, topk=4, index_dtype=torch.int32)
-    stream = torch.cuda.Stream()
-    stream.wait_stream(torch.cuda.current_stream())
+    stream = accelerator.Stream()
+    stream.wait_stream(accelerator.current_stream())
 
     infini.ops.topk_softmax(
         gating_output,
@@ -154,7 +158,7 @@ def test_topk_softmax_non_default_stream():
         None,
         True,
         *outputs,
-        stream=stream.cuda_stream,
+        stream=getattr(stream, stream_attribute),
     )
 
     stream.synchronize()
@@ -166,11 +170,9 @@ def test_topk_softmax_non_default_stream():
     torch.testing.assert_close(outputs[2], expected[2], rtol=0, atol=0)
 
 
-def test_topk_softmax_tie_selects_smaller_expert_index():
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_tie_selects_smaller_expert_index(device):
 
-    gating_output = torch.zeros((1, 4), dtype=torch.float32, device="cuda")
+    gating_output = torch.zeros((1, 4), dtype=torch.float32, device=device)
     outputs = _make_outputs(gating_output, topk=3, index_dtype=torch.int32)
 
     infini.ops.topk_softmax(
@@ -183,16 +185,18 @@ def test_topk_softmax_tie_selects_smaller_expert_index():
     )
 
     torch.testing.assert_close(
-        outputs[1], torch.tensor(((0, 1, 2),), dtype=torch.int32, device="cuda")
+        outputs[1], torch.tensor(((0, 1, 2),), dtype=torch.int32, device=device)
     )
 
 
-def test_topk_softmax_padding_uses_uint32_max_sentinel():
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_padding_uses_uint32_max_sentinel(device):
+    if device == "mlu":
+        pytest.skip("torch_mlu cannot construct uint32 test outputs")
 
-    gating_output = torch.tensor(((1.0, 2.0, 3.0),), dtype=torch.float32, device="cuda")
-    is_padding = torch.tensor((True,), dtype=torch.bool, device="cuda")
+    gating_output = torch.tensor(
+        ((1.0, 2.0, 3.0),), dtype=torch.float32, device=device
+    )
+    is_padding = torch.tensor((True,), dtype=torch.bool, device=device)
     outputs = _make_outputs(gating_output, topk=2, index_dtype=torch.uint32)
 
     infini.ops.topk_softmax(
@@ -208,16 +212,14 @@ def test_topk_softmax_padding_uses_uint32_max_sentinel():
         (1, 2),
         torch.iinfo(torch.uint32).max,
         dtype=torch.uint32,
-        device="cuda",
+        device=device,
     )
     torch.testing.assert_close(outputs[1], expected, rtol=0, atol=0)
 
 
-def test_topk_softmax_empty_tokens():
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_empty_tokens(device):
 
-    gating_output = torch.empty((0, 4), dtype=torch.float16, device="cuda")
+    gating_output = torch.empty((0, 4), dtype=torch.float16, device=device)
     outputs = _make_outputs(gating_output, topk=2, index_dtype=torch.int64)
 
     result = infini.ops.topk_softmax(
@@ -233,13 +235,11 @@ def test_topk_softmax_empty_tokens():
     assert all(output.shape == (0, 2) for output in outputs)
 
 
-def test_topk_softmax_descriptor_reuses_matching_metadata():
-    if not torch.cuda.is_available():
-        pytest.skip("`topk_softmax` requires the NVIDIA backend")
+def test_topk_softmax_descriptor_reuses_matching_metadata(device):
 
-    gating_output = torch.randn((3, 7), dtype=torch.float16, device="cuda")
-    bias = torch.randn((7,), dtype=torch.float32, device="cuda")
-    is_padding = torch.tensor((False, True, False), dtype=torch.bool, device="cuda")
+    gating_output = torch.randn((3, 7), dtype=torch.float16, device=device)
+    bias = torch.randn((7,), dtype=torch.float32, device=device)
+    is_padding = torch.tensor((False, True, False), dtype=torch.bool, device=device)
     outputs = _make_outputs(gating_output, topk=2, index_dtype=torch.int64)
     operator = infini.ops.TopkSoftmax(gating_output, bias, is_padding, True, *outputs)
     reused_input = torch.randn_like(gating_output)
@@ -251,7 +251,9 @@ def test_topk_softmax_descriptor_reuses_matching_metadata():
 
     expected = _reference(reused_input, reused_bias, reused_padding, 2, True)
     torch.testing.assert_close(reused_outputs[0], expected[0], rtol=1e-6, atol=1e-6)
-    torch.testing.assert_close(reused_outputs[1], expected[1], rtol=0, atol=0)
+    torch.testing.assert_close(
+        reused_outputs[1].cpu(), expected[1].cpu(), rtol=0, atol=0
+    )
     torch.testing.assert_close(reused_outputs[2], expected[2], rtol=0, atol=0)
 
 
