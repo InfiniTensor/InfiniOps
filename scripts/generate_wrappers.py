@@ -1301,8 +1301,7 @@ def _generate_generated_dispatch_entries(operator):
     symbol_name = _op_symbol_name(operator.name)
     op_type = _op_cpp_type(operator.name)
     declarations = [
-        f"std::vector<std::size_t> ActiveImplementationIndicesFor"
-        f"{symbol_name}(Device::Type dev_type);"
+        f"std::vector<std::size_t> ActiveImplementationIndicesFor{symbol_name}(Device::Type dev_type);"
     ]
     definitions = [
         f"""std::vector<std::size_t> ActiveImplementationIndicesFor{symbol_name}(Device::Type dev_type) {{
@@ -1508,10 +1507,7 @@ def _generate_operator_call_instantiation_entries(operator):
         if arg.spelling in optional_non_tensor_params:
             return False
 
-        if arg.spelling in optional_tensor_params:
-            return True
-
-        return False
+        return arg.spelling in optional_tensor_params
 
     def _is_optional_vector_int64(arg):
         return (
@@ -2063,18 +2059,12 @@ void BindHostRangeProfileControls(pybind11::module& m) {
             for bind_func_name in bind_func_names
         )
 
-    module_calls = """const char* tuning_path =
-    std::getenv("INFINI_OPS_TUNING_PATH");
-if (!tuning_path) {
-  tuning_path = "tuning.json";
-}
-TuningManager::Instance().LoadTuningCache(tuning_path);
+    module_calls = """TuningManager::Instance().InitializeFromEnvironment();
 BindHostRangeProfileControls(m);"""
     if bind_func_calls:
         module_calls = f"{module_calls}\n{bind_func_calls}"
 
-    return f"""#include <cstdlib>
-#include <pybind11/pybind11.h>
+    return f"""#include <pybind11/pybind11.h>
 
 #include "host_range_profiler.h"
 #include "tuning.h"
