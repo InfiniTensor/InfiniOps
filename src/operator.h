@@ -11,7 +11,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -26,7 +25,6 @@
 #include "runtime.h"
 #include "tensor.h"
 #include "tuning.h"
-#include "tuning_utils.h"
 
 namespace infini::ops::detail {
 
@@ -98,6 +96,21 @@ inline void SyncDevice(Device::Type dev_type) {
         infini::rt::runtime::Runtime<kDev>::DeviceSynchronize();
       },
       "SyncDevice");
+}
+
+inline Device::Type FirstDeviceType() { return Device::Type::kCount; }
+
+template <typename First, typename... Rest>
+Device::Type FirstDeviceType(const First& first, const Rest&... rest) {
+  if constexpr (std::is_same_v<std::decay_t<First>, Tensor>) {
+    return first.device().type();
+  } else if constexpr (std::is_same_v<std::decay_t<First>,
+                                      std::vector<Tensor>>) {
+    return first.empty() ? FirstDeviceType(rest...)
+                         : first.front().device().type();
+  } else {
+    return FirstDeviceType(rest...);
+  }
 }
 
 template <typename TensorLike, typename = void>
@@ -226,7 +239,7 @@ Config ResolveConfig(const Config& config, Device::Type dev_type,
 
 template <typename Key, typename... Args>
 Config ResolveConfigOnline(const Handle& handle, const Config& config,
-                           const Args&... args);
+                           Device::Type dev_type, const Args&... args);
 
 template <typename Key, Device::Type kDev>
 struct ActiveImplementations;
@@ -240,6 +253,11 @@ class OperatorBase {
   void set_handle(const Handle& handle) { handle_ptr_ = handle.Clone(); }
 
   void set_config(const Config& config) { config_ptr_ = config.Clone(); }
+
+  void set_config(const Config& config, std::size_t implementation_index) {
+    set_config(config);
+    config_ptr_->set_implementation_index(implementation_index);
+  }
 
   void set_stream(void* stream) { stream_ = stream; }
 
@@ -275,16 +293,16 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
                                         const Tensor tensor, Args&&... args) {
-    Config resolved =
+    const Config resolved =
         ResolveConfig<Key>(config, tensor.device().type(), tensor, args...);
-    return MakeWithDevice(resolved, tensor.device().type(), tensor,
-                          std::forward<Args>(args)...);
+    return MakeResolved(config, resolved.implementation_index(),
+                        tensor.device().type(), tensor,
+                        std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Tensor tensor, Args&&... args) {
-    return Make(DefaultConfig(tensor.device().type()), tensor,
-                std::as_const(args)...);
+    return Make(Config{}, tensor, std::as_const(args)...);
   }
 
   template <typename... Args>
@@ -293,10 +311,11 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    Config resolved = ResolveConfig<Key>(
+    const Config resolved = ResolveConfig<Key>(
         config, tensors.front().device().type(), tensors, args...);
-    return MakeWithDevice(resolved, tensors.front().device().type(), tensors,
-                          std::forward<Args>(args)...);
+    return MakeResolved(config, resolved.implementation_index(),
+                        tensors.front().device().type(), tensors,
+                        std::forward<Args>(args)...);
   }
 
   template <typename... Args>
@@ -304,8 +323,7 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    return Make(DefaultConfig(tensors.front().device().type()), tensors,
-                std::as_const(args)...);
+    return Make(Config{}, tensors, std::as_const(args)...);
   }
 
   template <typename... Args>
@@ -326,8 +344,12 @@ class Operator : public OperatorBase {
       generation = cache_generation;
     }
 
+    const auto dev_type = detail::FirstDeviceType(args...);
+    assert(dev_type != Device::Type::kCount &&
+           "operator call requires at least one tensor argument");
+
     const Config effective_config =
-        ResolveConfigOnline<Key>(handle, config, args...);
+        ResolveConfigOnline<Key>(handle, config, dev_type, args...);
 
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
     auto key = [&]() {
@@ -344,7 +366,9 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       HostRangeScope host_range_cache_construct{
           HostRangeLayer::kCacheConstruct};
-      auto new_op = Make(effective_config, args...);
+      auto new_op =
+          MakeResolved(config, effective_config.implementation_index(),
+                       dev_type, args...);
       it = cache.emplace(std::move(key), std::move(new_op)).first;
     }
 #else
@@ -354,7 +378,12 @@ class Operator : public OperatorBase {
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      it = cache.emplace(std::move(key), Make(effective_config, args...)).first;
+      it = cache
+               .emplace(std::move(key),
+                        MakeResolved(config,
+                                     effective_config.implementation_index(),
+                                     dev_type, args...))
+               .first;
     }
 #endif
 
@@ -367,7 +396,7 @@ class Operator : public OperatorBase {
 
   template <typename... Args>
   static void Call(const Tensor tensor, const Args&... args) {
-    return Call({}, DefaultConfig(tensor.device().type()), tensor, args...);
+    return Call({}, Config{}, tensor, args...);
   }
 
   template <
@@ -417,39 +446,6 @@ class Operator : public OperatorBase {
   static constexpr std::size_t implementation_index_{implementation_index};
 
  private:
-  template <auto first, auto... rest>
-  static constexpr std::size_t FirstActiveImplementationIndex(
-      List<first, rest...>) {
-    return static_cast<std::size_t>(first);
-  }
-
-  static std::size_t FirstActiveImplementationIndex(List<>) {
-    assert(false && "operator has no active implementation for this device");
-    std::abort();
-  }
-
-  static std::size_t DefaultImplementationIndex(Device::Type dev_type) {
-    std::size_t default_index{0};
-
-    DispatchFunc<ActiveDevices<Key>>(
-        dev_type,
-        [&](auto device_tag) {
-          constexpr Device::Type kDev = decltype(device_tag)::value;
-          default_index = FirstActiveImplementationIndex(
-              typename ActiveImplementations<Key, kDev>::type{});
-        },
-        "Operator::DefaultImplementationIndex");
-
-    return default_index;
-  }
-
-  static Config DefaultConfig(Device::Type dev_type) {
-    Config config;
-    config.set_implementation_index(DefaultImplementationIndex(dev_type));
-
-    return config;
-  }
-
   template <typename TensorLike, typename... Args>
   static auto CallReturning(const TensorLike& tensor, const Args&... args) {
     auto out = Key::MakeReturnValue(tensor, args...);
@@ -459,8 +455,9 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static std::unique_ptr<Operator> MakeWithDevice(
-      const Config& config, Device::Type dispatch_device_type, Args&&... args) {
+  static std::unique_ptr<Operator> MakeResolved(
+      const Config& config, std::size_t resolved_implementation_index,
+      Device::Type dispatch_device_type, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
     auto cache_args = std::forward_as_tuple(args...);
 
@@ -469,7 +466,7 @@ class Operator : public OperatorBase {
         [&](auto device_tag) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
           detail::DispatchImplementation(
-              config.implementation_index(),
+              resolved_implementation_index,
               [&](auto implementation_tag) {
                 constexpr std::size_t kImplementationIndex =
                     decltype(implementation_tag)::value;
@@ -494,7 +491,7 @@ class Operator : public OperatorBase {
         },
         "Operator::Make");
 
-    op_ptr->set_config(config);
+    op_ptr->set_config(config, resolved_implementation_index);
 
     return op_ptr;
   }
@@ -544,37 +541,35 @@ struct ActiveImplementations {
 template <typename Key, typename... Args>
 Config ResolveConfig(const Config& config, Device::Type dev_type,
                      const Args&... args) {
-  if (config.auto_select()) {
-    auto indices = Operator<Key>::active_implementation_indices(dev_type);
-    if (!indices.empty()) {
-      auto signature = TuningSignature::Build(args...);
+  if (!config.auto_select()) return config;
 
-      auto op_name = detail::ExtractOperatorName<Key>();
-      auto tuned_index =
-          TuningManager::Instance().Lookup(op_name, dev_type, signature);
+  auto indices = Operator<Key>::active_implementation_indices(dev_type);
+  if (indices.empty()) return config;
 
-      Config resolved = config;
-      if (tuned_index.has_value()) {
-        bool is_valid = std::find(indices.begin(), indices.end(),
-                                  *tuned_index) != indices.end();
-        if (is_valid) {
-          resolved.set_implementation_index(*tuned_index);
-        } else {
-          std::cerr << "[Tuning] Warning: tuned implementation " << *tuned_index
-                    << " for " << op_name << " on "
-                    << Device::StringFromType(dev_type)
-                    << " is not available (compiled indices:";
-          for (auto idx : indices) std::cerr << " " << idx;
-          std::cerr << "), falling back to " << indices.front() << std::endl;
-          resolved.set_implementation_index(indices.front());
-        }
-      } else {
-        resolved.set_implementation_index(indices.front());
-      }
-      return resolved;
+  auto signature = TuningSignature::Build(args...);
+  constexpr auto op_name = detail::OperatorName<Key>();
+  auto tuned_index =
+      TuningManager::Instance().Lookup(op_name, dev_type, signature);
+  auto chosen = indices.front();
+
+  if (tuned_index.has_value()) {
+    bool is_valid = std::find(indices.begin(), indices.end(), *tuned_index) !=
+                    indices.end();
+    if (is_valid) {
+      chosen = *tuned_index;
+    } else {
+      std::cerr << "[Tuning] Warning: tuned implementation " << *tuned_index
+                << " for " << op_name << " on "
+                << Device::StringFromType(dev_type)
+                << " is not available (compiled indices:";
+      for (auto idx : indices) std::cerr << " " << idx;
+      std::cerr << "), falling back to " << chosen << std::endl;
     }
   }
-  return config;
+
+  Config resolved;
+  resolved.set_implementation_index(chosen);
+  return resolved;
 }
 
 template <typename Key, typename... Args>
@@ -584,12 +579,10 @@ double BenchmarkImplementation(const Handle& handle, Device::Type dev_type,
   fixed.set_implementation_index(impl_index);
 
   auto op = Operator<Key>::Make(fixed, args...);
-  if (!op) {
-    return std::numeric_limits<double>::infinity();
-  }
 
-  const int warmup = detail::EnvInt("INFINI_OPS_TUNING_WARMUP", 1);
-  const int repeat = detail::EnvInt("INFINI_OPS_TUNING_REPEAT", 5);
+  const auto& tuning = TuningManager::Instance();
+  const int warmup = tuning.warmup_count();
+  const int repeat = tuning.repeat_count();
 
   for (int i = 0; i < warmup; ++i) {
     (*op)(handle, args...);
@@ -610,57 +603,52 @@ double BenchmarkImplementation(const Handle& handle, Device::Type dev_type,
 
 template <typename Key, typename... Args>
 Config ResolveConfigOnline(const Handle& handle, const Config& config,
-                           const Args&... args) {
-  if (config.auto_select() && TuningManager::Instance().IsEnabled()) {
-    Device::Type dev_type = detail::FirstDeviceType(args...);
-    auto indices = Operator<Key>::active_implementation_indices(dev_type);
+                           Device::Type dev_type, const Args&... args) {
+  if (!config.auto_select()) return config;
 
-    if (!indices.empty()) {
-      auto signature = TuningSignature::Build(args...);
-      auto op_name = detail::ExtractOperatorName<Key>();
-
-      auto tuned =
-          TuningManager::Instance().Lookup(op_name, dev_type, signature);
-
-      std::size_t chosen;
-      if (tuned.has_value() &&
-          std::find(indices.begin(), indices.end(), *tuned) != indices.end()) {
-        chosen = *tuned;
-      } else {
-        if (indices.size() == 1) {
-          chosen = indices.front();
-          TuningManager::Instance().Record(op_name, dev_type, signature,
-                                           chosen);
-          std::cout << "[Tuning] " << op_name << " on "
-                    << Device::StringFromType(dev_type)
-                    << ": single impl, chose index " << chosen << std::endl;
-        } else {
-          chosen = indices.front();
-          double best_time = std::numeric_limits<double>::infinity();
-          for (auto idx : indices) {
-            double t =
-                BenchmarkImplementation<Key>(handle, dev_type, idx, args...);
-            if (t < best_time) {
-              best_time = t;
-              chosen = idx;
-            }
-          }
-          TuningManager::Instance().Record(op_name, dev_type, signature,
-                                           chosen);
-          std::cout << "[Tuning] " << op_name << " on "
-                    << Device::StringFromType(dev_type) << ": benchmarked "
-                    << indices.size() << " impls, chose index " << chosen
-                    << " (" << best_time * 1e6 << " us)" << std::endl;
-        }
-      }
-
-      Config resolved = config;
-      resolved.set_implementation_index(chosen);
-      return resolved;
-    }
+  auto& tuning = TuningManager::Instance();
+  if (!tuning.IsEnabled()) {
+    return ResolveConfig<Key>(config, dev_type, args...);
   }
-  (void)handle;
-  return config;
+
+  auto indices = Operator<Key>::active_implementation_indices(dev_type);
+  if (indices.empty()) return config;
+
+  auto signature = TuningSignature::Build(args...);
+  constexpr auto op_name = detail::OperatorName<Key>();
+  auto tuned = tuning.Lookup(op_name, dev_type, signature);
+  std::size_t chosen;
+
+  if (tuned.has_value() &&
+      std::find(indices.begin(), indices.end(), *tuned) != indices.end()) {
+    chosen = *tuned;
+  } else if (indices.size() == 1) {
+    chosen = indices.front();
+    tuning.Record(op_name, dev_type, signature, chosen);
+    std::cout << "[Tuning] " << op_name << " on "
+              << Device::StringFromType(dev_type)
+              << ": single impl, chose index " << chosen << std::endl;
+  } else {
+    chosen = indices.front();
+    double best_time = std::numeric_limits<double>::infinity();
+    for (auto idx : indices) {
+      double time =
+          BenchmarkImplementation<Key>(handle, dev_type, idx, args...);
+      if (time < best_time) {
+        best_time = time;
+        chosen = idx;
+      }
+    }
+    tuning.Record(op_name, dev_type, signature, chosen);
+    std::cout << "[Tuning] " << op_name << " on "
+              << Device::StringFromType(dev_type) << ": benchmarked "
+              << indices.size() << " impls, chose index " << chosen << " ("
+              << best_time * 1e6 << " us)" << std::endl;
+  }
+
+  Config resolved;
+  resolved.set_implementation_index(chosen);
+  return resolved;
 }
 
 }  // namespace infini::ops

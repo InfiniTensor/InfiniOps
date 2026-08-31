@@ -70,19 +70,52 @@ def test_cpp_operator_call_trace_is_json(tmp_path):
 
 
 def test_cpp_returning_call_smoke(tmp_path):
+    binary = _compile_cpp(tmp_path, "add_return_smoke", _ADD_RETURN_SMOKE_SOURCE)
+    _run([str(binary)])
+
+
+def test_tuning_cache_round_trip(tmp_path):
+    binary = _compile_cpp(tmp_path, "tuning_cache", _TUNING_CACHE_SOURCE)
+    cache_path = tmp_path / "tuning.json"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "INFINI_OPS_TUNING_PATH": str(cache_path),
+            "INFINI_OPS_TUNING_WARMUP": "2",
+            "INFINI_OPS_TUNING_REPEAT": "3",
+        }
+    )
+
+    _run([str(binary), "initialize", str(cache_path)], env=environment)
+
+    cache = json.loads(cache_path.read_text())
+    assert cache["version"] == 1
+    entry = cache["entries"][0]
+    assert entry["operator"] == "Add"
+    assert entry["best_implementation"] == 7
+
+    _run([str(binary), "lookup", str(cache_path)])
+
+    cache_path.write_text("{")
+    _run([str(binary), "miss", str(cache_path)])
+
+
+def _compile_cpp(tmp_path, name, source_text):
     install_prefix = _install_prefix()
-    include_dir = install_prefix / "include"
+    include_dirs = [install_prefix / "include"]
+    if infinirt_root := os.environ.get("INFINI_RT_ROOT"):
+        include_dirs.append(Path(infinirt_root) / "include")
     library_dir = _library_dir(install_prefix)
-    source = tmp_path / "add_return_smoke.cc"
-    binary = tmp_path / "add_return_smoke"
-    source.write_text(_ADD_RETURN_SMOKE_SOURCE)
+    source = tmp_path / f"{name}.cc"
+    binary = tmp_path / name
+    source.write_text(source_text)
 
     _run(
         [
             _compiler("CXX", "c++"),
             "-std=c++17",
             "-Werror",
-            f"-I{include_dir}",
+            *(f"-I{include_dir}" for include_dir in include_dirs),
             str(source),
             f"-L{library_dir}",
             "-linfiniops",
@@ -92,7 +125,8 @@ def test_cpp_returning_call_smoke(tmp_path):
             str(binary),
         ]
     )
-    _run([str(binary)])
+
+    return binary
 
 
 def test_cpp_configless_calls_use_first_active_implementation(tmp_path):
@@ -184,12 +218,14 @@ def _install_prefix():
 
 
 def _library_dir(prefix):
-    for name in ("lib", "lib64"):
-        library_dir = prefix / name
-        if (library_dir / "libinfiniops.so").exists():
+    for library_dir in (prefix, prefix / "lib", prefix / "lib64"):
+        if all(
+            (library_dir / name).exists()
+            for name in ("libinfiniops.so", "libinfinirt.so")
+        ):
             return library_dir
 
-    pytest.skip(f"`libinfiniops.so` was not found under `{prefix}`.")
+    pytest.skip(f"InfiniOps and InfiniRT libraries were not found under `{prefix}`.")
 
 
 def _compiler(env_name, default):
@@ -209,7 +245,7 @@ def _run(command, **kwargs):
     except FileNotFoundError as error:
         pytest.skip(f"`{command[0]}` is not available: {error}")
     except subprocess.CalledProcessError as error:
-        output = "\n".join((error.stdout, error.stderr)).strip()
+        output = f"{error.stdout}\n{error.stderr}".strip()
         raise AssertionError(output) from error
 
 
@@ -226,6 +262,49 @@ _CMAKE_PACKAGE_SMOKE_PROJECT = textwrap.dedent(
     target_link_libraries(add_smoke PRIVATE InfiniOps::infiniops)
     """
 )
+
+
+_TUNING_CACHE_SOURCE = textwrap.dedent(
+    r"""
+    #include <tuning.h>
+
+    #include <string>
+
+    int main(int argc, char** argv) {
+      if (argc != 3) {
+        return 2;
+      }
+
+      infini::ops::TuningSignature signature;
+      signature.tensors.push_back(
+          {{2, 3}, infini::ops::DataType::kFloat32});
+      signature.scalars.push_back(1.5);
+
+      auto& manager = infini::ops::TuningManager::Instance();
+      const std::string mode{argv[1]};
+
+      if (mode == "initialize") {
+        manager.InitializeFromEnvironment();
+        if (manager.warmup_count() != 2 || manager.repeat_count() != 3) {
+          return 1;
+        }
+        manager.Record("Add", infini::ops::Device::Type::kCpu, signature, 7);
+        return 0;
+      }
+
+      manager.LoadTuningCache(argv[2]);
+      auto implementation = manager.Lookup(
+          "Add", infini::ops::Device::Type::kCpu, signature);
+      if (mode == "lookup") {
+        return implementation == std::optional<std::size_t>{7} ? 0 : 1;
+      }
+      if (mode == "miss") {
+        return implementation.has_value() ? 1 : 0;
+      }
+      return 2;
+    }
+    """
+).lstrip()
 
 
 _ADD_SMOKE_SOURCE = textwrap.dedent(
@@ -642,12 +721,12 @@ _POLYMORPHIC_CONTEXT_SOURCE = textwrap.dedent(
       {
         DerivedConfig config{17};
         config.set_implementation_index(3);
-        owner.set_config(config);
+        owner.set_config(config, 5);
         config.set_implementation_index(9);
       }
 
       if (owner.config_value() != 17) return 1;
-      if (owner.implementation_index() != 3) return 2;
+      if (owner.implementation_index() != 5) return 2;
 
       int stream;
       {

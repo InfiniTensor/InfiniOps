@@ -3,9 +3,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -15,6 +17,15 @@
 #include "tensor.h"
 
 namespace infini::ops {
+
+namespace detail {
+
+template <typename T>
+void CombineTuningHash(std::size_t& hash, const T& value) {
+  hash ^= std::hash<T>{}(value) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+}
+
+}  // namespace detail
 
 struct TuningSignature {
   struct TensorSig {
@@ -41,18 +52,17 @@ struct TuningSignature {
   }
 
   std::size_t Hash() const {
-    std::size_t h = 0;
+    std::size_t hash = 0;
     for (const auto& t : tensors) {
-      for (auto dim : t.shape) {
-        h ^= std::hash<int64_t>{}(dim) + 0x9e3779b9 + (h << 6) + (h >> 2);
+      for (auto dimension : t.shape) {
+        detail::CombineTuningHash(hash, dimension);
       }
-      h ^= std::hash<int>{}(static_cast<int>(t.dtype)) + 0x9e3779b9 + (h << 6) +
-           (h >> 2);
+      detail::CombineTuningHash(hash, static_cast<int>(t.dtype));
     }
     for (auto s : scalars) {
-      h ^= std::hash<double>{}(s) + 0x9e3779b9 + (h << 6) + (h >> 2);
+      detail::CombineTuningHash(hash, s);
     }
-    return h;
+    return hash;
   }
 
  private:
@@ -93,35 +103,26 @@ struct TuningSignature {
   }
 };
 
-}  // namespace infini::ops
-
-namespace std {
-
-template <>
-struct hash<infini::ops::TuningSignature> {
-  std::size_t operator()(const infini::ops::TuningSignature& sig) const {
-    return sig.Hash();
-  }
-};
-
-}  // namespace std
-
-namespace infini::ops {
-
 class TuningManager {
  public:
   static TuningManager& Instance();
 
+  void InitializeFromEnvironment();
+
   void LoadTuningCache(const std::string& json_path);
 
-  std::optional<std::size_t> Lookup(const std::string& operator_name,
+  std::optional<std::size_t> Lookup(std::string_view operator_name,
                                     Device::Type device,
                                     const TuningSignature& signature) const;
 
-  void Record(const std::string& operator_name, Device::Type device,
+  void Record(std::string_view operator_name, Device::Type device,
               const TuningSignature& signature, std::size_t best_index);
 
   bool IsEnabled() const { return enabled_; }
+
+  int warmup_count() const { return warmup_count_; }
+
+  int repeat_count() const { return repeat_count_; }
 
  private:
   TuningManager() = default;
@@ -129,6 +130,10 @@ class TuningManager {
   TuningManager(const TuningManager&) = delete;
 
   TuningManager& operator=(const TuningManager&) = delete;
+
+  static constexpr int kDefaultWarmupCount = 1;
+
+  static constexpr int kDefaultRepeatCount = 5;
 
   struct CacheKey {
     std::string operator_name;
@@ -143,11 +148,11 @@ class TuningManager {
 
   struct CacheKeyHash {
     std::size_t operator()(const CacheKey& key) const {
-      std::size_t h = std::hash<std::string>{}(key.operator_name);
-      h ^= std::hash<int>{}(static_cast<int>(key.device)) + 0x9e3779b9 +
-           (h << 6) + (h >> 2);
-      h ^= key.signature.Hash() + 0x9e3779b9 + (h << 6) + (h >> 2);
-      return h;
+      std::size_t hash = 0;
+      detail::CombineTuningHash(hash, key.operator_name);
+      detail::CombineTuningHash(hash, static_cast<int>(key.device));
+      detail::CombineTuningHash(hash, key.signature.Hash());
+      return hash;
     }
   };
 
@@ -157,7 +162,11 @@ class TuningManager {
 
   bool enabled_{false};
 
-  std::string json_path_{"tuning.json"};
+  std::string json_path_;
+
+  int warmup_count_{kDefaultWarmupCount};
+
+  int repeat_count_{kDefaultRepeatCount};
 
   mutable std::mutex mutex_;
 };

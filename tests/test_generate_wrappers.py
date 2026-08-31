@@ -375,8 +375,11 @@ class Mul {
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
     ) in text
     assert "std::optional<std::size_t> implementation_index" in text
-    assert "if (implementation_index.has_value())" in text
-    assert "config.set_implementation_index(*implementation_index)" in text
+    assert (
+        "if (implementation_index.has_value()) {\n"
+        "      config.set_implementation_index(*implementation_index);\n"
+        "    }"
+    ) in text
     assert "auto converted_first_tensor{TensorFromPybind11Handle(input)};" in text
     assert "std::move(converted_first_tensor)" not in text
     assert text.count("DeviceFromPybind11Handle(input)") == 1
@@ -384,9 +387,7 @@ class Mul {
     assert 'py::arg("implementation_index") = py::none()' in text
 
 
-def test_pybind_reuses_first_vector_tensor_conversion(
-    monkeypatch, tmp_path
-):
+def test_pybind_reuses_first_vector_tensor_conversion(monkeypatch, tmp_path):
     module = _load_generator_module()
     base_header = tmp_path / "cat.h"
     base_header.write_text(
@@ -568,6 +569,23 @@ def test_generated_ops_module_exposes_host_range_profile_controls_once():
         assert text.count(marker) == 1
         binding = text.split(marker, maxsplit=1)[1].split("\n  m.def(", maxsplit=1)[0]
         assert target in binding
+
+
+@pytest.mark.parametrize("monolithic", [False, True])
+def test_generated_ops_module_initializes_tuning(monolithic):
+    module = _load_generator_module()
+
+    text = module._generate_ops_module_source(
+        ["BindAdd"],
+        op_includes=['#include "base/add.h"'],
+        monolithic=monolithic,
+    )
+
+    assert text.count('#include "tuning.h"') == 1
+    assert (
+        text.count("TuningManager::Instance().InitializeFromEnvironment();") == 1
+    )
+    assert text.count("BindHostRangeProfileControls(m);") == 1
 
 
 def test_iluvatar_custom_compilers_receive_host_range_profile_definition():
