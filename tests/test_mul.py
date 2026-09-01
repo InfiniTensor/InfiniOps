@@ -49,9 +49,9 @@ _UINT_DTYPES = tuple(
 def test_mul(
     shape, input_strides, other_strides, out_strides, dtype, device, rtol, atol
 ):
-    if device == "musa" and dtype in _UINT_DTYPES:
+    if device in ("mlu", "musa") and dtype in _UINT_DTYPES:
         pytest.skip(
-            "The `torch.musa` test cloning path does not support `uint16`, `uint32`, or `uint64`."
+            f"The `{device}` test cloning path does not support `uint16`, `uint32`, or `uint64`."
         )
 
     if dtype in _INT_DTYPES or dtype in _UINT_DTYPES:
