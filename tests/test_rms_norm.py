@@ -55,7 +55,38 @@ def test_rms_norm(
     )
 
 
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-4, 1e-4),
+        (torch.float16, 1e-2, 1e-2),
+        (torch.bfloat16, 2e-2, 1e-2),
+    ),
+)
+def test_rms_norm_without_weight(dtype, device, rtol, atol):
+    input = torch.randn((7, 769), dtype=dtype, device=device)
+    out = torch.empty_like(input)
+
+    return Payload(
+        _rms_norm,
+        _torch_rms_norm,
+        (input, None),
+        {"eps": 1e-6, "out": out},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
 def test_rms_norm_non_default_stream(device, implementation_index):
+    _run_rms_norm_non_default_stream(device, implementation_index, has_weight=True)
+
+
+def test_rms_norm_without_weight_non_default_stream(device):
+    _run_rms_norm_non_default_stream(device, 0, has_weight=False)
+
+
+def _run_rms_norm_non_default_stream(device, implementation_index, *, has_weight):
     if device == "cuda":
         accelerator = torch.cuda
         stream_attribute = "cuda_stream"
@@ -69,7 +100,9 @@ def test_rms_norm_non_default_stream(device, implementation_index):
         pytest.skip("non-default streams require an accelerator backend")
 
     input = torch.randn((32, 128), dtype=torch.float16, device=device)
-    weight = torch.randn((128,), dtype=torch.float16, device=device)
+    weight = (
+        torch.randn((128,), dtype=torch.float16, device=device) if has_weight else None
+    )
     out = torch.zeros_like(input)
     expected = _torch_rms_norm(input, weight, out=torch.empty_like(out)).cpu()
     accelerator.synchronize()
@@ -110,11 +143,15 @@ def _rms_norm(input, weight, *, eps=1e-6, out=None, implementation_index=0):
 
 
 def _torch_rms_norm(input, weight, *, eps=1e-6, out=None):
-    # Fallback for `torch<2.3`: `rms_norm = (x / sqrt(mean(x^2) + eps)) * weight`.
+    # Fallback for `torch<2.3`: normalize first, then apply weight when present.
     def _fallback(input, _normalized_shape, weight, *, eps=1e-6):
         rms = torch.sqrt(torch.mean(input * input, dim=-1, keepdim=True) + eps)
+        result = input / rms
 
-        return (input / rms) * weight
+        if weight is not None:
+            result = result * weight
+
+        return result
 
     rms_norm_fn = getattr(torch.nn.functional, "rms_norm", _fallback)
 
