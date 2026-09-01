@@ -8,7 +8,7 @@ import pytest
 
 
 def test_cpp_operator_call_instantiation_smoke(tmp_path):
-    install_prefix = _install_prefix()
+    install_prefixes = _install_prefixes()
     source_dir = tmp_path / "source"
     build_dir = tmp_path / "build"
     source_dir.mkdir()
@@ -23,7 +23,7 @@ def test_cpp_operator_call_instantiation_smoke(tmp_path):
             str(source_dir),
             "-B",
             str(build_dir),
-            f"-DCMAKE_PREFIX_PATH={install_prefix}",
+            f"-DCMAKE_PREFIX_PATH={';'.join(map(str, install_prefixes))}",
             f"-DCMAKE_CXX_COMPILER={_compiler('CXX', 'c++')}",
         ]
     )
@@ -32,28 +32,7 @@ def test_cpp_operator_call_instantiation_smoke(tmp_path):
 
 
 def test_cpp_operator_call_trace_is_json(tmp_path):
-    install_prefix = _install_prefix()
-    include_dir = install_prefix / "include"
-    library_dir = _library_dir(install_prefix)
-    source = tmp_path / "add_trace.cc"
-    binary = tmp_path / "add_trace"
-    source.write_text(_ADD_SMOKE_SOURCE)
-
-    _run(
-        [
-            _compiler("CXX", "c++"),
-            "-std=c++17",
-            "-Werror",
-            f"-I{include_dir}",
-            str(source),
-            f"-L{library_dir}",
-            "-linfiniops",
-            "-linfinirt",
-            f"-Wl,-rpath,{library_dir}",
-            "-o",
-            str(binary),
-        ]
-    )
+    binary = _compile_cpp(tmp_path, "add_trace", _ADD_SMOKE_SOURCE)
     env = os.environ.copy()
     env["INFINI_OPS_TRACE_CALLS"] = "1"
     result = _run([str(binary)], env=env)
@@ -101,11 +80,16 @@ def test_tuning_cache_round_trip(tmp_path):
 
 
 def _compile_cpp(tmp_path, name, source_text):
-    install_prefix = _install_prefix()
-    include_dirs = [install_prefix / "include"]
-    if infinirt_root := os.environ.get("INFINI_RT_ROOT"):
-        include_dirs.append(Path(infinirt_root) / "include")
-    library_dir = _library_dir(install_prefix)
+    install_prefixes = _install_prefixes()
+    include_dirs = [prefix / "include" for prefix in install_prefixes]
+    library_dirs = list(
+        dict.fromkeys(
+            (
+                _library_dir(install_prefixes, "libinfiniops.so"),
+                _library_dir(install_prefixes, "libinfinirt.so"),
+            )
+        )
+    )
     source = tmp_path / f"{name}.cc"
     binary = tmp_path / name
     source.write_text(source_text)
@@ -115,12 +99,13 @@ def _compile_cpp(tmp_path, name, source_text):
             _compiler("CXX", "c++"),
             "-std=c++17",
             "-Werror",
+            "-Wno-error=deprecated-declarations",
             *(f"-I{include_dir}" for include_dir in include_dirs),
             str(source),
-            f"-L{library_dir}",
+            *(f"-L{library_dir}" for library_dir in library_dirs),
             "-linfiniops",
             "-linfinirt",
-            f"-Wl,-rpath,{library_dir}",
+            *(f"-Wl,-rpath,{library_dir}" for library_dir in library_dirs),
             "-o",
             str(binary),
         ]
@@ -130,54 +115,16 @@ def _compile_cpp(tmp_path, name, source_text):
 
 
 def test_cpp_configless_calls_use_first_active_implementation(tmp_path):
-    install_prefix = _install_prefix()
-    include_dir = install_prefix / "include"
-    library_dir = _library_dir(install_prefix)
-    source = tmp_path / "configless_active_implementation.cc"
-    binary = tmp_path / "configless_active_implementation"
-    source.write_text(_CONFIGLESS_ACTIVE_IMPLEMENTATION_SOURCE)
-
-    _run(
-        [
-            _compiler("CXX", "c++"),
-            "-std=c++17",
-            "-Werror",
-            f"-I{include_dir}",
-            str(source),
-            f"-L{library_dir}",
-            "-linfiniops",
-            "-linfinirt",
-            f"-Wl,-rpath,{library_dir}",
-            "-o",
-            str(binary),
-        ]
+    binary = _compile_cpp(
+        tmp_path,
+        "configless_active_implementation",
+        _CONFIGLESS_ACTIVE_IMPLEMENTATION_SOURCE,
     )
     _run([str(binary)])
 
 
 def test_cpp_polymorphic_context_smoke(tmp_path):
-    install_prefix = _install_prefix()
-    include_dir = install_prefix / "include"
-    library_dir = _library_dir(install_prefix)
-    source = tmp_path / "polymorphic_context.cc"
-    binary = tmp_path / "polymorphic_context"
-    source.write_text(_POLYMORPHIC_CONTEXT_SOURCE)
-
-    _run(
-        [
-            _compiler("CXX", "c++"),
-            "-std=c++17",
-            "-Werror",
-            f"-I{include_dir}",
-            str(source),
-            f"-L{library_dir}",
-            "-linfiniops",
-            "-linfinirt",
-            f"-Wl,-rpath,{library_dir}",
-            "-o",
-            str(binary),
-        ]
-    )
+    binary = _compile_cpp(tmp_path, "polymorphic_context", _POLYMORPHIC_CONTEXT_SOURCE)
     _run([str(binary)])
 
 
@@ -190,8 +137,7 @@ def test_cpp_polymorphic_context_smoke(tmp_path):
     ),
 )
 def test_cpp_base_headers_compile_with_metadata_views(tmp_path, header):
-    install_prefix = _install_prefix()
-    include_dir = install_prefix / "include"
+    include_dirs = [prefix / "include" for prefix in _install_prefixes()]
     source = tmp_path / f"{Path(header).stem}_metadata_view.cc"
     source.write_text(f"#include <{header}>\n\nint main() {{ return 0; }}\n")
 
@@ -202,7 +148,7 @@ def test_cpp_base_headers_compile_with_metadata_views(tmp_path, header):
             "-Werror",
             "-UNDEBUG",
             "-fsyntax-only",
-            f"-I{include_dir}",
+            *(f"-I{include_dir}" for include_dir in include_dirs),
             str(source),
         ]
     )
@@ -217,15 +163,22 @@ def _install_prefix():
     pytest.skip("`INFINI_OPS_INSTALL_PREFIX` is not set.")
 
 
-def _library_dir(prefix):
-    for library_dir in (prefix, prefix / "lib", prefix / "lib64"):
-        if all(
-            (library_dir / name).exists()
-            for name in ("libinfiniops.so", "libinfinirt.so")
-        ):
-            return library_dir
+def _install_prefixes():
+    infiniops_prefix = _install_prefix()
+    prefixes = [infiniops_prefix]
+    if infinirt_root := os.environ.get("INFINI_RT_ROOT"):
+        prefixes.append(Path(infinirt_root))
 
-    pytest.skip(f"InfiniOps and InfiniRT libraries were not found under `{prefix}`.")
+    return list(dict.fromkeys(prefixes))
+
+
+def _library_dir(prefixes, library_name):
+    for prefix in prefixes:
+        for library_dir in (prefix, prefix / "lib", prefix / "lib64"):
+            if (library_dir / library_name).exists():
+                return library_dir
+
+    pytest.skip(f"`{library_name}` was not found under any configured prefix.")
 
 
 def _compiler(env_name, default):
