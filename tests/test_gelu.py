@@ -42,6 +42,8 @@ def test_gelu(
 ):
     if device == "musa" and dtype == torch.float64:
         pytest.skip("MUSA does not support float64 GELU")
+    if device == "mlu" and dtype == torch.float64:
+        pytest.skip("Cambricon CNNL does not support float64 GELU")
 
     input = randn_strided(shape, input_strides, dtype=dtype, device=device)
     out = (
