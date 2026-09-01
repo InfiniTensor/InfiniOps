@@ -583,7 +583,7 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
-if(WITH_NVIDIA AND WITH_TORCH)
+if((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH)
     list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
 endif()
 
@@ -821,7 +821,7 @@ if(WITH_TORCH)
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
 
-    if(NOT WITH_NVIDIA)
+    if(NOT WITH_NVIDIA AND NOT WITH_MOORE)
         list(FILTER TORCH_SOURCES EXCLUDE REGEX
             ".*/flash_attn_varlen_func/flash_attn_varlen_func\\.cc$")
     endif()

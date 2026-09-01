@@ -21,6 +21,7 @@ if not hasattr(infini.ops, "FlashAttnVarlenFunc"):
     ),
     (
         ((3, 5), (4, 5), 4, 4, False, (-1, -1), None, False, False),
+        ((3, 5), (3, 5), 4, 2, True, (-1, -1), 0.125, False, False),
         ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125, False, False),
         ((4, 3), (6, 2), 4, 2, False, (2, 1), None, False, False),
         ((4, 3), (6, 2), 4, 2, True, (2, 1), None, False, False),
@@ -52,10 +53,14 @@ def test_flash_attn_varlen_func(
     rtol,
     atol,
 ):
-    if device != "cuda":
-        pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
+    if device == "musa" and window_size != (-1, -1):
+        pytest.skip("TorchMusa FlashAttention does not support local windows")
+    if device == "musa" and not paged and causal and q_lens != k_lens:
+        pytest.skip("TorchMusa causal FlashAttention requires matching Q/K lengths")
 
-    if (paged or use_alibi) and implementation_index == 8:
+    if device == "cuda" and (paged or use_alibi) and implementation_index == 8:
         pytest.skip("paged KV cache and ALiBi require the linked provider")
 
     q = torch.randn((sum(q_lens), num_heads, head_dim), dtype=dtype, device=device)
@@ -152,6 +157,12 @@ def test_flash_attn_varlen_func(
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
 
     if return_attn_probs:
+        reference_window_size_right = None
+        if device == "cuda" and causal:
+            reference_window_size_right = 0
+        elif device == "cuda" and window_size[1] >= 0:
+            reference_window_size_right = window_size[1]
+
         expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
             q,
             k,
@@ -165,9 +176,7 @@ def test_flash_attn_varlen_func(
             False,
             scale=scale,
             window_size_left=None if window_size[0] < 0 else window_size[0],
-            window_size_right=(
-                0 if causal else None if window_size[1] < 0 else window_size[1]
-            ),
+            window_size_right=reference_window_size_right,
         )
         expected_softmax_lse = _pack_varlen_softmax_lse(
             expected_auxiliary[1],
@@ -274,8 +283,8 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
 
 
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn((5, 4, 64), dtype=torch.float16, device=device)

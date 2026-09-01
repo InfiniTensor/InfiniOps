@@ -334,8 +334,10 @@ __device__ void FlashAttentionDecodeWarpKernel(
     const float o = acc[i] * inv_l;
     if constexpr (std::is_same_v<TData, half>) {
       outptr[dim] = __float2half_rn(o);
+#if defined(__CUDA_ARCH__)
     } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
       outptr[dim] = __float2bfloat16_rn(o);
+#endif
     } else {
       outptr[dim] = static_cast<TData>(o);
     }
@@ -616,8 +618,10 @@ __device__ void FlashAttentionDecodeSplitKvCombineWarpKernel(
     const float o = acc * inv_l;
     if constexpr (std::is_same_v<TData, half>) {
       outptr[dim] = __float2half_rn(o);
+#if defined(__CUDA_ARCH__)
     } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
       outptr[dim] = __float2bfloat16_rn(o);
+#endif
     } else {
       outptr[dim] = static_cast<TData>(o);
     }
