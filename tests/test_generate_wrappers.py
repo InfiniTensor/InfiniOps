@@ -80,33 +80,6 @@ class Clamp {
     ) in text
 
 
-def test_operator_call_instantiations_externalize_default_implementation_lookup():
-    module = _load_generator_module()
-    operator = module._Operator(
-        "abs",
-        constructors=[],
-        calls=[
-            module._ParsedFunction(
-                [
-                    module._ParsedArgument("const Tensor", "input"),
-                    module._ParsedArgument("Tensor", "out"),
-                ]
-            )
-        ],
-    )
-
-    declarations, definitions = module._generate_operator_call_instantiation_entries(
-        operator
-    )
-
-    signature = (
-        "std::size_t "
-        "Operator<::infini::ops::Abs>::DefaultImplementationIndex(Device::Type);"
-    )
-    assert f"extern template {signature}" in declarations
-    assert f"template {signature}" in definitions
-
-
 def test_operator_call_instantiations_externalize_active_implementation_query():
     module = _load_generator_module()
     operator = module._Operator("add", constructors=[], calls=[])
@@ -121,6 +94,7 @@ def test_operator_call_instantiations_externalize_active_implementation_query():
     )
     assert f"extern template {signature}" in declarations
     assert f"template {signature}" in definitions
+    assert "DefaultImplementationIndex" not in "\n".join(declarations + definitions)
 
 
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
@@ -418,10 +392,7 @@ class Cat {
     assert (
         "auto converted_first_tensor{VectorTensorFromPybind11Handle(inputs)};" in text
     )
-    assert (
-        "generated_dispatch::CallCat(handle, config, converted_first_tensor,"
-        in text
-    )
+    assert "generated_dispatch::CallCat(handle, config, converted_first_tensor," in text
     assert "std::move(converted_first_tensor)" not in text
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
 
@@ -582,9 +553,7 @@ def test_generated_ops_module_initializes_tuning(monolithic):
     )
 
     assert text.count('#include "tuning.h"') == 1
-    assert (
-        text.count("TuningManager::Instance().InitializeFromEnvironment();") == 1
-    )
+    assert text.count("TuningManager::Instance().InitializeFromEnvironment();") == 1
     assert text.count("BindHostRangeProfileControls(m);") == 1
 
 
@@ -1012,6 +981,7 @@ def test_triton_binding_uses_backend_metadata_and_shared_config_parser(
     assert "std::unique_ptr<Config> triton_config_ptr;" in binding
     assert "triton::jit::ConfigFromPyDict(*config_dict)" in binding
     assert "triton_config_ptr->set_implementation_index(" in binding
+    assert "if (!config.needs_implementation_resolution())" in binding
     assert "config.implementation_index()" in binding
     assert "if (triton_config_ptr)" in binding
     assert "generated_dispatch::MakeAdd(*triton_config_ptr," in binding

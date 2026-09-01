@@ -756,21 +756,15 @@ def _generate_pybind11(operator):
             return f"VectorTensorFromPybind11Handle({arg.spelling})"
         return f"TensorFromPybind11Handle({arg.spelling})"
 
-    def _default_impl_index_expr(node, converted_first_tensor_name=None):
+    def _default_impl_index_expr(node):
         first_tensor_arg = _first_tensor_arg(node)
         if first_tensor_arg is None:
             return "0"
 
-        if converted_first_tensor_name is not None:
-            first_tensor = converted_first_tensor_name
-            if _is_vector_tensor(first_tensor_arg):
-                first_tensor += ".at(0)"
-            device_type = f"{first_tensor}.device().type()"
-        else:
-            first_tensor = first_tensor_arg.spelling
-            if _is_vector_tensor(first_tensor_arg):
-                first_tensor += ".at(0)"
-            device_type = f"DeviceFromPybind11Handle({first_tensor}).type()"
+        first_tensor = first_tensor_arg.spelling
+        if _is_vector_tensor(first_tensor_arg):
+            first_tensor += ".at(0)"
+        device_type = f"DeviceFromPybind11Handle({first_tensor}).type()"
 
         return f"DefaultImplementationIndexFor{symbol_name}({device_type})"
 
@@ -808,7 +802,6 @@ def _generate_pybind11(operator):
 
         if not method:
             first_tensor_arg = _first_tensor_arg(call)
-            converted_first_tensor_name = None
             first_tensor_conversion = ""
             if first_tensor_arg is not None:
                 converted_first_tensor_name = _unique_local_name(
@@ -831,7 +824,7 @@ def _generate_pybind11(operator):
                     "    if (config_dict.has_value()) {\n"
                     "      triton_config_ptr = "
                     "triton::jit::ConfigFromPyDict(*config_dict);\n"
-                    "      if (!config.auto_select()) {\n"
+                    "      if (!config.needs_implementation_resolution()) {\n"
                     "        triton_config_ptr->set_implementation_index(\n"
                     "            config.implementation_index());\n"
                     "      }\n"
@@ -1601,13 +1594,6 @@ def _generate_operator_call_instantiation_entries(operator):
         f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
         f"template std::vector<std::size_t> "
         f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
-    )
-
-    _append_unique(
-        f"extern template std::size_t "
-        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
-        f"template std::size_t "
-        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
     )
 
     for call in operator.calls:

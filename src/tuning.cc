@@ -171,8 +171,7 @@ std::optional<std::size_t> TuningManager::Lookup(
   return iterator->second;
 }
 
-void TuningManager::Record(std::string_view operator_name,
-                           Device::Type device,
+void TuningManager::Record(std::string_view operator_name, Device::Type device,
                            const TuningSignature& signature,
                            std::size_t best_index) {
   if (!enabled_) return;

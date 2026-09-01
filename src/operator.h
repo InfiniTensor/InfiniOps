@@ -233,13 +233,20 @@ struct CacheKeyBuilder {
   }
 };
 
-template <typename Key, typename... Args>
-Config ResolveConfig(const Config& config, Device::Type dev_type,
-                     const Args&... args);
+namespace detail {
 
 template <typename Key, typename... Args>
-Config ResolveConfigOnline(const Handle& handle, const Config& config,
-                           Device::Type dev_type, const Args&... args);
+std::size_t ResolveImplementationIndex(const Config& config,
+                                       Device::Type dev_type,
+                                       const Args&... args);
+
+template <typename Key, typename... Args>
+std::size_t ResolveImplementationIndexOnline(const Handle& handle,
+                                             const Config& config,
+                                             Device::Type dev_type,
+                                             const Args&... args);
+
+}  // namespace detail
 
 template <typename Key, Device::Type kDev>
 struct ActiveImplementations;
@@ -293,9 +300,10 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
                                         const Tensor tensor, Args&&... args) {
-    const Config resolved =
-        ResolveConfig<Key>(config, tensor.device().type(), tensor, args...);
-    return MakeResolved(config, resolved.implementation_index(),
+    const auto resolved_implementation_index =
+        detail::ResolveImplementationIndex<Key>(config, tensor.device().type(),
+                                                tensor, args...);
+    return MakeResolved(config, resolved_implementation_index,
                         tensor.device().type(), tensor,
                         std::forward<Args>(args)...);
   }
@@ -311,9 +319,10 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    const Config resolved = ResolveConfig<Key>(
-        config, tensors.front().device().type(), tensors, args...);
-    return MakeResolved(config, resolved.implementation_index(),
+    const auto resolved_implementation_index =
+        detail::ResolveImplementationIndex<Key>(
+            config, tensors.front().device().type(), tensors, args...);
+    return MakeResolved(config, resolved_implementation_index,
                         tensors.front().device().type(), tensors,
                         std::forward<Args>(args)...);
   }
@@ -348,15 +357,18 @@ class Operator : public OperatorBase {
     assert(dev_type != Device::Type::kCount &&
            "operator call requires at least one tensor argument");
 
-    const Config effective_config =
-        ResolveConfigOnline<Key>(handle, config, dev_type, args...);
+    const auto resolved_implementation_index =
+        detail::ResolveImplementationIndexOnline<Key>(handle, config, dev_type,
+                                                      args...);
+    Config cache_config;
+    cache_config.set_implementation_index(resolved_implementation_index);
 
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
     auto key = [&]() {
       HostRangeScope host_range_cache_key{HostRangeLayer::kCacheKey};
-      return CacheKeyBuilder<Key>{}(effective_config, args...);
+      return CacheKeyBuilder<Key>{}(cache_config, args...);
     }();
-    detail::TraceOperatorCall<Key>(key, effective_config);
+    detail::TraceOperatorCall<Key>(key, cache_config);
 
     auto it = [&]() {
       HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
@@ -366,22 +378,20 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       HostRangeScope host_range_cache_construct{
           HostRangeLayer::kCacheConstruct};
-      auto new_op =
-          MakeResolved(config, effective_config.implementation_index(),
-                       dev_type, args...);
+      auto new_op = MakeResolved(config, resolved_implementation_index,
+                                 dev_type, args...);
       it = cache.emplace(std::move(key), std::move(new_op)).first;
     }
 #else
-    auto key = CacheKeyBuilder<Key>{}(effective_config, args...);
-    detail::TraceOperatorCall<Key>(key, effective_config);
+    auto key = CacheKeyBuilder<Key>{}(cache_config, args...);
+    detail::TraceOperatorCall<Key>(key, cache_config);
 
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
       it = cache
                .emplace(std::move(key),
-                        MakeResolved(config,
-                                     effective_config.implementation_index(),
+                        MakeResolved(config, resolved_implementation_index,
                                      dev_type, args...))
                .first;
     }
@@ -538,16 +548,21 @@ struct ActiveImplementations {
       Key, kDev, std::make_index_sequence<kMaxImplementations>>::type;
 };
 
+namespace detail {
+
 template <typename Key, typename... Args>
-Config ResolveConfig(const Config& config, Device::Type dev_type,
-                     const Args&... args) {
-  if (!config.auto_select()) return config;
+std::size_t ResolveImplementationIndex(const Config& config,
+                                       Device::Type dev_type,
+                                       const Args&... args) {
+  if (!config.needs_implementation_resolution()) {
+    return config.implementation_index();
+  }
 
   auto indices = Operator<Key>::active_implementation_indices(dev_type);
-  if (indices.empty()) return config;
+  if (indices.empty()) return config.implementation_index();
 
   auto signature = TuningSignature::Build(args...);
-  constexpr auto op_name = detail::OperatorName<Key>();
+  constexpr auto op_name = OperatorName<Key>();
   auto tuned_index =
       TuningManager::Instance().Lookup(op_name, dev_type, signature);
   auto chosen = indices.front();
@@ -567,9 +582,7 @@ Config ResolveConfig(const Config& config, Device::Type dev_type,
     }
   }
 
-  Config resolved;
-  resolved.set_implementation_index(chosen);
-  return resolved;
+  return chosen;
 }
 
 template <typename Key, typename... Args>
@@ -587,13 +600,13 @@ double BenchmarkImplementation(const Handle& handle, Device::Type dev_type,
   for (int i = 0; i < warmup; ++i) {
     (*op)(handle, args...);
   }
-  detail::SyncDevice(dev_type);
+  SyncDevice(dev_type);
 
   double best = std::numeric_limits<double>::infinity();
   for (int i = 0; i < repeat; ++i) {
     auto start = std::chrono::steady_clock::now();
     (*op)(handle, args...);
-    detail::SyncDevice(dev_type);
+    SyncDevice(dev_type);
     auto end = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(end - start).count();
     best = std::min(best, elapsed);
@@ -602,20 +615,24 @@ double BenchmarkImplementation(const Handle& handle, Device::Type dev_type,
 }
 
 template <typename Key, typename... Args>
-Config ResolveConfigOnline(const Handle& handle, const Config& config,
-                           Device::Type dev_type, const Args&... args) {
-  if (!config.auto_select()) return config;
+std::size_t ResolveImplementationIndexOnline(const Handle& handle,
+                                             const Config& config,
+                                             Device::Type dev_type,
+                                             const Args&... args) {
+  if (!config.needs_implementation_resolution()) {
+    return config.implementation_index();
+  }
 
   auto& tuning = TuningManager::Instance();
   if (!tuning.IsEnabled()) {
-    return ResolveConfig<Key>(config, dev_type, args...);
+    return ResolveImplementationIndex<Key>(config, dev_type, args...);
   }
 
   auto indices = Operator<Key>::active_implementation_indices(dev_type);
-  if (indices.empty()) return config;
+  if (indices.empty()) return config.implementation_index();
 
   auto signature = TuningSignature::Build(args...);
-  constexpr auto op_name = detail::OperatorName<Key>();
+  constexpr auto op_name = OperatorName<Key>();
   auto tuned = tuning.Lookup(op_name, dev_type, signature);
   std::size_t chosen;
 
@@ -646,10 +663,10 @@ Config ResolveConfigOnline(const Handle& handle, const Config& config,
               << best_time * 1e6 << " us)" << std::endl;
   }
 
-  Config resolved;
-  resolved.set_implementation_index(chosen);
-  return resolved;
+  return chosen;
 }
+
+}  // namespace detail
 
 }  // namespace infini::ops
 

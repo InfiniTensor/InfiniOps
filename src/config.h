@@ -25,7 +25,9 @@ class Config {
     implementation_index_ = implementation_index;
   }
 
-  bool auto_select() const { return !implementation_index_.has_value(); }
+  bool needs_implementation_resolution() const {
+    return !implementation_index_.has_value();
+  }
 
  private:
   std::optional<std::size_t> implementation_index_;
