@@ -1,0 +1,175 @@
+#include <cstddef>
+#include <type_traits>
+
+#include "kernel.h"
+#include "native/cambricon/kernel_utils.h"
+
+namespace infini::ops {
+namespace {
+
+__nram__ char relu_nram_buffer[NRAM_MAX_SIZE] __attribute__((aligned(128)));
+
+template <typename T>
+__mlu_device__ void ComputeRelu(const T* input, T* output, float* values,
+                                size_t count) {
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float(values, reinterpret_cast<half*>(const_cast<T*>(input)),
+                      count);
+    for (size_t i = 0; i < count; ++i) {
+      const float value = values[i];
+      values[i] = value != value || value > 0.0F ? value : 0.0F;
+    }
+    __bang_float2half(reinterpret_cast<half*>(output), values, count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float(values, const_cast<T*>(input), count);
+    for (size_t i = 0; i < count; ++i) {
+      const float value = values[i];
+      values[i] = value != value || value > 0.0F ? value : 0.0F;
+    }
+    __bang_float2bfloat16(output, values, count);
+  } else {
+    for (size_t i = 0; i < count; ++i) {
+      const T value = input[i];
+      output[i] = value != value || value > static_cast<T>(0)
+                      ? value
+                      : static_cast<T>(0);
+    }
+  }
+}
+
+template <typename T>
+__mlu_global__ void GatherInputKernel(const T* input, T* contiguous_input,
+                                      const size_t* shape,
+                                      const ptrdiff_t* input_strides,
+                                      size_t output_size, int ndim) {
+  const auto range = cambricon::kernel_utils::GetTaskRange(output_size);
+  for (size_t logical = range.begin; logical < range.end; ++logical) {
+    contiguous_input[logical] = input[cambricon::kernel_utils::LogicalToOffset(
+        logical, ndim, shape, input_strides)];
+  }
+}
+
+template <typename T>
+__mlu_global__ void ReluKernel(const T* input, T* output, const size_t* shape,
+                               const ptrdiff_t* input_strides,
+                               const ptrdiff_t* out_strides, size_t output_size,
+                               int ndim, bool input_contiguous,
+                               bool out_contiguous) {
+  const auto range = cambricon::kernel_utils::GetTaskRange(output_size);
+  if (range.begin >= range.end) {
+    return;
+  }
+
+  size_t block_size = NRAM_MAX_SIZE / (2 * sizeof(T) + sizeof(float));
+  block_size = block_size / 64 * 64;
+  if (block_size == 0) {
+    block_size = 1;
+  }
+  auto* input_buffer = reinterpret_cast<T*>(relu_nram_buffer);
+  auto* output_buffer = input_buffer + block_size;
+  auto* values = reinterpret_cast<float*>(output_buffer + block_size);
+
+  size_t processed = range.begin;
+  while (processed < range.end) {
+    const size_t current =
+        block_size < range.end - processed ? block_size : range.end - processed;
+    if (input_contiguous) {
+      __memcpy(input_buffer, input + processed, current * sizeof(T),
+               GDRAM2NRAM);
+    } else {
+      for (size_t i = 0; i < current; ++i) {
+        const size_t logical = processed + i;
+        input_buffer[i] = input[cambricon::kernel_utils::LogicalToOffset(
+            logical, ndim, shape, input_strides)];
+      }
+    }
+
+    ComputeRelu(input_buffer, output_buffer, values, current);
+    if (out_contiguous) {
+      __memcpy(output + processed, output_buffer, current * sizeof(T),
+               NRAM2GDRAM);
+    } else {
+      for (size_t i = 0; i < current; ++i) {
+        const size_t logical = processed + i;
+        output[cambricon::kernel_utils::LogicalToOffset(
+            logical, ndim, shape, out_strides)] = output_buffer[i];
+      }
+    }
+    processed += current;
+  }
+}
+
+}  // namespace
+
+template <typename T>
+void ReluUnion(void* workspace, int core_per_cluster, int cluster_count,
+               cnrtQueue_t queue, const void* input, void* out,
+               const size_t* shape, const ptrdiff_t* input_strides,
+               const ptrdiff_t* out_strides, size_t output_size, int ndim,
+               bool input_contiguous, bool out_contiguous,
+               bool needs_input_copy) {
+  auto* workspace_bytes = static_cast<char*>(workspace);
+  auto* device_shape = reinterpret_cast<size_t*>(workspace_bytes);
+  auto* device_input_strides =
+      reinterpret_cast<ptrdiff_t*>(device_shape + ndim);
+  auto* device_out_strides = device_input_strides + ndim;
+  auto* contiguous_input = reinterpret_cast<T*>(device_out_strides + ndim);
+
+  if (ndim != 0) {
+    CNRT_CHECK(cnrtMemcpyAsync(device_shape, const_cast<size_t*>(shape),
+                               ndim * sizeof(size_t), queue,
+                               cnrtMemcpyHostToDev));
+    CNRT_CHECK(cnrtMemcpyAsync(
+        device_input_strides, const_cast<ptrdiff_t*>(input_strides),
+        ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+    CNRT_CHECK(
+        cnrtMemcpyAsync(device_out_strides, const_cast<ptrdiff_t*>(out_strides),
+                        ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  }
+
+  cnrtDim3_t kernel_dim;
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+
+  const T* kernel_input = static_cast<const T*>(input);
+  if (needs_input_copy) {
+    if (input_contiguous) {
+      CNRT_CHECK(cnrtMemcpyAsync(contiguous_input, const_cast<void*>(input),
+                                 output_size * sizeof(T), queue,
+                                 cnrtMemcpyDevToDev));
+    } else {
+      (void)cnrtGetLastError();
+      GatherInputKernel<T><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+          kernel_input, contiguous_input, device_shape, device_input_strides,
+          output_size, ndim);
+      CNRT_CHECK(cnrtGetLastError());
+    }
+    kernel_input = contiguous_input;
+    input_contiguous = true;
+  }
+
+  (void)cnrtGetLastError();
+  ReluKernel<T><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+      kernel_input, static_cast<T*>(out), device_shape, device_input_strides,
+      device_out_strides, output_size, ndim, input_contiguous, out_contiguous);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+#define INSTANTIATE_RELU(T)                                                    \
+  template void ReluUnion<T>(void*, int, int, cnrtQueue_t, const void*, void*, \
+                             const size_t*, const ptrdiff_t*,                  \
+                             const ptrdiff_t*, size_t, int, bool, bool, bool)
+
+INSTANTIATE_RELU(float);
+INSTANTIATE_RELU(__half);
+INSTANTIATE_RELU(__bang_bfloat16);
+INSTANTIATE_RELU(int64_t);
+INSTANTIATE_RELU(int32_t);
+INSTANTIATE_RELU(int16_t);
+INSTANTIATE_RELU(int8_t);
+INSTANTIATE_RELU(uint8_t);
+
+#undef INSTANTIATE_RELU
+
+}  // namespace infini::ops
