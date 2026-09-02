@@ -5,6 +5,14 @@ import torch
 from tests.utils import get_stream
 
 
+def _require_extended_sampling_provider(device, implementation_index):
+    if implementation_index == 16:
+        return
+    if device == "mlu" and implementation_index == 0:
+        return
+    pytest.skip("extended sampling coverage requires FlashInfer or Cambricon native")
+
+
 @pytest.mark.parametrize(
     "top_k_value, top_p_value, allowed",
     (
@@ -50,9 +58,8 @@ def test_top_k_top_p_sampling_from_logits(
     assert torch.all(torch.isin(first, allowed_tensor))
 
 
-def test_flashinfer_sampling_joint_host_indices(device, implementation_index):
-    if implementation_index != 16:
-        pytest.skip("FlashInfer linked-provider coverage")
+def test_sampling_joint_host_indices(device, implementation_index):
+    _require_extended_sampling_provider(device, implementation_index)
 
     logits = torch.tensor(
         (
@@ -85,9 +92,8 @@ def test_flashinfer_sampling_joint_host_indices(device, implementation_index):
     assert torch.equal(out, expected)
 
 
-def test_flashinfer_sampling_top_k_first_cuda_indices(device, implementation_index):
-    if implementation_index != 16:
-        pytest.skip("FlashInfer linked-provider coverage")
+def test_sampling_top_k_first_device_indices(device, implementation_index):
+    _require_extended_sampling_provider(device, implementation_index)
 
     logits = torch.tensor(
         (
@@ -120,9 +126,8 @@ def test_flashinfer_sampling_top_k_first_cuda_indices(device, implementation_ind
     assert torch.equal(out, expected)
 
 
-def test_flashinfer_sampling_offset(device, implementation_index):
-    if implementation_index != 16:
-        pytest.skip("FlashInfer linked-provider coverage")
+def test_sampling_offset(device, implementation_index):
+    _require_extended_sampling_provider(device, implementation_index)
 
     batch_size = 256
     logits = torch.zeros((batch_size, 4), dtype=torch.float32, device=device)
@@ -217,11 +222,8 @@ def test_flashinfer_sampling_uses_handle_stream(device, implementation_index):
         torch.cuda.synchronize()
 
 
-def test_flashinfer_sampling_preserves_float64_top_p_underflow(
-    device, implementation_index
-):
-    if implementation_index != 16:
-        pytest.skip("FlashInfer linked-provider coverage")
+def test_sampling_preserves_float64_top_p_underflow(device, implementation_index):
+    _require_extended_sampling_provider(device, implementation_index)
 
     batch_size = 4096
     logits = torch.tensor((0.0, -1.0), dtype=torch.float32, device=device).repeat(
