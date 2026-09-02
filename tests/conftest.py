@@ -243,6 +243,7 @@ def _is_smoke_item(item):
         "tests/test_silu_and_mul.py": _is_smoke_silu_and_mul_case,
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
         "tests/test_flash_attn_varlen_func.py": _is_smoke_flash_attn_varlen_func_case,
+        "tests/test_flash_attn_varlen_func_moore.py": _is_smoke_flash_attn_varlen_func_moore_case,
         "tests/test_swiglu.py": _is_smoke_swiglu_case,
         "tests/test_torch_ops.py": _is_smoke_torch_op_case,
     }
@@ -519,6 +520,13 @@ def _is_smoke_flash_attn_varlen_func_case(params):
         and params.get("scale") is None
         and params.get("head_dim") == 64
         and params.get("dtype") == torch.float16
+    )
+
+
+def _is_smoke_flash_attn_varlen_func_moore_case(params):
+    return params.get("implementation_index") == 8 and params.get("head_dim") in (
+        None,
+        64,
     )
 
 
