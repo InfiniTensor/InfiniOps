@@ -20,9 +20,7 @@ from tests.utils import get_stream
         (torch.bfloat16, 1e-6, 1e-6),
     ),
 )
-def test_topk_softmax(
-    dtype, index_dtype, has_bias, renormalize, rtol, atol, device
-):
+def test_topk_softmax(dtype, index_dtype, has_bias, renormalize, rtol, atol, device):
     if device == "mlu" and index_dtype == torch.uint32:
         pytest.skip("torch_mlu cannot construct uint32 test outputs")
 
@@ -62,9 +60,7 @@ def test_topk_softmax(
 
 def test_topk_softmax_bias_only_changes_selection(device):
 
-    gating_output = torch.tensor(
-        ((3.0, 2.0, 1.0),), dtype=torch.float32, device=device
-    )
+    gating_output = torch.tensor(((3.0, 2.0, 1.0),), dtype=torch.float32, device=device)
     bias = torch.tensor((-4.0, 0.0, 3.0), dtype=torch.float32, device=device)
     outputs = _make_outputs(gating_output, topk=1, index_dtype=torch.int32)
 
@@ -133,9 +129,7 @@ def test_topk_softmax_padding_and_token_expert_indices(device):
 
     expected = _reference(gating_output, None, is_padding, 3, False)
     torch.testing.assert_close(outputs[0], expected[0])
-    torch.testing.assert_close(
-        outputs[1].cpu(), expected[1].cpu(), rtol=0, atol=0
-    )
+    torch.testing.assert_close(outputs[1].cpu(), expected[1].cpu(), rtol=0, atol=0)
     torch.testing.assert_close(outputs[2], expected[2], rtol=0, atol=0)
 
 
@@ -193,9 +187,7 @@ def test_topk_softmax_padding_uses_uint32_max_sentinel(device):
     if device == "mlu":
         pytest.skip("torch_mlu cannot construct uint32 test outputs")
 
-    gating_output = torch.tensor(
-        ((1.0, 2.0, 3.0),), dtype=torch.float32, device=device
-    )
+    gating_output = torch.tensor(((1.0, 2.0, 3.0),), dtype=torch.float32, device=device)
     is_padding = torch.tensor((True,), dtype=torch.bool, device=device)
     outputs = _make_outputs(gating_output, topk=2, index_dtype=torch.uint32)
 
