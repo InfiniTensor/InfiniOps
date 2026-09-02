@@ -51,6 +51,8 @@ def test_relu(
 ):
     if device == "musa" and dtype == torch.float64:
         pytest.skip("MUSA does not support float64 ReLU")
+    if device == "mlu" and dtype == torch.float64:
+        pytest.skip("Cambricon device code does not support float64 comparisons")
 
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     input.mul_(2).sub_(1)
@@ -130,6 +132,8 @@ def test_relu_matches_special_value_semantics(
 ):
     if device == "musa" and dtype == torch.float64:
         pytest.skip("MUSA does not support float64 ReLU")
+    if device == "mlu" and dtype == torch.float64:
+        pytest.skip("Cambricon device code does not support float64 comparisons")
 
     input = torch.tensor(
         [float("-inf"), -1.0, -0.0, 0.0, 1.0, float("inf"), float("nan")],
