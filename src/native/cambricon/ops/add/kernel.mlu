@@ -188,8 +188,6 @@ void AddUnion(void* workspace, int core_per_cluster, int cluster_count,
       input_, other_, out_, mlu_out_shape, mlu_out_strides, mlu_input_shape,
       mlu_input_strides, mlu_other_shape, mlu_other_strides, output_size, ndim,
       fast_path, out_contiguous, static_cast<AddAlpha<T>>(alpha));
-
-  cnrtQueueSync(queue);
 }
 
 template void AddUnion<__half>(void*, int, int, cnrtQueue_t, const void*,

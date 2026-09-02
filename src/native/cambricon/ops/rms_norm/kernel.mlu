@@ -285,8 +285,6 @@ void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
 
   RmsNorm<T, TW><<<kernel_dim, kernel_type, queue>>>(
       x_, w_, y_, mlu_shape, mlu_y_strides, mlu_x_strides, eps, ndim, dim_s);
-
-  cnrtQueueSync(queue);
 }
 
 template void RmsNormUnion<__half, __half>(void*, int, int, cnrtQueue_t, void*,
