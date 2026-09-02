@@ -59,6 +59,7 @@ def test_tuning_cache_round_trip(tmp_path):
     environment = os.environ.copy()
     environment.update(
         {
+            "INFINI_OPS_ENABLE_AUTO_TUNING": "1",
             "INFINI_OPS_TUNING_PATH": str(cache_path),
             "INFINI_OPS_TUNING_WARMUP": "2",
             "INFINI_OPS_TUNING_REPEAT": "3",
@@ -77,6 +78,22 @@ def test_tuning_cache_round_trip(tmp_path):
 
     cache_path.write_text("{")
     _run([str(binary), "miss", str(cache_path)])
+
+
+def test_tuning_disabled_by_default(tmp_path):
+    binary = _compile_cpp(tmp_path, "tuning_disabled", _TUNING_CACHE_SOURCE)
+
+    for index, setting in enumerate((None, "0", "OFF", "false")):
+        cache_path = tmp_path / f"disabled-{index}.json"
+        environment = os.environ.copy()
+        environment["INFINI_OPS_TUNING_PATH"] = str(cache_path)
+        if setting is None:
+            environment.pop("INFINI_OPS_ENABLE_AUTO_TUNING", None)
+        else:
+            environment["INFINI_OPS_ENABLE_AUTO_TUNING"] = setting
+
+        _run([str(binary), "disabled", str(cache_path)], env=environment)
+        assert not cache_path.exists()
 
 
 def _compile_cpp(tmp_path, name, source_text):
@@ -238,7 +255,17 @@ _TUNING_CACHE_SOURCE = textwrap.dedent(
 
       if (mode == "initialize") {
         manager.InitializeFromEnvironment();
-        if (manager.warmup_count() != 2 || manager.repeat_count() != 3) {
+        if (!manager.IsEnabled() || manager.warmup_count() != 2 ||
+            manager.repeat_count() != 3) {
+          return 1;
+        }
+        manager.Record("Add", infini::ops::Device::Type::kCpu, signature, 7);
+        return 0;
+      }
+
+      if (mode == "disabled") {
+        manager.InitializeFromEnvironment();
+        if (manager.IsEnabled()) {
           return 1;
         }
         manager.Record("Add", infini::ops::Device::Type::kCpu, signature, 7);
@@ -674,12 +701,12 @@ _POLYMORPHIC_CONTEXT_SOURCE = textwrap.dedent(
       {
         DerivedConfig config{17};
         config.set_implementation_index(3);
-        owner.set_config(config, 5);
+        owner.set_config(config);
         config.set_implementation_index(9);
       }
 
       if (owner.config_value() != 17) return 1;
-      if (owner.implementation_index() != 5) return 2;
+      if (owner.implementation_index() != 3) return 2;
 
       int stream;
       {

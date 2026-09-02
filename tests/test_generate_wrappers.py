@@ -80,6 +80,33 @@ class Clamp {
     ) in text
 
 
+def test_operator_call_instantiations_externalize_default_implementation_lookup():
+    module = _load_generator_module()
+    operator = module._Operator(
+        "abs",
+        constructors=[],
+        calls=[
+            module._ParsedFunction(
+                [
+                    module._ParsedArgument("const Tensor", "input"),
+                    module._ParsedArgument("Tensor", "out"),
+                ]
+            )
+        ],
+    )
+
+    declarations, definitions = module._generate_operator_call_instantiation_entries(
+        operator
+    )
+
+    signature = (
+        "std::size_t "
+        "Operator<::infini::ops::Abs>::DefaultImplementationIndex(Device::Type);"
+    )
+    assert f"extern template {signature}" in declarations
+    assert f"template {signature}" in definitions
+
+
 def test_operator_call_instantiations_externalize_active_implementation_query():
     module = _load_generator_module()
     operator = module._Operator("add", constructors=[], calls=[])
@@ -94,7 +121,6 @@ def test_operator_call_instantiations_externalize_active_implementation_query():
     )
     assert f"extern template {signature}" in declarations
     assert f"template {signature}" in definitions
-    assert "DefaultImplementationIndex" not in "\n".join(declarations + definitions)
 
 
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
@@ -343,6 +369,7 @@ class Mul {
 
     text = module._generate_pybind11(operator)
 
+    assert '#include "tuning.h"' in text
     assert "std::size_t DefaultImplementationIndexForMul" in text
     assert (
         "config.set_implementation_index("
@@ -352,6 +379,10 @@ class Mul {
     assert (
         "if (implementation_index.has_value()) {\n"
         "      config.set_implementation_index(*implementation_index);\n"
+        "    } else if (!TuningManager::Instance().IsEnabled()) {\n"
+        "      config.set_implementation_index(\n"
+        "          DefaultImplementationIndexForMul("
+        "converted_first_tensor.device().type()));\n"
         "    }"
     ) in text
     assert "auto converted_first_tensor{TensorFromPybind11Handle(input)};" in text
@@ -393,6 +424,7 @@ class Cat {
         "auto converted_first_tensor{VectorTensorFromPybind11Handle(inputs)};" in text
     )
     assert "generated_dispatch::CallCat(handle, config, converted_first_tensor," in text
+    assert "converted_first_tensor.at(0).device().type()" in text
     assert "std::move(converted_first_tensor)" not in text
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
 
@@ -977,6 +1009,7 @@ def test_triton_binding_uses_backend_metadata_and_shared_config_parser(
 
     binding = module._generate_pybind11(operator)
 
+    assert '#include "tuning.h"' in binding
     assert '#include "triton/jit/pybind11_config.h"' in binding
     assert "std::unique_ptr<Config> triton_config_ptr;" in binding
     assert "triton::jit::ConfigFromPyDict(*config_dict)" in binding

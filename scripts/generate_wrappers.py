@@ -756,15 +756,21 @@ def _generate_pybind11(operator):
             return f"VectorTensorFromPybind11Handle({arg.spelling})"
         return f"TensorFromPybind11Handle({arg.spelling})"
 
-    def _default_impl_index_expr(node):
+    def _default_impl_index_expr(node, converted_first_tensor_name=None):
         first_tensor_arg = _first_tensor_arg(node)
         if first_tensor_arg is None:
             return "0"
 
-        first_tensor = first_tensor_arg.spelling
-        if _is_vector_tensor(first_tensor_arg):
-            first_tensor += ".at(0)"
-        device_type = f"DeviceFromPybind11Handle({first_tensor}).type()"
+        if converted_first_tensor_name is not None:
+            first_tensor = converted_first_tensor_name
+            if _is_vector_tensor(first_tensor_arg):
+                first_tensor += ".at(0)"
+            device_type = f"{first_tensor}.device().type()"
+        else:
+            first_tensor = first_tensor_arg.spelling
+            if _is_vector_tensor(first_tensor_arg):
+                first_tensor += ".at(0)"
+            device_type = f"DeviceFromPybind11Handle({first_tensor}).type()"
 
         return f"DefaultImplementationIndexFor{symbol_name}({device_type})"
 
@@ -802,6 +808,7 @@ def _generate_pybind11(operator):
 
         if not method:
             first_tensor_arg = _first_tensor_arg(call)
+            converted_first_tensor_name = None
             first_tensor_conversion = ""
             if first_tensor_arg is not None:
                 converted_first_tensor_name = _unique_local_name(
@@ -840,6 +847,10 @@ def _generate_pybind11(operator):
             )
             py_args = _generate_py_args(call)
             py_args_str = f"{py_args}, " if py_args else ""
+            default_impl_index = _default_impl_index_expr(
+                call, converted_first_tensor_name
+            )
+
             if supports_triton_config:
                 dispatch = (
                     "    if (triton_config_ptr) {\n"
@@ -863,6 +874,9 @@ def _generate_pybind11(operator):
                 f"    Config config;\n"
                 f"    if (implementation_index.has_value()) {{\n"
                 f"      config.set_implementation_index(*implementation_index);\n"
+                f"    }} else if (!TuningManager::Instance().IsEnabled()) {{\n"
+                f"      config.set_implementation_index(\n"
+                f"          {default_impl_index});\n"
                 f"    }}\n"
                 f"{extra_config_init}"
                 f"{dispatch}\n"
@@ -947,7 +961,8 @@ def _generate_pybind11(operator):
 #include "generated/bindings/generated_dispatch.h"
 #include "handle.h"
 #include "host_range_profiler.h"
-#include "pybind11_utils.h"{triton_config_include}
+#include "pybind11_utils.h"
+#include "tuning.h"{triton_config_include}
 
 namespace py = pybind11;
 
@@ -1294,7 +1309,8 @@ def _generate_generated_dispatch_entries(operator):
     symbol_name = _op_symbol_name(operator.name)
     op_type = _op_cpp_type(operator.name)
     declarations = [
-        f"std::vector<std::size_t> ActiveImplementationIndicesFor{symbol_name}(Device::Type dev_type);"
+        f"std::vector<std::size_t> ActiveImplementationIndicesFor"
+        f"{symbol_name}(Device::Type dev_type);"
     ]
     definitions = [
         f"""std::vector<std::size_t> ActiveImplementationIndicesFor{symbol_name}(Device::Type dev_type) {{
@@ -1500,7 +1516,10 @@ def _generate_operator_call_instantiation_entries(operator):
         if arg.spelling in optional_non_tensor_params:
             return False
 
-        return arg.spelling in optional_tensor_params
+        if arg.spelling in optional_tensor_params:
+            return True
+
+        return False
 
     def _is_optional_vector_int64(arg):
         return (
@@ -1594,6 +1613,13 @@ def _generate_operator_call_instantiation_entries(operator):
         f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
         f"template std::vector<std::size_t> "
         f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
+    )
+
+    _append_unique(
+        f"extern template std::size_t "
+        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
+        f"template std::size_t "
+        f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
     )
 
     for call in operator.calls:

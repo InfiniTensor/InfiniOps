@@ -66,7 +66,6 @@ endif()
 
 file(GLOB BASE_SRCS CONFIGURE_DEPENDS "*.cc")
 list(FILTER BASE_SRCS EXCLUDE REGEX ".*tensor\\.cc$")
-
 target_sources(infiniops PRIVATE ${BASE_SRCS})
 
 target_link_libraries(infiniops PUBLIC
