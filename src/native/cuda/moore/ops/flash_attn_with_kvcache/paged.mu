@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 
 #include "dispatcher.h"
 #include "native/cuda/moore/caster.cuh"
@@ -46,6 +47,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 8>::operator()(
   (void)return_softmax_lse;
   (void)out;
   (void)softmax_lse;
+  std::abort();
 }
 
 void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 8>::operator()(
