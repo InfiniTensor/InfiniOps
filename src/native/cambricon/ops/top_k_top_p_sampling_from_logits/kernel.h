@@ -25,7 +25,7 @@ void TopKTopPSamplingFromLogitsUnion(
     int32_t vocab_size, uint32_t seed, uint32_t offset);
 
 template <>
-class Operator<TopKTopPSamplingFromLogits, Device::Type::kCambricon, 0>
+class Operator<TopKTopPSamplingFromLogits, Device::Type::kCambricon>
     : public TopKTopPSamplingFromLogits {
  public:
   Operator(const Tensor logits, const Tensor top_k, const Tensor top_p,
