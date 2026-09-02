@@ -46,8 +46,8 @@ def test_fill(
     value,
     device,
 ):
-    if device == "musa" and dtype == torch.float64:
-        pytest.skip("MUSA does not support float64 fill")
+    if device in ("mlu", "musa") and dtype == torch.float64:
+        pytest.skip(f"{device.upper()} does not support float64 fill")
 
     input = _make_input(shape, input_strides, dtype=dtype, device=device)
     out = (

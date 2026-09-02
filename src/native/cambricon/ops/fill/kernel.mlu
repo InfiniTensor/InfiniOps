@@ -1,0 +1,170 @@
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
+#include "kernel.h"
+#include "native/cambricon/kernel_utils.h"
+
+namespace infini::ops {
+namespace {
+
+__nram__ char fill_nram_buffer[NRAM_MAX_SIZE] __attribute__((aligned(128)));
+
+template <typename T>
+__mlu_device__ void FillBuffer(T* buffer, std::size_t count,
+                               const T* device_value) {
+  if constexpr (std::is_same_v<T, float>) {
+    const T value = device_value[0];
+    __bang_write_value(buffer, count, value);
+  } else {
+    const T value = device_value[0];
+    for (std::size_t i = 0; i < count; ++i) {
+      buffer[i] = value;
+    }
+  }
+}
+
+template <typename T>
+__mlu_global__ void FillKernel(const T* device_value, T* out,
+                               const std::size_t* out_shape,
+                               const ptrdiff_t* out_strides,
+                               std::size_t output_size, int ndim,
+                               bool out_contiguous) {
+  const auto range = cambricon::kernel_utils::GetTaskRange(output_size);
+  if (range.begin >= range.end) {
+    return;
+  }
+
+  std::size_t block_size = NRAM_MAX_SIZE / sizeof(T);
+  if (block_size >= 64) {
+    block_size = block_size / 64 * 64;
+  }
+  auto* buffer = reinterpret_cast<T*>(fill_nram_buffer);
+
+  for (std::size_t processed = range.begin; processed < range.end;) {
+    const std::size_t current = std::min(block_size, range.end - processed);
+    FillBuffer(buffer, current, device_value);
+
+    if (out_contiguous) {
+      __memcpy(out + processed, buffer, current * sizeof(T), NRAM2GDRAM);
+    } else {
+      for (std::size_t i = 0; i < current; ++i) {
+        const ptrdiff_t offset = cambricon::kernel_utils::LogicalToOffset(
+            processed + i, ndim, out_shape, out_strides);
+        out[offset] = buffer[i];
+      }
+    }
+    processed += current;
+  }
+}
+
+__mlu_global__ void FillRaw64Kernel(const void* device_value, void* out,
+                                    const std::size_t* out_shape,
+                                    const ptrdiff_t* out_strides,
+                                    std::size_t output_size, int ndim,
+                                    bool out_contiguous) {
+  constexpr std::size_t kElementSize = 8;
+  const auto range = cambricon::kernel_utils::GetTaskRange(output_size);
+  if (range.begin >= range.end) {
+    return;
+  }
+
+  auto* out_words = static_cast<std::int32_t*>(out);
+  for (std::size_t logical = range.begin; logical < range.end; ++logical) {
+    const ptrdiff_t offset = out_contiguous
+                                 ? static_cast<ptrdiff_t>(logical)
+                                 : cambricon::kernel_utils::LogicalToOffset(
+                                       logical, ndim, out_shape, out_strides);
+    __memcpy(out_words + 2 * offset, device_value, kElementSize, GDRAM2GDRAM);
+  }
+}
+
+}  // namespace
+
+void FillRaw64Union(void* workspace, cnrtQueue_t queue, int core_per_cluster,
+                    int cluster_count, const void* device_value, void* out,
+                    const std::size_t* out_shape, const ptrdiff_t* out_strides,
+                    std::size_t output_size, int ndim, bool out_contiguous) {
+  auto* bytes = static_cast<char*>(workspace) + sizeof(std::uint64_t);
+  std::size_t* device_shape = nullptr;
+  ptrdiff_t* device_strides = nullptr;
+  if (ndim != 0) {
+    device_shape = reinterpret_cast<std::size_t*>(bytes);
+    device_strides = reinterpret_cast<ptrdiff_t*>(device_shape + ndim);
+    CNRT_CHECK(cnrtMemcpyAsync(
+        device_shape, const_cast<std::size_t*>(out_shape),
+        ndim * sizeof(std::size_t), queue, cnrtMemcpyHostToDev));
+    CNRT_CHECK(
+        cnrtMemcpyAsync(device_strides, const_cast<ptrdiff_t*>(out_strides),
+                        ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  }
+
+  const cnrtDim3_t kernel_dim = {static_cast<unsigned int>(core_per_cluster),
+                                 static_cast<unsigned int>(cluster_count), 1};
+  FillRaw64Kernel<<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+      device_value, out, device_shape, device_strides, output_size, ndim,
+      out_contiguous);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+template <typename T>
+void FillUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
+               int cluster_count, const T* device_value, double host_value,
+               T* out, const std::size_t* out_shape,
+               const ptrdiff_t* out_strides, std::size_t output_size, int ndim,
+               bool out_contiguous) {
+  auto* bytes = static_cast<char*>(workspace);
+  auto* device_scalar = reinterpret_cast<T*>(bytes);
+  bytes += sizeof(std::uint64_t);
+  std::size_t* device_shape = nullptr;
+  ptrdiff_t* device_strides = nullptr;
+  if (ndim != 0) {
+    device_shape = reinterpret_cast<std::size_t*>(bytes);
+    device_strides = reinterpret_cast<ptrdiff_t*>(device_shape + ndim);
+    CNRT_CHECK(cnrtMemcpyAsync(
+        device_shape, const_cast<std::size_t*>(out_shape),
+        ndim * sizeof(std::size_t), queue, cnrtMemcpyHostToDev));
+    CNRT_CHECK(
+        cnrtMemcpyAsync(device_strides, const_cast<ptrdiff_t*>(out_strides),
+                        ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  }
+
+  const cnrtDim3_t kernel_dim = {static_cast<unsigned int>(core_per_cluster),
+                                 static_cast<unsigned int>(cluster_count), 1};
+  if (device_value == nullptr) {
+    T converted_host_value;
+    if constexpr (std::is_same_v<T, __half> ||
+                  std::is_same_v<T, __bang_bfloat16>) {
+      converted_host_value = static_cast<T>(static_cast<float>(host_value));
+    } else {
+      converted_host_value = static_cast<T>(host_value);
+    }
+    CNRT_CHECK(cnrtMemcpy(device_scalar, &converted_host_value, sizeof(T),
+                          cnrtMemcpyHostToDev));
+    device_value = device_scalar;
+  }
+  FillKernel<T><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+      device_value, out, device_shape, device_strides, output_size, ndim,
+      out_contiguous);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+#define INSTANTIATE_FILL(T)                                                  \
+  template void FillUnion<T>(void*, cnrtQueue_t, int, int, const T*, double, \
+                             T*, const std::size_t*, const ptrdiff_t*,       \
+                             std::size_t, int, bool)
+
+INSTANTIATE_FILL(__half);
+INSTANTIATE_FILL(__bang_bfloat16);
+INSTANTIATE_FILL(float);
+INSTANTIATE_FILL(int8_t);
+INSTANTIATE_FILL(int16_t);
+INSTANTIATE_FILL(int32_t);
+INSTANTIATE_FILL(uint8_t);
+INSTANTIATE_FILL(uint16_t);
+INSTANTIATE_FILL(uint32_t);
+
+#undef INSTANTIATE_FILL
+
+}  // namespace infini::ops
