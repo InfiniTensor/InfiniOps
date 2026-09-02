@@ -1,0 +1,172 @@
+#include <cmath>
+#include <cstddef>
+#include <type_traits>
+
+#include "kernel.h"
+
+namespace infini::ops {
+namespace {
+
+__nram__ char gelu_nram_buffer[NRAM_MAX_SIZE] __attribute__((aligned(128)));
+
+__mlu_device__ ptrdiff_t LogicalToOffset(size_t logical_index, int ndim,
+                                         const size_t* shape,
+                                         const ptrdiff_t* strides) {
+  ptrdiff_t offset = 0;
+  for (int dim = ndim - 1; dim >= 0; --dim) {
+    const size_t coordinate = logical_index % shape[dim];
+    logical_index /= shape[dim];
+    offset += static_cast<ptrdiff_t>(coordinate) * strides[dim];
+  }
+  return offset;
+}
+
+template <typename T>
+__mlu_device__ void ComputeGelu(const T* input, T* output, float* values,
+                                size_t count, bool approximate) {
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float(values, reinterpret_cast<half*>(const_cast<T*>(input)),
+                      count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float(values, const_cast<T*>(input), count);
+  } else {
+    __memcpy(values, const_cast<T*>(input), count * sizeof(float), NRAM2NRAM);
+  }
+
+  constexpr float kSqrtTwoOverPi = 0.7978845608028654F;
+  constexpr float kCubicCoefficient = 0.044715F;
+  for (size_t i = 0; i < count; ++i) {
+    const float x = values[i];
+    if (approximate) {
+      const float inner = kSqrtTwoOverPi * (x + kCubicCoefficient * x * x * x);
+      values[i] = 0.5F * x * (1.0F + tanhf(inner));
+    } else {
+      constexpr float kInverseSqrtTwo = 0.7071067811865475F;
+      values[i] = 0.5F * x * (1.0F + erff(x * kInverseSqrtTwo));
+    }
+  }
+
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_float2half(reinterpret_cast<half*>(output), values, count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_float2bfloat16(output, values, count);
+  } else {
+    __memcpy(output, values, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+template <typename T>
+__mlu_global__ void GeluKernel(const T* input, T* output,
+                               const size_t* input_shape,
+                               const ptrdiff_t* input_strides,
+                               const size_t* out_shape,
+                               const ptrdiff_t* out_strides, size_t output_size,
+                               int ndim, bool approximate,
+                               bool input_contiguous, bool out_contiguous) {
+  const size_t elements_per_task = (output_size + taskDim - 1) / taskDim;
+  const size_t begin = taskId * elements_per_task;
+  const size_t end = begin + elements_per_task < output_size
+                         ? begin + elements_per_task
+                         : output_size;
+  if (begin >= end) {
+    return;
+  }
+
+  size_t block_size = NRAM_MAX_SIZE / (2 * sizeof(T) + sizeof(float));
+  block_size = block_size / 64 * 64;
+  if (block_size == 0) {
+    block_size = 1;
+  }
+  auto* input_buffer = reinterpret_cast<T*>(gelu_nram_buffer);
+  auto* output_buffer = input_buffer + block_size;
+  auto* values = reinterpret_cast<float*>(output_buffer + block_size);
+
+  size_t processed = begin;
+  while (processed < end) {
+    const size_t current =
+        block_size < end - processed ? block_size : end - processed;
+    if (input_contiguous) {
+      __memcpy(input_buffer, input + processed, current * sizeof(T),
+               GDRAM2NRAM);
+    } else {
+      for (size_t i = 0; i < current; ++i) {
+        const size_t logical = processed + i;
+        input_buffer[i] =
+            input[LogicalToOffset(logical, ndim, input_shape, input_strides)];
+      }
+    }
+
+    ComputeGelu(input_buffer, output_buffer, values, current, approximate);
+    if (out_contiguous) {
+      __memcpy(output + processed, output_buffer, current * sizeof(T),
+               NRAM2GDRAM);
+    } else {
+      for (size_t i = 0; i < current; ++i) {
+        const size_t logical = processed + i;
+        output[LogicalToOffset(logical, ndim, out_shape, out_strides)] =
+            output_buffer[i];
+      }
+    }
+    processed += current;
+  }
+}
+
+}  // namespace
+
+template <typename T>
+void GeluUnion(void* workspace, int core_per_cluster, int cluster_count,
+               cnrtQueue_t queue, const void* input, void* out,
+               const size_t* input_shape, const ptrdiff_t* input_strides,
+               const size_t* out_shape, const ptrdiff_t* out_strides,
+               size_t output_size, int ndim, bool approximate,
+               bool input_contiguous, bool out_contiguous) {
+  size_t* device_input_shape = nullptr;
+  size_t* device_out_shape = nullptr;
+  ptrdiff_t* device_input_strides = nullptr;
+  ptrdiff_t* device_out_strides = nullptr;
+  if (ndim != 0) {
+    auto* workspace_bytes = static_cast<char*>(workspace);
+    device_input_shape = reinterpret_cast<size_t*>(workspace_bytes);
+    device_out_shape = device_input_shape + ndim;
+    device_input_strides =
+        reinterpret_cast<ptrdiff_t*>(device_out_shape + ndim);
+    device_out_strides = device_input_strides + ndim;
+
+    CNRT_CHECK(
+        cnrtMemcpyAsync(device_input_shape, const_cast<size_t*>(input_shape),
+                        ndim * sizeof(size_t), queue, cnrtMemcpyHostToDev));
+    CNRT_CHECK(cnrtMemcpyAsync(device_out_shape, const_cast<size_t*>(out_shape),
+                               ndim * sizeof(size_t), queue,
+                               cnrtMemcpyHostToDev));
+    CNRT_CHECK(cnrtMemcpyAsync(
+        device_input_strides, const_cast<ptrdiff_t*>(input_strides),
+        ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+    CNRT_CHECK(
+        cnrtMemcpyAsync(device_out_strides, const_cast<ptrdiff_t*>(out_strides),
+                        ndim * sizeof(ptrdiff_t), queue, cnrtMemcpyHostToDev));
+  }
+
+  cnrtDim3_t kernel_dim;
+  kernel_dim.x = core_per_cluster;
+  kernel_dim.y = cluster_count;
+  kernel_dim.z = 1;
+  (void)cnrtGetLastError();
+  GeluKernel<T><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+      static_cast<const T*>(input), static_cast<T*>(out), device_input_shape,
+      device_input_strides, device_out_shape, device_out_strides, output_size,
+      ndim, approximate, input_contiguous, out_contiguous);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+#define INSTANTIATE_GELU(T)                                                    \
+  template void GeluUnion<T>(void*, int, int, cnrtQueue_t, const void*, void*, \
+                             const size_t*, const ptrdiff_t*, const size_t*,   \
+                             const ptrdiff_t*, size_t, int, bool, bool, bool)
+
+INSTANTIATE_GELU(__half);
+INSTANTIATE_GELU(__bang_bfloat16);
+INSTANTIATE_GELU(float);
+
+#undef INSTANTIATE_GELU
+
+}  // namespace infini::ops
