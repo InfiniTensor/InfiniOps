@@ -261,11 +261,6 @@ class OperatorBase {
 
   void set_config(const Config& config) { config_ptr_ = config.Clone(); }
 
-  void set_config(const Config& config, std::size_t implementation_index) {
-    set_config(config);
-    config_ptr_->set_implementation_index(implementation_index);
-  }
-
   void set_stream(void* stream) { stream_ = stream; }
 
   void set_workspace(void* workspace) { workspace_ = workspace; }
@@ -300,17 +295,25 @@ class Operator : public OperatorBase {
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Config& config,
                                         const Tensor tensor, Args&&... args) {
-    const auto resolved_implementation_index =
-        detail::ResolveImplementationIndex<Key>(config, tensor.device().type(),
-                                                tensor, args...);
-    return MakeResolved(config, resolved_implementation_index,
-                        tensor.device().type(), tensor,
-                        std::forward<Args>(args)...);
+    const auto dev_type = tensor.device().type();
+    if (!TuningManager::Instance().IsEnabled() ||
+        !config.needs_implementation_resolution()) {
+      return MakeWithDevice(config, dev_type, tensor,
+                            std::forward<Args>(args)...);
+    }
+
+    auto resolved_config = config.Clone();
+    resolved_config->set_implementation_index(
+        detail::ResolveImplementationIndex<Key>(config, dev_type, tensor,
+                                                args...));
+    return MakeWithDevice(*resolved_config, dev_type, tensor,
+                          std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   static std::unique_ptr<Operator> Make(const Tensor tensor, Args&&... args) {
-    return Make(Config{}, tensor, std::as_const(args)...);
+    return Make(ImplicitConfig(tensor.device().type()), tensor,
+                std::as_const(args)...);
   }
 
   template <typename... Args>
@@ -319,12 +322,19 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    const auto resolved_implementation_index =
-        detail::ResolveImplementationIndex<Key>(
-            config, tensors.front().device().type(), tensors, args...);
-    return MakeResolved(config, resolved_implementation_index,
-                        tensors.front().device().type(), tensors,
-                        std::forward<Args>(args)...);
+    const auto dev_type = tensors.front().device().type();
+    if (!TuningManager::Instance().IsEnabled() ||
+        !config.needs_implementation_resolution()) {
+      return MakeWithDevice(config, dev_type, tensors,
+                            std::forward<Args>(args)...);
+    }
+
+    auto resolved_config = config.Clone();
+    resolved_config->set_implementation_index(
+        detail::ResolveImplementationIndex<Key>(config, dev_type, tensors,
+                                                args...));
+    return MakeWithDevice(*resolved_config, dev_type, tensors,
+                          std::forward<Args>(args)...);
   }
 
   template <typename... Args>
@@ -332,7 +342,8 @@ class Operator : public OperatorBase {
                                         Args&&... args) {
     assert(!tensors.empty() && "operator tensor list input cannot be empty");
 
-    return Make(Config{}, tensors, std::as_const(args)...);
+    return Make(ImplicitConfig(tensors.front().device().type()), tensors,
+                std::as_const(args)...);
   }
 
   template <typename... Args>
@@ -353,22 +364,28 @@ class Operator : public OperatorBase {
       generation = cache_generation;
     }
 
-    const auto dev_type = detail::FirstDeviceType(args...);
-    assert(dev_type != Device::Type::kCount &&
-           "operator call requires at least one tensor argument");
+    std::unique_ptr<Config> resolved_config;
+    const Config* effective_config = &config;
+    if (TuningManager::Instance().IsEnabled() &&
+        config.needs_implementation_resolution()) {
+      const auto dev_type = detail::FirstDeviceType(args...);
+      assert(dev_type != Device::Type::kCount &&
+             "operator call requires at least one tensor argument");
 
-    const auto resolved_implementation_index =
-        detail::ResolveImplementationIndexOnline<Key>(handle, config, dev_type,
-                                                      args...);
-    Config cache_config;
-    cache_config.set_implementation_index(resolved_implementation_index);
+      const auto resolved_implementation_index =
+          detail::ResolveImplementationIndexOnline<Key>(handle, config,
+                                                        dev_type, args...);
+      resolved_config = config.Clone();
+      resolved_config->set_implementation_index(resolved_implementation_index);
+      effective_config = resolved_config.get();
+    }
 
 #if defined(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING)
     auto key = [&]() {
       HostRangeScope host_range_cache_key{HostRangeLayer::kCacheKey};
-      return CacheKeyBuilder<Key>{}(cache_config, args...);
+      return CacheKeyBuilder<Key>{}(*effective_config, args...);
     }();
-    detail::TraceOperatorCall<Key>(key, cache_config);
+    detail::TraceOperatorCall<Key>(key, *effective_config);
 
     auto it = [&]() {
       HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
@@ -378,22 +395,18 @@ class Operator : public OperatorBase {
     if (it == cache.end()) {
       HostRangeScope host_range_cache_construct{
           HostRangeLayer::kCacheConstruct};
-      auto new_op = MakeResolved(config, resolved_implementation_index,
-                                 dev_type, args...);
+      auto new_op = Make(*effective_config, args...);
       it = cache.emplace(std::move(key), std::move(new_op)).first;
     }
 #else
-    auto key = CacheKeyBuilder<Key>{}(cache_config, args...);
-    detail::TraceOperatorCall<Key>(key, cache_config);
+    auto key = CacheKeyBuilder<Key>{}(*effective_config, args...);
+    detail::TraceOperatorCall<Key>(key, *effective_config);
 
     auto it{cache.find(key)};
 
     if (it == cache.end()) {
-      it = cache
-               .emplace(std::move(key),
-                        MakeResolved(config, resolved_implementation_index,
-                                     dev_type, args...))
-               .first;
+      it =
+          cache.emplace(std::move(key), Make(*effective_config, args...)).first;
     }
 #endif
 
@@ -406,7 +419,7 @@ class Operator : public OperatorBase {
 
   template <typename... Args>
   static void Call(const Tensor tensor, const Args&... args) {
-    return Call({}, Config{}, tensor, args...);
+    return Call({}, ImplicitConfig(tensor.device().type()), tensor, args...);
   }
 
   template <
@@ -456,6 +469,44 @@ class Operator : public OperatorBase {
   static constexpr std::size_t implementation_index_{implementation_index};
 
  private:
+  template <auto first, auto... rest>
+  static constexpr std::size_t FirstActiveImplementationIndex(
+      List<first, rest...>) {
+    return static_cast<std::size_t>(first);
+  }
+
+  static std::size_t FirstActiveImplementationIndex(List<>) {
+    assert(false && "operator has no active implementation for this device");
+    std::abort();
+  }
+
+  static std::size_t DefaultImplementationIndex(Device::Type dev_type) {
+    std::size_t default_index{0};
+
+    DispatchFunc<ActiveDevices<Key>>(
+        dev_type,
+        [&](auto device_tag) {
+          constexpr Device::Type kDev = decltype(device_tag)::value;
+          default_index = FirstActiveImplementationIndex(
+              typename ActiveImplementations<Key, kDev>::type{});
+        },
+        "Operator::DefaultImplementationIndex");
+
+    return default_index;
+  }
+
+  static Config DefaultConfig(Device::Type dev_type) {
+    Config config;
+    config.set_implementation_index(DefaultImplementationIndex(dev_type));
+
+    return config;
+  }
+
+  static Config ImplicitConfig(Device::Type dev_type) {
+    if (TuningManager::Instance().IsEnabled()) return Config{};
+    return DefaultConfig(dev_type);
+  }
+
   template <typename TensorLike, typename... Args>
   static auto CallReturning(const TensorLike& tensor, const Args&... args) {
     auto out = Key::MakeReturnValue(tensor, args...);
@@ -465,9 +516,8 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
-  static std::unique_ptr<Operator> MakeResolved(
-      const Config& config, std::size_t resolved_implementation_index,
-      Device::Type dispatch_device_type, Args&&... args) {
+  static std::unique_ptr<Operator> MakeWithDevice(
+      const Config& config, Device::Type dispatch_device_type, Args&&... args) {
     std::unique_ptr<Operator> op_ptr;
     auto cache_args = std::forward_as_tuple(args...);
 
@@ -476,7 +526,7 @@ class Operator : public OperatorBase {
         [&](auto device_tag) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
           detail::DispatchImplementation(
-              resolved_implementation_index,
+              config.implementation_index(),
               [&](auto implementation_tag) {
                 constexpr std::size_t kImplementationIndex =
                     decltype(implementation_tag)::value;
@@ -501,7 +551,7 @@ class Operator : public OperatorBase {
         },
         "Operator::Make");
 
-    op_ptr->set_config(config, resolved_implementation_index);
+    op_ptr->set_config(config);
 
     return op_ptr;
   }

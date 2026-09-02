@@ -1,5 +1,7 @@
 #include "tuning.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -15,6 +17,24 @@ using Json = nlohmann::json;
 
 constexpr int kTuningCacheVersion = 1;
 constexpr char kDefaultTuningPath[] = "tuning.json";
+
+bool EqualsIgnoreCase(std::string_view value, std::string_view expected) {
+  return value.size() == expected.size() &&
+         std::equal(value.begin(), value.end(), expected.begin(),
+                    [](char left, char right) {
+                      return std::toupper(static_cast<unsigned char>(left)) ==
+                             std::toupper(static_cast<unsigned char>(right));
+                    });
+}
+
+bool EnvFlag(const char* name) {
+  const char* value = std::getenv(name);
+  if (!value || !*value) return false;
+
+  const std::string_view flag{value};
+  return flag == "1" || EqualsIgnoreCase(flag, "ON") ||
+         EqualsIgnoreCase(flag, "TRUE");
+}
 
 int EnvInt(const char* name, int fallback) {
   const char* value = std::getenv(name);
@@ -97,6 +117,14 @@ TuningManager& TuningManager::Instance() {
 }
 
 void TuningManager::InitializeFromEnvironment() {
+  if (!EnvFlag("INFINI_OPS_ENABLE_AUTO_TUNING")) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    enabled_ = false;
+    cache_.clear();
+    json_path_.clear();
+    return;
+  }
+
   warmup_count_ = EnvInt("INFINI_OPS_TUNING_WARMUP", kDefaultWarmupCount);
   repeat_count_ = EnvInt("INFINI_OPS_TUNING_REPEAT", kDefaultRepeatCount);
 
@@ -107,6 +135,7 @@ void TuningManager::InitializeFromEnvironment() {
 void TuningManager::LoadTuningCache(const std::string& json_path) {
   std::lock_guard<std::mutex> lock(mutex_);
 
+  cache_.clear();
   json_path_ = json_path;
   enabled_ = true;
 
