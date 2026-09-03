@@ -1,0 +1,237 @@
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
+#include "kernel.h"
+
+__nram__ char top_k_top_p_sampling_nram[NRAM_MAX_SIZE]
+    __attribute__((aligned(128)));
+
+namespace infini::ops {
+namespace {
+
+template <typename T>
+__mlu_device__ void LoadAsFloat(float* destination, T* cache, const T* source,
+                                std::size_t count) {
+  __memcpy(cache, const_cast<T*>(source), count * sizeof(T), GDRAM2NRAM);
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float(destination, reinterpret_cast<half*>(cache), count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float(destination, cache, count);
+  } else {
+    __memcpy(destination, cache, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+struct Candidate {
+  float value;
+  int32_t index;
+  bool found;
+};
+
+template <typename T>
+__mlu_device__ Candidate FindNext(const T* row, int32_t vocab_size,
+                                  float previous_value, int32_t previous_index,
+                                  bool first, T* input_cache,
+                                  float* float_cache, std::size_t chunk_size) {
+  Candidate result{-INFINITY, 0, false};
+  for (int32_t start = 0; start < vocab_size;
+       start += static_cast<int32_t>(chunk_size)) {
+    const std::size_t count =
+        std::min(chunk_size, static_cast<std::size_t>(vocab_size - start));
+    LoadAsFloat(float_cache, input_cache, row + start, count);
+    for (std::size_t i = 0; i < count; ++i) {
+      const float value = float_cache[i];
+      const int32_t index = start + static_cast<int32_t>(i);
+      if (isnan(value) ||
+          (!first && !(value < previous_value ||
+                       (value == previous_value && index > previous_index)))) {
+        continue;
+      }
+      if (!result.found || value > result.value ||
+          (value == result.value && index < result.index)) {
+        result = {value, index, true};
+      }
+    }
+  }
+  return result;
+}
+
+__mlu_device__ float UnnormalizedWeight(float value, float max_value) {
+  if (value == max_value && isinf(value)) {
+    return 1.0F;
+  }
+  return expf(value - max_value);
+}
+
+template <typename T>
+__mlu_device__ float SumAllWeights(const T* row, int32_t vocab_size,
+                                   float max_value, T* input_cache,
+                                   float* float_cache, std::size_t chunk_size) {
+  float result = 0.0F;
+  for (int32_t start = 0; start < vocab_size;
+       start += static_cast<int32_t>(chunk_size)) {
+    const std::size_t count =
+        std::min(chunk_size, static_cast<std::size_t>(vocab_size - start));
+    LoadAsFloat(float_cache, input_cache, row + start, count);
+    for (std::size_t i = 0; i < count; ++i) {
+      if (!isnan(float_cache[i])) {
+        result += UnnormalizedWeight(float_cache[i], max_value);
+      }
+    }
+  }
+  return result;
+}
+
+__mlu_device__ uint32_t MixBits(uint32_t value) {
+  value ^= value >> 16;
+  value *= 0x7feb352dU;
+  value ^= value >> 15;
+  value *= 0x846ca68bU;
+  value ^= value >> 16;
+  return value;
+}
+
+template <typename T, typename OutputIndex>
+__mlu_global__ void TopKTopPSamplingFromLogitsKernel(
+    const T* logits, const int32_t* top_k, const float* top_p,
+    const int32_t* row_indices, bool has_indices, bool joint, OutputIndex* out,
+    int32_t batch_size, int32_t vocab_size, uint32_t seed, uint32_t offset) {
+  std::size_t chunk_size = NRAM_MAX_SIZE / (sizeof(T) + sizeof(float));
+  chunk_size = chunk_size / 64 * 64;
+  if (chunk_size == 0) {
+    chunk_size = 1;
+  }
+  auto* input_cache = reinterpret_cast<T*>(top_k_top_p_sampling_nram);
+  auto* float_cache = reinterpret_cast<float*>(input_cache + chunk_size);
+
+  for (int32_t output_row = taskId; output_row < batch_size;
+       output_row += taskDim) {
+    const int32_t logits_row =
+        has_indices ? row_indices[output_row] : output_row;
+    const T* row = logits + static_cast<std::size_t>(logits_row) * vocab_size;
+    const int32_t keep_limit = top_k[output_row];
+
+    Candidate candidate = FindNext(row, vocab_size, 0.0F, 0, true, input_cache,
+                                   float_cache, chunk_size);
+    if (!candidate.found) {
+      out[output_row] = static_cast<OutputIndex>(0);
+      continue;
+    }
+    const float max_value = candidate.value;
+
+    float top_k_sum = 0.0F;
+    float previous_value = 0.0F;
+    int32_t previous_index = 0;
+    for (int32_t rank = 0; rank < keep_limit; ++rank) {
+      candidate = FindNext(row, vocab_size, previous_value, previous_index,
+                           rank == 0, input_cache, float_cache, chunk_size);
+      if (!candidate.found) {
+        break;
+      }
+      top_k_sum += UnnormalizedWeight(candidate.value, max_value);
+      previous_value = candidate.value;
+      previous_index = candidate.index;
+    }
+
+    int32_t keep_count = keep_limit;
+    float kept_sum = top_k_sum;
+    const float p = top_p[output_row];
+    if (p < 1.0F) {
+      const float denominator =
+          joint ? SumAllWeights(row, vocab_size, max_value, input_cache,
+                                float_cache, chunk_size)
+                : top_k_sum;
+      const float threshold = p * denominator;
+      float cumulative = 0.0F;
+      previous_value = 0.0F;
+      previous_index = 0;
+      for (int32_t rank = 0; rank < keep_limit; ++rank) {
+        candidate = FindNext(row, vocab_size, previous_value, previous_index,
+                             rank == 0, input_cache, float_cache, chunk_size);
+        if (!candidate.found) {
+          keep_count = rank;
+          kept_sum = cumulative;
+          break;
+        }
+        cumulative += UnnormalizedWeight(candidate.value, max_value);
+        previous_value = candidate.value;
+        previous_index = candidate.index;
+        if (cumulative >= threshold) {
+          keep_count = rank + 1;
+          kept_sum = cumulative;
+          break;
+        }
+      }
+    }
+
+    if (keep_count <= 1 || !(kept_sum > 0.0F)) {
+      out[output_row] = static_cast<OutputIndex>(
+          FindNext(row, vocab_size, 0.0F, 0, true, input_cache, float_cache,
+                   chunk_size)
+              .index);
+      continue;
+    }
+
+    const uint32_t random_bits =
+        MixBits(seed ^ MixBits(offset + static_cast<uint32_t>(output_row)));
+    const float uniform =
+        (static_cast<float>(random_bits) + 0.5F) * 2.3283064365386963e-10F;
+    const float target = uniform * kept_sum;
+    float cumulative = 0.0F;
+    previous_value = 0.0F;
+    previous_index = 0;
+    int32_t selected_index = 0;
+    for (int32_t rank = 0; rank < keep_count; ++rank) {
+      candidate = FindNext(row, vocab_size, previous_value, previous_index,
+                           rank == 0, input_cache, float_cache, chunk_size);
+      if (!candidate.found) {
+        break;
+      }
+      selected_index = candidate.index;
+      cumulative += UnnormalizedWeight(candidate.value, max_value);
+      if (cumulative >= target) {
+        break;
+      }
+      previous_value = candidate.value;
+      previous_index = candidate.index;
+    }
+    out[output_row] = static_cast<OutputIndex>(selected_index);
+  }
+}
+
+}  // namespace
+
+template <typename T, typename OutputIndex>
+void TopKTopPSamplingFromLogitsUnion(
+    cnrtQueue_t queue, int core_per_cluster, int cluster_count, const T* logits,
+    const int32_t* top_k, const float* top_p, const int32_t* row_indices,
+    bool has_indices, bool joint, OutputIndex* out, int32_t batch_size,
+    int32_t vocab_size, uint32_t seed, uint32_t offset) {
+  const cnrtDim3_t kernel_dim = {static_cast<unsigned int>(core_per_cluster),
+                                 static_cast<unsigned int>(cluster_count), 1};
+  TopKTopPSamplingFromLogitsKernel<T, OutputIndex>
+      <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+          logits, top_k, top_p, row_indices, has_indices, joint, out,
+          batch_size, vocab_size, seed, offset);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+#define INSTANTIATE_SAMPLING(T, OUTPUT_INDEX)                                \
+  template void TopKTopPSamplingFromLogitsUnion<T, OUTPUT_INDEX>(            \
+      cnrtQueue_t, int, int, const T*, const int32_t*, const float*,         \
+      const int32_t*, bool, bool, OUTPUT_INDEX*, int32_t, int32_t, uint32_t, \
+      uint32_t)
+
+INSTANTIATE_SAMPLING(__half, int32_t);
+INSTANTIATE_SAMPLING(__half, int64_t);
+INSTANTIATE_SAMPLING(__bang_bfloat16, int32_t);
+INSTANTIATE_SAMPLING(__bang_bfloat16, int64_t);
+INSTANTIATE_SAMPLING(float, int32_t);
+INSTANTIATE_SAMPLING(float, int64_t);
+
+#undef INSTANTIATE_SAMPLING
+
+}  // namespace infini::ops
