@@ -45,8 +45,8 @@ void LaunchMoorePagedFlashAttnVarlenFunc(
                         static_cast<unsigned>(grid_y),
                         static_cast<unsigned>(grid_z));
         op::paged_attention_prefill::cuda::
-            PagedAttentionPrefillWarpGlobalKernel<Index, TData, kHeadSize,
-                                                  Lengths>
+            PagedAttentionPrefillWarpGlobalKernel<Device::Type::kMoore, Index,
+                                                  TData, kHeadSize, Lengths>
             <<<grid, 32, 0, stream>>>(
                 reinterpret_cast<TData*>(params.out),
                 reinterpret_cast<const TData*>(params.q),

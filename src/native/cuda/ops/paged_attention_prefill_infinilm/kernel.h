@@ -60,8 +60,8 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
                              static_cast<unsigned>(num_seqs_),
                              static_cast<unsigned>(
                                  (total_q_tokens_ + kWarps - 1) / kWarps));
-              PagedAttentionPrefillInfinilmHd128WarpCta8PipeKernel<TIndex,
-                                                                   TData>
+              PagedAttentionPrefillInfinilmHd128WarpCta8PipeKernel<
+                  Backend::kDeviceType, TIndex, TData>
                   <<<pipe_grid, kWarps * 32, 0, cuda_stream>>>(
                       reinterpret_cast<TData*>(out.data()),
                       reinterpret_cast<const TData*>(q.data()),
@@ -83,8 +83,8 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
               dim3 legacy_grid(static_cast<unsigned>(num_heads_),
                                static_cast<unsigned>(total_q_tokens_));
               op::paged_attention_prefill::cuda::
-                  PagedAttentionPrefillWarpGlobalKernel<TIndex, TData,
-                                                        kHeadSize>
+                  PagedAttentionPrefillWarpGlobalKernel<
+                      Backend::kDeviceType, TIndex, TData, kHeadSize>
                   <<<legacy_grid, 32, 0, cuda_stream>>>(
                       reinterpret_cast<TData*>(out.data()),
                       reinterpret_cast<const TData*>(q.data()),
@@ -108,7 +108,8 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
             dim3 legacy_grid(static_cast<unsigned>(num_heads_),
                              static_cast<unsigned>(total_q_tokens_));
             op::paged_attention_prefill::cuda::
-                PagedAttentionPrefillWarpGlobalKernel<TIndex, TData, kHeadSize>
+                PagedAttentionPrefillWarpGlobalKernel<Backend::kDeviceType,
+                                                      TIndex, TData, kHeadSize>
                 <<<legacy_grid, 32, 0, cuda_stream>>>(
                     reinterpret_cast<TData*>(out.data()),
                     reinterpret_cast<const TData*>(q.data()),

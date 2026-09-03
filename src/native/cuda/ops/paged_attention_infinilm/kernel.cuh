@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "native/cuda/caster.cuh"
+
 namespace op::paged_attention::cuda {
 
 struct OnlineSoftmaxState {
@@ -139,7 +141,8 @@ __device__ __forceinline__ void CpAsyncWaitGroupRt(int n) {
 
 __device__ __forceinline__ void CpAsyncWaitAll() { CpAsyncWaitGroup<0>(); }
 
-template <typename TIndex, typename TData, int kHeadSize>
+template <infini::ops::Device::Type kDev, typename TIndex, typename TData,
+          int kHeadSize>
 __device__ void FlashAttentionDecodeWarpKernel(
     TData* out, const TData* q, const TData* k_cache, const TData* v_cache,
     const TIndex* block_tables, const TIndex* cache_lens,
@@ -332,15 +335,7 @@ __device__ void FlashAttentionDecodeWarpKernel(
   for (int i = 0; i < kDimsPerThread; ++i) {
     const int dim = lane * kDimsPerThread + i;
     const float o = acc[i] * inv_l;
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(o);
-#if defined(__CUDA_ARCH__)
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(o);
-#endif
-    } else {
-      outptr[dim] = static_cast<TData>(o);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(o);
   }
 }
 
@@ -565,7 +560,7 @@ __device__ void FlashAttentionDecodeSplitKvWarpKernel(
   }
 }
 
-template <typename TData, int kHeadSize>
+template <infini::ops::Device::Type kDev, typename TData, int kHeadSize>
 __device__ void FlashAttentionDecodeSplitKvCombineWarpKernel(
     TData* out,
     const float* partial_acc,  // [num_splits, num_seqs, num_heads, head_size]
@@ -616,15 +611,7 @@ __device__ void FlashAttentionDecodeSplitKvCombineWarpKernel(
       acc += partial_acc[(s * n + base) * kHeadSize + dim] * w;
     }
     const float o = acc * inv_l;
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(o);
-#if defined(__CUDA_ARCH__)
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(o);
-#endif
-    } else {
-      outptr[dim] = static_cast<TData>(o);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(o);
   }
 }
 
@@ -2245,14 +2232,14 @@ __global__ void PagedAttentionInfinilmSplitKvCtaKernel(
       v_cachehead_stride, num_splits);
 }
 
-template <typename TData, int kHeadSize>
+template <Device::Type kDev, typename TData, int kHeadSize>
 __global__ void PagedAttentionInfinilmSplitKvCombineKernel(
     TData* __restrict__ out, const float* __restrict__ partial_acc,
     const float* __restrict__ partial_m, const float* __restrict__ partial_l,
     int num_splits, std::ptrdiff_t outstride) {
   op::paged_attention::cuda::FlashAttentionDecodeSplitKvCombineWarpKernel<
-      TData, kHeadSize>(out, partial_acc, partial_m, partial_l, num_splits,
-                        outstride);
+      kDev, TData, kHeadSize>(out, partial_acc, partial_m, partial_l,
+                              num_splits, outstride);
 }
 
 template <typename TIndex, typename TData, int kHeadSize>
