@@ -67,24 +67,27 @@ def _torch_abs(input, out):
 
 @pytest.mark.smoke
 def test_abs_torch_backend_uses_handle_stream(device):
+    platform = {"cuda": "nvidia", "npu": "ascend"}.get(device)
     pytorch_slot = 8
 
-    if device != "cuda":
-        pytest.skip("The stream regression requires CUDA")
-    if not infini.ops.Abs.active_implementation_indices("nvidia"):
-        pytest.skip("The stream regression requires the NVIDIA backend")
+    if platform is None:
+        pytest.skip("The stream regression requires CUDA or NPU")
+    if not infini.ops.Abs.active_implementation_indices(platform):
+        pytest.skip(f"The stream regression requires the {platform} backend")
     if pytorch_slot not in infini.ops.Abs.active_implementation_indices(device):
         pytest.skip("The PyTorch backend is not active")
 
     input = torch.full((4096,), -1.0, device=device)
     out = torch.full_like(input, torch.nan)
-    stream = torch.cuda.Stream()
+    accelerator = getattr(torch, device)
+    stream = accelerator.Stream()
+    raw_stream = getattr(stream, f"{device}_stream")
 
     def call_abs():
         infini.ops.abs(
             input,
             out,
-            stream=stream.cuda_stream,
+            stream=raw_stream,
             implementation_index=pytorch_slot,
         )
 
@@ -92,19 +95,64 @@ def test_abs_torch_backend_uses_handle_stream(device):
         call_abs()
         stream.synchronize()
         out.fill_(torch.nan)
-        torch.cuda.synchronize()
+        accelerator.synchronize()
 
-        with torch.cuda.stream(stream):
-            torch.cuda._sleep(50_000_000)
-        call_abs()
+        if device == "cuda":
+            with accelerator.stream(stream):
+                accelerator._sleep(50_000_000)
+            call_abs()
 
-        default_stream = torch.cuda.default_stream()
-        with torch.cuda.stream(default_stream):
-            snapshot = out.clone()
+            default_stream = accelerator.default_stream()
+            with accelerator.stream(default_stream):
+                snapshot = out.clone()
+        else:
+            lhs = torch.randn((4096, 4096), dtype=torch.float16, device=device)
+            rhs = torch.randn((4096, 4096), dtype=torch.float16, device=device)
+            busy_out = torch.empty_like(lhs)
+            producer = accelerator.Stream()
+            gate = accelerator.Event()
+            accelerator.synchronize()
+
+            with accelerator.stream(producer):
+                for _ in range(32):
+                    torch.mm(lhs, rhs, out=busy_out)
+                gate.record()
+
+            assert not producer.query()
+            stream.wait_event(gate)
+            call_abs()
+
+            default_stream = accelerator.default_stream()
+            with accelerator.stream(default_stream):
+                snapshot = out.clone()
         default_stream.synchronize()
         assert torch.isnan(snapshot).all()
 
         stream.synchronize()
         torch.testing.assert_close(out, input.abs())
     finally:
-        torch.cuda.synchronize()
+        accelerator.synchronize()
+
+
+@pytest.mark.smoke
+def test_abs_torch_backend_accepts_null_stream(device):
+    pytorch_slot = 8
+
+    if device != "npu":
+        pytest.skip("The null-stream regression requires NPU")
+    if not infini.ops.Abs.active_implementation_indices("ascend"):
+        pytest.skip("The null-stream regression requires the Ascend backend")
+    if pytorch_slot not in infini.ops.Abs.active_implementation_indices(device):
+        pytest.skip("The PyTorch backend is not active")
+
+    input = torch.full((4096,), -1.0, device=device)
+    out = torch.full_like(input, torch.nan)
+
+    infini.ops.abs(
+        input,
+        out,
+        stream=0,
+        implementation_index=pytorch_slot,
+    )
+    torch.npu.synchronize()
+    torch.testing.assert_close(out, input.abs())
