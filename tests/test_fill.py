@@ -1,7 +1,7 @@
 import infini.ops
 import pytest
-import torch
 
+import torch
 from tests.utils import (
     Payload,
     empty_strided,
@@ -57,6 +57,39 @@ def test_fill(
     )
 
     return Payload(_fill, _torch_fill, (input, value, out), {}, rtol=0, atol=0)
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize("shape, value_shape", (((13, 4), ()), ((3, 5), (1,))))
+@pytest.mark.parametrize(
+    "dtype, value",
+    (
+        (torch.uint8, 3),
+        (torch.int8, -3),
+        (torch.int16, -7),
+        (torch.int32, 11),
+        (torch.int64, -13),
+        (torch.float32, 2.5),
+        (torch.float16, -3.5),
+        (torch.bfloat16, 4.5),
+    ),
+)
+def test_fill_device_scalar(shape, value_shape, dtype, value, device):
+    if device != "npu":
+        pytest.skip("Device-scalar fill coverage is Ascend-specific")
+
+    input = _make_input(shape, None, dtype=dtype, device=device)
+    scalar = torch.full(value_shape, value, dtype=dtype, device=device)
+    out = torch.empty_like(input)
+
+    return Payload(
+        _fill,
+        _torch_fill,
+        (input, scalar, out),
+        {},
+        rtol=0,
+        atol=0,
+    )
 
 
 def _make_input(shape, strides, *, dtype, device):
