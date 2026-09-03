@@ -816,15 +816,16 @@ if(WITH_TORCH)
     message(STATUS "Generating torch op wrappers - done")
 
     file(GLOB_RECURSE TORCH_SOURCES CONFIGURE_DEPENDS
-        "torch/*.cc" "torch/*.cpp"
+        "torch/ops/*.cc" "torch/ops/*.cpp"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cc"
         "${PROJECT_SOURCE_DIR}/generated/torch/*.cpp"
     )
 
-    if(NOT WITH_NVIDIA AND NOT WITH_MOORE)
-        list(FILTER TORCH_SOURCES EXCLUDE REGEX
-            ".*/flash_attn_varlen_func/flash_attn_varlen_func\\.cc$")
-    endif()
+    foreach(_device IN LISTS DEVICE_LIST)
+        file(GLOB_RECURSE _torch_device_sources CONFIGURE_DEPENDS
+            "torch/${_device}/*.cc" "torch/${_device}/*.cpp")
+        list(APPEND TORCH_SOURCES ${_torch_device_sources})
+    endforeach()
 endif()
 
 if(_infini_ops_linked_uses_torch)
