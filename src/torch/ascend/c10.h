@@ -18,6 +18,8 @@ struct C10<Device::Type::kAscend> {
   static c10_npu::NPUStream GetStreamFromExternal(void* stream,
                                                   int device_index) {
     if (stream == nullptr) {
+      // `torch_npu` rejects null external streams, while InfiniOps uses null
+      // to select the default device stream.
       return c10_npu::getDefaultNPUStream(
           static_cast<c10::DeviceIndex>(device_index));
     }
