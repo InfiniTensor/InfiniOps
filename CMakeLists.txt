@@ -297,6 +297,13 @@ if(WITH_TORCH OR WITH_LINKED)
             -Wl,--no-as-needed ${TORCH_CUDA_LIB} ${C10_CUDA_LIB} -Wl,--as-needed)
     endif()
 
+    if(WITH_HYGON)
+        find_library(TORCH_HIP_LIB torch_hip HINTS ${_torch_lib_dirs} REQUIRED)
+        find_library(C10_HIP_LIB c10_hip HINTS ${_torch_lib_dirs} REQUIRED)
+        list(APPEND TORCH_LIBRARIES
+            -Wl,--no-as-needed ${TORCH_HIP_LIB} ${C10_HIP_LIB} -Wl,--as-needed)
+    endif()
+
     if(WITH_METAX)
         find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         find_library(MACA_TORCH_RUNTIME_LIB runtime_cu
