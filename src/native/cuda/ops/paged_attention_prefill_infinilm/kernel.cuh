@@ -17,11 +17,22 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "native/cuda/caster.cuh"
+
 // Reuse warp-level primitives and math helpers from decode flash_attention
 // kernels.
 #include "native/cuda/ops/paged_attention_infinilm/kernel.cuh"
 
 namespace op::paged_attention_prefill::cuda {
+
+template <typename TIndex>
+struct CumulativeSequenceLengths {
+  const TIndex* values;
+
+  __device__ __forceinline__ TIndex operator[](size_t index) const {
+    return values[index + 1] - values[index];
+  }
+};
 
 template <typename TIndex>
 __device__ __forceinline__ size_t FindSeqId(size_t token_idx,
@@ -46,7 +57,8 @@ __device__ __forceinline__ size_t FindSeqId(size_t token_idx,
   return 0;
 }
 
-template <typename TIndex, typename TData, int kHeadSize>
+template <infini::ops::Device::Type kDev, typename TIndex, typename TData,
+          int kHeadSize>
 __device__ void PagedAttentionPrefillWarpKernel(
     TData* out, const TData* q, const TData* k_cache, const TData* v_cache,
     const TIndex* block_tables, const TIndex* total_kv_lens,
@@ -251,20 +263,15 @@ __device__ void PagedAttentionPrefillWarpKernel(
   for (int i = 0; i < kDimsPerThread; ++i) {
     const int dim = lane * kDimsPerThread + i;
     const float o = acc[i] * inv_l;
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(o);
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(o);
-    } else {
-      outptr[dim] = static_cast<TData>(o);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(o);
   }
 }
 
-template <typename TIndex, typename TData, int kHeadSize>
+template <infini::ops::Device::Type kDev, typename TIndex, typename TData,
+          int kHeadSize, typename TLengths>
 __global__ void PagedAttentionPrefillWarpGlobalKernel(
     TData* out, const TData* q, const TData* k_cache, const TData* v_cache,
-    const TIndex* block_tables, const TIndex* total_kv_lens,
+    const TIndex* block_tables, TLengths total_kv_lens,
     const TIndex* cu_seqlens_q, const float* alibi_slopes, size_t num_heads,
     size_t num_seqs, size_t num_kv_heads, size_t total_qtokens, float scale,
     size_t max_num_blocks_per_seq, size_t page_block_size,
@@ -281,7 +288,8 @@ __global__ void PagedAttentionPrefillWarpGlobalKernel(
 
   const int lane = threadIdx.x;
   const size_t head_idx = static_cast<size_t>(blockIdx.x);
-  const size_t global_token_idx = static_cast<size_t>(blockIdx.y);
+  const size_t global_token_idx = static_cast<size_t>(blockIdx.y) +
+                                  static_cast<size_t>(blockIdx.z) * gridDim.y;
 
   if (lane >= kWarpSize || head_idx >= num_heads ||
       global_token_idx >= total_qtokens) {
@@ -303,7 +311,14 @@ __global__ void PagedAttentionPrefillWarpGlobalKernel(
   const int kv_len_total = static_cast<int>(total_kv_lens[seqidx]);
   const int history_len = kv_len_total - qlen;
   const int allowed_k_len = history_len + qtoken_local + 1;
+  TData* outptr = out + static_cast<int64_t>(global_token_idx) * o_stride +
+                  static_cast<int64_t>(head_idx) * o_head_stride;
   if (allowed_k_len <= 0) {
+#pragma unroll
+    for (int i = 0; i < kDimsPerThread; ++i) {
+      const int dim = lane * kDimsPerThread + i;
+      outptr[dim] = TData{};
+    }
     return;
   }
 
@@ -317,8 +332,6 @@ __global__ void PagedAttentionPrefillWarpGlobalKernel(
 
   const TData* qptr = q + static_cast<int64_t>(global_token_idx) * qstride +
                       static_cast<int64_t>(head_idx) * qhead_stride;
-  TData* outptr = out + static_cast<int64_t>(global_token_idx) * o_stride +
-                  static_cast<int64_t>(head_idx) * o_head_stride;
 
   const TIndex* block_table =
       block_tables + static_cast<int64_t>(seqidx) *
@@ -361,7 +374,9 @@ __global__ void PagedAttentionPrefillWarpGlobalKernel(
   // Iterate by pages to avoid per-token division/mod and redundant block_table
   // loads.
   int t_base = 0;
-  for (int logical_block = 0; t_base < allowed_k_len;
+  for (int logical_block = 0;
+       t_base < allowed_k_len &&
+       logical_block < static_cast<int>(max_num_blocks_per_seq);
        ++logical_block, t_base += pbs) {
     const int32_t phys = static_cast<int32_t>(block_table[logical_block]);
     const TData* k_base = k_cache +
@@ -476,13 +491,7 @@ __global__ void PagedAttentionPrefillWarpGlobalKernel(
   for (int i = 0; i < kDimsPerThread; ++i) {
     const int dim = lane * kDimsPerThread + i;
     const float o = acc[i] * inv_l;
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(o);
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(o);
-    } else {
-      outptr[dim] = static_cast<TData>(o);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(o);
   }
 }
 
@@ -610,8 +619,8 @@ __global__ void PagedAttentionPrefillReferenceKernel(
   outptr[dim_idx] = static_cast<TData>(acc);
 }
 
-template <typename TIndex, typename TData, int kHeadSize, int kBlockM,
-          int kBlockN>
+template <infini::ops::Device::Type kDev, typename TIndex, typename TData,
+          int kHeadSize, int kBlockM, int kBlockN>
 __device__ void PagedAttentionPrefillWarpCtaKernel(
     TData* out, const TData* q, const TData* k_cache, const TData* v_cache,
     const TIndex* block_tables, const TIndex* total_kv_lens,
@@ -867,13 +876,7 @@ __device__ void PagedAttentionPrefillWarpCtaKernel(
     if (!is_active) {
       continue;
     }
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(outval);
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(outval);
-    } else {
-      outptr[dim] = static_cast<TData>(outval);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(outval);
   }
 }
 
@@ -890,11 +893,12 @@ __device__ void PagedAttentionPrefillWarpCtaKernel(
 // shorter causal
 //   limits simply mask the tail tokens but still participate in CTA-wide
 //   barriers.
-template <typename TIndex, typename TData, int kHeadSize, int kBlockM,
-          int kTokensPerTile, int kStages>
+template <infini::ops::Device::Type kDev, typename TIndex, typename TData,
+          int kHeadSize, int kBlockM, int kTokensPerTile, int kStages,
+          typename TLengths>
 __device__ void PagedAttentionPrefillWarpCtaKernelPipelined(
     TData* out, const TData* q, const TData* k_cache, const TData* v_cache,
-    const TIndex* block_tables, const TIndex* total_kv_lens,
+    const TIndex* block_tables, TLengths total_kv_lens,
     const TIndex* cu_seqlens_q, const float* alibi_slopes, size_t num_kv_heads,
     float scale, size_t max_num_blocks_per_seq, size_t page_block_size,
     ptrdiff_t block_table_batch_stride, ptrdiff_t qstride,
@@ -1034,7 +1038,9 @@ __device__ void PagedAttentionPrefillWarpCtaKernelPipelined(
   __syncwarp();
 
   int t_base = 0;
-  for (int logical_block = 0; t_base < max_allowed_k_len;
+  for (int logical_block = 0;
+       t_base < max_allowed_k_len &&
+       logical_block < static_cast<int>(max_num_blocks_per_seq);
        ++logical_block, t_base += pbs) {
     const int physical_block = static_cast<int>(block_table[logical_block]);
 
@@ -1347,13 +1353,7 @@ __device__ void PagedAttentionPrefillWarpCtaKernelPipelined(
     if (!is_active) {
       continue;
     }
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(outval);
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(outval);
-    } else {
-      outptr[dim] = static_cast<TData>(outval);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(outval);
   }
 }
 
@@ -1792,7 +1792,7 @@ __device__ void PagedAttentionPrefillWarpCtaKernelPipelinedSplitKv(
   }
 }
 
-template <typename TData, int kHeadSize>
+template <infini::ops::Device::Type kDev, typename TData, int kHeadSize>
 __device__ void PagedAttentionPrefillSplitKvCombineWarpKernel(
     TData* out,
     const float*
@@ -1850,21 +1850,15 @@ __device__ void PagedAttentionPrefillSplitKvCombineWarpKernel(
           w;
     }
     const float o = acc * inv_l;
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(o);
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(o);
-    } else {
-      outptr[dim] = static_cast<TData>(o);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(o);
   }
 }
 
 // Variant for large K tile where (K+V) shared memory would exceed the per-block
 // limit on some GPUs. We keep K in shared memory for reuse across warps, but
 // load V directly from global memory.
-template <typename TIndex, typename TData, int kHeadSize, int kBlockM,
-          int kBlockN>
+template <infini::ops::Device::Type kDev, typename TIndex, typename TData,
+          int kHeadSize, int kBlockM, int kBlockN>
 __device__ void PagedAttentionPrefillWarpCtaKernelKOnly(
     TData* out, const TData* q, const TData* k_cache, const TData* v_cache,
     const TIndex* block_tables, const TIndex* total_kv_lens,
@@ -2109,13 +2103,7 @@ __device__ void PagedAttentionPrefillWarpCtaKernelKOnly(
     if (!is_active) {
       continue;
     }
-    if constexpr (std::is_same_v<TData, half>) {
-      outptr[dim] = __float2half_rn(outval);
-    } else if constexpr (std::is_same_v<TData, __nv_bfloat16>) {
-      outptr[dim] = __float2bfloat16_rn(outval);
-    } else {
-      outptr[dim] = static_cast<TData>(outval);
-    }
+    outptr[dim] = infini::ops::Caster<kDev>::template Cast<TData>(outval);
   }
 }
 
@@ -2495,11 +2483,11 @@ __device__ __forceinline__ std::size_t PagedPrefillFindSeqId(
   return 0;
 }
 
-template <typename TIndex, typename TData>
+template <Device::Type kDev, typename TIndex, typename TData, typename TLengths>
 __global__ void PagedAttentionPrefillInfinilmHd128WarpCta8PipeKernel(
     TData* __restrict__ out, const TData* __restrict__ q,
     const TData* __restrict__ k_cache, const TData* __restrict__ v_cache,
-    const TIndex* __restrict__ block_tables, const TIndex* __restrict__ seqlens,
+    const TIndex* __restrict__ block_tables, TLengths seqlens,
     const TIndex* __restrict__ cum_seqlens_q,
     const float* __restrict__ alibi_slopes, std::size_t num_kv_heads,
     float scale, std::size_t max_num_blocks_per_seq, std::size_t block_size,
@@ -2510,7 +2498,8 @@ __global__ void PagedAttentionPrefillInfinilmHd128WarpCta8PipeKernel(
     std::ptrdiff_t v_cachehead_stride, std::ptrdiff_t outstride,
     std::ptrdiff_t outhead_stride) {
   op::paged_attention_prefill::cuda::
-      PagedAttentionPrefillWarpCtaKernelPipelined<TIndex, TData, 128, 8, 32, 2>(
+      PagedAttentionPrefillWarpCtaKernelPipelined<kDev, TIndex, TData, 128, 8,
+                                                  32, 2>(
           out, q, k_cache, v_cache, block_tables, seqlens, cum_seqlens_q,
           alibi_slopes, num_kv_heads, scale, max_num_blocks_per_seq, block_size,
           block_table_batch_stride, qstride, qhead_stride, k_cacheblock_stride,

@@ -21,6 +21,7 @@ if not hasattr(infini.ops, "FlashAttnVarlenFunc"):
     ),
     (
         ((3, 5), (4, 5), 4, 4, False, (-1, -1), None, False, False),
+        ((3, 5), (3, 5), 4, 2, True, (-1, -1), 0.125, False, False),
         ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125, False, False),
         ((4, 3), (6, 2), 4, 2, False, (2, 1), None, False, False),
         ((4, 3), (6, 2), 4, 2, True, (2, 1), None, False, False),
@@ -52,10 +53,14 @@ def test_flash_attn_varlen_func(
     rtol,
     atol,
 ):
-    if device != "cuda":
-        pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
+    if device == "musa" and window_size != (-1, -1):
+        pytest.skip("TorchMusa FlashAttention does not support local windows")
+    if device == "musa" and not paged and causal and q_lens != k_lens:
+        pytest.skip("TorchMusa causal FlashAttention requires matching Q/K lengths")
 
-    if (paged or use_alibi) and implementation_index == 8:
+    if device == "cuda" and (paged or use_alibi) and implementation_index == 8:
         pytest.skip("paged KV cache and ALiBi require the linked provider")
 
     q = torch.randn((sum(q_lens), num_heads, head_dim), dtype=dtype, device=device)
@@ -152,6 +157,12 @@ def test_flash_attn_varlen_func(
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
 
     if return_attn_probs:
+        reference_window_size_right = None
+        if device == "cuda" and causal:
+            reference_window_size_right = 0
+        elif device == "cuda" and window_size[1] >= 0:
+            reference_window_size_right = window_size[1]
+
         expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
             q,
             k,
@@ -165,9 +176,7 @@ def test_flash_attn_varlen_func(
             False,
             scale=scale,
             window_size_left=None if window_size[0] < 0 else window_size[0],
-            window_size_right=(
-                0 if causal else None if window_size[1] < 0 else window_size[1]
-            ),
+            window_size_right=reference_window_size_right,
         )
         expected_softmax_lse = _pack_varlen_softmax_lse(
             expected_auxiliary[1],
@@ -274,8 +283,8 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
 
 
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("FlashAttention FA2 requires the NVIDIA backend")
+    if device not in ("cuda", "musa"):
+        pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
@@ -346,6 +355,193 @@ def test_flash_attn_varlen_func_device_guard():
         (-1, -1),
     )
     torch.testing.assert_close(out, expected, rtol=2e-3, atol=2e-3)
+
+
+@pytest.mark.parametrize("head_dim", (64, 128))
+@pytest.mark.parametrize("implementation_index", (8,))
+def test_moore_paged_flash_attn_uses_stream_and_current_lengths(
+    device, implementation_index, head_dim
+):
+    if device != "musa":
+        pytest.skip("paged Moore stream coverage requires the Moore backend")
+
+    q_lens = (2, 3)
+    initial_k_lens = (130, 300)
+    updated_k_lens = (65, 129)
+    num_heads = 4
+    num_kv_heads = 2
+    page_size = 256
+
+    # Sliced padded storage keeps the head dimension contiguous while making
+    # every outer stride non-default. K and V deliberately use different
+    # padding so their stride metadata cannot be interchanged.
+    q = torch.randn(
+        (sum(q_lens), num_heads, head_dim + 5),
+        dtype=torch.float16,
+        device=device,
+    )[..., :head_dim]
+    k = torch.randn(
+        (4, page_size, num_kv_heads, head_dim + 7),
+        dtype=torch.float16,
+        device=device,
+    )[..., :head_dim]
+    v = torch.randn(
+        (4, page_size, num_kv_heads, head_dim + 11),
+        dtype=torch.float16,
+        device=device,
+    )[..., :head_dim]
+    # Physical block 3 is intentionally unused and the first row's tail is
+    # invalid. This catches providers that ignore the block table or scan
+    # unused entries.
+    block_table = torch.tensor(((2, -1), (1, 0)), dtype=torch.int32, device=device)
+    cu_seqlens_q = _cumulative_lengths(q_lens, device)
+    cu_seqlens_k = _cumulative_lengths(initial_k_lens, device)
+    updated_cu_seqlens_k = _cumulative_lengths(updated_k_lens, device)
+    out = torch.full(
+        (sum(q_lens), num_heads, head_dim + 13),
+        math.nan,
+        dtype=torch.float16,
+        device=device,
+    )[..., :head_dim]
+
+    expected = _reference_varlen_attention(
+        q,
+        k,
+        v,
+        q_lens,
+        initial_k_lens,
+        None,
+        True,
+        (-1, -1),
+        block_table,
+    ).cpu()
+    torch.musa.synchronize()
+
+    stream = torch.musa.Stream()
+    stream.wait_stream(torch.musa.current_stream())
+
+    # Keep the current stream busy. A provider that ignores the explicit raw
+    # stream will leave `out` untouched when the target stream is synchronized.
+    torch.musa._sleep(50_000_000)
+    try:
+        infini.ops.flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            None,
+            block_table,
+            max(q_lens),
+            max(initial_k_lens),
+            0.0,
+            None,
+            True,
+            (-1, -1),
+            0.0,
+            False,
+            False,
+            out,
+            None,
+            None,
+            stream=stream.musa_stream,
+            implementation_index=implementation_index,
+        )
+
+        stream.synchronize()
+        with torch.musa.stream(stream):
+            actual = out.cpu()
+        torch.testing.assert_close(actual, expected, rtol=1e-2, atol=1e-2)
+
+        torch.musa.synchronize()
+        expected = _reference_varlen_attention(
+            q,
+            k,
+            v,
+            q_lens,
+            updated_k_lens,
+            None,
+            True,
+            (-1, -1),
+            block_table,
+        ).cpu()
+
+        with torch.musa.stream(stream):
+            cu_seqlens_k.copy_(updated_cu_seqlens_k)
+            out.fill_(math.nan)
+
+        # Omit implementation_index on the replay: the Moore default must be
+        # the same paged-capable mixed provider used above.
+        infini.ops.flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            None,
+            block_table,
+            max(q_lens),
+            max(initial_k_lens),
+            0.0,
+            None,
+            True,
+            (-1, -1),
+            0.0,
+            False,
+            False,
+            out,
+            None,
+            None,
+            stream=stream.musa_stream,
+        )
+
+        stream.synchronize()
+        with torch.musa.stream(stream):
+            actual = out.cpu()
+        torch.testing.assert_close(actual, expected, rtol=1e-2, atol=1e-2)
+    finally:
+        torch.musa.synchronize()
+
+
+@pytest.mark.parametrize("head_dim", (64,))
+@pytest.mark.parametrize("implementation_index", (8,))
+def test_moore_paged_flash_attn_empty_q(device, implementation_index, head_dim):
+    if device != "musa":
+        pytest.skip("empty paged Moore coverage requires the Moore backend")
+
+    q = torch.empty((0, 4, head_dim), dtype=torch.float16, device=device)
+    k = torch.empty((1, 256, 2, head_dim), dtype=torch.float16, device=device)
+    v = torch.empty_like(k)
+    cu_seqlens_q = torch.tensor((0, 0), dtype=torch.int32, device=device)
+    cu_seqlens_k = torch.tensor((0, 0), dtype=torch.int32, device=device)
+    block_table = torch.zeros((1, 1), dtype=torch.int32, device=device)
+    out = torch.empty_like(q)
+
+    infini.ops.flash_attn_varlen_func(
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        None,
+        block_table,
+        1,
+        1,
+        0.0,
+        None,
+        True,
+        (-1, -1),
+        0.0,
+        False,
+        False,
+        out,
+        None,
+        None,
+        stream=torch.musa.current_stream().musa_stream,
+        implementation_index=implementation_index,
+    )
+
+    assert out.numel() == 0
 
 
 def _cumulative_lengths(lengths, device):

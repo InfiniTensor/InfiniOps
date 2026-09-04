@@ -497,12 +497,30 @@ def _is_smoke_cutlass_scaled_mm_case(params):
 
 
 def _is_smoke_flash_attn_varlen_func_case(params):
-    return (
+    dense = (
         params.get("q_lens") == (3, 5)
         and params.get("k_lens") == (4, 5)
         and params.get("num_heads") == 4
         and params.get("num_kv_heads") == 4
         and params.get("causal") is False
+        and params.get("paged") is False
+    )
+    paged = (
+        params.get("q_lens") == (2, 3)
+        and params.get("k_lens") == (130, 300)
+        and params.get("num_heads") == 4
+        and params.get("num_kv_heads") == 2
+        and params.get("causal") is True
+        and params.get("paged") is True
+    )
+    moore_paged_regression = (
+        "q_lens" not in params
+        and params.get("device") == "musa"
+        and params.get("implementation_index") == 8
+        and params.get("head_dim") == 64
+    )
+    return moore_paged_regression or (
+        (dense or paged)
         and params.get("window_size") == (-1, -1)
         and params.get("scale") is None
         and params.get("head_dim") == 64

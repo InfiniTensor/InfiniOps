@@ -106,7 +106,8 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
                       k_cache_slot_stride_, k_cache_head_stride_,
                       v_cache_block_stride_, v_cache_slot_stride_,
                       v_cache_head_stride_, num_splits);
-              PagedAttentionInfinilmSplitKvCombineKernel<TData, kHeadSize>
+              PagedAttentionInfinilmSplitKvCombineKernel<Backend::kDeviceType,
+                                                         TData, kHeadSize>
                   <<<grid, 32, 0, cuda_stream>>>(
                       reinterpret_cast<TData*>(out.data()), partial_acc,
                       partial_m, partial_l, num_splits, out_stride_);
