@@ -7,14 +7,15 @@ import torch
 from tests.utils import get_stream
 
 
-flash_attn = pytest.importorskip("flash_attn")
-
-
 if not hasattr(infini.ops, "FlashAttnWithKvcache"):
     pytest.skip(
         "`FlashAttnWithKvcache` is not available on this platform",
         allow_module_level=True,
     )
+
+
+def _get_flash_attn():
+    return pytest.importorskip("flash_attn")
 
 
 @pytest.mark.parametrize("cache_seqlens_kind", ("tensor", "scalar"))
@@ -79,7 +80,7 @@ def test_flash_attn_with_kvcache_dense(
             window_size=(4, 0),
         )
     else:
-        expected, expected_softmax_lse = flash_attn.flash_attn_with_kvcache(
+        expected, expected_softmax_lse = _get_flash_attn().flash_attn_with_kvcache(
             q,
             expected_k_cache,
             expected_v_cache,
@@ -165,7 +166,7 @@ def test_flash_attn_with_kvcache_paged(device, implementation_index):
             causal=True,
         )
     else:
-        expected = flash_attn.flash_attn_with_kvcache(
+        expected = _get_flash_attn().flash_attn_with_kvcache(
             q,
             k_cache,
             v_cache,
@@ -225,7 +226,7 @@ def test_flash_attn_with_kvcache_scalar_seqlens_with_cache_batch_idx(
             cache_batch_idx=cache_batch_idx,
         )
     else:
-        expected = flash_attn.flash_attn_with_kvcache(
+        expected = _get_flash_attn().flash_attn_with_kvcache(
             q,
             k_cache,
             v_cache,
@@ -273,7 +274,7 @@ def test_flash_attn_with_kvcache_defaults(device, implementation_index):
     if device == "mlu":
         expected, _ = _reference_flash_attn_with_kvcache(q, k_cache, v_cache)
     else:
-        expected = flash_attn.flash_attn_with_kvcache(q, k_cache, v_cache)
+        expected = _get_flash_attn().flash_attn_with_kvcache(q, k_cache, v_cache)
     actual = torch.empty_like(q)
 
     infini.ops.flash_attn_with_kvcache(
@@ -304,7 +305,7 @@ def test_flash_attn_with_kvcache_non_default_stream(device, implementation_index
     if device == "mlu":
         expected, _ = _reference_flash_attn_with_kvcache(q, k_cache, v_cache)
     else:
-        expected = flash_attn.flash_attn_with_kvcache(q, k_cache, v_cache)
+        expected = _get_flash_attn().flash_attn_with_kvcache(q, k_cache, v_cache)
     actual = torch.empty_like(q)
     stream = accelerator.Stream()
     stream.wait_stream(accelerator.current_stream())
@@ -322,6 +323,215 @@ def test_flash_attn_with_kvcache_non_default_stream(device, implementation_index
     torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
 
 
+@pytest.mark.parametrize("head_dim", (64, 128))
+@pytest.mark.parametrize(
+    "dtype, rtol, atol",
+    (
+        (torch.float16, 1e-2, 1e-2),
+        (torch.bfloat16, 2e-2, 2e-2),
+    ),
+)
+@pytest.mark.parametrize("num_kv_heads", (2, 4))
+@pytest.mark.parametrize("implementation_index", (8,))
+def test_flash_attn_with_kvcache_paged_moore_decode_matrix(
+    device, implementation_index, num_kv_heads, head_dim, dtype, rtol, atol
+):
+    if device != "musa":
+        pytest.skip("paged decode matrix requires the Moore backend")
+
+    cache_seqlens = (1, 255, 256, 257)
+    batch_size = len(cache_seqlens)
+    num_heads = 4
+    page_size = 256
+    q = torch.randn(
+        (batch_size, 1, num_heads, head_dim + 5), dtype=dtype, device=device
+    )[..., :head_dim]
+    k_cache = torch.randn(
+        (5, page_size, num_kv_heads, head_dim + 7), dtype=dtype, device=device
+    )[..., :head_dim]
+    v_cache = torch.randn(
+        (5, page_size, num_kv_heads, head_dim + 11), dtype=dtype, device=device
+    )[..., :head_dim]
+    block_table = torch.tensor(
+        ((3, -1), (1, -1), (4, -1), (2, 0)),
+        dtype=torch.int32,
+        device=device,
+    )
+    cache_seqlens_tensor = torch.tensor(cache_seqlens, dtype=torch.int32, device=device)
+    alibi_slopes = torch.linspace(
+        0.01, 0.04, num_heads, dtype=torch.float32, device=device
+    )
+    out = torch.full(
+        (batch_size, 1, num_heads, head_dim + 13),
+        math.nan,
+        dtype=dtype,
+        device=device,
+    )[..., :head_dim]
+    k_before = k_cache.clone()
+    v_before = v_cache.clone()
+
+    expected, _ = _reference_flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        cache_seqlens=cache_seqlens_tensor,
+        block_table=block_table,
+        softmax_scale=0.125,
+        causal=True,
+        alibi_slopes=alibi_slopes,
+    )
+
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        None,
+        None,
+        None,
+        None,
+        cache_seqlens_tensor,
+        None,
+        None,
+        block_table,
+        alibi_slopes,
+        0.125,
+        True,
+        (-1, -1),
+        0.0,
+        True,
+        0,
+        False,
+        out,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
+    torch.testing.assert_close(k_cache, k_before, rtol=0, atol=0)
+    torch.testing.assert_close(v_cache, v_before, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("implementation_index", (8,))
+def test_flash_attn_with_kvcache_paged_moore_uses_stream_and_current_metadata(
+    device, implementation_index
+):
+    if device != "musa":
+        pytest.skip("paged stream metadata coverage requires the Moore backend")
+
+    accelerator = torch.musa
+    head_dim = 64
+    q = torch.randn((2, 1, 4, head_dim), dtype=torch.float16, device=device)
+    k_cache = torch.randn((3, 256, 2, head_dim), dtype=torch.float16, device=device)
+    v_cache = torch.randn_like(k_cache)
+    block_table = torch.tensor(((2, -1), (1, 0)), dtype=torch.int32, device=device)
+    cache_seqlens = torch.tensor((0, 257), dtype=torch.int32, device=device)
+    out = torch.full_like(q, math.nan)
+    expected, _ = _reference_flash_attn_with_kvcache(
+        q[1:],
+        k_cache,
+        v_cache,
+        cache_seqlens=cache_seqlens[1:],
+        block_table=block_table[1:],
+        causal=True,
+    )
+    expected = expected.cpu()
+    updated_block_table = torch.tensor(
+        ((0, -1), (2, -1)), dtype=torch.int32, device=device
+    )
+    updated_cache_seqlens = torch.tensor((1, 256), dtype=torch.int32, device=device)
+    updated_expected, _ = _reference_flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        cache_seqlens=updated_cache_seqlens,
+        block_table=updated_block_table,
+        causal=True,
+    )
+    updated_expected = updated_expected.cpu()
+    accelerator.synchronize()
+
+    stream = accelerator.Stream()
+    stream.wait_stream(accelerator.current_stream())
+
+    # Keep the current stream busy after the target dependency is recorded. A
+    # provider that ignores the raw stream then leaves output untouched at target sync.
+    accelerator._sleep(50_000_000)
+    try:
+        infini.ops.flash_attn_with_kvcache(
+            q,
+            k_cache,
+            v_cache,
+            None,
+            None,
+            None,
+            None,
+            cache_seqlens,
+            None,
+            None,
+            block_table,
+            None,
+            None,
+            True,
+            (-1, -1),
+            0.0,
+            True,
+            0,
+            False,
+            out,
+            None,
+            stream=stream.musa_stream,
+            implementation_index=implementation_index,
+        )
+
+        stream.synchronize()
+        with accelerator.stream(stream):
+            actual = out.cpu()
+        torch.testing.assert_close(actual[1], expected[0], rtol=1e-2, atol=1e-2)
+        torch.testing.assert_close(
+            actual[0], torch.zeros_like(actual[0]), rtol=0, atol=0
+        )
+
+        with accelerator.stream(stream):
+            cache_seqlens.copy_(updated_cache_seqlens)
+            block_table.copy_(updated_block_table)
+            out.fill_(math.nan)
+        infini.ops.flash_attn_with_kvcache(
+            q,
+            k_cache,
+            v_cache,
+            None,
+            None,
+            None,
+            None,
+            cache_seqlens,
+            None,
+            None,
+            block_table,
+            None,
+            None,
+            True,
+            (-1, -1),
+            0.0,
+            True,
+            0,
+            False,
+            out,
+            None,
+            stream=stream.musa_stream,
+            implementation_index=implementation_index,
+        )
+
+        stream.synchronize()
+        with accelerator.stream(stream):
+            updated_actual = out.cpu()
+        torch.testing.assert_close(
+            updated_actual, updated_expected, rtol=1e-2, atol=1e-2
+        )
+    finally:
+        accelerator.synchronize()
+
+
 def _reference_flash_attn_with_kvcache(
     q,
     k_cache,
@@ -334,6 +544,7 @@ def _reference_flash_attn_with_kvcache(
     softmax_scale=None,
     causal=False,
     window_size=(-1, -1),
+    alibi_slopes=None,
 ):
     batch_size, query_length, num_heads, _ = q.shape
     if cache_seqlens is None:
@@ -379,6 +590,12 @@ def _reference_flash_attn_with_kvcache(
         scale = softmax_scale if softmax_scale is not None else q.size(-1) ** -0.5
         scores = torch.matmul(q_seq.float(), k_seq.float().transpose(-2, -1))
         scores *= scale
+        if alibi_slopes is not None:
+            slopes = alibi_slopes if alibi_slopes.ndim == 1 else alibi_slopes[batch]
+            query_positions = torch.arange(query_length, device=q.device).unsqueeze(1)
+            key_positions = torch.arange(length, device=q.device).unsqueeze(0)
+            distance = (query_positions + length - query_length - key_positions).abs()
+            scores += -slopes[:, None, None] * distance
         mask = _attention_mask(
             query_length,
             length,
