@@ -841,6 +841,52 @@ if(INFINI_OPS_LINKED_INCLUDE_DIRS)
     target_include_directories(infiniops PRIVATE
         ${INFINI_OPS_LINKED_INCLUDE_DIRS})
 endif()
+
+if(WITH_ASCEND AND TORCH_SOURCES)
+    execute_process(
+        COMMAND "${_TORCH_PYTHON}" -c
+            "import pathlib, torch_npu; root = pathlib.Path(torch_npu.__file__).resolve().parent; print(root / 'include', root / 'lib', torch_npu.__version__, sep=';')"
+        OUTPUT_VARIABLE _torch_npu_paths
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _torch_npu_paths_result
+    )
+    if(NOT _torch_npu_paths_result EQUAL 0 OR NOT _torch_npu_paths)
+        message(FATAL_ERROR
+            "The Ascend PyTorch backend requires an installed `torch_npu` package.")
+    endif()
+    list(GET _torch_npu_paths 0 _torch_npu_include_dir)
+    list(GET _torch_npu_paths 1 _torch_npu_library_dir)
+    list(GET _torch_npu_paths 2 _torch_npu_version)
+
+    set(_torch_npu_stream_header
+        "${_torch_npu_include_dir}/torch_npu/csrc/core/npu/NPUStream.h")
+    set(_torch_npu_guard_header
+        "${_torch_npu_include_dir}/torch_npu/csrc/core/npu/NPUGuard.h")
+    if(NOT EXISTS "${_torch_npu_stream_header}" OR
+       NOT EXISTS "${_torch_npu_guard_header}" OR
+       NOT IS_DIRECTORY "${_torch_npu_library_dir}")
+        message(FATAL_ERROR
+            "Could not find the installed `torch_npu` C++ development files.")
+    endif()
+
+    file(STRINGS "${_torch_npu_stream_header}" _torch_npu_external_stream_api
+        REGEX "getStreamFromExternal")
+    if(NOT _torch_npu_external_stream_api)
+        message(FATAL_ERROR
+            "torch_npu ${_torch_npu_version} does not provide "
+            "`c10_npu::getStreamFromExternal`; install a compatible release "
+            "such as torch_npu 2.10.0.post4 or newer.")
+    endif()
+
+    find_library(TORCH_NPU_LIB torch_npu
+        HINTS "${_torch_npu_library_dir}"
+        NO_DEFAULT_PATH REQUIRED)
+    list(APPEND TORCH_INCLUDE_DIRS "${_torch_npu_include_dir}")
+    list(APPEND TORCH_LIBRARIES "${TORCH_NPU_LIB}")
+    list(APPEND TORCH_RUNTIME_DIRS "${_torch_npu_library_dir}")
+    message(STATUS "Found torch_npu ${_torch_npu_version}: ${TORCH_NPU_LIB}")
+endif()
+
 if(WITH_CAMBRICON AND TORCH_SOURCES)
     execute_process(
         COMMAND "${_TORCH_PYTHON}" -c

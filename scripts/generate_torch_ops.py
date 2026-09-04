@@ -82,6 +82,7 @@ _DEVICE_TYPES = (
 _C10_DEVICE_TYPES = (
     "kNvidia",
     "kCambricon",
+    "kAscend",
     "kMetax",
     "kMoore",
     "kIluvatar",
