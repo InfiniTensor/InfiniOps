@@ -60,6 +60,11 @@ def test_flash_attn_varlen_func(
     if device == "musa" and not paged and causal and q_lens != k_lens:
         pytest.skip("TorchMusa causal FlashAttention requires matching Q/K lengths")
 
+    if device == "cuda" and implementation_index == 0 and not (
+        paged and causal and window_size == (-1, -1)
+    ):
+        pytest.skip("Iluvatar native provider supports causal paged inference")
+
     if device == "cuda" and (paged or use_alibi) and implementation_index == 8:
         pytest.skip("paged KV cache and ALiBi require the linked provider")
 
@@ -189,6 +194,8 @@ def test_flash_attn_varlen_func(
 def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
     if device != "cuda":
         pytest.skip("non-default CUDA streams require the NVIDIA backend")
+    if implementation_index == 0:
+        pytest.skip("Iluvatar native provider requires a paged KV cache")
 
     dtype = torch.float16
     q_lens = (3, 5)
@@ -243,6 +250,8 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
 def test_flash_attn_varlen_func_default_stream(device, implementation_index):
     if device != "cuda":
         pytest.skip("CUDA stream coverage requires the NVIDIA backend")
+    if implementation_index == 0:
+        pytest.skip("Iluvatar native provider requires a paged KV cache")
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn_like(q)
@@ -285,6 +294,8 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
     if device not in ("cuda", "musa"):
         pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
+    if device == "cuda" and implementation_index == 0:
+        pytest.skip("Iluvatar native provider requires a paged KV cache")
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
@@ -319,6 +330,8 @@ def test_flash_attn_varlen_func_defaults(device, implementation_index):
 
 
 def test_flash_attn_varlen_func_device_guard():
+    if 0 in infini.ops.FlashAttnVarlenFunc.active_implementation_indices("iluvatar"):
+        pytest.skip("Iluvatar native provider requires a paged KV cache")
     if torch.cuda.device_count() < 2:
         pytest.skip("device-guard coverage requires at least two NVIDIA GPUs")
 

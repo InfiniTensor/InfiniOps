@@ -7,7 +7,7 @@
 #include <cstdint>
 
 #if defined(ENABLE_NVIDIA_API) || defined(ENABLE_ALI_API) || \
-    defined(ENABLE_ILUVATAR_API)
+    defined(WITH_ILUVATAR) || defined(ENABLE_ILUVATAR_API)
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -481,7 +481,7 @@ __global__ void PagedAttentionPrefillWarpGlobalKernel(
   if (lane == 0) {
     inv_l = 1.0f / (l + 1e-6f);
   }
-#ifdef ENABLE_ILUVATAR_API
+#ifdef INFINI_OPS_PAGED_ATTENTION_ILUVATAR
   inv_l = op::paged_attention::cuda::WarpBroadcast(inv_l, 0);
 #else
   inv_l = __shfl_sync(0xffffffff, inv_l, 0);

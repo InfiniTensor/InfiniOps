@@ -14,7 +14,10 @@
 
 namespace infini::ops {
 
-template <typename Backend>
+// Backends may lower the launch cap for this kernel without changing the
+// default launch policy used by other CUDA-compatible platforms.
+template <typename Backend,
+          int kMaxBlockSize = BackendMaxBlockSize<Backend>::value>
 class CudaReshapeAndCacheFlash : public ReshapeAndCacheFlash {
  public:
   using ReshapeAndCacheFlash::ReshapeAndCacheFlash;
@@ -32,13 +35,12 @@ class CudaReshapeAndCacheFlash : public ReshapeAndCacheFlash {
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
     int block_size =
         std::min(RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(),
-                 BackendMaxBlockSize<Backend>::value);
+                 kMaxBlockSize);
     dim3 grid(static_cast<unsigned>(num_heads_),
               static_cast<unsigned>(num_tokens_));
 
-    DispatchFunc<
-        ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
-        SupportedCudaBlockSizesType<BackendMaxBlockSize<Backend>::value>>(
+    DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
+                 SupportedCudaBlockSizesType<kMaxBlockSize>>(
         {static_cast<int64_t>(dtype_), block_size},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;

@@ -236,7 +236,9 @@ if(WITH_ILUVATAR)
     target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
-    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas CUDA::cuda_driver)
+    # CoreX does not provide FindCUDAToolkit's CUDA::cuda_driver target. The
+    # Iluvatar backend uses the runtime and BLAS APIs directly.
+    target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
 
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
@@ -583,8 +585,12 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
-if((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH)
+if(((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH) OR WITH_ILUVATAR)
     list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
+endif()
+
+if(WITH_ILUVATAR)
+    list(APPEND _infini_ops_smoke_ops flash_attn_with_kvcache)
 endif()
 
 if(INFINI_OPS_SMOKE_BUILD)
