@@ -1,14 +1,17 @@
 #ifndef INFINI_OPS_ASCEND_WORKSPACE_POOL__H_
 #define INFINI_OPS_ASCEND_WORKSPACE_POOL__H_
 
+#include <algorithm>
 #include <cassert>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "acl/acl.h"
 
@@ -69,17 +72,25 @@ class WorkspacePool {
     auto* arena = owned.get();
 
     if (needed > arena->capacity) {
-      if (arena->capacity > 0) {
-        aclrtSynchronizeStream(stream);
-        aclrtFree(arena->buf);
-      }
+      const auto new_capacity = NextCapacity(arena->capacity, needed);
+      void* new_buf = nullptr;
 
-      if (needed > 0) {
-        auto ret = aclrtMalloc(&arena->buf, needed, ACL_MEM_MALLOC_NORMAL_ONLY);
+      if (new_capacity > 0) {
+        auto ret =
+            aclrtMalloc(&new_buf, new_capacity, ACL_MEM_MALLOC_NORMAL_ONLY);
         assert(ret == ACL_SUCCESS && "`WorkspacePool`: `aclrtMalloc` failed");
       }
 
-      arena->capacity = needed;
+      // CANN RI graphs capture the raw workspace address. A graph may outlive
+      // a later arena growth, so freeing the old allocation here would leave
+      // the captured graph with a dangling pointer. Keep old generations alive
+      // until the process-level pool is destroyed.
+      if (arena->buf != nullptr) {
+        retained_arenas_.push_back(*arena);
+      }
+
+      arena->buf = new_buf;
+      arena->capacity = new_capacity;
     }
 
     // Insert into the thread-local cache (evict oldest).
@@ -98,6 +109,18 @@ class WorkspacePool {
   void set_capture_mode(bool capturing) { capturing_ = capturing; }
 
   ~WorkspacePool() {
+    for (auto& arena : retained_arenas_) {
+      int32_t dev_id = -1;
+      if (aclrtGetDevice(&dev_id) == ACL_SUCCESS) {
+        aclrtFree(arena.buf);
+      } else {
+        fprintf(stderr,
+                "[InfiniOps] `WorkspacePool`: CANN runtime already "
+                "finalized, skipping retained `aclrtFree` (%" PRIu64
+                " bytes leaked).\n",
+                arena.capacity);
+      }
+    }
     for (auto& [key, arena] : arenas_) {
       if (arena && arena->capacity > 0) {
         // The CANN runtime may already be torn down when this static
@@ -119,6 +142,19 @@ class WorkspacePool {
   }
 
  private:
+  static uint64_t NextCapacity(uint64_t current, uint64_t needed) {
+    if (current == 0) {
+      return needed;
+    }
+
+    const auto growth = current / 2;
+    if (current > std::numeric_limits<uint64_t>::max() - growth) {
+      return needed;
+    }
+
+    return std::max(needed, current + growth);
+  }
+
   struct SlotKey {
     aclrtStream stream;
     std::string slot;
@@ -139,6 +175,8 @@ class WorkspacePool {
 
   std::unordered_map<SlotKey, std::unique_ptr<WorkspaceArena>, SlotKeyHash>
       arenas_;
+
+  std::vector<WorkspaceArena> retained_arenas_;
 
   std::mutex mutex_;
 
