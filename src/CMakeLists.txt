@@ -569,6 +569,11 @@ if(WITH_ASCEND)
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
         # them via the generated launch functions.
         target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
+        target_include_directories(infiniops PRIVATE
+            "${_custom_build_dir}/include/no_workspace_kernel")
+        target_link_libraries(infiniops PRIVATE
+            -Wl,--whole-archive $<TARGET_FILE:no_workspace_kernel> -Wl,--no-whole-archive)
+        add_dependencies(infiniops no_workspace_kernel_build)
     endif()
 endif()
 
@@ -1554,6 +1559,8 @@ if(GENERATE_PYTHON_BINDINGS)
     # otherwise non-Ascend builds error out with "No target
     # no_workspace_kernel".
     if(WITH_ASCEND AND BUILD_ASCEND_CUSTOM)
+        target_include_directories(ops PRIVATE
+            "${_custom_build_dir}/include/no_workspace_kernel")
         target_link_libraries(ops PRIVATE
             -Wl,--whole-archive $<TARGET_FILE:no_workspace_kernel> -Wl,--no-whole-archive)
         # `ops` link step must wait for `build.sh` to produce the `.a`.
