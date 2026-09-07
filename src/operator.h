@@ -86,9 +86,6 @@ bool ListContains(ValueType value, List<values...>) {
 }
 
 inline void SyncDevice(Device::Type dev_type) {
-  if (!ListContains(dev_type, ActiveDevices<void>{})) {
-    return;
-  }
   DispatchFunc<ActiveDevices<void>>(
       dev_type,
       [](auto device_tag) {
