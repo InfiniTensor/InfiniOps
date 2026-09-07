@@ -53,8 +53,8 @@ def test_flash_attn_varlen_func(
     rtol,
     atol,
 ):
-    if device not in ("cuda", "musa"):
-        pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
+    if device not in ("cuda", "musa", "mlu"):
+        pytest.skip("FlashAttention requires the NVIDIA, Moore, or Cambricon backend")
     if device == "musa" and window_size != (-1, -1):
         pytest.skip("TorchMusa FlashAttention does not support local windows")
     if device == "musa" and not paged and causal and q_lens != k_lens:
@@ -157,38 +157,57 @@ def test_flash_attn_varlen_func(
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
 
     if return_attn_probs:
-        reference_window_size_right = None
-        if device == "cuda" and causal:
-            reference_window_size_right = 0
-        elif device == "cuda" and window_size[1] >= 0:
-            reference_window_size_right = window_size[1]
+        if device == "mlu":
+            expected_softmax_lse = _reference_varlen_softmax_lse(
+                q,
+                k,
+                q_lens,
+                k_lens,
+                scale,
+                causal,
+                window_size,
+                alibi_slopes,
+            )
+        else:
+            reference_window_size_right = None
+            if device == "cuda" and causal:
+                reference_window_size_right = 0
+            elif device == "cuda" and window_size[1] >= 0:
+                reference_window_size_right = window_size[1]
 
-        expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
-            q,
-            k,
-            v,
-            cu_seqlens_q,
-            cu_seqlens_k,
-            max(q_lens),
-            max(k_lens),
-            0.0,
-            causal,
-            False,
-            scale=scale,
-            window_size_left=None if window_size[0] < 0 else window_size[0],
-            window_size_right=reference_window_size_right,
-        )
-        expected_softmax_lse = _pack_varlen_softmax_lse(
-            expected_auxiliary[1],
-            q_lens,
-        )
+            expected_auxiliary = torch.ops.aten._flash_attention_forward.default(
+                q,
+                k,
+                v,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                max(q_lens),
+                max(k_lens),
+                0.0,
+                causal,
+                False,
+                scale=scale,
+                window_size_left=None if window_size[0] < 0 else window_size[0],
+                window_size_right=reference_window_size_right,
+            )
+            expected_softmax_lse = _pack_varlen_softmax_lse(
+                expected_auxiliary[1],
+                q_lens,
+            )
         torch.testing.assert_close(softmax_lse, expected_softmax_lse)
-        torch.testing.assert_close(s_dmask, expected_auxiliary[4])
+        if device == "cuda":
+            torch.testing.assert_close(s_dmask, expected_auxiliary[4])
 
 
 def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
-    if device != "cuda":
-        pytest.skip("non-default CUDA streams require the NVIDIA backend")
+    if device == "cuda":
+        accelerator = torch.cuda
+        stream_attribute = "cuda_stream"
+    elif device == "mlu":
+        accelerator = torch.mlu
+        stream_attribute = "mlu_stream"
+    else:
+        pytest.skip("stream coverage requires an accelerator backend")
 
     dtype = torch.float16
     q_lens = (3, 5)
@@ -199,8 +218,8 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
     cu_seqlens_q = _cumulative_lengths(q_lens, device)
     cu_seqlens_k = _cumulative_lengths(k_lens, device)
     out = torch.empty_like(q)
-    stream = torch.cuda.Stream()
-    stream.wait_stream(torch.cuda.current_stream())
+    stream = accelerator.Stream()
+    stream.wait_stream(accelerator.current_stream())
 
     infini.ops.flash_attn_varlen_func(
         q,
@@ -222,7 +241,7 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
         out,
         None,
         None,
-        stream=stream.cuda_stream,
+        stream=getattr(stream, stream_attribute),
         implementation_index=implementation_index,
     )
 
@@ -283,8 +302,8 @@ def test_flash_attn_varlen_func_default_stream(device, implementation_index):
 
 
 def test_flash_attn_varlen_func_defaults(device, implementation_index):
-    if device not in ("cuda", "musa"):
-        pytest.skip("FlashAttention requires the NVIDIA or Moore backend")
+    if device not in ("cuda", "musa", "mlu"):
+        pytest.skip("FlashAttention requires the NVIDIA, Moore, or Cambricon backend")
 
     q = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
     k = torch.randn((5, 4, 64), dtype=torch.float16, device=device)
@@ -627,6 +646,49 @@ def _reference_varlen_attention(
         k_offset += k_len
 
     return torch.cat(outputs)
+
+
+def _reference_varlen_softmax_lse(
+    q,
+    k,
+    q_lens,
+    k_lens,
+    scale,
+    causal,
+    window_size,
+    alibi_slopes=None,
+):
+    outputs = []
+    q_offset = 0
+    k_offset = 0
+
+    for batch_index, (q_len, k_len) in enumerate(zip(q_lens, k_lens)):
+        q_seq = q[q_offset : q_offset + q_len].transpose(0, 1)
+        k_seq = k[k_offset : k_offset + k_len].transpose(0, 1)
+        groups = q_seq.size(0) // k_seq.size(0)
+        k_seq = k_seq.repeat_interleave(groups, dim=0)
+        scale_factor = scale if scale is not None else 1.0 / math.sqrt(q.size(-1))
+        scores = (
+            torch.matmul(q_seq.float(), k_seq.float().transpose(-2, -1)) * scale_factor
+        )
+        if alibi_slopes is not None:
+            slopes = (
+                alibi_slopes if alibi_slopes.ndim == 1 else alibi_slopes[batch_index]
+            )
+            query_positions = torch.arange(q_len, device=q.device).unsqueeze(1)
+            key_positions = torch.arange(k_len, device=q.device).unsqueeze(0)
+            distance = (query_positions + k_len - q_len - key_positions).abs()
+            scores += -slopes[:, None, None] * distance
+
+        mask = _attention_mask(q_len, k_len, causal, window_size, q.device)
+        if mask is not None:
+            scores.masked_fill_(~mask.unsqueeze(0), -math.inf)
+        softmax_lse = torch.logsumexp(scores, dim=-1)
+        outputs.append(torch.where(torch.isneginf(softmax_lse), math.inf, softmax_lse))
+        q_offset += q_len
+        k_offset += k_len
+
+    return torch.cat(outputs, dim=1)
 
 
 def _attention_mask(q_len, k_len, causal, window_size, device):
