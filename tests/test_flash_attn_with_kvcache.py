@@ -18,6 +18,169 @@ def _get_flash_attn():
     return pytest.importorskip("flash_attn")
 
 
+def _reference_decode(q, k_cache, v_cache, cache_seqlens, block_table=None, scale=None):
+    scale = q.size(-1) ** -0.5 if scale is None else scale
+    group_size = q.size(2) // k_cache.size(2)
+    outputs = []
+
+    for batch, length in enumerate(cache_seqlens):
+        if block_table is None:
+            key = k_cache[batch, :length]
+            value = v_cache[batch, :length]
+        else:
+            blocks = block_table[batch].cpu().long()
+            key = k_cache[blocks].flatten(0, 1)[:length]
+            value = v_cache[blocks].flatten(0, 1)[:length]
+
+        key = key.repeat_interleave(group_size, dim=1)
+        value = value.repeat_interleave(group_size, dim=1)
+        scores = torch.einsum("qhd,khd->hqk", q[batch].float(), key.float())
+        probs = torch.softmax(scores * scale, dim=-1)
+        outputs.append(torch.einsum("hqk,khd->qhd", probs, value.float()))
+
+    return torch.stack(outputs).to(q.dtype)
+
+
+@pytest.mark.parametrize("cache_seqlens_kind", ("tensor", "scalar"))
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float16, 2e-3, 2e-3),
+        (torch.bfloat16, 2e-2, 2e-2),
+    ),
+)
+def test_flash_attn_with_kvcache_ascend_dense(
+    cache_seqlens_kind, dtype, device, implementation_index, rtol, atol
+):
+    if device != "npu":
+        pytest.skip("this test covers the Ascend provider")
+
+    batch_size, cache_size = 2, 16
+    num_heads, num_kv_heads, head_size = 4, 2, 64
+    q = torch.randn((batch_size, 1, num_heads, head_size), dtype=dtype, device=device)
+    k_cache = torch.randn(
+        (batch_size, cache_size, num_kv_heads, head_size),
+        dtype=dtype,
+        device=device,
+    )
+    v_cache = torch.randn_like(k_cache)
+    lengths = (5, 13) if cache_seqlens_kind == "tensor" else (5, 5)
+    cache_seqlens = (
+        torch.tensor(lengths, dtype=torch.int32, device=device)
+        if cache_seqlens_kind == "tensor"
+        else lengths[0]
+    )
+    expected = _reference_decode(q, k_cache, v_cache, lengths, scale=0.125)
+    actual = torch.empty_like(q)
+
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        None,
+        None,
+        None,
+        None,
+        cache_seqlens,
+        None,
+        None,
+        None,
+        None,
+        0.125,
+        True,
+        (-1, -1),
+        0.0,
+        True,
+        0,
+        False,
+        actual,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+
+
+def test_flash_attn_with_kvcache_ascend_paged(device, implementation_index):
+    if device != "npu":
+        pytest.skip("this test covers the Ascend provider")
+
+    batch_size, page_size = 2, 256
+    num_heads, num_kv_heads, head_size = 4, 2, 64
+    q = torch.randn(
+        (batch_size, 1, num_heads, head_size),
+        dtype=torch.float16,
+        device=device,
+    )
+    k_cache = torch.randn(
+        (4, page_size, num_kv_heads, head_size),
+        dtype=torch.float16,
+        device=device,
+    )
+    v_cache = torch.randn_like(k_cache)
+    lengths = (130, 300)
+    cache_seqlens = torch.tensor(lengths, dtype=torch.int32, device=device)
+    block_table = torch.tensor(((0, 1), (2, 3)), dtype=torch.int32, device=device)
+    expected = _reference_decode(q, k_cache, v_cache, lengths, block_table=block_table)
+    actual = torch.empty_like(q)
+
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        None,
+        None,
+        None,
+        None,
+        cache_seqlens,
+        None,
+        None,
+        block_table,
+        None,
+        None,
+        True,
+        (-1, -1),
+        0.0,
+        True,
+        0,
+        False,
+        actual,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+
+def test_flash_attn_with_kvcache_ascend_non_default_stream(
+    device, implementation_index
+):
+    if device != "npu":
+        pytest.skip("this test covers the Ascend provider")
+
+    q = torch.randn((2, 1, 4, 64), dtype=torch.float16, device=device)
+    k_cache = torch.randn((2, 8, 2, 64), dtype=torch.float16, device=device)
+    v_cache = torch.randn_like(k_cache)
+    expected = _reference_decode(q, k_cache, v_cache, (8, 8))
+    actual = torch.empty_like(q)
+    stream = torch.npu.Stream()
+    stream.wait_stream(torch.npu.current_stream())
+
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        actual,
+        stream=stream.npu_stream,
+        implementation_index=implementation_index,
+    )
+
+    stream.synchronize()
+    torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+
 @pytest.mark.parametrize("cache_seqlens_kind", ("tensor", "scalar"))
 @pytest.mark.parametrize("append_kv", (False, True))
 @pytest.mark.parametrize(
