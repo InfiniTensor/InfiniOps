@@ -17,7 +17,7 @@ namespace infini::ops {
 using PagedAttentionPrefillInfinilmIndexTypes =
     List<DataType::kInt32, DataType::kInt64, DataType::kUInt32>;
 
-template <typename Backend>
+template <typename Backend, bool kCumulativeSequenceLengths = false>
 class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
  public:
   using PagedAttentionPrefillInfinilm::PagedAttentionPrefillInfinilm;
@@ -52,6 +52,16 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
           using TIndex =
               TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
           constexpr int kHeadSize = ListGet<2>(list_tag);
+          const auto* sequence_lengths =
+              reinterpret_cast<const TIndex*>(seq_lens.data());
+          const auto total_kv_lengths = [&]() {
+            if constexpr (kCumulativeSequenceLengths) {
+              return op::paged_attention_prefill::cuda::
+                  CumulativeSequenceLengths<TIndex>{sequence_lengths};
+            } else {
+              return sequence_lengths;
+            }
+          }();
 
           if constexpr (kHeadSize == 128) {
             if (block_size_ == 256) {
@@ -68,7 +78,7 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
                       reinterpret_cast<const TData*>(k_cache.data()),
                       reinterpret_cast<const TData*>(v_cache.data()),
                       reinterpret_cast<const TIndex*>(block_tables.data()),
-                      reinterpret_cast<const TIndex*>(seq_lens.data()),
+                      total_kv_lengths,
                       reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
                       alibi_slopes.has_value()
                           ? reinterpret_cast<const float*>(alibi_slopes->data())
@@ -91,7 +101,7 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
                       reinterpret_cast<const TData*>(k_cache.data()),
                       reinterpret_cast<const TData*>(v_cache.data()),
                       reinterpret_cast<const TIndex*>(block_tables.data()),
-                      reinterpret_cast<const TIndex*>(seq_lens.data()),
+                      total_kv_lengths,
                       reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
                       alibi_slopes.has_value()
                           ? reinterpret_cast<const float*>(alibi_slopes->data())
@@ -116,7 +126,7 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
                     reinterpret_cast<const TData*>(k_cache.data()),
                     reinterpret_cast<const TData*>(v_cache.data()),
                     reinterpret_cast<const TIndex*>(block_tables.data()),
-                    reinterpret_cast<const TIndex*>(seq_lens.data()),
+                    total_kv_lengths,
                     reinterpret_cast<const TIndex*>(cum_seq_lens_q.data()),
                     alibi_slopes.has_value()
                         ? reinterpret_cast<const float*>(alibi_slopes->data())
