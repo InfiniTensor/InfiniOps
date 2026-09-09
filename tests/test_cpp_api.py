@@ -174,6 +174,30 @@ def test_cpp_base_headers_compile_with_metadata_views(tmp_path, header):
     )
 
 
+def test_ascend_workspace_pool_retains_allocations_until_destruction(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    fake_acl_dir = tmp_path / "include" / "acl"
+    fake_acl_dir.mkdir(parents=True)
+    (fake_acl_dir / "acl.h").write_text(_FAKE_ACL_HEADER)
+    source = tmp_path / "workspace_pool_retention.cc"
+    binary = tmp_path / "workspace_pool_retention"
+    source.write_text(_ASCEND_WORKSPACE_POOL_RETENTION_SOURCE)
+
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-Werror",
+            f"-I{tmp_path / 'include'}",
+            f"-I{repo_root}",
+            str(source),
+            "-o",
+            str(binary),
+        ]
+    )
+    _run([str(binary)])
+
+
 def _install_prefix():
     prefix = os.environ.get("INFINI_OPS_INSTALL_PREFIX")
 
@@ -226,6 +250,141 @@ _CMAKE_PACKAGE_SMOKE_PROJECT = textwrap.dedent(
     target_link_libraries(add_smoke PRIVATE InfiniOps::infiniops)
     """
 )
+
+
+_FAKE_ACL_HEADER = textwrap.dedent(
+    r"""
+    #ifndef TEST_FAKE_ACL_ACL_H_
+    #define TEST_FAKE_ACL_ACL_H_
+
+    #include <cstddef>
+    #include <cstdint>
+
+    using aclError = int;
+    using aclrtStream = void*;
+
+    enum aclrtMemMallocPolicy {
+      ACL_MEM_MALLOC_NORMAL_ONLY = 0,
+    };
+
+    constexpr aclError ACL_SUCCESS = 0;
+
+    extern "C" aclError aclrtMalloc(void** dev_ptr, std::size_t size,
+                                     aclrtMemMallocPolicy policy);
+    extern "C" aclError aclrtFree(void* dev_ptr);
+    extern "C" aclError aclrtGetDevice(std::int32_t* device_id);
+
+    #endif
+    """
+).lstrip()
+
+
+_ASCEND_WORKSPACE_POOL_RETENTION_SOURCE = textwrap.dedent(
+    r"""
+    #include <algorithm>
+    #include <cstddef>
+    #include <cstdint>
+    #include <cstdlib>
+    #include <limits>
+    #include <set>
+    #include <vector>
+
+    #include "src/native/ascend/workspace_pool_.h"
+
+    namespace {
+
+    std::vector<void*> allocations;
+    std::vector<void*> frees;
+
+    }  // namespace
+
+    extern "C" aclError aclrtMalloc(void** dev_ptr, std::size_t,
+                                     aclrtMemMallocPolicy) {
+      *dev_ptr = std::malloc(1);
+      if (*dev_ptr == nullptr) {
+        return 1;
+      }
+      allocations.push_back(*dev_ptr);
+      return ACL_SUCCESS;
+    }
+
+    extern "C" aclError aclrtFree(void* dev_ptr) {
+      frees.push_back(dev_ptr);
+      std::free(dev_ptr);
+      return ACL_SUCCESS;
+    }
+
+    extern "C" aclError aclrtGetDevice(std::int32_t* device_id) {
+      *device_id = 0;
+      return ACL_SUCCESS;
+    }
+
+    int main() {
+      using infini::ops::ascend::WorkspacePool;
+      const auto stream = reinterpret_cast<aclrtStream>(0x1);
+      const auto other_stream = reinterpret_cast<aclrtStream>(0x2);
+
+      {
+        WorkspacePool pool;
+        auto& initial = pool.Ensure(stream, 64);
+        const auto initial_buf = initial.buf;
+        if (initial.capacity != 64 || allocations.size() != 1 ||
+            !frees.empty()) {
+          return 1;
+        }
+
+        auto& reused = pool.Ensure(stream, 32);
+        if (reused.buf != initial_buf || allocations.size() != 1 ||
+            !frees.empty()) {
+          return 2;
+        }
+
+        auto& grown = pool.Ensure(stream, 80);
+        const auto grown_buf = grown.buf;
+        if (grown_buf == initial_buf || grown.capacity != 96 ||
+            allocations.size() != 2 || !frees.empty()) {
+          return 3;
+        }
+
+        auto& grown_again = pool.Ensure(stream, 97);
+        if (grown_again.buf == grown_buf || grown_again.capacity != 144 ||
+            allocations.size() != 3 || !frees.empty()) {
+          return 4;
+        }
+
+        auto& temp = pool.Ensure(stream, 17, "temp");
+        auto& other = pool.Ensure(other_stream, 11);
+        if (temp.capacity != 17 || other.capacity != 11 ||
+            allocations.size() != 5 || !frees.empty()) {
+          return 5;
+        }
+
+        const auto near_max = std::numeric_limits<std::uint64_t>::max() - 8;
+        auto& overflow = pool.Ensure(stream, near_max, "overflow");
+        auto& overflow_grown = pool.Ensure(stream, near_max + 4, "overflow");
+        if (overflow.capacity != near_max + 4 ||
+            overflow_grown.capacity != near_max + 4 ||
+            allocations.size() != 7 || !frees.empty()) {
+          return 6;
+        }
+      }
+
+      if (frees.size() != allocations.size()) {
+        return 7;
+      }
+
+      const std::set<void*> allocated_set(allocations.begin(),
+                                           allocations.end());
+      const std::set<void*> freed_set(frees.begin(), frees.end());
+      if (allocated_set.size() != allocations.size() ||
+          freed_set != allocated_set) {
+        return 8;
+      }
+
+      return 0;
+    }
+    """
+).lstrip()
 
 
 _ADD_SMOKE_SOURCE = textwrap.dedent(
