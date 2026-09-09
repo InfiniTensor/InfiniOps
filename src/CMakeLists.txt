@@ -1129,6 +1129,14 @@ if(TORCH_SOURCES)
         target_compile_options(infini_ops_torch_objs PRIVATE
             $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS>
             -O0)
+        if(WITH_HYGON)
+            # DTK's CUDA compatibility headers and PyTorch HIP headers share
+            # vector types. Include HIP first and select their AMD bridge.
+            target_compile_definitions(infini_ops_torch_objs PRIVATE
+                __HIP_PLATFORM_AMD__ __CUDA_HIP_PLATFORM_AMD__)
+            target_compile_options(infini_ops_torch_objs PRIVATE
+                -include hip/hip_runtime.h)
+        endif()
         if(CMAKE_GENERATOR MATCHES "Ninja")
             set_target_properties(infini_ops_torch_objs
                 PROPERTIES JOB_POOL_COMPILE torch_compile)
