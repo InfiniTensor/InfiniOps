@@ -843,6 +843,28 @@ if(_infini_ops_linked_uses_torch)
     list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_TORCH_SOURCES})
 endif()
 
+if(WITH_MOORE AND WITH_LINKED)
+    set(_moore_mate_linked_ops
+        flash_attn_varlen_func
+        flash_attn_with_kvcache)
+    set(_moore_mate_linked_enabled FALSE)
+    foreach(_op IN LISTS _moore_mate_linked_ops)
+        if(NOT _infini_ops_op_allowlist OR _op IN_LIST _infini_ops_op_allowlist)
+            list(APPEND TORCH_SOURCES
+                "${CMAKE_CURRENT_SOURCE_DIR}/linked/torch/moore/ops/${_op}/mate.cc")
+            set(_moore_mate_linked_enabled TRUE)
+        endif()
+    endforeach()
+
+    if(_moore_mate_linked_enabled)
+        find_package(Python COMPONENTS Interpreter Development REQUIRED)
+        find_library(TORCH_PYTHON_LIB torch_python
+            HINTS ${_torch_lib_dirs} REQUIRED)
+        list(APPEND TORCH_INCLUDE_DIRS ${Python_INCLUDE_DIRS})
+        list(APPEND TORCH_LIBRARIES ${TORCH_PYTHON_LIB} Python::Python)
+        set(_infini_ops_linked_uses_torch TRUE)
+    endif()
+endif()
 
 if(_infini_ops_linked_uses_tvm_ffi)
     target_sources(infiniops PRIVATE ${INFINI_OPS_LINKED_TVM_FFI_SOURCES})
