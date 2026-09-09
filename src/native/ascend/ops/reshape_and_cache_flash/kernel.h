@@ -17,6 +17,10 @@
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+#include "aclrtlaunch_reshape_and_cache_flash_strided.h"
+#endif
+
 namespace infini::ops {
 
 template <>
@@ -70,7 +74,12 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     if (use_fast_path_) {
       RunFastPath(key, value, slot_mapping, key_cache, value_cache, stream);
     } else {
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+      RunStridedKernel(key, value, slot_mapping, key_cache, value_cache,
+                       stream);
+#else
       RunFallback(key, value, slot_mapping, key_cache, value_cache, stream);
+#endif
     }
   }
 
@@ -106,6 +115,32 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     assert(ret == ACL_SUCCESS &&
            "Ascend `ReshapeAndCacheFlash` execution failed");
   }
+
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+  void RunStridedKernel(const Tensor key, const Tensor value,
+                        const Tensor slot_mapping, Tensor key_cache,
+                        Tensor value_cache, aclrtStream stream) const {
+    auto ret = aclrtlaunch_reshape_and_cache_flash_strided(
+        1, stream, const_cast<void*>(key.data()),
+        const_cast<void*>(value.data()), const_cast<void*>(slot_mapping.data()),
+        key_cache.data(), value_cache.data(), static_cast<int64_t>(num_tokens_),
+        static_cast<int64_t>(num_heads_), static_cast<int64_t>(head_size_),
+        static_cast<int64_t>(block_size_), static_cast<int64_t>(num_blocks_),
+        static_cast<int64_t>(key_token_stride_),
+        static_cast<int64_t>(key_head_stride_),
+        static_cast<int64_t>(value_token_stride_),
+        static_cast<int64_t>(value_head_stride_),
+        static_cast<int64_t>(key_cache_block_stride_),
+        static_cast<int64_t>(key_cache_page_stride_),
+        static_cast<int64_t>(key_cache_head_stride_),
+        static_cast<int64_t>(value_cache_block_stride_),
+        static_cast<int64_t>(value_cache_page_stride_),
+        static_cast<int64_t>(value_cache_head_stride_),
+        static_cast<int64_t>(element_size_));
+    assert(ret == ACL_SUCCESS &&
+           "Ascend `ReshapeAndCacheFlash` strided execution failed");
+  }
+#endif
 
   void RunFallback(const Tensor key, const Tensor value,
                    const Tensor slot_mapping, Tensor key_cache,
