@@ -424,6 +424,10 @@ if(WITH_CAMBRICON)
         target_compile_options(infiniops PUBLIC 
             "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-idirafter /usr/local/neuware/lib/clang/11.1.0/include>"
         )
+        set(_cambricon_host_bang_compat_option
+            "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/native/cambricon/host_bang_compat.h>")
+        target_compile_options(infiniops PRIVATE
+            "${_cambricon_host_bang_compat_option}")
     endif()
 
     list(APPEND DEVICE_LIST "cambricon")
@@ -1506,6 +1510,11 @@ if(GENERATE_PYTHON_BINDINGS)
     target_compile_options(ops PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX,CUDA>:-Wno-deprecated-declarations>"
     )
+
+    if(WITH_CAMBRICON AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(ops PRIVATE
+            "${_cambricon_host_bang_compat_option}")
+    endif()
 
     if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
         target_compile_definitions(ops PRIVATE
