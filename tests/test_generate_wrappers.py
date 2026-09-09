@@ -1133,3 +1133,19 @@ def test_shared_triton_config_parser_has_one_explicit_schema():
 
     assert "namespace infini::ops::triton::jit" in parser_header
     assert "namespace detail" in parser_header
+
+
+def test_cmake_configures_cambricon_half_compatibility():
+    root = pathlib.Path(__file__).parents[1]
+    source_cmake = (root / "src" / "CMakeLists.txt").read_text(encoding="utf-8")
+    compatibility_header = (
+        root / "src" / "native" / "cambricon" / "host_bang_compat.h"
+    ).read_text(encoding="utf-8")
+
+    assert "native/cambricon/host_bang_compat.h" in source_cmake
+    assert "target_compile_options(infiniops PRIVATE" in source_cmake
+    assert "target_compile_options(ops PRIVATE" in source_cmake
+    assert source_cmake.count("_cambricon_host_bang_compat_option}") == 2
+    assert "#include <bang_fp16.h>" in compatibility_header
+    assert "#include <bang_bf16.h>" in compatibility_header
+    assert "#define __mlu_host__ inline" in compatibility_header
