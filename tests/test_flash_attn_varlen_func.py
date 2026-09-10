@@ -210,6 +210,84 @@ def test_flash_attn_varlen_func(
             torch.testing.assert_close(s_dmask, expected_auxiliary[4])
 
 
+@pytest.mark.parametrize("causal", (False, True))
+@pytest.mark.parametrize(
+    "dtype, rtol, atol",
+    (
+        (torch.float16, 2e-3, 2e-3),
+        (torch.bfloat16, 2e-2, 2e-2),
+    ),
+)
+def test_ascend_paged_prefill_follows_nontrivial_block_table(
+    device,
+    implementation_index,
+    causal,
+    dtype,
+    rtol,
+    atol,
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("coverage requires the native Ascend provider")
+
+    q_lens = (128, 256)
+    k_lens = q_lens
+    num_heads = 8
+    num_kv_heads = 2
+    head_dim = 64
+    page_size = 128
+    block_rows = ((2, 0), (1, 3))
+    num_blocks = 4
+
+    q = torch.randn((sum(q_lens), num_heads, head_dim), dtype=dtype, device=device)
+    k = torch.randn(
+        (num_blocks, page_size, num_kv_heads, head_dim),
+        dtype=dtype,
+        device=device,
+    )
+    v = torch.randn_like(k)
+    block_table = torch.tensor(block_rows, dtype=torch.int32, device=device)
+    cu_seqlens_q = _cumulative_lengths(q_lens, device)
+    cu_seqlens_k = _cumulative_lengths(k_lens, device)
+    out = torch.empty_like(q)
+
+    infini.ops.flash_attn_varlen_func(
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        None,
+        block_table,
+        max(q_lens),
+        max(k_lens),
+        0.0,
+        None,
+        causal,
+        (-1, -1),
+        0.0,
+        False,
+        False,
+        out,
+        None,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    expected = _reference_varlen_attention(
+        q,
+        k,
+        v,
+        q_lens,
+        k_lens,
+        None,
+        causal,
+        (-1, -1),
+        block_table,
+    )
+    torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
+
+
 def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
     if device == "cuda":
         accelerator = torch.cuda

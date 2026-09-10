@@ -72,6 +72,30 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
 
   using FlashAttnVarlenFunc::operator();
 
+  // CANN paged attention consumes a BnBsH cache. InfiniOps exposes the same
+  // storage as BnBsND, so flatten the head dimensions in the ACL descriptor.
+  static aclTensor* BuildPagedCacheAclTensor(const Tensor& tensor) {
+    const std::vector<int64_t> shape{
+        static_cast<int64_t>(tensor.size(0)),
+        static_cast<int64_t>(tensor.size(1)),
+        static_cast<int64_t>(tensor.size(2) * tensor.size(3)),
+    };
+    std::vector<int64_t> strides(shape.size());
+    int64_t stride = 1;
+    for (int64_t index = static_cast<int64_t>(shape.size()) - 1; index >= 0;
+         --index) {
+      strides[index] = stride;
+      stride *= shape[index];
+    }
+    const std::vector<int64_t> storage_shape{stride};
+    return aclCreateTensor(shape.data(), static_cast<int64_t>(shape.size()),
+                           ascend::ToAclDtype(tensor.dtype()), strides.data(),
+                           /*storageOffset=*/0, ACL_FORMAT_ND,
+                           storage_shape.data(),
+                           static_cast<int64_t>(storage_shape.size()),
+                           const_cast<void*>(tensor.data()));
+  }
+
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
                   const std::optional<Tensor> alibi_slopes,
@@ -86,15 +110,18 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     ValidateSupportedOptions(alibi_slopes, return_attn_probs, softmax_lse,
                              s_dmask);
     ValidateTensors(q, k, v, block_table, out);
+    const bool paged = block_table.has_value();
 
     auto stream = static_cast<aclrtStream>(stream_);
     auto actual_seq_lengths =
-        MakeCumulativeLengths(cu_seqlens_q, q_lengths_i64_, stream);
+        MakeSequenceLengths(cu_seqlens_q, q_lengths_i64_, stream,
+                            /*cumulative=*/true);
     auto actual_seq_lengths_kv =
-        MakeCumulativeLengths(cu_seqlens_k, k_lengths_i64_, stream);
+        MakeSequenceLengths(cu_seqlens_k, k_lengths_i64_, stream,
+                            /*cumulative=*/!block_table.has_value());
     auto t_q = q_cache_.get(const_cast<void*>(q.data()));
-    auto t_k = ascend::BuildAclTensor(k);
-    auto t_v = ascend::BuildAclTensor(v);
+    auto t_k = paged ? BuildPagedCacheAclTensor(k) : ascend::BuildAclTensor(k);
+    auto t_v = paged ? BuildPagedCacheAclTensor(v) : ascend::BuildAclTensor(v);
     auto t_out = out_cache_.get(out.data());
     auto t_attention_mask =
         attention_mask_data_ ? attention_mask_cache_.get(attention_mask_data_)
@@ -121,7 +148,6 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
       if (next_tokens < 0) next_tokens = max_token_count;
     }
 
-    const bool paged = block_table.has_value();
     auto scale = softmax_scale.value_or(1.0 / std::sqrt(q.size(2)));
     const auto num_key_value_heads = paged ? k.size(2) : k.size(1);
     const auto block_size = paged ? k.size(1) : 0;
@@ -242,9 +268,11 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
         {mask_size, mask_size}, ACL_BOOL, attention_mask_data_);
   }
 
-  aclIntArray* MakeCumulativeLengths(const Tensor cu_seqlens,
-                                     std::vector<int64_t>& lengths,
-                                     aclrtStream stream) const {
+  // Dense TND K/V uses cumulative endpoints, while paged K/V uses per-batch
+  // lengths. Query is always dense TND and therefore cumulative.
+  aclIntArray* MakeSequenceLengths(const Tensor cu_seqlens,
+                                   std::vector<int64_t>& lengths,
+                                   aclrtStream stream, bool cumulative) const {
     const auto bytes = cu_i32_host_.size() * sizeof(cu_i32_host_[0]);
     auto ret = aclrtMemcpyAsync(cu_i32_host_.data(), bytes, cu_seqlens.data(),
                                 bytes, ACL_MEMCPY_DEVICE_TO_HOST, stream);
@@ -254,9 +282,12 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     assert(ret == ACL_SUCCESS &&
            "Ascend `FlashAttnVarlenFunc` failed to synchronize lengths");
 
-    std::transform(cu_i32_host_.begin() + 1, cu_i32_host_.end(),
-                   lengths.begin(),
-                   [](int32_t length) { return static_cast<int64_t>(length); });
+    std::transform(
+        cu_i32_host_.begin() + 1, cu_i32_host_.end(), cu_i32_host_.begin(),
+        lengths.begin(), [cumulative](int32_t current, int32_t previous) {
+          return static_cast<int64_t>(cumulative ? current
+                                                 : current - previous);
+        });
     return aclCreateIntArray(lengths.data(), lengths.size());
   }
 
