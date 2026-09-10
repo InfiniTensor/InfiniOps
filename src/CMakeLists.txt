@@ -849,9 +849,11 @@ if(WITH_MOORE AND WITH_LINKED)
         flash_attn_with_kvcache)
     set(_moore_mate_linked_enabled FALSE)
     foreach(_op IN LISTS _moore_mate_linked_ops)
-        if(NOT _infini_ops_op_allowlist OR _op IN_LIST _infini_ops_op_allowlist)
-            list(APPEND TORCH_SOURCES
-                "${CMAKE_CURRENT_SOURCE_DIR}/linked/torch/moore/ops/${_op}/mate.cc")
+        set(_moore_mate_source
+            "${CMAKE_CURRENT_SOURCE_DIR}/linked/tvm_ffi/moore/ops/${_op}/mate.cc")
+        list(FIND INFINI_OPS_LINKED_SOURCES "${_moore_mate_source}"
+            _moore_mate_source_index)
+        if(NOT _moore_mate_source_index EQUAL -1)
             set(_moore_mate_linked_enabled TRUE)
         endif()
     endforeach()
@@ -861,7 +863,8 @@ if(WITH_MOORE AND WITH_LINKED)
         find_library(TORCH_PYTHON_LIB torch_python
             HINTS ${_torch_lib_dirs} REQUIRED)
         list(APPEND TORCH_INCLUDE_DIRS ${Python_INCLUDE_DIRS})
-        list(APPEND TORCH_LIBRARIES ${TORCH_PYTHON_LIB} Python::Python)
+        list(APPEND TORCH_LIBRARIES
+            ${TORCH_PYTHON_LIB} Python::Python ${CMAKE_DL_LIBS})
         set(_infini_ops_linked_uses_torch TRUE)
     endif()
 endif()

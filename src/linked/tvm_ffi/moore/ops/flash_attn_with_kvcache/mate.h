@@ -1,9 +1,13 @@
-#ifndef INFINI_OPS_LINKED_TORCH_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
-#define INFINI_OPS_LINKED_TORCH_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
+#ifndef INFINI_OPS_LINKED_TVM_FFI_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
+#define INFINI_OPS_LINKED_TVM_FFI_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
 
-#include <memory>
+#include <ATen/core/Tensor.h>
+
+#include <mutex>
+#include <optional>
 
 #include "base/flash_attn_with_kvcache.h"
+#include "linked/tvm_ffi/moore/mate.h"
 
 namespace infini::ops {
 
@@ -45,9 +49,28 @@ class Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>
                   std::optional<Tensor> softmax_lse) const override;
 
  private:
-  mutable std::unique_ptr<FlashAttnWithKvcache> delegate_;
+  void Run(const Tensor q, Tensor k_cache, Tensor v_cache,
+           const std::optional<Tensor> k, const std::optional<Tensor> v,
+           const std::optional<Tensor> rotary_cos,
+           const std::optional<Tensor> rotary_sin,
+           const std::optional<Tensor> cache_seqlens,
+           const std::optional<int64_t> scalar_cache_seqlens,
+           const std::optional<Tensor> cache_batch_idx,
+           const std::optional<Tensor> cache_leftpad,
+           const std::optional<Tensor> block_table,
+           const std::optional<Tensor> alibi_slopes,
+           const std::optional<double> softmax_scale, const bool causal,
+           const std::vector<int64_t> window_size, const double softcap,
+           const bool rotary_interleaved, const int64_t num_splits,
+           const bool return_softmax_lse, Tensor out,
+           std::optional<Tensor> softmax_lse) const;
+
+  mutable std::mutex runtime_mutex_;
+  mutable linked::tvm_ffi::moore::MateFmhaRuntime runtime_;
+  mutable std::optional<at::Tensor> scalar_cache_seqlens_;
+  mutable std::optional<at::Tensor> internal_lse_;
 };
 
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_LINKED_TORCH_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
+#endif  // INFINI_OPS_LINKED_TVM_FFI_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
