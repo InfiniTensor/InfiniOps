@@ -1039,7 +1039,7 @@ if(TORCH_SOURCES)
         endif()
 
         set(_torch_include_flags "")
-        foreach(_dir ${TORCH_INCLUDE_DIRS})
+        foreach(_dir ${TORCH_INCLUDE_DIRS} ${INFINI_OPS_LINKED_INCLUDE_DIRS})
             list(APPEND _torch_include_flags "-isystem" "${_dir}")
         endforeach()
 
