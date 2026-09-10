@@ -327,9 +327,13 @@ def test_topk_sigmoid_vllm_provider_empty_tokens():
 
 def _require_vllm_implementation():
     if not torch.cuda.is_available():
-        pytest.skip("`topk_sigmoid` vLLM provider requires the NVIDIA backend")
-    if _VLLM_IMPLEMENTATION_INDEX not in (
-        infini.ops.TopkSigmoid.active_implementation_indices("nvidia")
+        pytest.skip(
+            "`topk_sigmoid` vLLM provider requires a CUDA-compatible backend"
+        )
+    if not any(
+        _VLLM_IMPLEMENTATION_INDEX
+        in infini.ops.TopkSigmoid.active_implementation_indices(platform)
+        for platform in ("nvidia", "thead")
     ):
         pytest.skip("vLLM `topk_sigmoid` provider is not active")
 

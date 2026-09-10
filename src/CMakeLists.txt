@@ -749,10 +749,10 @@ if(WITH_LINKED)
         if(_linked_force_load EQUAL -1)
             set(_linked_library_link_items "-l:${_linked_library_name}")
         else()
+            # Keep the state and library in one item so CMake cannot
+            # de-duplicate or reorder the repeated linker state flags.
             set(_linked_library_link_items
-                "-Wl,--push-state,--no-as-needed"
-                "-l:${_linked_library_name}"
-                "-Wl,--pop-state")
+                "-Wl,--push-state,--no-as-needed,-l:${_linked_library_name},--pop-state")
         endif()
         add_library("${_linked_library_target}" INTERFACE IMPORTED)
         set_target_properties("${_linked_library_target}" PROPERTIES

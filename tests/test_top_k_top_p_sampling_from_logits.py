@@ -285,7 +285,9 @@ def test_flashinfer_sampling_rejects_noncontiguous_logits(device, implementation
     top_p = torch.ones(2, dtype=torch.float32)
     out = torch.empty(2, dtype=torch.int32, device=device)
 
-    with pytest.raises(ValueError, match="contiguous NVIDIA logits"):
+    with pytest.raises(
+        ValueError, match=r"contiguous (?:NVIDIA|Thead) logits"
+    ):
         _top_k_top_p_sampling_from_logits(
             logits,
             top_k,

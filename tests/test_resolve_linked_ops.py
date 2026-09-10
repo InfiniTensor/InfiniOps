@@ -1033,3 +1033,53 @@ def test_resolve_tvm_ffi_cuda_source_with_link_dependency(monkeypatch, tmp_path)
     assert "flashinfer.cu" not in torch_sources
     assert str(include_dir).replace("\\", "/") in include_dirs
     assert "libtvm_ffi.so" in force_load_libraries
+
+
+def test_locate_distribution_library_builds_python_jit_fallback(
+    monkeypatch, tmp_path
+):
+    module = _load_resolver_module()
+    distribution_root = tmp_path / "site-packages"
+    distribution_root.mkdir()
+    library_path = tmp_path / "cache" / "sampling.so"
+    library_path.parent.mkdir()
+    library_path.touch()
+
+    class FakeDistribution:
+        files = ()
+
+        def locate_file(self, path):
+            return distribution_root / path
+
+        def read_text(self, filename):
+            assert filename == "direct_url.json"
+            return None
+
+    calls = []
+
+    class FakeSpec:
+        def build(self, *, verbose):
+            calls.append(verbose)
+
+        def get_library_path(self):
+            return library_path
+
+    class FakeModule:
+        @staticmethod
+        def make_sampling():
+            return FakeSpec()
+
+    monkeypatch.setattr(module, "_load_distribution", lambda config: FakeDistribution())
+    monkeypatch.setattr(module.importlib, "import_module", lambda name: FakeModule)
+    config = module.LibraryConfig(
+        device="thead",
+        transport="tvm_ffi",
+        name="sampling",
+        path=tmp_path / "sampling.yaml",
+        python_distribution_package="flashinfer-python",
+        library_glob="flashinfer/data/aot/sampling/sampling.so",
+        python_jit_factory="fake.sampling:make_sampling",
+    )
+
+    assert module._locate_distribution_library(config) == library_path
+    assert calls == [False]

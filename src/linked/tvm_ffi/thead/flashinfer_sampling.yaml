@@ -1,0 +1,4 @@
+python_distribution_package: flashinfer-python
+python_distribution_version: ">=0.6.1,<0.7"
+library_glob: flashinfer/data/aot/sampling/sampling.so
+python_jit_factory: flashinfer.jit.sampling:gen_sampling_module

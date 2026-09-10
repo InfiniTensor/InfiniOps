@@ -1,6 +1,7 @@
 import argparse
 import dataclasses
 import fnmatch
+import importlib
 import importlib.metadata
 import json
 import os
@@ -25,6 +26,7 @@ _LIBRARY_KEYS = {
     "python_distribution_package",
     "python_distribution_version",
     "library_glob",
+    "python_jit_factory",
     "include_glob",
 }
 _BINDING_KEYS = {
@@ -74,6 +76,7 @@ class LibraryConfig:
     path: pathlib.Path
     python_distribution_package: str
     library_glob: str
+    python_jit_factory: str | None = None
     include_glob: str | None = None
     python_distribution_version: str | None = None
 
@@ -169,6 +172,11 @@ def _load_libraries(platform_dir, device, transport, selected_libraries=None):
                 data, "python_distribution_package", path
             ),
             library_glob=_require_relative_glob(data, "library_glob", path),
+            python_jit_factory=(
+                _require_string(data, "python_jit_factory", path)
+                if "python_jit_factory" in data
+                else None
+            ),
             python_distribution_version=(
                 _require_string(data, "python_distribution_version", path)
                 if "python_distribution_version" in data
@@ -387,6 +395,36 @@ def _load_distribution(config):
     return distribution
 
 
+def _locate_python_jit_library(config):
+    factory_path = config.python_jit_factory
+    if not re.fullmatch(
+        r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*", factory_path
+    ):
+        raise ResolutionError(
+            f"{config.path}: python_jit_factory must use `module:function` syntax"
+        )
+
+    module_name, factory_name = factory_path.split(":", maxsplit=1)
+    try:
+        factory = getattr(importlib.import_module(module_name), factory_name)
+        spec = factory()
+        spec.build(verbose=False)
+        candidate = pathlib.Path(spec.get_library_path()).resolve()
+    except Exception as error:
+        raise ResolutionError(
+            f"{config.path}: failed to build Python JIT library with "
+            f"{factory_path!r}: {error}"
+        ) from error
+
+    if not candidate.is_file():
+        raise ResolutionError(
+            f"{config.path}: Python JIT factory {factory_path!r} returned "
+            f"missing library {candidate}"
+        )
+
+    return candidate
+
+
 def _locate_distribution_library(config):
     distribution = _load_distribution(config)
 
@@ -417,6 +455,9 @@ def _locate_distribution_library(config):
                 matches.append(candidate)
 
     matches = sorted(set(matches))
+    if not matches and config.python_jit_factory is not None:
+        return _locate_python_jit_library(config)
+
     if len(matches) != 1:
         formatted = ", ".join(str(path) for path in matches) or "none"
         raise ResolutionError(
