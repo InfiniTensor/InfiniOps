@@ -24,6 +24,7 @@ if not hasattr(infini.ops, "FlashAttnVarlenFunc"):
         ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125, False, False),
         ((4, 3), (6, 2), 4, 2, False, (2, 1), None, False, False),
         ((4, 3), (6, 2), 4, 2, True, (2, 1), None, False, False),
+        ((2, 3), (130, 300), 4, 2, True, (-1, -1), None, True, False),
         ((2, 3), (130, 300), 4, 2, True, (-1, -1), None, True, True),
     ),
 )
@@ -56,10 +57,18 @@ def test_flash_attn_varlen_func(
         pytest.skip(
             "FlashAttention requires the NVIDIA, Moore, Cambricon, or Ascend backend"
         )
-    if device == "musa" and window_size != (-1, -1):
+    if device == "musa" and implementation_index == 8 and window_size != (-1, -1):
         pytest.skip("TorchMusa FlashAttention does not support local windows")
-    if device == "musa" and not paged and causal and q_lens != k_lens:
+    if (
+        device == "musa"
+        and implementation_index == 8
+        and not paged
+        and causal
+        and q_lens != k_lens
+    ):
         pytest.skip("TorchMusa causal FlashAttention requires matching Q/K lengths")
+    if device == "musa" and implementation_index == 16 and use_alibi:
+        pytest.skip("Mate does not support ALiBi")
 
     if (
         device == "cuda"
@@ -115,7 +124,11 @@ def test_flash_attn_varlen_func(
         else None
     )
     out = torch.empty_like(q)
-    return_attn_probs = device != "npu" and not paged
+    return_attn_probs = (
+        device != "npu"
+        and not paged
+        and not (device == "musa" and implementation_index == 16)
+    )
     softmax_lse = (
         torch.empty(
             (q.size(1), q.size(0)),
@@ -298,6 +311,9 @@ def test_flash_attn_varlen_func_non_default_stream(device, implementation_index)
     elif device == "npu":
         accelerator = torch.npu
         stream_attribute = "npu_stream"
+    elif device == "musa" and implementation_index == 16:
+        accelerator = torch.musa
+        stream_attribute = "musa_stream"
     else:
         pytest.skip("stream coverage requires an accelerator backend")
     if device == "cuda" and implementation_index == 0:
