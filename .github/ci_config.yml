@@ -189,7 +189,7 @@ platforms:
             run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
-    runner_label: Ascend-910C-canary
+    runner_label: Ascend
     execution_mode: agent_local
     image:
       dockerfile: images/ascend/
@@ -207,7 +207,7 @@ platforms:
       - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
     env:
       ASCEND_HOME_PATH: /usr/local/Ascend/ascend-toolkit/latest
-    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_ASCEND=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j16 && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix --config-settings=cmake.define.SOC_VERSION=Ascend910_9362
+    setup: pip install scikit-build-core pybind11 libclang pyyaml && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://gh-proxy.com/https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_ASCEND=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       npu:
         type: unittest
