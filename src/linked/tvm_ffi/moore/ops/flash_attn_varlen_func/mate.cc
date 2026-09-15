@@ -56,8 +56,8 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::operator()(
   std::lock_guard lock{runtime_mutex_};
   Call(q, k, v, cu_seqlens_q, cu_seqlens_k, alibi_slopes, block_table,
        max_seqlen_q, max_seqlen_k, dropout_p, softmax_scale, causal,
-       window_size, softcap, deterministic, return_attn_probs, out,
-       softmax_lse, s_dmask);
+       window_size, softcap, deterministic, return_attn_probs, out, softmax_lse,
+       s_dmask);
 }
 
 void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
@@ -73,20 +73,21 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
   TORCH_CHECK(!alibi_slopes.has_value(), "MATE ALiBi is not supported");
   TORCH_CHECK(dropout_p == 0.0, "MATE attention dropout is not supported");
   TORCH_CHECK(!deterministic, "MATE deterministic attention is not supported");
-  TORCH_CHECK(!return_attn_probs, "MATE attention probabilities are not supported");
+  TORCH_CHECK(!return_attn_probs,
+              "MATE attention probabilities are not supported");
 
   const typename C10<Device::Type::kMoore>::StreamGuard stream_guard{
       C10<Device::Type::kMoore>::GetStreamFromExternal(stream_, device_index_)};
 
-  auto at_q = ToAtenTensor<Device::Type::kMoore>(
-      const_cast<void*>(q.data()), q_shape_, q_strides_, q_dtype_,
-      device_index_);
-  auto at_k = ToAtenTensor<Device::Type::kMoore>(
-      const_cast<void*>(k.data()), k_shape_, k_strides_, k_dtype_,
-      device_index_);
-  auto at_v = ToAtenTensor<Device::Type::kMoore>(
-      const_cast<void*>(v.data()), v_shape_, v_strides_, v_dtype_,
-      device_index_);
+  auto at_q =
+      ToAtenTensor<Device::Type::kMoore>(const_cast<void*>(q.data()), q_shape_,
+                                         q_strides_, q_dtype_, device_index_);
+  auto at_k =
+      ToAtenTensor<Device::Type::kMoore>(const_cast<void*>(k.data()), k_shape_,
+                                         k_strides_, k_dtype_, device_index_);
+  auto at_v =
+      ToAtenTensor<Device::Type::kMoore>(const_cast<void*>(v.data()), v_shape_,
+                                         v_strides_, v_dtype_, device_index_);
   auto at_cu_seqlens_q = ToAtenTensor<Device::Type::kMoore>(
       const_cast<void*>(cu_seqlens_q.data()), cu_seqlens_q_shape_,
       cu_seqlens_q_strides_, cu_seqlens_q_dtype_, device_index_);
@@ -134,12 +135,10 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
           py::arg("max_seqlen_k") = max_seqlen_k,
           py::arg("page_table") = PythonTensor(at_block_table),
           py::arg("kv_batch_idx") = py::none(),
-          py::arg("leftpad_k") = py::none(),
-          py::arg("rotary_cos") = py::none(),
+          py::arg("leftpad_k") = py::none(), py::arg("rotary_cos") = py::none(),
           py::arg("rotary_sin") = py::none(),
           py::arg("seqlens_rotary") = py::none(),
-          py::arg("q_descale") = py::none(),
-          py::arg("k_descale") = py::none(),
+          py::arg("q_descale") = py::none(), py::arg("k_descale") = py::none(),
           py::arg("v_descale") = py::none(),
           py::arg("softmax_scale") = static_cast<float>(softmax_scale.value_or(
               1.0 / std::sqrt(static_cast<double>(q_shape_[2])))),
@@ -150,16 +149,14 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
           py::arg("learnable_sink") = py::none(),
           py::arg("softcap") = static_cast<float>(softcap),
           py::arg("is_rotary_interleaved") = false,
-          py::arg("scheduler_metadata") = py::none(),
-          py::arg("num_splits") = 0,
+          py::arg("scheduler_metadata") = py::none(), py::arg("num_splits") = 0,
           py::arg("pack_gqa") =
-              (q_shape_[1] != (block_table.has_value() ? k_shape_[3]
-                                                       : k_shape_[2])),
+              (q_shape_[1] !=
+               (block_table.has_value() ? k_shape_[3] : k_shape_[2])),
           py::arg("mp_margin") = 0, py::arg("return_lse") = true,
           py::arg("lse") = at_lse, py::arg("out") = at_out,
           py::arg("cp_world_size") = 1, py::arg("cp_rank") = 0,
-          py::arg("cp_tot_seqused_k") = py::none(),
-          py::arg("only_qv") = false);
+          py::arg("cp_tot_seqused_k") = py::none(), py::arg("only_qv") = false);
       runtime_.Load(recorder.ForwardName(), recorder.CombineName());
     } catch (const py::error_already_set& error) {
       TORCH_CHECK(false, "MATE flash_attn_varlen_func bootstrap failed: ",
@@ -211,8 +208,8 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
       causal, int{window_size[0]}, int{window_size[1]}, int{0},
       static_cast<float>(softcap), int{0}, int{0}, OptionalTensorView{},
       OptionalTensorView{}, tvm::ffi::TensorView(dl_out.Get()),
-      tvm::ffi::TensorView(dl_lse.Get()), int{1}, int{0},
-      OptionalTensorView{}, false);
+      tvm::ffi::TensorView(dl_lse.Get()), int{1}, int{0}, OptionalTensorView{},
+      false);
 
   const auto outputs = result.cast<tvm::ffi::Array<tvm::ffi::Any>>();
   const auto accumulators =

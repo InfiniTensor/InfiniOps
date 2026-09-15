@@ -38,8 +38,8 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>
             const int64_t max_seqlen_k, const double dropout_p,
             const std::optional<double> softmax_scale, const bool causal,
             const std::vector<int64_t> window_size, const double softcap,
-            const bool deterministic, const bool return_attn_probs,
-            Tensor out, std::optional<Tensor> softmax_lse,
+            const bool deterministic, const bool return_attn_probs, Tensor out,
+            std::optional<Tensor> softmax_lse,
             std::optional<Tensor> s_dmask) const;
 
   mutable std::mutex runtime_mutex_;
