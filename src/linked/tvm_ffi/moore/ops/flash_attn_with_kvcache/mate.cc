@@ -32,9 +32,8 @@ void CallCombine(mate::MateFmhaRuntime& runtime,
 
   tvm::ffi::Function::InvokeExternC(
       nullptr, combine->Entry(), OptionalTensorView{}, OptionalTensorView{},
-      tvm::ffi::Optional<int>{max_seqlen_q},
-      tvm::ffi::TensorView(out.Get()), tvm::ffi::TensorView(lse.Get()),
-      tvm::ffi::TensorView(accumulators[0]),
+      tvm::ffi::Optional<int>{max_seqlen_q}, tvm::ffi::TensorView(out.Get()),
+      tvm::ffi::TensorView(lse.Get()), tvm::ffi::TensorView(accumulators[0]),
       tvm::ffi::TensorView(accumulators[1]), OptionalTensorView{},
       int{num_splits});
 }
@@ -42,8 +41,9 @@ void CallCombine(mate::MateFmhaRuntime& runtime,
 }  // namespace
 
 void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::operator()(
-    const Tensor q, Tensor k_cache, Tensor v_cache, const std::optional<Tensor> k,
-    const std::optional<Tensor> v, const std::optional<Tensor> rotary_cos,
+    const Tensor q, Tensor k_cache, Tensor v_cache,
+    const std::optional<Tensor> k, const std::optional<Tensor> v,
+    const std::optional<Tensor> rotary_cos,
     const std::optional<Tensor> rotary_sin, const int64_t cache_seqlens,
     const std::optional<Tensor> cache_batch_idx,
     const std::optional<Tensor> cache_leftpad,
@@ -55,14 +55,15 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::operator()(
     const bool return_softmax_lse, Tensor out,
     std::optional<Tensor> softmax_lse) const {
   Run(q, k_cache, v_cache, k, v, rotary_cos, rotary_sin, std::nullopt,
-      cache_seqlens, cache_batch_idx, cache_leftpad, block_table,
-      alibi_slopes, softmax_scale, causal, window_size, softcap,
-      rotary_interleaved, num_splits, return_softmax_lse, out, softmax_lse);
+      cache_seqlens, cache_batch_idx, cache_leftpad, block_table, alibi_slopes,
+      softmax_scale, causal, window_size, softcap, rotary_interleaved,
+      num_splits, return_softmax_lse, out, softmax_lse);
 }
 
 void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::operator()(
-    const Tensor q, Tensor k_cache, Tensor v_cache, const std::optional<Tensor> k,
-    const std::optional<Tensor> v, const std::optional<Tensor> rotary_cos,
+    const Tensor q, Tensor k_cache, Tensor v_cache,
+    const std::optional<Tensor> k, const std::optional<Tensor> v,
+    const std::optional<Tensor> rotary_cos,
     const std::optional<Tensor> rotary_sin,
     const std::optional<Tensor> cache_seqlens,
     const std::optional<Tensor> cache_batch_idx,
@@ -75,14 +76,15 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::operator()(
     const bool return_softmax_lse, Tensor out,
     std::optional<Tensor> softmax_lse) const {
   Run(q, k_cache, v_cache, k, v, rotary_cos, rotary_sin, cache_seqlens,
-      std::nullopt, cache_batch_idx, cache_leftpad, block_table,
-      alibi_slopes, softmax_scale, causal, window_size, softcap,
-      rotary_interleaved, num_splits, return_softmax_lse, out, softmax_lse);
+      std::nullopt, cache_batch_idx, cache_leftpad, block_table, alibi_slopes,
+      softmax_scale, causal, window_size, softcap, rotary_interleaved,
+      num_splits, return_softmax_lse, out, softmax_lse);
 }
 
 void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
-    const Tensor q, Tensor k_cache, Tensor v_cache, const std::optional<Tensor> k,
-    const std::optional<Tensor> v, const std::optional<Tensor> rotary_cos,
+    const Tensor q, Tensor k_cache, Tensor v_cache,
+    const std::optional<Tensor> k, const std::optional<Tensor> v,
+    const std::optional<Tensor> rotary_cos,
     const std::optional<Tensor> rotary_sin,
     const std::optional<Tensor> cache_seqlens,
     const std::optional<int64_t> scalar_cache_seqlens,
@@ -102,9 +104,9 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
   const typename C10<Device::Type::kMoore>::StreamGuard stream_guard{
       C10<Device::Type::kMoore>::GetStreamFromExternal(stream_, device_index_)};
 
-  auto at_q = ToAtenTensor<Device::Type::kMoore>(
-      const_cast<void*>(q.data()), q_shape_, q_strides_, q_dtype_,
-      device_index_);
+  auto at_q =
+      ToAtenTensor<Device::Type::kMoore>(const_cast<void*>(q.data()), q_shape_,
+                                         q_strides_, q_dtype_, device_index_);
   auto at_k_cache = ToAtenTensor<Device::Type::kMoore>(
       k_cache.data(), k_cache_shape_, k_cache_strides_, k_cache_dtype_,
       device_index_);
@@ -142,14 +144,14 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
       optional_tensor(cache_leftpad, cache_leftpad_shape_,
                       cache_leftpad_strides_, cache_leftpad_dtype_);
   const auto at_block_table =
-      optional_tensor(block_table, block_table_shape_,
-                      block_table_strides_, block_table_dtype_);
+      optional_tensor(block_table, block_table_shape_, block_table_strides_,
+                      block_table_dtype_);
 
   if (!at_cache_seqlens.has_value() && scalar_cache_seqlens.has_value()) {
-    scalar_cache_seqlens_.emplace(at::full(
-        {static_cast<int64_t>(batch_size_)},
-        static_cast<int64_t>(*scalar_cache_seqlens),
-        at_out.options().dtype(at::kInt)));
+    scalar_cache_seqlens_.emplace(
+        at::full({static_cast<int64_t>(batch_size_)},
+                 static_cast<int64_t>(*scalar_cache_seqlens),
+                 at_out.options().dtype(at::kInt)));
     at_cache_seqlens = scalar_cache_seqlens_;
   }
   if (!softmax_lse.has_value() && !internal_lse_.has_value()) {
@@ -183,8 +185,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
           py::arg("rotary_cos") = PythonTensor(at_rotary_cos),
           py::arg("rotary_sin") = PythonTensor(at_rotary_sin),
           py::arg("seqlens_rotary") = py::none(),
-          py::arg("q_descale") = py::none(),
-          py::arg("k_descale") = py::none(),
+          py::arg("q_descale") = py::none(), py::arg("k_descale") = py::none(),
           py::arg("v_descale") = py::none(),
           py::arg("softmax_scale") = static_cast<float>(softmax_scale.value_or(
               1.0 / std::sqrt(static_cast<double>(head_size_)))),
@@ -196,13 +197,11 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
           py::arg("softcap") = static_cast<float>(softcap),
           py::arg("is_rotary_interleaved") = rotary_interleaved,
           py::arg("scheduler_metadata") = py::none(),
-          py::arg("num_splits") = num_splits,
-          py::arg("pack_gqa") = pack_gqa,
+          py::arg("num_splits") = num_splits, py::arg("pack_gqa") = pack_gqa,
           py::arg("mp_margin") = 0, py::arg("return_lse") = true,
           py::arg("lse") = at_lse, py::arg("out") = at_out,
           py::arg("cp_world_size") = 1, py::arg("cp_rank") = 0,
-          py::arg("cp_tot_seqused_k") = py::none(),
-          py::arg("only_qv") = false);
+          py::arg("cp_tot_seqused_k") = py::none(), py::arg("only_qv") = false);
       runtime_.Load(recorder.ForwardName(), recorder.CombineName());
     } catch (const py::error_already_set& error) {
       TORCH_CHECK(false, "MATE flash_attn_with_kvcache bootstrap failed: ",
@@ -256,12 +255,12 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
       tvm::ffi::TensorView(dl_v_cache.Get()), optional_view(dl_k),
       optional_view(dl_v), OptionalTensorView{}, OptionalTensorView{},
       OptionalTensorView{}, OptionalTensorView{},
-      optional_view(dl_cache_seqlens),
-      tvm::ffi::Optional<int>{max_seqlen_q}, tvm::ffi::Optional<int>{},
-      optional_view(dl_block_table), optional_view(dl_cache_batch_idx),
-      optional_view(dl_cache_leftpad), optional_view(dl_rotary_cos),
-      optional_view(dl_rotary_sin), OptionalTensorView{},
+      optional_view(dl_cache_seqlens), tvm::ffi::Optional<int>{max_seqlen_q},
+      tvm::ffi::Optional<int>{}, optional_view(dl_block_table),
+      optional_view(dl_cache_batch_idx), optional_view(dl_cache_leftpad),
+      optional_view(dl_rotary_cos), optional_view(dl_rotary_sin),
       OptionalTensorView{}, OptionalTensorView{}, OptionalTensorView{},
+      OptionalTensorView{},
       static_cast<float>(softmax_scale.value_or(
           1.0 / std::sqrt(static_cast<double>(head_size_)))),
       causal, int{window_size[0]}, int{window_size[1]}, int{0},

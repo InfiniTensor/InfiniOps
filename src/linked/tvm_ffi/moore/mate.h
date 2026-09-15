@@ -10,12 +10,12 @@
 #include <tvm/ffi/function.h>
 #include <tvm/ffi/optional.h>
 
-#include <fstream>
 #include <cstdio>
+#include <fstream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <memory>
 #include <utility>
 
 namespace infini::ops::linked::tvm_ffi::moore {
@@ -51,8 +51,8 @@ class DlSymbol {
     entry_ = reinterpret_cast<TvmFfiEntry*>(
         dlsym(library_.get(), ("__tvm_ffi_" + dispatch_name).c_str()));
     if (const auto* error = dlerror(); entry_ == nullptr || error != nullptr) {
-      throw std::runtime_error("MATE did not export __tvm_ffi_" + dispatch_name +
-                               ": " + error);
+      throw std::runtime_error("MATE did not export __tvm_ffi_" +
+                               dispatch_name + ": " + error);
     }
   }
 
@@ -104,9 +104,8 @@ class DlPackTensor {
 class TvmStreamGuard {
  public:
   TvmStreamGuard(DLDevice device, void* stream) : device_{device} {
-    const auto status =
-        TVMFFIEnvSetStream(device.device_type, device.device_id, stream,
-                           &previous_stream_);
+    const auto status = TVMFFIEnvSetStream(device.device_type, device.device_id,
+                                           stream, &previous_stream_);
     if (status != 0) {
       throw std::runtime_error(
           "MATE failed to select the TVM-FFI MUSA stream (status " +
@@ -137,15 +136,14 @@ class ModuleRecorder {
     const auto version = py::str(mate.attr("__version__")).cast<std::string>();
     const auto separator = version.find('+');
     if (version.substr(0, separator) != "0.2.5") {
-      throw std::runtime_error("Mate 0.2.5 is required by the Moore native "
-                               "FlashAttention provider, but found " +
-                               version);
+      throw std::runtime_error(
+          "Mate 0.2.5 is required by the Moore native "
+          "FlashAttention provider, but found " +
+          version);
     }
 
-    forward_ = py::module_::import(
-        "mate.jit.attention.fmha.fmha_fwd");
-    combine_ = py::module_::import(
-        "mate.jit.attention.fmha.fmha_combine");
+    forward_ = py::module_::import("mate.jit.attention.fmha.fmha_fwd");
+    combine_ = py::module_::import("mate.jit.attention.fmha.fmha_combine");
     original_forward_loader_ = forward_.attr("_fmha_fwd_module");
     original_combine_loader_ = combine_.attr("_fmha_fwd_combine_module");
     forward_names_ = py::list();
@@ -179,9 +177,7 @@ class ModuleRecorder {
 
   py::module_ Forward() const { return forward_; }
 
-  std::string ForwardName() const {
-    return Name(forward_names_);
-  }
+  std::string ForwardName() const { return Name(forward_names_); }
 
   std::optional<std::string> CombineName() const {
     if (py::len(combine_names_) == 0) return std::nullopt;
