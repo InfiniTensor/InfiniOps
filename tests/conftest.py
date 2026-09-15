@@ -499,16 +499,23 @@ def _is_smoke_cutlass_scaled_mm_case(params):
 def _is_smoke_flash_attn_varlen_func_case(params):
     if params.get("device") == "cuda" and params.get("implementation_index") == 0:
         return (
-            params.get("q_lens") == (2, 3)
-            and params.get("k_lens") == (130, 300)
-            and params.get("num_heads") == 4
+            (
+                params.get("q_lens"),
+                params.get("k_lens"),
+                params.get("num_heads"),
+                params.get("head_dim"),
+                params.get("use_alibi"),
+            )
+            in (
+                ((2, 3), (130, 300), 4, 64, True),
+                ((2, 3), (130, 300), 4, 128, True),
+                ((13,), (13,), 32, 128, False),
+            )
             and params.get("num_kv_heads") == 2
             and params.get("causal") is True
             and params.get("window_size") == (-1, -1)
             and params.get("scale") is None
             and params.get("paged") is True
-            and params.get("use_alibi") is True
-            and params.get("head_dim") == 64
             and params.get("dtype") == torch.float16
         )
 

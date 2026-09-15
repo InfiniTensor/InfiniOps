@@ -63,7 +63,10 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
             }
           }();
 
-          if constexpr (kHeadSize == 128) {
+          // The HD128 pipeline produces incorrect results on Iluvatar.
+          // Keep its native prefill on the global warp kernel.
+          if constexpr (kHeadSize == 128 &&
+                        Backend::kDeviceType != Device::Type::kIluvatar) {
             if (block_size_ == 256) {
               constexpr int kWarps = 8;
               dim3 pipe_grid(static_cast<unsigned>(num_heads_),
@@ -117,6 +120,15 @@ class CudaPagedAttentionPrefillInfinilm : public PagedAttentionPrefillInfinilm {
           } else {
             dim3 legacy_grid(static_cast<unsigned>(num_heads_),
                              static_cast<unsigned>(total_q_tokens_));
+            if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
+              // The kernel folds grid.z into its token index when grid.y
+              // would exceed CUDA's 65535 limit (e.g. B16 x I4096).
+              if (total_q_tokens_ > 65535) {
+                legacy_grid.y = 65535;
+                legacy_grid.z =
+                    static_cast<unsigned>((total_q_tokens_ + 65534) / 65535);
+              }
+            }
             op::paged_attention_prefill::cuda::
                 PagedAttentionPrefillWarpGlobalKernel<Backend::kDeviceType,
                                                       TIndex, TData, kHeadSize>
