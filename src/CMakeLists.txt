@@ -861,6 +861,35 @@ if(_infini_ops_linked_uses_torch)
     list(APPEND TORCH_SOURCES ${INFINI_OPS_LINKED_TORCH_SOURCES})
 endif()
 
+if(WITH_MOORE AND WITH_LINKED)
+    set(_moore_mate_linked_ops
+        flash_attn_varlen_func
+        flash_attn_with_kvcache)
+    set(_moore_mate_linked_enabled FALSE)
+    set(_moore_mate_sources "")
+    foreach(_op IN LISTS _moore_mate_linked_ops)
+        set(_moore_mate_source
+            "${CMAKE_CURRENT_SOURCE_DIR}/linked/tvm_ffi/moore/ops/${_op}/mate.cc")
+        list(FIND INFINI_OPS_LINKED_SOURCES "${_moore_mate_source}"
+            _moore_mate_source_index)
+        if(NOT _moore_mate_source_index EQUAL -1)
+            list(APPEND _moore_mate_sources "${_moore_mate_source}")
+            set(_moore_mate_linked_enabled TRUE)
+        endif()
+    endforeach()
+
+    if(_moore_mate_linked_enabled)
+        find_package(Python COMPONENTS Interpreter Development REQUIRED)
+        find_library(TORCH_PYTHON_LIB torch_python
+            HINTS ${_torch_lib_dirs} REQUIRED)
+        list(APPEND TORCH_INCLUDE_DIRS ${Python_INCLUDE_DIRS})
+        list(APPEND TORCH_LIBRARIES
+            ${TORCH_PYTHON_LIB} Python::Python ${CMAKE_DL_LIBS})
+        set(_infini_ops_linked_uses_torch TRUE)
+        list(APPEND TORCH_SOURCES ${_moore_mate_sources})
+        list(REMOVE_ITEM INFINI_OPS_LINKED_TVM_FFI_SOURCES ${_moore_mate_sources})
+    endif()
+endif()
 
 if(_infini_ops_linked_uses_tvm_ffi)
     target_sources(infiniops PRIVATE ${INFINI_OPS_LINKED_TVM_FFI_SOURCES})
@@ -947,7 +976,13 @@ endif()
 if(TORCH_SOURCES)
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
-    set(TORCH_COMPILE_SOURCES ${TORCH_SOURCES})
+    set(_torch_batchable_sources ${TORCH_SOURCES})
+    set(_torch_unbatched_sources "")
+    if(_moore_mate_linked_enabled)
+        list(REMOVE_ITEM _torch_batchable_sources ${_moore_mate_sources})
+        list(APPEND _torch_unbatched_sources ${_moore_mate_sources})
+    endif()
+    set(TORCH_COMPILE_SOURCES ${_torch_batchable_sources})
     if(INFINI_OPS_TORCH_UNITY_BATCH_SIZE GREATER 1)
         set(_torch_unity_dir "${CMAKE_CURRENT_BINARY_DIR}/torch_unity")
         file(MAKE_DIRECTORY "${_torch_unity_dir}")
@@ -957,7 +992,7 @@ if(TORCH_SOURCES)
         set(_torch_unity_index 0)
         set(_torch_unity_count 0)
         set(_torch_unity_content "")
-        foreach(_src IN LISTS TORCH_SOURCES)
+        foreach(_src IN LISTS _torch_batchable_sources)
             if(_torch_unity_count EQUAL 0)
                 set(_torch_unity_src
                     "${_torch_unity_dir}/torch_unity_${_torch_unity_index}.cc")
@@ -990,6 +1025,10 @@ if(TORCH_SOURCES)
         message(STATUS
             "Torch unity build: ${_torch_source_count} sources batched into "
             "${_torch_unity_source_count} translation units")
+    endif()
+
+    if(_torch_unbatched_sources)
+        list(APPEND TORCH_COMPILE_SOURCES ${_torch_unbatched_sources})
     endif()
 
     if(WITH_TORCH)
@@ -1028,7 +1067,7 @@ if(TORCH_SOURCES)
         endif()
 
         set(_torch_include_flags "")
-        foreach(_dir ${TORCH_INCLUDE_DIRS})
+        foreach(_dir ${TORCH_INCLUDE_DIRS} ${INFINI_OPS_LINKED_INCLUDE_DIRS})
             list(APPEND _torch_include_flags "-isystem" "${_dir}")
         endforeach()
 
