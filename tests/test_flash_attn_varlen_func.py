@@ -24,6 +24,9 @@ if not hasattr(infini.ops, "FlashAttnVarlenFunc"):
         ((5, 2), (3, 6), 4, 2, True, (-1, -1), 0.125, False, False),
         ((4, 3), (6, 2), 4, 2, False, (2, 1), None, False, False),
         ((4, 3), (6, 2), 4, 2, True, (2, 1), None, False, False),
+        ((13,), (13,), 32, 2, True, (-1, -1), None, True, False),
+        # MiniCPM4 batched prefill; catches the Iluvatar HD128 pipeline regression.
+        ((1024,) * 16, (1024,) * 16, 32, 2, True, (-1, -1), None, True, False),
         ((2, 3), (130, 300), 4, 2, True, (-1, -1), None, True, True),
     ),
 )
@@ -286,6 +289,49 @@ def test_ascend_paged_prefill_follows_nontrivial_block_table(
         block_table,
     )
     torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
+
+
+@pytest.mark.parametrize("total_tokens", (65535, 65536, 131071))
+def test_iluvatar_prefill_grid_limit(device, implementation_index, total_tokens):
+    if device != "cuda" or implementation_index != 0:
+        pytest.skip("this launch geometry regression targets Iluvatar native")
+    if 0 not in infini.ops.FlashAttnVarlenFunc.active_implementation_indices(
+        "iluvatar"
+    ):
+        pytest.skip("requires the Iluvatar native provider")
+
+    # Each one-token sequence attends to the same physical cache slot. This
+    # exercises grid.y/z boundaries without quadratic reference allocations.
+    q = torch.zeros((total_tokens, 1, 128), dtype=torch.float16, device=device)
+    k = torch.zeros((1, 256, 1, 128), dtype=q.dtype, device=device)
+    v = torch.randn_like(k)
+    cumulative = torch.arange(total_tokens + 1, dtype=torch.int32, device=device)
+    block_table = torch.zeros((total_tokens, 1), dtype=torch.int32, device=device)
+    out = torch.full_like(q, math.nan)
+    infini.ops.flash_attn_varlen_func(
+        q,
+        k,
+        v,
+        cumulative,
+        cumulative,
+        None,
+        block_table,
+        1,
+        1,
+        0.0,
+        None,
+        True,
+        (-1, -1),
+        0.0,
+        False,
+        False,
+        out,
+        None,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+    torch.testing.assert_close(out, v[0, 0].expand_as(out), rtol=2e-3, atol=2e-3)
 
 
 def test_flash_attn_varlen_func_non_default_stream(device, implementation_index):
