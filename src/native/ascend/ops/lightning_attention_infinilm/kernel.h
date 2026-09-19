@@ -283,7 +283,7 @@ class Operator<LightningAttentionInfinilm, Device::Type::kAscend>
     auto* t_outer = outer_cache_.get(outer);
 
     if (!outer_exec_) {
-      const int8_t cube_math_type = 1;
+      const int8_t cube_math_type = data_type_ == DataType::kFloat32 ? 0 : 1;
       CheckAcl(aclnnMatmulGetWorkspaceSize(t_k, t_v, t_outer, cube_math_type,
                                            &outer_ws_, &outer_exec_),
                "aclnnMatmulGetWorkspaceSize(outer)");
@@ -330,7 +330,7 @@ class Operator<LightningAttentionInfinilm, Device::Type::kAscend>
     auto* t_out = output_cache_.get(out_t);
 
     if (!output_exec_) {
-      const int8_t cube_math_type = 1;
+      const int8_t cube_math_type = data_type_ == DataType::kFloat32 ? 0 : 1;
       CheckAcl(aclnnMatmulGetWorkspaceSize(t_q, t_state, t_out, cube_math_type,
                                            &output_ws_, &output_exec_),
                "aclnnMatmulGetWorkspaceSize(output)");
