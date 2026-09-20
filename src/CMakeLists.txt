@@ -873,6 +873,8 @@ if(WITH_CAMBRICON AND TORCH_SOURCES)
 endif()
 
 if(WITH_ASCEND AND TORCH_SOURCES)
+    target_compile_definitions(infiniops PRIVATE
+        INFINI_OPS_WITH_ASCEND_TORCH_CAPTURE=1)
     execute_process(
         COMMAND "${_TORCH_PYTHON}" -c
             "import importlib.util, pathlib; spec = importlib.util.find_spec('torch_npu'); root = pathlib.Path(next(iter(spec.submodule_search_locations))); print(root / 'include', root / 'lib', sep=';')"
@@ -918,16 +920,23 @@ if(WITH_ASCEND AND TORCH_SOURCES)
             #include <torch_npu/csrc/aten/common/from_blob.h>
             #include <torch_npu/csrc/core/npu/NPUGuard.h>
             #include <torch_npu/csrc/core/npu/NPUStream.h>
+            #include <torch_npu/csrc/core/npu/NPUCachingAllocator.h>
             int main() {
                 auto stream = c10_npu::getStreamFromExternal(nullptr, 0);
                 c10_npu::NPUStreamGuard guard(stream);
+                c10_npu::MemPool pool(nullptr, false);
+                c10_npu::NPUCachingAllocator::beginAllocateToPool(
+                    0, pool.id(), [](aclrtStream) { return true; });
+                c10_npu::NPUCachingAllocator::endAllocateToPool(0, pool.id());
+                c10_npu::NPUCachingAllocator::releasePool(0, pool.id());
                 return 0;
             }
         ]] INFINI_OPS_TORCH_NPU_EXTERNAL_STREAM)
         if(NOT INFINI_OPS_TORCH_NPU_EXTERNAL_STREAM)
             message(FATAL_ERROR
                 "Ascend ATen backends require torch_npu with c10_npu::getStreamFromExternal "
-                "and NPU from_blob support (for torch 2.7.1, use torch_npu 2.7.1.post10). "
+                "NPU from_blob and graph memory pool support "
+                "(for torch 2.7.1, use torch_npu 2.7.1.post10). "
                 "Upgrade the matching torch_npu package, or configure WITH_TORCH=OFF.")
         endif()
     endfunction()
