@@ -872,6 +872,68 @@ if(WITH_CAMBRICON AND TORCH_SOURCES)
     list(APPEND TORCH_RUNTIME_DIRS "${_torch_mlu_library_dir}")
 endif()
 
+if(WITH_ASCEND AND TORCH_SOURCES)
+    execute_process(
+        COMMAND "${_TORCH_PYTHON}" -c
+            "import importlib.util, pathlib; spec = importlib.util.find_spec('torch_npu'); root = pathlib.Path(next(iter(spec.submodule_search_locations))); print(root / 'include', root / 'lib', sep=';')"
+        OUTPUT_VARIABLE _torch_npu_paths
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _torch_npu_paths_result
+    )
+    if(NOT _torch_npu_paths_result EQUAL 0 OR NOT _torch_npu_paths)
+        message(FATAL_ERROR
+            "Ascend ATen backends require an installed torch_npu package matching torch.")
+    endif()
+    list(GET _torch_npu_paths 0 _torch_npu_include_dir)
+    list(GET _torch_npu_paths 1 _torch_npu_library_dir)
+    find_library(TORCH_NPU_LIB torch_npu
+        HINTS "${_torch_npu_library_dir}" NO_DEFAULT_PATH REQUIRED)
+    # torch_npu wheels depend on libtorch_python and the Python embedding
+    # symbols, including when building standalone C++ examples. Resolve them
+    # from the interpreter that supplies torch, not a build-isolation Python.
+    function(_infini_ops_find_torch_npu_python)
+        set(Python_EXECUTABLE "${_TORCH_PYTHON}")
+        find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
+        set(TORCH_NPU_PYTHON_LIBRARIES ${Python_LIBRARIES} PARENT_SCOPE)
+    endfunction()
+    _infini_ops_find_torch_npu_python()
+    list(APPEND TORCH_INCLUDE_DIRS "${_torch_npu_include_dir}")
+    list(APPEND TORCH_LIBRARIES
+        -Wl,--no-as-needed "${TORCH_NPU_LIB}" ${TORCH_NPU_PYTHON_LIBRARIES}
+        -Wl,--as-needed)
+    list(APPEND TORCH_RUNTIME_DIRS "${_torch_npu_library_dir}")
+    foreach(_python_library IN LISTS TORCH_NPU_PYTHON_LIBRARIES)
+        get_filename_component(_python_library_dir "${_python_library}" DIRECTORY)
+        list(APPEND TORCH_RUNTIME_DIRS "${_python_library_dir}")
+    endforeach()
+
+    # Old torch_npu wheels have no public external-stream API. Fail at
+    # configure time instead of silently executing on a different stream.
+    function(_infini_ops_check_torch_npu)
+        include(CheckCXXSourceCompiles)
+        set(CMAKE_REQUIRED_INCLUDES ${TORCH_INCLUDE_DIRS})
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+        unset(INFINI_OPS_TORCH_NPU_EXTERNAL_STREAM CACHE)
+        check_cxx_source_compiles([[
+            #include <torch_npu/csrc/aten/common/from_blob.h>
+            #include <torch_npu/csrc/core/npu/NPUGuard.h>
+            #include <torch_npu/csrc/core/npu/NPUStream.h>
+            int main() {
+                auto stream = c10_npu::getStreamFromExternal(nullptr, 0);
+                c10_npu::NPUStreamGuard guard(stream);
+                return 0;
+            }
+        ]] INFINI_OPS_TORCH_NPU_EXTERNAL_STREAM)
+        if(NOT INFINI_OPS_TORCH_NPU_EXTERNAL_STREAM)
+            message(FATAL_ERROR
+                "Ascend ATen backends require torch_npu with c10_npu::getStreamFromExternal "
+                "and NPU from_blob support (for torch 2.7.1, use torch_npu 2.7.1.post10). "
+                "Upgrade the matching torch_npu package, or configure WITH_TORCH=OFF.")
+        endif()
+    endfunction()
+    _infini_ops_check_torch_npu()
+endif()
+
 if(TORCH_SOURCES)
     set(INFINI_OPS_TORCH_UNITY_BATCH_SIZE "8" CACHE STRING
         "Number of torch sources to include in each generated unity translation unit; set to 1 to disable")
@@ -1090,6 +1152,9 @@ if(TORCH_SOURCES)
 endif()
 
 set(_INFINI_OPS_LINKED_INSTALL_RPATH "$ORIGIN")
+if(WITH_ASCEND AND TORCH_SOURCES)
+    list(APPEND _INFINI_OPS_LINKED_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})
+endif()
 if(WITH_LINKED)
     if(_infini_ops_linked_uses_torch)
         list(APPEND _INFINI_OPS_LINKED_INSTALL_RPATH ${TORCH_RUNTIME_DIRS})

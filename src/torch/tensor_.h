@@ -4,6 +4,10 @@
 #include <torch/torch.h>
 #include <torch/version.h>
 
+#ifdef WITH_ASCEND
+#include <torch_npu/csrc/aten/common/from_blob.h>
+#endif
+
 #include <optional>
 #include <vector>
 
@@ -106,6 +110,15 @@ inline at::Tensor ToAtenTensor(
     if (dim == 0) return at::empty_strided(at_shape, at_strides, options);
   }
 
+#ifdef WITH_ASCEND
+  if constexpr (kDev == Device::Type::kAscend) {
+    // NPU tensors require torch_npu's storage descriptor. Supplying the
+    // device explicitly also avoids the unsupported PrivateUse1
+    // getDeviceFromPtr hook for memory allocated by an external runtime.
+    return at_npu::native::from_blob(data, at_shape, at_strides, 0, options,
+                                     options.device());
+  }
+#endif
   return at::from_blob(data, at_shape, at_strides, options);
 }
 
