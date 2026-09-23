@@ -46,6 +46,7 @@ surface.
 - `DataType::kInt8`, `DataType::kInt16`, `DataType::kInt32`, `DataType::kInt64`
 - `DataType::kUInt8`, `DataType::kUInt16`, `DataType::kUInt32`, `DataType::kUInt64`
 - `DataType::kFloat16`, `DataType::kBFloat16`, `DataType::kFloat32`, `DataType::kFloat64`
+- `DataType::kBool` (distinct from `kUInt8`, with one byte per element)
 
 InfiniOps also exposes type-list helpers such as `FloatTypes`,
 `ReducedFloatTypes`, `IntTypes`, `UIntTypes`, and `AllTypes` for template

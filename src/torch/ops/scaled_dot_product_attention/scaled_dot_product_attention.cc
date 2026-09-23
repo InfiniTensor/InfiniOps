@@ -39,12 +39,9 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
 
   c10::optional<at::Tensor> at_attn_mask;
   if (attn_mask.has_value()) {
-    const auto dtype_override = attn_mask_type_ == DataType::kUInt8
-                                    ? std::optional<at::ScalarType>{at::kBool}
-                                    : std::nullopt;
     at_attn_mask.emplace(ToAtenTensor<kDev>(
         const_cast<void*>(attn_mask->data()), attn_mask_shape_,
-        attn_mask_strides_, attn_mask_type_, device_index_, dtype_override));
+        attn_mask_strides_, attn_mask_type_, device_index_));
   }
 
   c10::optional<double> at_scale;
