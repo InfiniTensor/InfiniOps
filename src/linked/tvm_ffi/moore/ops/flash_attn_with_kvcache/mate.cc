@@ -5,6 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "linked/tvm_ffi/moore/mate.h"
 #include "torch/moore/c10.h"
 #include "torch/tensor_.h"
 
@@ -13,6 +14,7 @@ namespace {
 
 namespace mate = linked::tvm_ffi::moore;
 using mate::OptionalTensorView;
+namespace py = mate::py;
 
 py::object PythonTensor(const std::optional<at::Tensor>& tensor) {
   return tensor.has_value() ? py::cast(*tensor) : py::none();
@@ -39,6 +41,14 @@ void CallCombine(mate::MateFmhaRuntime& runtime,
 }
 
 }  // namespace
+
+struct Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::MateState {
+  linked::tvm_ffi::moore::MateFmhaRuntime runtime_;
+  std::optional<at::Tensor> scalar_cache_seqlens_;
+  std::optional<at::Tensor> internal_lse_;
+};
+
+Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::~Operator() = default;
 
 void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::operator()(
     const Tensor q, Tensor k_cache, Tensor v_cache,
@@ -101,6 +111,8 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
   TORCH_CHECK(!alibi_slopes.has_value(), "MATE ALiBi is not supported");
 
   std::lock_guard lock{runtime_mutex_};
+  if (!state_) state_ = std::make_shared<MateState>();
+  auto& state = *state_;
   const typename C10<Device::Type::kMoore>::StreamGuard stream_guard{
       C10<Device::Type::kMoore>::GetStreamFromExternal(stream_, device_index_)};
 
@@ -148,23 +160,30 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
                       block_table_dtype_);
 
   if (!at_cache_seqlens.has_value() && scalar_cache_seqlens.has_value()) {
-    scalar_cache_seqlens_.emplace(
+    state.scalar_cache_seqlens_.emplace(
         at::full({static_cast<int64_t>(batch_size_)},
                  static_cast<int64_t>(*scalar_cache_seqlens),
                  at_out.options().dtype(at::kInt)));
-    at_cache_seqlens = scalar_cache_seqlens_;
+    at_cache_seqlens = state.scalar_cache_seqlens_;
   }
-  if (!softmax_lse.has_value() && !internal_lse_.has_value()) {
-    internal_lse_.emplace(at::empty(
-        {static_cast<int64_t>(q_shape_[0]), static_cast<int64_t>(q_shape_[2]),
-         static_cast<int64_t>(q_shape_[1])},
-        at_out.options().dtype(at::kFloat)));
+  at::Tensor at_lse;
+  if (softmax_lse.has_value()) {
+    at_lse = ToAtenTensor<Device::Type::kMoore>(
+        const_cast<void*>(softmax_lse->data()), softmax_lse_shape_,
+        softmax_lse_strides_, softmax_lse_dtype_, device_index_);
+  } else {
+    if (!state.internal_lse_.has_value()) {
+      state.internal_lse_.emplace(at::empty(
+          {static_cast<int64_t>(q_shape_[0]), static_cast<int64_t>(q_shape_[2]),
+           static_cast<int64_t>(q_shape_[1])},
+          at_out.options().dtype(at::kFloat)));
+    }
+    at_lse = *state.internal_lse_;
   }
-  const auto& at_lse = softmax_lse.has_value() ? *softmax_lse : *internal_lse_;
   const auto max_seqlen_q = static_cast<int>(q_shape_[1]);
   const auto pack_gqa = q_shape_[2] != k_cache_shape_[2];
 
-  if (runtime_.Forward().Entry() == nullptr) {
+  if (state.runtime_.Forward().Entry() == nullptr) {
     py::gil_scoped_acquire gil;
     try {
       mate::detail::ModuleRecorder recorder;
@@ -202,7 +221,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
           py::arg("lse") = at_lse, py::arg("out") = at_out,
           py::arg("cp_world_size") = 1, py::arg("cp_rank") = 0,
           py::arg("cp_tot_seqused_k") = py::none(), py::arg("only_qv") = false);
-      runtime_.Load(recorder.ForwardName(), recorder.CombineName());
+      state.runtime_.Load(recorder.ForwardName(), recorder.CombineName());
     } catch (const py::error_already_set& error) {
       TORCH_CHECK(false, "MATE flash_attn_with_kvcache bootstrap failed: ",
                   error.what());
@@ -250,8 +269,8 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
       };
 
   auto result = tvm::ffi::Function::InvokeExternC(
-      nullptr, runtime_.Forward().Entry(), tvm::ffi::TensorView(dl_q.Get()),
-      tvm::ffi::TensorView(dl_k_cache.Get()),
+      nullptr, state.runtime_.Forward().Entry(),
+      tvm::ffi::TensorView(dl_q.Get()), tvm::ffi::TensorView(dl_k_cache.Get()),
       tvm::ffi::TensorView(dl_v_cache.Get()), optional_view(dl_k),
       optional_view(dl_v), OptionalTensorView{}, OptionalTensorView{},
       OptionalTensorView{}, OptionalTensorView{},
@@ -273,7 +292,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
   const auto accumulators =
       outputs[0].cast<tvm::ffi::Array<tvm::ffi::Tensor>>();
   const auto actual_num_splits = outputs[1].cast<int>();
-  CallCombine(runtime_, dl_out, dl_lse, accumulators, max_seqlen_q,
+  CallCombine(state.runtime_, dl_out, dl_lse, accumulators, max_seqlen_q,
               actual_num_splits);
 }
 
