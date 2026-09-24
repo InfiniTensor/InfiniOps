@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "linked/tvm_ffi/moore/mate.h"
 #include "torch/moore/c10.h"
 #include "torch/tensor_.h"
 
@@ -14,6 +15,7 @@ namespace {
 
 namespace mate = linked::tvm_ffi::moore;
 using mate::OptionalTensorView;
+namespace py = mate::py;
 
 py::object PythonTensor(const std::optional<at::Tensor>& tensor) {
   return tensor.has_value() ? py::cast(*tensor) : py::none();
@@ -43,6 +45,14 @@ void CallCombine(mate::MateFmhaRuntime& runtime,
 }
 
 }  // namespace
+
+struct Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::MateState {
+  linked::tvm_ffi::moore::MateFmhaRuntime runtime_;
+  std::optional<at::Tensor> paged_seqused_k_;
+  std::optional<at::Tensor> internal_lse_;
+};
+
+Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::~Operator() = default;
 
 void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::operator()(
     const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q,
@@ -76,6 +86,9 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
   TORCH_CHECK(!return_attn_probs,
               "MATE attention probabilities are not supported");
 
+  if (!state_) state_ = std::make_shared<MateState>();
+  auto& state = *state_;
+
   const typename C10<Device::Type::kMoore>::StreamGuard stream_guard{
       C10<Device::Type::kMoore>::GetStreamFromExternal(stream_, device_index_)};
 
@@ -104,19 +117,27 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
         block_table_strides_, block_table_dtype_, device_index_));
   }
 
-  if (block_table.has_value() && !paged_seqused_k_.has_value()) {
-    paged_seqused_k_.emplace(
+  if (block_table.has_value() && !state.paged_seqused_k_.has_value()) {
+    state.paged_seqused_k_.emplace(
         (at_cu_seqlens_k.slice(0, 1) - at_cu_seqlens_k.slice(0, 0, -1))
             .contiguous());
   }
-  if (!softmax_lse.has_value() && !internal_lse_.has_value()) {
-    internal_lse_.emplace(at::empty(
-        {static_cast<int64_t>(q_shape_[1]), static_cast<int64_t>(q_shape_[0])},
-        at_out.options().dtype(at::kFloat)));
+  at::Tensor at_lse;
+  if (softmax_lse.has_value()) {
+    at_lse = ToAtenTensor<Device::Type::kMoore>(
+        const_cast<void*>(softmax_lse->data()), softmax_lse_shape_,
+        softmax_lse_strides_, softmax_lse_dtype_, device_index_);
+  } else {
+    if (!state.internal_lse_.has_value()) {
+      state.internal_lse_.emplace(
+          at::empty({static_cast<int64_t>(q_shape_[1]),
+                     static_cast<int64_t>(q_shape_[0])},
+                    at_out.options().dtype(at::kFloat)));
+    }
+    at_lse = *state.internal_lse_;
   }
-  const auto& at_lse = softmax_lse.has_value() ? *softmax_lse : *internal_lse_;
 
-  if (runtime_.Forward().Entry() == nullptr) {
+  if (state.runtime_.Forward().Entry() == nullptr) {
     py::gil_scoped_acquire gil;
     try {
       mate::detail::ModuleRecorder recorder;
@@ -130,7 +151,7 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
                                        : py::cast(at_cu_seqlens_k)),
           py::arg("cu_seqlens_k_new") = py::none(),
           py::arg("seqused_q") = py::none(),
-          py::arg("seqused_k") = PythonTensor(paged_seqused_k_),
+          py::arg("seqused_k") = PythonTensor(state.paged_seqused_k_),
           py::arg("max_seqlen_q") = max_seqlen_q,
           py::arg("max_seqlen_k") = max_seqlen_k,
           py::arg("page_table") = PythonTensor(at_block_table),
@@ -157,7 +178,7 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
           py::arg("lse") = at_lse, py::arg("out") = at_out,
           py::arg("cp_world_size") = 1, py::arg("cp_rank") = 0,
           py::arg("cp_tot_seqused_k") = py::none(), py::arg("only_qv") = false);
-      runtime_.Load(recorder.ForwardName(), recorder.CombineName());
+      state.runtime_.Load(recorder.ForwardName(), recorder.CombineName());
     } catch (const py::error_already_set& error) {
       TORCH_CHECK(false, "MATE flash_attn_varlen_func bootstrap failed: ",
                   error.what());
@@ -176,7 +197,7 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
   std::optional<mate::detail::DlPackTensor> dl_seqused_k;
   if (at_block_table.has_value()) {
     dl_block_table.emplace(*at_block_table);
-    dl_seqused_k.emplace(*paged_seqused_k_);
+    dl_seqused_k.emplace(*state.paged_seqused_k_);
   }
 
   const mate::detail::TvmStreamGuard tvm_stream_guard{
@@ -184,9 +205,10 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
       C10<Device::Type::kMoore>::GetStreamFromExternal(stream_, device_index_)};
 
   auto result = tvm::ffi::Function::InvokeExternC(
-      nullptr, runtime_.Forward().Entry(), tvm::ffi::TensorView(dl_q.Get()),
-      tvm::ffi::TensorView(dl_k.Get()), tvm::ffi::TensorView(dl_v.Get()),
-      OptionalTensorView{}, OptionalTensorView{}, OptionalTensorView{},
+      nullptr, state.runtime_.Forward().Entry(),
+      tvm::ffi::TensorView(dl_q.Get()), tvm::ffi::TensorView(dl_k.Get()),
+      tvm::ffi::TensorView(dl_v.Get()), OptionalTensorView{},
+      OptionalTensorView{}, OptionalTensorView{},
       tvm::ffi::TensorView(dl_cu_q.Get()),
       block_table.has_value()
           ? OptionalTensorView{}
@@ -215,7 +237,7 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
   const auto accumulators =
       outputs[0].cast<tvm::ffi::Array<tvm::ffi::Tensor>>();
   const auto num_splits = outputs[1].cast<int>();
-  CallCombine(runtime_, dl_out, dl_lse, accumulators, dl_cu_q,
+  CallCombine(state.runtime_, dl_out, dl_lse, accumulators, dl_cu_q,
               static_cast<int>(max_seqlen_q), num_splits);
 }
 

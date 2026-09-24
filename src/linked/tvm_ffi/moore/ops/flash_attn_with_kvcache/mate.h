@@ -1,13 +1,11 @@
 #ifndef INFINI_OPS_LINKED_TVM_FFI_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
 #define INFINI_OPS_LINKED_TVM_FFI_MOORE_OPS_FLASH_ATTN_WITH_KVCACHE_MATE_H_
 
-#include <ATen/core/Tensor.h>
-
+#include <memory>
 #include <mutex>
 #include <optional>
 
 #include "base/flash_attn_with_kvcache.h"
-#include "linked/tvm_ffi/moore/mate.h"
 
 namespace infini::ops {
 
@@ -17,6 +15,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>
  public:
   using FlashAttnWithKvcache::FlashAttnWithKvcache;
   using FlashAttnWithKvcache::operator();
+  ~Operator() override;
 
   void operator()(const Tensor q, Tensor k_cache, Tensor v_cache,
                   const std::optional<Tensor> k, const std::optional<Tensor> v,
@@ -49,6 +48,8 @@ class Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>
                   std::optional<Tensor> softmax_lse) const override;
 
  private:
+  struct MateState;
+
   void Run(const Tensor q, Tensor k_cache, Tensor v_cache,
            const std::optional<Tensor> k, const std::optional<Tensor> v,
            const std::optional<Tensor> rotary_cos,
@@ -66,9 +67,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>
            std::optional<Tensor> softmax_lse) const;
 
   mutable std::mutex runtime_mutex_;
-  mutable linked::tvm_ffi::moore::MateFmhaRuntime runtime_;
-  mutable std::optional<at::Tensor> scalar_cache_seqlens_;
-  mutable std::optional<at::Tensor> internal_lse_;
+  mutable std::shared_ptr<MateState> state_;
 };
 
 }  // namespace infini::ops

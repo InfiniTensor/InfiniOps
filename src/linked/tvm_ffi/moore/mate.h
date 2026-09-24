@@ -5,6 +5,7 @@
 #include <dlfcn.h>
 #include <dlpack/dlpack.h>
 #include <pybind11/pybind11.h>
+#include <torch/csrc/utils/pybind.h>
 #include <tvm/ffi/container/tensor.h>
 #include <tvm/ffi/extra/c_env_api.h>
 #include <tvm/ffi/function.h>
@@ -151,13 +152,13 @@ class ModuleRecorder {
 
     auto forward_loader = py::cpp_function(
         [forward = forward_, original = original_forward_loader_,
-         names = forward_names_](py::object config) {
+         names = forward_names_](py::object config) mutable {
           names.append(forward.attr("_fmha_fwd_encode")(config));
           return original(config);
         });
     auto combine_loader = py::cpp_function(
         [combine = combine_, original = original_combine_loader_,
-         names = combine_names_](py::object config) {
+         names = combine_names_](py::object config) mutable {
           names.append(combine.attr("_fmha_fwd_combine_encode")(config));
           return original(config);
         });
