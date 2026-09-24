@@ -114,7 +114,7 @@ _SCALAR_VALUES = {
 _TYPE_DEFAULTS = {"int": 0, "SymInt": 0, "bool": False, "str": "none"}
 
 # Mirrors `kStringToDataType` in `src/data_type.h`.  Any tensor passed to
-# an InfiniOps op must have one of these dtypes; others (`bool`, complex,
+# an InfiniOps op must have one of these dtypes; others (complex,
 # quantised types) abort the process inside `DataTypeFromString`.  Some
 # vendor torch forks lag behind upstream and lack `uint16` / `uint32` /
 # `uint64` (added in PyTorch 2.3); resolve them lazily and keep the
@@ -128,6 +128,7 @@ _SUPPORTED_DTYPE_NAMES = (
     "uint16",
     "uint32",
     "uint64",
+    "bool",
     "float16",
     "bfloat16",
     "float32",
@@ -679,8 +680,8 @@ def test_op(op_meta, shape, dtype, device, rtol, atol):
         )
 
     # InfiniOps `DataType` supports only `int{8,16,32,64}`,
-    # `uint{8,16,32,64}`, `float{16,32,64}`, and `bfloat16`.  Tensors with
-    # any other torch dtype (`bool`, `complex64`, `complex128`, etc.) abort
+    # `uint{8,16,32,64}`, `bool`, `float{16,32,64}`, and `bfloat16`. Tensors with
+    # any other torch dtype (`complex64`, `complex128`, etc.) abort
     # on `DataTypeFromString`, so skip the test rather than crash the process.
     tensors = [*ref_outs, *(x for x in inputs if isinstance(x, torch.Tensor))]
     unsupported = next(

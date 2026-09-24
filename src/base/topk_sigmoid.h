@@ -162,7 +162,7 @@ class TopkSigmoid : public Operator<TopkSigmoid> {
     if (is_padding) {
       assert(is_padding->ndim() == 1 && is_padding->numel() == num_tokens_ &&
              "`TopkSigmoid` requires `is_padding` shape `[num_tokens]`");
-      assert(is_padding->dtype() == DataType::kUInt8 &&
+      assert(is_padding->dtype() == DataType::kBool &&
              is_padding->IsContiguous() &&
              "`TopkSigmoid` requires contiguous bool `is_padding`");
       assert(same_device(*is_padding) &&

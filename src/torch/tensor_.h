@@ -63,6 +63,8 @@ inline at::ScalarType ToAtenDataType(DataType dtype) {
       return at::kLong;
     case DataType::kUInt8:
       return at::kByte;
+    case DataType::kBool:
+      return at::kBool;
     case DataType::kUInt16:
     case DataType::kUInt32:
     case DataType::kUInt64:
