@@ -174,6 +174,126 @@ class Clamp {
     ) in text
 
 
+def test_rms_norm_optional_weight_is_preserved_across_generated_wrappers():
+    module = _load_generator_module()
+    operator = module._parse_operator_header("rms_norm")
+
+    binding = module._generate_pybind11(operator)
+    optional_conversion = "OptionalTensorFromPybind11Handle(weight)"
+
+    assert binding.count("std::optional<py::object> weight") == 6
+    assert binding.count(optional_conversion) == 6
+    assert "TensorFromPybind11Handle(weight)" not in binding.replace(
+        optional_conversion, ""
+    )
+
+    dispatch_declarations, _ = module._generate_generated_dispatch_entries(operator)
+    dispatch_text = "\n".join(dispatch_declarations)
+
+    assert (
+        "void CallRmsNorm(const Handle& handle, const Config& config, "
+        "Tensor input, std::optional<Tensor> weight, float eps, Tensor out);"
+    ) in dispatch_text
+    assert (
+        "void CallRmsNorm(const Handle& handle, const Config& config, "
+        "Tensor input, std::optional<Tensor> weight, Tensor out);"
+    ) in dispatch_text
+
+    instantiation_declarations, _ = (
+        module._generate_operator_call_instantiation_entries(operator)
+    )
+    instantiation_text = "\n".join(instantiation_declarations)
+
+    assert (
+        "Operator<::infini::ops::RmsNorm>::Call<"
+        "Tensor, std::optional<Tensor>, float, Tensor>"
+    ) in instantiation_text
+    assert (
+        "Operator<::infini::ops::RmsNorm>::Call<Tensor, std::optional<Tensor>, Tensor>"
+    ) in instantiation_text
+
+    legacy_source, legacy_header = module._generate_legacy_c(operator, ())
+
+    assert "std::optional" not in legacy_header
+    assert "const infiniopTensorDescriptor_t weight" in legacy_header
+    assert "const void * weight" in legacy_header
+
+    nullable_weight_prefix = (
+        "weight == nullptr ? std::optional<infini::ops::Tensor>{} : "
+        "std::optional<infini::ops::Tensor>{"
+    )
+    assert (
+        nullable_weight_prefix + "infini::ops::Tensor{nullptr, weight->shape(), "
+    ) in legacy_source
+    assert (
+        nullable_weight_prefix + "infini::ops::Tensor(const_cast<void *>(weight), "
+    ) in legacy_source
+
+    for line in legacy_source.splitlines():
+        if "weight->shape()" in line:
+            assert nullable_weight_prefix in line
+
+
+def test_legacy_c_uses_selected_overload_type_for_reused_optional_name(
+    monkeypatch, tmp_path
+):
+    module = _load_generator_module()
+    base_header = tmp_path / "legacy_optional.h"
+    base_header.write_text(
+        """
+class LegacyOptional {
+ public:
+  virtual void operator()(const Tensor input,
+                          const std::optional<Tensor> value,
+                          Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const Tensor value,
+                          Tensor out) const = 0;
+  virtual void operator()(const Tensor input, const int64_t value,
+                          Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda op_name: base_header)
+
+    required_tensor = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "input"),
+            module._ParsedArgument("const Tensor", "value"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    required_scalar = module._ParsedFunction(
+        [
+            module._ParsedArgument("const Tensor", "input"),
+            module._ParsedArgument("const int64_t", "value"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+
+    tensor_operator = module._Operator(
+        "legacy_optional",
+        constructors=[required_tensor],
+        calls=[required_tensor],
+    )
+    tensor_source, tensor_header = module._generate_legacy_c(tensor_operator, ())
+
+    assert "const infiniopTensorDescriptor_t value" in tensor_header
+    assert "const void * value" in tensor_header
+    assert "value == nullptr" not in tensor_source
+    assert "infini::ops::Tensor{nullptr, value->shape()" in tensor_source
+
+    scalar_operator = module._Operator(
+        "legacy_optional",
+        constructors=[required_scalar],
+        calls=[required_scalar],
+    )
+    scalar_source, scalar_header = module._generate_legacy_c(scalar_operator, ())
+
+    assert "const int64_t value" in scalar_header
+    assert "value == nullptr" not in scalar_source
+    assert "value->shape()" not in scalar_source
+
+
 def test_extractor_prefers_header_types_for_reused_parameter_names(
     monkeypatch, tmp_path
 ):
