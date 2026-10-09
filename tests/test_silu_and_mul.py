@@ -111,3 +111,37 @@ def _torch_silu_and_mul(input, out):
     up = input[..., hidden_size:]
 
     return torch.mul(torch.nn.functional.silu(gate), up, out=out)
+
+
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize("tokens", (1, 31, 8192))
+@pytest.mark.parametrize("hidden", (3072, 6144, 8192))
+@pytest.mark.parametrize("padded", (False, True))
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
+def test_silu_and_mul_ascend_token_tiles(
+    tokens, hidden, padded, dtype, device, implementation_index
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("token tile regression targets native Ascend")
+
+    input = rand_strided(
+        (tokens, hidden * 2),
+        (hidden * 2 + 128, 1) if padded else None,
+        dtype=dtype,
+        device=device,
+    )
+    out = empty_strided(
+        (tokens, hidden),
+        (hidden + 128, 1) if padded else None,
+        dtype=dtype,
+        device=device,
+    )
+
+    return Payload(
+        lambda *args: _silu_and_mul(*args, implementation_index=implementation_index),
+        _torch_silu_and_mul,
+        (input, out),
+        {},
+        rtol=1e-2 if dtype == torch.bfloat16 else 1e-3,
+        atol=5e-3 if dtype == torch.bfloat16 else 1e-5,
+    )

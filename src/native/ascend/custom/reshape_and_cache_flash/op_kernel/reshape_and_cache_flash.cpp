@@ -38,61 +38,70 @@ class KernelReshapeAndCacheFlashStrided {
     value_cache_page_stride_ = value_cache_page_stride;
     value_cache_head_stride_ = value_cache_head_stride;
 
-    int64_t aligned_bytes = (head_bytes_ + 31) / 32 * 32;
-    pipe_.InitBuffer(copy_buffer_, static_cast<uint32_t>(aligned_bytes));
+    combine_heads_ = key_head_stride == head_size &&
+                     value_head_stride == head_size &&
+                     key_cache_head_stride == head_size &&
+                     value_cache_head_stride == head_size;
+    pipe_.InitBuffer(copy_buffer_, kTileBytes);
   }
 
   __aicore__ inline void Process() {
     auto local = copy_buffer_.Get<uint8_t>();
-    AscendC::DataCopyExtParams copy_params{
-        1, static_cast<uint32_t>(head_bytes_), 0, 0, 0};
-    AscendC::DataCopyPadExtParams<uint8_t> pad_params{false, 0, 0, 0};
-
-    for (int64_t token = 0; token < num_tokens_; ++token) {
+    int64_t heads_per_task = combine_heads_ ? num_heads_ : 1;
+    int64_t tasks_per_token = combine_heads_ ? 1 : num_heads_;
+    for (int64_t task = AscendC::GetBlockIdx();
+         task < num_tokens_ * tasks_per_token; task += AscendC::GetBlockNum()) {
+      int64_t token = task / tasks_per_token;
+      int64_t head = task % tasks_per_token;
       int64_t slot = slot_mapping_.GetValue(token);
-      if (slot < 0 || slot >= num_blocks_ * block_size_) {
-        continue;
-      }
+      if (slot < 0 || slot >= num_blocks_ * block_size_) continue;
 
       int64_t block = slot / block_size_;
       int64_t page = slot % block_size_;
-
-      for (int64_t head = 0; head < num_heads_; ++head) {
-        int64_t key_offset =
-            (token * key_token_stride_ + head * key_head_stride_) *
-            element_size_;
-        int64_t key_cache_offset =
-            (block * key_cache_block_stride_ + page * key_cache_page_stride_ +
-             head * key_cache_head_stride_) *
-            element_size_;
-        Copy(key_, key_offset, key_cache_, key_cache_offset, local, copy_params,
-             pad_params);
-
-        int64_t value_offset =
-            (token * value_token_stride_ + head * value_head_stride_) *
-            element_size_;
-        int64_t value_cache_offset = (block * value_cache_block_stride_ +
-                                      page * value_cache_page_stride_ +
-                                      head * value_cache_head_stride_) *
-                                     element_size_;
-        Copy(value_, value_offset, value_cache_, value_cache_offset, local,
-             copy_params, pad_params);
-      }
+      int64_t key_offset =
+          (token * key_token_stride_ + head * key_head_stride_) * element_size_;
+      int64_t key_cache_offset =
+          (block * key_cache_block_stride_ + page * key_cache_page_stride_ +
+           head * key_cache_head_stride_) *
+          element_size_;
+      Copy(key_, key_offset, key_cache_, key_cache_offset,
+           heads_per_task * head_bytes_, local);
+      int64_t value_offset =
+          (token * value_token_stride_ + head * value_head_stride_) *
+          element_size_;
+      int64_t value_cache_offset =
+          (block * value_cache_block_stride_ + page * value_cache_page_stride_ +
+           head * value_cache_head_stride_) *
+          element_size_;
+      Copy(value_, value_offset, value_cache_, value_cache_offset,
+           heads_per_task * head_bytes_, local);
     }
   }
 
  private:
-  __aicore__ inline void Copy(
-      AscendC::GlobalTensor<uint8_t>& source, int64_t source_offset,
-      AscendC::GlobalTensor<uint8_t>& destination, int64_t destination_offset,
-      AscendC::LocalTensor<uint8_t>& local,
-      const AscendC::DataCopyExtParams& copy_params,
-      const AscendC::DataCopyPadExtParams<uint8_t>& pad_params) {
-    AscendC::DataCopyPad(local, source[source_offset], copy_params, pad_params);
-    AscendC::PipeBarrier<PIPE_ALL>();
-    AscendC::DataCopyPad(destination[destination_offset], local, copy_params);
-    AscendC::PipeBarrier<PIPE_ALL>();
+  __aicore__ inline void Copy(AscendC::GlobalTensor<uint8_t>& source,
+                              int64_t source_offset,
+                              AscendC::GlobalTensor<uint8_t>& destination,
+                              int64_t destination_offset, int64_t bytes,
+                              AscendC::LocalTensor<uint8_t>& local) {
+    AscendC::DataCopyPadExtParams<uint8_t> pad{false, 0, 0, 0};
+    for (int64_t offset = 0; offset < bytes; offset += kTileBytes) {
+      auto count = static_cast<uint32_t>(
+          bytes - offset < kTileBytes ? bytes - offset : kTileBytes);
+      AscendC::DataCopyExtParams params{1, count, 0, 0, 0};
+      AscendC::DataCopyPad(local, source[source_offset + offset], params, pad);
+      AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE3>(0);
+      AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE3>(0);
+      AscendC::DataCopyPad(destination[destination_offset + offset], local,
+                           params);
+      AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(0);
+      AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(0);
+    }
   }
+
+  static constexpr int64_t kTileBytes = 2048;
+
+  bool combine_heads_{false};
 
   AscendC::TPipe pipe_;
   AscendC::TBuf<AscendC::TPosition::VECCALC> copy_buffer_;

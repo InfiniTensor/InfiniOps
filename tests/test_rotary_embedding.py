@@ -324,3 +324,95 @@ def _apply_rotary(
         y = rotary[..., 1::2].float().clone()
         rotary[..., 0::2].copy_(x * cos - y * sin)
         rotary[..., 1::2].copy_(y * cos + x * sin)
+
+
+@pytest.mark.parametrize("tokens", (1, 32, 8192))
+@pytest.mark.parametrize("has_key", (False, True))
+@pytest.mark.parametrize("padded_cache", (False, True))
+def test_rotary_embedding_ascend_packed_qk(
+    tokens, has_key, padded_cache, device, implementation_index
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("packed Q/K regression targets native Ascend")
+
+    query_width, key_width = 32 * 128, 8 * 128
+    fused = torch.randn(
+        (tokens, query_width + 2 * key_width), dtype=torch.bfloat16, device=device
+    )
+    query = fused[:, :query_width].view(tokens, 32, 128)
+    key = (
+        fused[:, query_width : query_width + key_width].view(tokens, 8, 128)
+        if has_key
+        else None
+    )
+    positions = torch.arange(tokens, dtype=torch.int64, device=device) % 128
+    cache = torch.randn(
+        (128, 160 if padded_cache else 128), dtype=query.dtype, device=device
+    )[:, :128]
+    expected_query = query.clone()
+    expected_key = key.clone() if key is not None else None
+    _torch_rotary_embedding(
+        positions, expected_query, expected_key, cache, 128, True, 0, False
+    )
+
+    infini.ops.rotary_embedding(
+        positions,
+        query,
+        key,
+        cache,
+        128,
+        True,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+
+    torch.testing.assert_close(query, expected_query, rtol=0, atol=0)
+
+    if key is not None:
+        torch.testing.assert_close(key, expected_key, rtol=0, atol=0)
+
+
+def test_rotary_embedding_ascend_graph_updates_cache_and_positions(
+    device, implementation_index
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("Q/K graph regression targets native Ascend")
+
+    source = torch.randn((32, 40, 128), dtype=torch.bfloat16, device=device)
+    query = source[:, :32].clone()
+    key = source[:, 32:].clone()
+    positions = torch.arange(32, dtype=torch.int64, device=device)
+    cache = torch.randn((64, 128), dtype=query.dtype, device=device)
+
+    def invoke():
+        infini.ops.rotary_embedding(
+            positions,
+            query,
+            key,
+            cache,
+            128,
+            True,
+            implementation_index=implementation_index,
+            stream=get_stream(query.device),
+        )
+
+    invoke()
+    torch.npu.synchronize()
+    graph = torch.npu.NPUGraph()
+
+    with torch.npu.graph(graph):
+        invoke()
+
+    query.copy_(source[:, :32])
+    key.copy_(source[:, 32:])
+    cache.mul_(0.25)
+    positions.add_(16)
+    expected_query, expected_key = query.clone(), key.clone()
+    _torch_rotary_embedding(
+        positions, expected_query, expected_key, cache, 128, True, 0, False
+    )
+    graph.replay()
+    torch.npu.synchronize()
+
+    torch.testing.assert_close(query, expected_query, rtol=0, atol=0)
+    torch.testing.assert_close(key, expected_key, rtol=0, atol=0)

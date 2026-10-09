@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_ASCEND_SILU_AND_MUL_KERNEL_H_
 #define INFINI_OPS_ASCEND_SILU_AND_MUL_KERNEL_H_
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -13,6 +14,10 @@
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+#include "aclrtlaunch_silu_and_mul_tiled.h"
+#endif
+
 namespace infini::ops {
 
 // `aclnnSwiGlu` splits the last input dimension into `[gate, up]` and
@@ -23,6 +28,22 @@ class Operator<SiluAndMul, Device::Type::kAscend> : public SiluAndMul {
  public:
   Operator(const Tensor input, Tensor out)
       : SiluAndMul(input, out), input_cache_(input), out_cache_(out) {
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+    // Padded outputs avoid the ACLNN staging and copy; contiguous outputs
+    // retain the vendor kernel's lower launch overhead.
+    use_tiled_kernel_ =
+        !is_out_contiguous_ && (ndim_ == 2 || ndim_ == 3) && hidden_size_ > 0 &&
+        hidden_size_ <= 8192 && hidden_size_ % 128 == 0 &&
+        input.stride(-1) == 1 && out.stride(-1) == 1 &&
+        input.stride(-2) >= static_cast<int64_t>(hidden_size_ * 2) &&
+        out.stride(-2) >= static_cast<int64_t>(hidden_size_) &&
+        (ndim_ == 2 || (input.stride(0) == static_cast<int64_t>(input.size(1)) *
+                                               input.stride(1) &&
+                        out.stride(0) == static_cast<int64_t>(out.size(1)) *
+                                             out.stride(1))) &&
+        input_type_ == DataType::kBFloat16;
+#endif
+
     needs_copy_ = !is_out_contiguous_;
     if (needs_copy_) {
       out_staging_size_ = out.numel() * kDataTypeToSize.at(out.dtype());
@@ -38,6 +59,24 @@ class Operator<SiluAndMul, Device::Type::kAscend> : public SiluAndMul {
   }
 
   void operator()(const Tensor input, Tensor out) const override {
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+    if (use_tiled_kernel_) {
+      auto rows = output_size_ / hidden_size_;
+      if (rows == 0) return;
+
+      auto blocks = static_cast<uint32_t>(std::min<Tensor::Size>(rows, 8) * 8);
+      auto ret = aclrtlaunch_silu_and_mul_tiled(
+          blocks, static_cast<aclrtStream>(stream_),
+          const_cast<void*>(input.data()), out.data(),
+          static_cast<int64_t>(rows), static_cast<int64_t>(hidden_size_),
+          static_cast<int64_t>(input.stride(-2)),
+          static_cast<int64_t>(out.stride(-2)));
+      assert(ret == ACL_SUCCESS &&
+             "Ascend tiled `SiluAndMul` execution failed");
+      return;
+    }
+#endif
+
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_out = out_cache_.get(out.data());
     auto stream = static_cast<aclrtStream>(stream_);
@@ -93,6 +132,8 @@ class Operator<SiluAndMul, Device::Type::kAscend> : public SiluAndMul {
   mutable ascend::AclTensorCache out_cache_;
 
   mutable std::optional<ascend::AclTensorCache> out_staging_cache_;
+
+  bool use_tiled_kernel_{false};
 
   bool needs_copy_{false};
 

@@ -126,3 +126,57 @@ def _torch_rms_norm(input, weight, *, eps=1e-6, out=None):
         out = result
 
     return out
+
+
+@pytest.mark.parametrize("tokens, heads", ((1, 1), (31, 8), (8192, 32)))
+@pytest.mark.parametrize("packed", (False, True))
+@pytest.mark.parametrize("eps", (1e-6, 1e-5))
+def test_rms_norm_ascend_packed_qk(
+    tokens, heads, packed, eps, device, implementation_index
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("packed Q/K regression targets native Ascend")
+
+    import torch_npu
+
+    shape = (tokens, heads, 128)
+    strides = ((heads + 3) * 128, 128, 1) if packed else None
+    input = randn_strided(shape, strides, dtype=torch.bfloat16, device=device)
+    weight = torch.randn(128, dtype=torch.bfloat16, device=device)
+    out = empty_strided(shape, strides, dtype=torch.bfloat16, device=device)
+    expected = torch_npu.npu_rms_norm(input.contiguous(), weight, eps)[0]
+
+    _rms_norm(
+        input, weight, eps=eps, out=out, implementation_index=implementation_index
+    )
+
+    torch.testing.assert_close(out, expected, rtol=0, atol=0)
+
+
+def test_rms_norm_ascend_graph_updates_input_and_weight(device, implementation_index):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("Q/K graph regression targets native Ascend")
+
+    import torch_npu
+
+    input = torch.randn((64, 35, 128), dtype=torch.bfloat16, device=device)[:, :32]
+    weight = torch.randn(128, dtype=input.dtype, device=device)
+    out = torch.empty_like(input)
+
+    def invoke():
+        _rms_norm(input, weight, out=out, implementation_index=implementation_index)
+
+    invoke()
+    torch.npu.synchronize()
+    graph = torch.npu.NPUGraph()
+
+    with torch.npu.graph(graph):
+        invoke()
+
+    input.add_(0.5)
+    weight.mul_(0.25)
+    graph.replay()
+    torch.npu.synchronize()
+    expected = torch_npu.npu_rms_norm(input.contiguous(), weight, 1e-6)[0]
+
+    torch.testing.assert_close(out, expected, rtol=0, atol=0)
