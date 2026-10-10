@@ -204,6 +204,7 @@ inline std::optional<Device::Type> TryDeviceTypeFromString(
       {"iluvatar", Device::Type::kIluvatar},
       {"hygon", Device::Type::kHygon},
       {"thead", Device::Type::kThead},
+      {"kunlun", Device::Type::kKunlun},
   };
 
   auto platform_it{

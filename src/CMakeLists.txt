@@ -396,6 +396,23 @@ if(WITH_MOORE)
     list(APPEND DEVICE_LIST "moore")
 endif()
 
+if(WITH_KUNLUN)
+    set(_kunlun_kernel "${CMAKE_CURRENT_SOURCE_DIR}/native/kunlun/ops/rotary_embedding/kernel.xpu")
+    set(KUNLUN_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/rotary_embedding_kunlun.o")
+    add_custom_command(OUTPUT "${KUNLUN_OBJECT}"
+        COMMAND "${XTDK_COMPILER}" --xpu-arch=${KUNLUN_ARCH}
+            -std=c++17 -O2 -fPIC -fno-builtin
+            -I${KUNLUN_INCLUDE_DIR} ${INFINI_RT_INCLUDE_FLAGS}
+            -c "${_kunlun_kernel}" -o "${KUNLUN_OBJECT}"
+        DEPENDS "${_kunlun_kernel}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/kunlun/ops/rotary_embedding/launch.h"
+        VERBATIM)
+    target_sources(infiniops PRIVATE "${KUNLUN_OBJECT}")
+    target_include_directories(infiniops PUBLIC "${KUNLUN_INCLUDE_DIR}")
+    target_link_libraries(infiniops PUBLIC "${KUNLUN_RUNTIME_LIB}")
+    list(APPEND DEVICE_LIST "kunlun")
+endif()
+
 if(WITH_CAMBRICON)
     file(GLOB_RECURSE CAMBRICON_MLU_SOURCES CONFIGURE_DEPENDS "native/cambricon/ops/*/*.mlu")
     find_program(CNCC_COMPILER cncc HINTS "${NEUWARE_HOME}/bin" "$ENV{NEUWARE_HOME}/bin" /usr/local/neuware/bin)
@@ -1568,6 +1585,11 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
 
     target_link_libraries(ops PRIVATE infiniops)
+
+    # Kunlun dispatch references the host launch stubs in this object.
+    if(WITH_KUNLUN)
+        target_sources(ops PRIVATE "${KUNLUN_OBJECT}")
+    endif()
 
     # Cambricon generated dispatch is compiled into the Python extension and
     # directly references host launch stubs emitted from `.mlu` sources. Link
