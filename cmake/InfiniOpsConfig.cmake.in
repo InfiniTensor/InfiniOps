@@ -8,5 +8,7 @@ if(@WITH_NVIDIA@ OR @WITH_ILUVATAR@ OR @WITH_HYGON@ OR @WITH_THEAD@)
     find_dependency(CUDAToolkit)
 endif()
 
+# WITH_QY links Denglin `curt`/`cublas` directly; no CUDAToolkit dependency.
+
 include("${CMAKE_CURRENT_LIST_DIR}/InfiniOpsTargets.cmake")
 check_required_components(InfiniOps)
