@@ -688,6 +688,12 @@ set(_infini_ops_linked_uses_torch FALSE)
 set(_infini_ops_linked_uses_tvm_ffi FALSE)
 
 if(WITH_LINKED)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    if(_TORCH_PYTHON)
+        set(_linked_python "${_TORCH_PYTHON}")
+    else()
+        set(_linked_python "${Python_EXECUTABLE}")
+    endif()
     if(NOT DEVICE_LIST)
         message(FATAL_ERROR
             "`WITH_LINKED=ON` requires an enabled device backend.")
@@ -734,7 +740,7 @@ if(WITH_LINKED)
     endif()
 
     execute_process(
-        COMMAND "${_TORCH_PYTHON}" ${_linked_resolver_args}
+        COMMAND "${_linked_python}" ${_linked_resolver_args}
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
         RESULT_VARIABLE _linked_resolution_result
     )
@@ -756,6 +762,10 @@ if(WITH_LINKED)
                 "Unsupported linked operator transport `${_linked_transport}`.")
         endif()
     endforeach()
+
+    if(_infini_ops_linked_uses_torch AND NOT WITH_TORCH)
+        infiniops_find_torch()
+    endif()
 
     list(REMOVE_DUPLICATES INFINI_OPS_LINKED_LIBRARIES)
     set(_linked_library_basenames)

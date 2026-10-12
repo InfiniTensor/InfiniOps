@@ -245,7 +245,10 @@ if(AUTO_DETECT_BACKENDS)
     endif()
 endif()
 
-if(WITH_TORCH OR WITH_LINKED)
+ # A linked backend is not necessarily a Torch backend: TVM-FFI transports
+ # consume DLPack views and their own runtime. Discover Torch lazily only when
+ # native Torch wrappers or a selected linked Torch transport need it.
+macro(infiniops_find_torch)
     if(WITH_MARS AND WITH_TORCH AND WITH_LINKED)
         find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
     else()
@@ -273,7 +276,7 @@ if(WITH_TORCH OR WITH_LINKED)
 
     if(NOT _torch_result EQUAL 0)
         message(FATAL_ERROR
-            "`WITH_TORCH=ON` or `WITH_LINKED=ON` requires an installed `torch` package.")
+            "The selected Torch backend/transport requires an installed `torch` package.")
     endif()
 
     execute_process(
@@ -366,6 +369,10 @@ if(WITH_TORCH OR WITH_LINKED)
     endif()
 
     message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
+endmacro()
+
+if(WITH_TORCH)
+    infiniops_find_torch()
 endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.
