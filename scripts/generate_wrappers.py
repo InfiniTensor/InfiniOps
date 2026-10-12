@@ -969,12 +969,7 @@ namespace py = pybind11;
 namespace infini::ops {{
 
 std::size_t DefaultImplementationIndexFor{symbol_name}(Device::Type dev_type) {{
-  auto indices = generated_dispatch::ActiveImplementationIndicesFor{symbol_name}(dev_type);
-  if (indices.empty()) {{
-    throw py::value_error("No active implementation for {symbol_name} on device " +
-                          std::string{{Device::StringFromType(dev_type)}});
-  }}
-  return indices.front();
+  return {op_type}::DefaultConfig(dev_type).implementation_index();
 }}
 
 void Bind{symbol_name}(py::module& m) {{
@@ -1331,7 +1326,17 @@ void ClearCacheFor{symbol_name}() {{
 
     for node in operator.constructors:
         params = _generate_params(node)
-        args = _generate_arguments(node)
+        constructor_args = [
+            arg.spelling for arg in node.get_arguments() if arg.spelling != "stream"
+        ]
+        # Operator::Make forwards its trailing arguments. Named by-value
+        # dispatch parameters are mutable lvalues, while the generated public
+        # instantiations use const T& for every trailing argument. Canonicalize
+        # this call so Python bindings request the exported specialization.
+        args = ", ".join(
+            [constructor_args[0]]
+            + [f"std::as_const({name})" for name in constructor_args[1:]]
+        )
         make_params = _append_optional_params("const Config& config", params)
 
         if make_params in emitted_make_params:
@@ -1422,6 +1427,8 @@ def _generate_generated_dispatch_source(impl_paths, definitions):
 
     return f"""#include "generated_dispatch.h"
 #include "host_range_profiler.h"
+
+#include <utility>
 
 // clang-format off
 {impl_includes}
@@ -1616,6 +1623,13 @@ def _generate_operator_call_instantiation_entries(operator):
     )
 
     _append_unique(
+        f"extern template Config "
+        f"Operator<{op_type}>::DefaultConfig(Device::Type);",
+        f"template Config "
+        f"Operator<{op_type}>::DefaultConfig(Device::Type);",
+    )
+
+    _append_unique(
         f"extern template std::size_t "
         f"Operator<{op_type}>::DefaultImplementationIndex(Device::Type);",
         f"template std::size_t "
@@ -1646,6 +1660,13 @@ def _generate_operator_call_instantiation_entries(operator):
             make_params,
         )
         make_instantiation = f"Operator<{op_type}>::Make<{make_template_arguments}>({make_function_params})"
+        can_make_template_arguments = ", ".join(
+            _normalized_type(arg) for arg in rest_args
+        )
+        can_make_instantiation = (
+            f"Operator<{op_type}>::CanMake<{can_make_template_arguments}>"
+            f"({make_function_params})"
+        )
 
         operator_instantiation = (
             f"Operator<{op_type}>::operator()<{template_arguments}>({params}) const"
@@ -1659,6 +1680,11 @@ def _generate_operator_call_instantiation_entries(operator):
             f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
             f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
         )
+        if operator.name in ("flash_attn_with_kvcache", "reshape_and_cache_flash"):
+            _append_unique(
+                f"extern template bool {can_make_instantiation};",
+                f"template bool {can_make_instantiation};",
+            )
         _append_unique(
             f"extern template void {operator_instantiation};",
             f"template void {operator_instantiation};",
@@ -1909,6 +1935,7 @@ def _get_all_ops(
     with_ninetoothed=False,
     with_linked=False,
     with_triton=False,
+    with_native_flash=False,
 ):
     scan_dirs = set(devices)
 
@@ -1939,6 +1966,17 @@ def _get_all_ops(
         impl_roots.append(_GENERATION_DIR)
 
     impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
+    if not with_native_flash:
+        # These optional providers require their exact pinned kernel build.
+        # Never emit a specialization merely because a source header exists.
+        for name, headers in impl_headers_by_operator.items():
+            impl_headers_by_operator[name] = [
+                header for header in headers
+                if header.path.as_posix() not in {
+                    "src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
+                    "src/native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
+                }
+            ]
 
     for base_dir in base_dirs:
         for file_path in base_dir.iterdir():
@@ -2134,6 +2172,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Include linked third-party backend implementations.",
     )
+    parser.add_argument("--with-native-flash", action="store_true",
+                        help="Include the pinned native inference Attention provider.")
     parser.add_argument(
         "--ops",
         nargs="+",
@@ -2170,6 +2210,7 @@ if __name__ == "__main__":
         with_ninetoothed=args.with_ninetoothed,
         with_linked=args.with_linked,
         with_triton=args.with_triton,
+        with_native_flash=args.with_native_flash,
     )
 
     if config_path is not None:

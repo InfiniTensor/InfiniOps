@@ -14,6 +14,12 @@ class Operator<Add, Device::Type::kNvidia>
     : public CudaAdd<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaAdd<Runtime<Device::Type::kNvidia>>::CudaAdd;
+  bool capture_safe() const override {
+    return out_type_ == DataType::kFloat16 ||
+           out_type_ == DataType::kBFloat16 ||
+           out_type_ == DataType::kFloat32 ||
+           out_type_ == DataType::kInt32;
+  }
 };
 
 }  // namespace infini::ops

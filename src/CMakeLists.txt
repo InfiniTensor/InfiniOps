@@ -95,6 +95,16 @@ if(WITH_CPU)
 
     find_package(OpenMP REQUIRED COMPONENTS CXX)
     target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
+    # Generated Call/dispatch translation units use CUDA when NVIDIA is
+    # enabled, but also instantiate CPU kernels. OpenMP::OpenMP_CXX only adds
+    # compile flags to CXX sources; forward them to NVCC's host compiler too.
+    if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+        separate_arguments(_cpu_openmp_flags NATIVE_COMMAND "${OpenMP_CXX_FLAGS}")
+        foreach(_flag IN LISTS _cpu_openmp_flags)
+            target_compile_options(infiniops PRIVATE
+                "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_flag}>")
+        endforeach()
+    endif()
 
     list(APPEND DEVICE_LIST "cpu")
 endif()
@@ -148,6 +158,9 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    # Optional pinned kernels have their own include closure and CUDA TUs.
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
 
     # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
     # the extra code objects to this provider source so other CUDA operators
@@ -159,6 +172,11 @@ if(WITH_NVIDIA)
             "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
 
     enable_language(CUDA)
+    if(BUILD_NVIDIA_FLASH_INFERENCE)
+        include("${PROJECT_SOURCE_DIR}/cmake/NativeFlashAttention.cmake")
+        infiniops_add_native_flash(infiniops_native_flash)
+        target_link_libraries(infiniops PRIVATE infiniops_native_flash)
+    endif()
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
@@ -1219,6 +1237,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     endif()
     if(WITH_LINKED)
         list(APPEND GENERATOR_ARGS --with-linked)
+    endif()
+    if(BUILD_NVIDIA_FLASH_INFERENCE)
+        list(APPEND GENERATOR_ARGS --with-native-flash)
     endif()
     if(WITH_NINETOOTHED)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)

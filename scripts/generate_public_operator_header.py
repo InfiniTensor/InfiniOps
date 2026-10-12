@@ -16,6 +16,90 @@ _CALL_SIGNATURE_RE = re.compile(
     re.MULTILINE,
 )
 
+# Provider implementations are visible only while building InfiniOps. Their
+# lookup and construction bodies must not be optimized in a downstream TU,
+# even when that TU sees an `extern template` declaration.
+_PROVIDER_SIGNATURES = (
+    (
+        "Operator::CanMake(Tensor)",
+        re.compile(
+            r"(?P<indent>^[ \t]*)template\s*<typename\.\.\.\s+Args>\s*\n"
+            r"(?P=indent)static\s+bool\s+CanMake\s*\(\s*"
+            r"const\s+Config\s*&\s*config\s*,\s*const\s+Tensor\s+tensor\s*,\s*"
+            r"const\s+Args\s*&\s*\.\.\.\s*args\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::Make(Tensor)",
+        re.compile(
+            r"(?P<indent>^[ \t]*)template\s*<typename\.\.\.\s+Args>\s*\n"
+            r"(?P=indent)static\s+std::unique_ptr<Operator>\s+Make\s*\(\s*"
+            r"const\s+Config\s*&\s*config\s*,\s*const\s+Tensor\s+tensor\s*,\s*"
+            r"Args\s*&&\s*\.\.\.\s*args\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::Make(vector<Tensor>)",
+        re.compile(
+            r"(?P<indent>^[ \t]*)template\s*<typename\.\.\.\s+Args>\s*\n"
+            r"(?P=indent)static\s+std::unique_ptr<Operator>\s+Make\s*\(\s*"
+            r"const\s+Config\s*&\s*config\s*,\s*"
+            r"const\s+std::vector<Tensor>\s+tensors\s*,\s*"
+            r"Args\s*&&\s*\.\.\.\s*args\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::active_implementation_indices",
+        re.compile(
+            r"(?P<indent>^[ \t]*)static\s+std::vector<std::size_t>\s+"
+            r"active_implementation_indices\s*\(\s*Device::Type\s+dev_type\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::DefaultConfig",
+        re.compile(
+            r"(?P<indent>^[ \t]*)static\s+Config\s+"
+            r"DefaultConfig\s*\(\s*Device::Type\s+dev_type\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::DefaultImplementationIndex",
+        re.compile(
+            r"(?P<indent>^[ \t]*)static\s+std::size_t\s+"
+            r"DefaultImplementationIndex\s*\(\s*Device::Type\s+dev_type\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::MakeWithDevice",
+        re.compile(
+            r"(?P<indent>^[ \t]*)template\s*<typename\.\.\.\s+Args>\s*\n"
+            r"(?P=indent)static\s+std::unique_ptr<Operator>\s+"
+            r"MakeWithDevice\s*\(\s*const\s+Config\s*&\s*config\s*,\s*"
+            r"Device::Type\s+dispatch_device_type\s*,\s*"
+            r"Args\s*&&\s*\.\.\.\s*args\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
+        "Operator::SelectWithDevice",
+        re.compile(
+            r"(?P<indent>^[ \t]*)template\s*<typename\s+Selected\s*,\s*typename\.\.\.\s+Args>\s*\n"
+            r"(?P=indent)static\s+bool\s+SelectWithDevice\s*\(\s*"
+            r"const\s+Config\s*&\s*config\s*,\s*"
+            r"Device::Type\s+dispatch_device_type\s*,\s*"
+            r"bool\s+strict\s*,\s*Selected\s*&&\s*selected\s*,\s*"
+            r"Args\s*&&\s*\.\.\.\s*args\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+)
+
 
 def _find_matching_brace(text: str, open_brace: int) -> int:
     depth = 0
@@ -111,19 +195,19 @@ def _find_matching_brace(text: str, open_brace: int) -> int:
     raise RuntimeError("Could not find the end of `Operator::Call`.")
 
 
-def _hide_operator_call_definition(text: str) -> str:
-    match = _CALL_SIGNATURE_RE.search(text)
+def _hide_definition(text: str, signature: re.Pattern[str], name: str) -> str:
+    match = signature.search(text)
 
     if match is None:
-        raise RuntimeError("Could not find the `Operator::Call` signature.")
+        raise RuntimeError(f"Could not find the `{name}` signature.")
 
     body_start = text.find("{", match.end())
 
     if body_start == -1:
-        raise RuntimeError("Could not find the `Operator::Call` body.")
+        raise RuntimeError(f"Could not find the `{name}` body.")
 
     if text[match.end() : body_start].strip():
-        raise RuntimeError("Unexpected tokens before the `Operator::Call` body.")
+        raise RuntimeError(f"Unexpected tokens before the `{name}` body.")
 
     body_end = _find_matching_brace(text, body_start)
     signature = text[match.start() : match.end()].rstrip()
@@ -132,7 +216,9 @@ def _hide_operator_call_definition(text: str) -> str:
 
 
 def generate_public_operator_header(source: Path, output: Path) -> None:
-    public_text = _hide_operator_call_definition(source.read_text())
+    public_text = _hide_definition(source.read_text(), _CALL_SIGNATURE_RE, "Operator::Call")
+    for name, signature in _PROVIDER_SIGNATURES:
+        public_text = _hide_definition(public_text, signature, name)
     public_text = public_text.replace('#include "host_range_profiler.h"\n', "")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(public_text)

@@ -138,13 +138,17 @@ __forceinline__ __device__ void CopyRowContiguous(T* __restrict__ dst,
     bool aligned_16 = IsAligned(src, 16) && IsAligned(dst, 16);
     if (aligned_16 && embedding_dim >= 4 && embedding_dim % 4 == 0) {
       CopyVectorizedFloat4<T>(dst, src, embedding_dim);
-    } else if (embedding_dim >= 2 && embedding_dim % 2 == 0) {
+    } else if (embedding_dim >= 2 && embedding_dim % 2 == 0 &&
+               IsAligned(src, alignof(float2)) &&
+               IsAligned(dst, alignof(float2))) {
       CopyVectorizedFloat2<T>(dst, src, embedding_dim);
     } else {
       CopyScalar<kDev, T>(dst, src, embedding_dim);
     }
   } else if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
-    if (embedding_dim >= 2 && embedding_dim % 2 == 0) {
+    if (embedding_dim >= 2 && embedding_dim % 2 == 0 &&
+        IsAligned(src, alignof(uint32_t)) &&
+        IsAligned(dst, alignof(uint32_t))) {
       CopyVectorized16<kDev, T>(dst, src, embedding_dim);
     } else {
       CopyScalar<kDev, T>(dst, src, embedding_dim);

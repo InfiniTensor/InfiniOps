@@ -46,7 +46,9 @@ class Embedding : public Operator<Embedding> {
     assert(out.size(-1) == embedding_dim_ &&
            "`Embedding` output last dim must equal `weight` embedding dim");
     assert((input_dtype_ == DataType::kInt32 ||
-            input_dtype_ == DataType::kInt64) &&
+            input_dtype_ == DataType::kInt64 ||
+            (input.device().type() == Device::Type::kCpu &&
+             (input_dtype_ == DataType::kUInt32 || input_dtype_ == DataType::kUInt64))) &&
            "`Embedding` supports int32 and int64 indices only");
     assert((weight_dtype_ == DataType::kFloat32 ||
             weight_dtype_ == DataType::kFloat16 ||

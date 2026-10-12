@@ -4,6 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
+#include <new>
+#include <stdexcept>
 #include <vector>
 
 #include "base/embedding.h"
@@ -31,42 +34,58 @@ class CudaEmbedding : public Embedding {
         is_out_contiguous_{out.IsContiguous()},
         weight_row_stride_{weight.stride(0)},
         weight_col_stride_{weight.stride(1)} {
-    size_t input_shape_size = input_ndim_ * sizeof(*d_input_shape_);
-    size_t input_strides_size = input_ndim_ * sizeof(*d_input_strides_);
-    size_t out_shape_size = out_ndim_ * sizeof(*d_out_shape_);
-    size_t out_strides_size = out_ndim_ * sizeof(*d_out_strides_);
+    if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
+      throw std::runtime_error("CudaEmbedding cannot query metadata owner device");
+    const size_t input_shape_size = input_ndim_ * sizeof(*d_input_shape_);
+    const size_t input_strides_size = input_ndim_ * sizeof(*d_input_strides_);
+    const size_t out_shape_size = out_ndim_ * sizeof(*d_out_shape_);
+    const size_t out_strides_size = out_ndim_ * sizeof(*d_out_strides_);
     const size_t metadata_size = input_shape_size + input_strides_size +
                                  out_shape_size + out_strides_size;
-
-    std::vector<std::byte> metadata(metadata_size);
-
-    Backend::Malloc((void**)&d_metadata_, metadata_size);
-
-    size_t offset = 0;
-    d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, input_shape_.data(),
-                input_shape_size);
-    offset += input_shape_size;
-
-    d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, input_strides_.data(),
-                input_strides_size);
-    offset += input_strides_size;
-
-    d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, out_shape_.data(), out_shape_size);
-    offset += out_shape_size;
-
-    d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, out_strides_.data(),
-                out_strides_size);
-
-    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
-
-    if (max_norm.has_value() && vocab_size_ > 0) {
-      Backend::Malloc(reinterpret_cast<void**>(&d_visited_),
-                      vocab_size_ * sizeof(*d_visited_));
+    try {
+      if (num_indices_ != 0 && !(is_input_contiguous_ && is_out_contiguous_)) {
+        std::vector<std::byte> metadata(metadata_size);
+        void* allocation = nullptr;
+        const auto status = Backend::Malloc(&allocation, metadata_size);
+        if (status != Backend::kSuccess || !allocation) {
+          if (allocation && Backend::Free(allocation) != Backend::kSuccess)
+            std::terminate();
+          throw std::bad_alloc();
+        }
+        d_metadata_ = static_cast<std::byte*>(allocation);
+        size_t offset = 0;
+        d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+        std::memcpy(metadata.data() + offset, input_shape_.data(), input_shape_size);
+        offset += input_shape_size;
+        d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+        std::memcpy(metadata.data() + offset, input_strides_.data(), input_strides_size);
+        offset += input_strides_size;
+        d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+        std::memcpy(metadata.data() + offset, out_shape_.data(), out_shape_size);
+        offset += out_shape_size;
+        d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+        std::memcpy(metadata.data() + offset, out_strides_.data(), out_strides_size);
+        if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                            Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+          throw std::runtime_error("CudaEmbedding metadata copy failed");
+      }
+      if (max_norm.has_value() && vocab_size_ > 0) {
+        void* allocation = nullptr;
+        const auto status = Backend::Malloc(&allocation,
+                                             vocab_size_ * sizeof(*d_visited_));
+        if (status != Backend::kSuccess || !allocation) {
+          if (allocation && Backend::Free(allocation) != Backend::kSuccess)
+            std::terminate();
+          throw std::bad_alloc();
+        }
+        d_visited_ = static_cast<int*>(allocation);
+      }
+    } catch (...) {
+      if (d_visited_ && Backend::Free(d_visited_) != Backend::kSuccess)
+        std::terminate();
+      if (d_metadata_ && Backend::Free(d_metadata_) != Backend::kSuccess)
+        std::terminate();
+      throw;
     }
   }
 
@@ -83,12 +102,18 @@ class CudaEmbedding : public Embedding {
       : CudaEmbedding(input, weight, padding_idx, std::nullopt, 2.0,
                       scale_grad_by_freq, sparse, out) {}
 
-  ~CudaEmbedding() {
-    Backend::Free(d_metadata_);
-
-    if (d_visited_) {
-      Backend::Free(d_visited_);
-    }
+  ~CudaEmbedding() override {
+    if (!d_metadata_ && !d_visited_) return;
+    int previous = -1;
+    if (Backend::GetDevice(&previous) != Backend::kSuccess) std::terminate();
+    const bool switched = previous != owner_device_;
+    if (switched && Backend::SetDevice(owner_device_) != Backend::kSuccess)
+      std::terminate();
+    const auto visited_freed = !d_visited_ || Backend::Free(d_visited_) == Backend::kSuccess;
+    const auto metadata_freed = !d_metadata_ || Backend::Free(d_metadata_) == Backend::kSuccess;
+    if (switched && Backend::SetDevice(previous) != Backend::kSuccess)
+      std::terminate();
+    if (!visited_freed || !metadata_freed) std::terminate();
   }
 
   void operator()(const Tensor input, const Tensor weight,
@@ -171,6 +196,7 @@ class CudaEmbedding : public Embedding {
   int* d_visited_{nullptr};
 
   std::byte* d_metadata_{nullptr};
+  int owner_device_{-1};
 
   Tensor::Size* d_input_shape_{nullptr};
 

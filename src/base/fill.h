@@ -1,12 +1,31 @@
 #ifndef INFINI_OPS_BASE_FILL_H_
 #define INFINI_OPS_BASE_FILL_H_
 
+
+#include "data_type.h"
 #include "operator.h"
 
 namespace infini::ops {
 
 class Fill : public Operator<Fill> {
  public:
+  // Output metadata contract; require storage at Call/RT memset, not planning.
+  // This does not select a provider or qualify its scalar/capture domain.
+  static bool valid_output(const Tensor& out, bool require_storage = true) {
+    const auto dtype = static_cast<int>(out.dtype());
+    if (dtype < 0 || dtype > static_cast<int>(DataType::kFloat64) ||
+        out.shape().size() != out.strides().size()) return false;
+    for (std::size_t i = 0; i < out.ndim(); ++i)
+      if (out.size(i) > 1 && out.stride(i) == 0) return false;
+    return !require_storage || !out.numel() || out.data();
+  }
+
+  static bool supports(const Tensor& input, double, const Tensor& out) {
+    return input.shape().size() == input.strides().size() &&
+           input.shape() == out.shape() && input.dtype() == out.dtype() &&
+           input.device() == out.device() && valid_output(out, false);
+  }
+
   Fill(const Tensor input, const double value, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},
@@ -57,6 +76,7 @@ class Fill : public Operator<Fill> {
   DataType out_type_;
 
   int device_index_{0};
+
 };
 
 }  // namespace infini::ops

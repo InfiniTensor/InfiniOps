@@ -26,6 +26,12 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
+option(BUILD_NVIDIA_FLASH_INFERENCE "Build pinned Torch-free NVIDIA inference Attention" OFF)
+set(FLASH_ATTN_SOURCE_ARCHIVE "" CACHE FILEPATH "Exact flash_attn-2.8.3 source archive")
+if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
+endif()
+
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
 option(WITH_TRITON "Enable the Triton JIT backend" OFF)
