@@ -1887,6 +1887,16 @@ def _select_ops_from_config(ops, config, config_path):
     selected = {}
 
     for op_name, selection in config.items():
+        if selection.get("public_api_only") is True:
+            base_header = _BASE_DIR / f"{op_name}.h"
+            if (base_header.resolve().parent != _BASE_DIR.resolve()
+                    or not base_header.is_file()):
+                raise ValueError(
+                    f"{config_path}: public API-only operator {op_name!r} "
+                    "has no hand-written base header"
+                )
+            selected[op_name] = []
+            continue
         headers = selection["headers"]
 
         if headers is not None:
