@@ -1,4 +1,4 @@
-// CUDA/CUTLASS body ported from frozen InfiniCore 0.2.9. See sources.json and upstream LICENSE.
+// CUDA/CUTLASS body ported from frozen InfiniCore 0.2.9. See THIRD_PARTY.txt for source and license details.
 #include "native/cuda/nvidia/ops/moe_fused_dense/kernel.h"
 #include "native/cuda/nvidia/ops/moe_fused_gate/device_guard.cuh"
 #include <cuda_runtime.h>
