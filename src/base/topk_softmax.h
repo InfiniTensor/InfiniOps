@@ -6,10 +6,49 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <cmath>
+#include <stdexcept>
 
 #include "operator.h"
 
 namespace infini::ops {
+
+class TopkSoftmaxConfig : public Config {
+ public:
+  explicit TopkSoftmaxConfig(float softcap = 0.0f, float min_sum = 0.0f)
+      : softcap_{softcap}, min_sum_{min_sum} {
+    if (!std::isfinite(softcap) || softcap < 0.0f) {
+      throw std::invalid_argument("TopkSoftmax softcap must be finite and nonnegative");
+    }
+    if (!std::isfinite(min_sum) || min_sum < 0.0f) {
+      throw std::invalid_argument("TopkSoftmax min_sum must be finite and nonnegative");
+    }
+  }
+
+  std::unique_ptr<Config> Clone() const override {
+    return std::make_unique<TopkSoftmaxConfig>(*this);
+  }
+
+  bool requires_config_aware_provider() const override {
+    return softcap_ != 0.0f || min_sum_ != 0.0f;
+  }
+  float softcap() const { return softcap_; }
+  float min_sum() const { return min_sum_; }
+
+  static float SoftcapFrom(const Config& config) {
+    const auto* typed = dynamic_cast<const TopkSoftmaxConfig*>(&config);
+    return typed ? typed->softcap() : 0.0f;
+  }
+
+  static float MinSumFrom(const Config& config) {
+    const auto* typed = dynamic_cast<const TopkSoftmaxConfig*>(&config);
+    return typed ? typed->min_sum() : 0.0f;
+  }
+
+ private:
+  float softcap_;
+  float min_sum_;
+};
 
 // Aligned with vLLM `_moe_C::topk_softmax`.
 class TopkSoftmax : public Operator<TopkSoftmax> {
@@ -43,6 +82,10 @@ class TopkSoftmax : public Operator<TopkSoftmax> {
                           Tensor token_expert_indices) const = 0;
 
  protected:
+  float softcap_{0.0f};
+
+  float min_sum_{0.0f};
+
   void ValidateCallMetadata(const Tensor gating_output,
                             std::optional<Tensor> bias,
                             std::optional<Tensor> is_padding,
@@ -164,6 +207,16 @@ class TopkSoftmax : public Operator<TopkSoftmax> {
   Tensor topk_indices_metadata_;
 
   Tensor token_expert_indices_metadata_;
+};
+
+template <>
+struct CacheKeyBuilder<TopkSoftmax> {
+  template <typename... Args>
+  detail::CacheKey operator()(const Config& config, const Args&... args) const {
+    return detail::CacheKey::Build(config.implementation_index(),
+                                   TopkSoftmaxConfig::SoftcapFrom(config),
+                                   TopkSoftmaxConfig::MinSumFrom(config), args...);
+  }
 };
 
 }  // namespace infini::ops
