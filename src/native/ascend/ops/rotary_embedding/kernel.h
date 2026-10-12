@@ -1,6 +1,8 @@
 #ifndef INFINI_OPS_ASCEND_ROTARY_EMBEDDING_KERNEL_H_
 #define INFINI_OPS_ASCEND_ROTARY_EMBEDDING_KERNEL_H_
 
+#if __has_include("aclnnop/aclnn_rotary_position_embedding.h")
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -336,5 +338,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
 };
 
 }  // namespace infini::ops
+
+#else
+#include "native/ascend/ops/rotary_embedding/cann82_compat.hpp"
+#endif
 
 #endif
