@@ -13,12 +13,11 @@ __nram__ char fill_nram_buffer[NRAM_MAX_SIZE] __attribute__((aligned(128)));
 
 template <typename T>
 __mlu_device__ void FillBuffer(T* buffer, std::size_t count,
-                               const T* device_value) {
+                               const T* device_value, T host_scalar) {
+  const T value = device_value != nullptr ? device_value[0] : host_scalar;
   if constexpr (std::is_same_v<T, float>) {
-    const T value = device_value[0];
     __bang_write_value(buffer, count, value);
   } else {
-    const T value = device_value[0];
     for (std::size_t i = 0; i < count; ++i) {
       buffer[i] = value;
     }
@@ -26,7 +25,7 @@ __mlu_device__ void FillBuffer(T* buffer, std::size_t count,
 }
 
 template <typename T>
-__mlu_global__ void FillKernel(const T* device_value, T* out,
+__mlu_global__ void FillKernel(const T* device_value, T host_scalar, T* out,
                                const std::size_t* out_shape,
                                const ptrdiff_t* out_strides,
                                std::size_t output_size, int ndim,
@@ -44,7 +43,7 @@ __mlu_global__ void FillKernel(const T* device_value, T* out,
 
   for (std::size_t processed = range.begin; processed < range.end;) {
     const std::size_t current = std::min(block_size, range.end - processed);
-    FillBuffer(buffer, current, device_value);
+    FillBuffer(buffer, current, device_value, host_scalar);
 
     if (out_contiguous) {
       __memcpy(out + processed, buffer, current * sizeof(T), NRAM2GDRAM);
@@ -108,14 +107,18 @@ void FillRaw64Union(void* workspace, cnrtQueue_t queue, int core_per_cluster,
   CNRT_CHECK(cnrtGetLastError());
 }
 
-template <typename T>
+template <typename StorageT>
 void FillUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
-               int cluster_count, const T* device_value, double host_value,
-               T* out, const std::size_t* out_shape,
+               int cluster_count, const StorageT* storage_device_value, double host_value,
+               StorageT* storage_out, const std::size_t* out_shape,
                const ptrdiff_t* out_strides, std::size_t output_size, int ndim,
                bool out_contiguous) {
+  using T = cambricon::NativeScalarType<StorageT>;
+  auto device_value = reinterpret_cast<const T*>(storage_device_value);
+  auto out = reinterpret_cast<T*>(storage_out);
+
+
   auto* bytes = static_cast<char*>(workspace);
-  auto* device_scalar = reinterpret_cast<T*>(bytes);
   bytes += sizeof(std::uint64_t);
   std::size_t* device_shape = nullptr;
   ptrdiff_t* device_strides = nullptr;
@@ -132,21 +135,18 @@ void FillUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
 
   const cnrtDim3_t kernel_dim = {static_cast<unsigned int>(core_per_cluster),
                                  static_cast<unsigned int>(cluster_count), 1};
+  T converted_host_value{};
   if (device_value == nullptr) {
-    T converted_host_value;
     if constexpr (std::is_same_v<T, __half> ||
                   std::is_same_v<T, __bang_bfloat16>) {
       converted_host_value = static_cast<T>(static_cast<float>(host_value));
     } else {
       converted_host_value = static_cast<T>(host_value);
     }
-    CNRT_CHECK(cnrtMemcpy(device_scalar, &converted_host_value, sizeof(T),
-                          cnrtMemcpyHostToDev));
-    device_value = device_scalar;
   }
   FillKernel<T><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
-      device_value, out, device_shape, device_strides, output_size, ndim,
-      out_contiguous);
+      device_value, converted_host_value, out, device_shape, device_strides,
+      output_size, ndim, out_contiguous);
   CNRT_CHECK(cnrtGetLastError());
 }
 
@@ -155,8 +155,8 @@ void FillUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
                              T*, const std::size_t*, const ptrdiff_t*,       \
                              std::size_t, int, bool)
 
-INSTANTIATE_FILL(__half);
-INSTANTIATE_FILL(__bang_bfloat16);
+INSTANTIATE_FILL(Float16);
+INSTANTIATE_FILL(BFloat16);
 INSTANTIATE_FILL(float);
 INSTANTIATE_FILL(int8_t);
 INSTANTIATE_FILL(int16_t);

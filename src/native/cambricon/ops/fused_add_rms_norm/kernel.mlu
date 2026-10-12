@@ -118,12 +118,15 @@ __mlu_global__ void FusedAddRmsNormKernel(
 
 }  // namespace fused_add_rms_norm_detail
 
-template <typename T>
+template <typename StorageT>
 void FusedAddRmsNormUnion(int core_per_cluster, int cluster_count,
                           cnrtQueue_t queue, void* input, void* residual,
                           const void* weight, size_t num_tokens, size_t dim,
                           ptrdiff_t input_row_stride,
                           ptrdiff_t residual_row_stride, float epsilon) {
+  using T = cambricon::NativeScalarType<StorageT>;
+
+
   cnrtDim3_t kernel_dim;
   kernel_dim.x = core_per_cluster;
   kernel_dim.y = cluster_count;
@@ -138,10 +141,10 @@ void FusedAddRmsNormUnion(int core_per_cluster, int cluster_count,
   CNRT_CHECK(cnrtGetLastError());
 }
 
-template void FusedAddRmsNormUnion<__half>(int, int, cnrtQueue_t, void*, void*,
+template void FusedAddRmsNormUnion<Float16>(int, int, cnrtQueue_t, void*, void*,
                                            const void*, size_t, size_t,
                                            ptrdiff_t, ptrdiff_t, float);
-template void FusedAddRmsNormUnion<__bang_bfloat16>(int, int, cnrtQueue_t,
+template void FusedAddRmsNormUnion<BFloat16>(int, int, cnrtQueue_t,
                                                     void*, void*, const void*,
                                                     size_t, size_t, ptrdiff_t,
                                                     ptrdiff_t, float);

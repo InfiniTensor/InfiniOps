@@ -422,10 +422,12 @@ if(WITH_CAMBRICON)
     find_program(CNCC_COMPILER cncc HINTS "${NEUWARE_HOME}/bin" "$ENV{NEUWARE_HOME}/bin" /usr/local/neuware/bin)
     if(CNCC_COMPILER)
         message(STATUS "Found cncc: ${CNCC_COMPILER}")
+        separate_arguments(INFINI_MLU_HOST_ABI_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS}")
         set(MLU_COMPILE_OPTS
             -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
             -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
             ${INFINI_RT_INCLUDE_FLAGS}
+            ${INFINI_MLU_HOST_ABI_FLAGS}
             -idirafter /usr/local/neuware/lib/clang/11.1.0/include
         )
         function(compile_mlu_file src_file)
