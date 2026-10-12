@@ -171,7 +171,10 @@ if(WITH_NVIDIA)
         COMPILE_OPTIONS
             "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
 
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/w4_marlin/")
     enable_language(CUDA)
+    include("${PROJECT_SOURCE_DIR}/cmake/NativeW4Marlin.cmake")
+
     if(BUILD_NVIDIA_FLASH_INFERENCE)
         include("${PROJECT_SOURCE_DIR}/cmake/NativeFlashAttention.cmake")
         infiniops_add_native_flash(infiniops_native_flash)
