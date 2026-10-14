@@ -1,6 +1,4 @@
-#include "native/cuda/qy/moe_topk_sigmoid_kernel.h"
-
-#include "native/cuda/qy/data_type_.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cfloat>
@@ -8,7 +6,8 @@
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/data_type_.h"
+#include "native/cuda/qy/moe_topk_sigmoid_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -57,7 +56,7 @@ __device__ __forceinline__ float sigmoidf_fast(float x) {
 
 // Load correction bias element; convert to float on device (no host cast).
 __device__ __forceinline__ float loadBias(const void *__restrict__ bias,
-                                         int bias_dtype_tag, int expert) {
+                                          int bias_dtype_tag, int expert) {
   using infini::rt::DataType;
   switch (static_cast<DataType>(bias_dtype_tag)) {
     case DataType::kFloat32:
@@ -75,11 +74,13 @@ __device__ __forceinline__ float loadBias(const void *__restrict__ bias,
 // CUB-free per-row top-k: grid-stride over tokens, block=128.
 // Compute in float; write WeightT / IndexT at the end (after optional renorm).
 template <typename GatingT, typename WeightT, typename IndexT>
-__global__ void moeTopkSigmoidKernel(
-    const GatingT *__restrict__ gating, WeightT *__restrict__ topk_weights,
-    IndexT *__restrict__ topk_indices, const void *__restrict__ correction_bias,
-    int bias_dtype_tag, int num_tokens, int num_experts, int topk,
-    int renormalize) {
+__global__ void moeTopkSigmoidKernel(const GatingT *__restrict__ gating,
+                                     WeightT *__restrict__ topk_weights,
+                                     IndexT *__restrict__ topk_indices,
+                                     const void *__restrict__ correction_bias,
+                                     int bias_dtype_tag, int num_tokens,
+                                     int num_experts, int topk,
+                                     int renormalize) {
   __shared__ float s_val[128];
   __shared__ int s_idx[128];
   __shared__ int selected[kMaxTopk];
@@ -187,7 +188,8 @@ void launchMoeTopkSigmoid(void *topk_weights, void *topk_indices,
 
   constexpr int block = 128;
   // One block per token when possible; Denglin OORs on huge grids with large
-  // blocks, but block=128 tolerates a higher grid than mul_scalar's old 256/256.
+  // blocks, but block=128 tolerates a higher grid than mul_scalar's old
+  // 256/256.
   constexpr size_t kMaxGrid = 1024;
   int grid = static_cast<int>(std::min(tokens, kMaxGrid));
   auto cuda_stream = reinterpret_cast<cudaStream_t>(stream);

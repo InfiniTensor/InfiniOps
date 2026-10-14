@@ -1,13 +1,12 @@
-#include "native/cuda/qy/silu_and_mul_kernel.h"
-
-#include "native/cuda/qy/data_type_.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/data_type_.h"
+#include "native/cuda/qy/silu_and_mul_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -80,11 +79,13 @@ void launchSiluAndMul(void *out, const void *in, size_t rows, size_t hidden,
       reinterpret_cast<T *>(out), reinterpret_cast<const T *>(in), n, hidden);
   auto err = cudaGetLastError();
   if (err != cudaSuccess) {
-    throw std::runtime_error(
-        std::string("QY silu_and_mul_launch failed: ") + cudaGetErrorString(err) +
-        " (n=" + std::to_string(n) + ", rows=" + std::to_string(rows) +
-        ", hidden=" + std::to_string(hidden) + ", grid=" + std::to_string(grid) +
-        ", block=" + std::to_string(block) + ")");
+    throw std::runtime_error(std::string("QY silu_and_mul_launch failed: ") +
+                             cudaGetErrorString(err) +
+                             " (n=" + std::to_string(n) +
+                             ", rows=" + std::to_string(rows) +
+                             ", hidden=" + std::to_string(hidden) +
+                             ", grid=" + std::to_string(grid) +
+                             ", block=" + std::to_string(block) + ")");
   }
 }
 

@@ -1,12 +1,11 @@
-#include "native/cuda/qy/moe_sum_kernel.h"
-
-#include "native/cuda/qy/data_type_.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/data_type_.h"
+#include "native/cuda/qy/moe_sum_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -50,8 +49,9 @@ __device__ __forceinline__ cuda_bfloat16 fromFloat<cuda_bfloat16>(float v) {
 // Runtime-topk loop: one block per token, threads stride over hidden.
 // Supports arbitrary topk (MiniCPM5 may use topk > 4).
 template <typename T>
-__global__ void moeSumKernel(T *__restrict__ output, const T *__restrict__ input,
-                             size_t topk, size_t hidden) {
+__global__ void moeSumKernel(T *__restrict__ output,
+                             const T *__restrict__ input, size_t topk,
+                             size_t hidden) {
   const size_t token_idx = blockIdx.x;
   const T *token_in = input + token_idx * topk * hidden;
   T *token_out = output + token_idx * hidden;
@@ -100,7 +100,8 @@ void launchMoeSum(void *output, const void *input, size_t tokens, size_t topk,
   // Prefer one-block-per-token when token count is modest (Denglin grid cap).
   constexpr int kMaxTokenGrid = 128;
   if (tokens <= static_cast<size_t>(kMaxTokenGrid)) {
-    int threads = static_cast<int>(std::min(hidden, static_cast<size_t>(block)));
+    int threads =
+        static_cast<int>(std::min(hidden, static_cast<size_t>(block)));
     moeSumKernel<T><<<static_cast<int>(tokens), threads, 0, cuda_stream>>>(
         reinterpret_cast<T *>(output), reinterpret_cast<const T *>(input), topk,
         hidden);
@@ -115,11 +116,12 @@ void launchMoeSum(void *output, const void *input, size_t tokens, size_t topk,
 
   auto err = cudaGetLastError();
   if (err != cudaSuccess) {
-    throw std::runtime_error(
-        std::string("QY moe_sum_launch failed: ") + cudaGetErrorString(err) +
-        " (tokens=" + std::to_string(tokens) + ", topk=" + std::to_string(topk) +
-        ", hidden=" + std::to_string(hidden) + ", block=" +
-        std::to_string(block) + ")");
+    throw std::runtime_error(std::string("QY moe_sum_launch failed: ") +
+                             cudaGetErrorString(err) +
+                             " (tokens=" + std::to_string(tokens) +
+                             ", topk=" + std::to_string(topk) +
+                             ", hidden=" + std::to_string(hidden) +
+                             ", block=" + std::to_string(block) + ")");
   }
 }
 

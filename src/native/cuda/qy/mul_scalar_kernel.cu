@@ -1,12 +1,11 @@
-#include "native/cuda/qy/mul_scalar_kernel.h"
-
-#include "native/cuda/qy/data_type_.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/data_type_.h"
+#include "native/cuda/qy/mul_scalar_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -49,18 +48,18 @@ void launchMulScalarKernel(size_t numel, void *output, const void *input,
   // Denglin OORs on large grids even for grid-stride kernels; keep modest.
   grid = std::min(grid, 128);
   auto cuda_stream = reinterpret_cast<cudaStream_t>(stream);
-  // Clear any prior sticky launch error so we attribute failures to this launch.
+  // Clear any prior sticky launch error so we attribute failures to this
+  // launch.
   (void)cudaGetLastError();
   mulScalarKernel<T><<<grid, block, 0, cuda_stream>>>(
-      numel, reinterpret_cast<T *>(output),
-      reinterpret_cast<const T *>(input), alpha);
+      numel, reinterpret_cast<T *>(output), reinterpret_cast<const T *>(input),
+      alpha);
   auto err = cudaGetLastError();
   if (err != cudaSuccess) {
-    throw std::runtime_error(std::string("QY mul_scalar_launch failed: ") +
-                             cudaGetErrorString(err) + " (numel=" +
-                             std::to_string(numel) + ", grid=" +
-                             std::to_string(grid) + ", block=" +
-                             std::to_string(block) + ")");
+    throw std::runtime_error(
+        std::string("QY mul_scalar_launch failed: ") + cudaGetErrorString(err) +
+        " (numel=" + std::to_string(numel) + ", grid=" + std::to_string(grid) +
+        ", block=" + std::to_string(block) + ")");
   }
 }
 

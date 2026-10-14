@@ -1,11 +1,11 @@
-#include "native/cuda/qy/moe_align_kernel.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/moe_align_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -51,8 +51,7 @@ __global__ void moeAlignCount(const int32_t *__restrict__ topk_ids,
   for (; idx < numel; idx += stride) {
     int32_t expert_id = topk_ids[idx];
     if (expert_map != nullptr) {
-      if (expert_id < 0 ||
-          expert_id >= static_cast<int32_t>(num_experts)) {
+      if (expert_id < 0 || expert_id >= static_cast<int32_t>(num_experts)) {
         continue;
       }
       expert_id = expert_map[expert_id];
@@ -68,8 +67,9 @@ __global__ void moeAlignCount(const int32_t *__restrict__ topk_ids,
 __global__ void moeAlignScan(const int32_t *__restrict__ counts,
                              int32_t *__restrict__ write_offsets,
                              int32_t *__restrict__ expert_ids,
-                             int32_t *__restrict__ total_out, int32_t num_experts,
-                             int32_t block_size, int32_t expert_ids_capacity) {
+                             int32_t *__restrict__ total_out,
+                             int32_t num_experts, int32_t block_size,
+                             int32_t expert_ids_capacity) {
   // Serial scan on thread 0 — E is modest (MiniCPM5 typically <= 256).
   if (threadIdx.x != 0 || blockIdx.x != 0) {
     return;
@@ -110,8 +110,7 @@ __global__ void moeAlignScatter(const int32_t *__restrict__ topk_ids,
   for (; idx < numel; idx += stride) {
     int32_t expert_id = topk_ids[idx];
     if (expert_map != nullptr) {
-      if (expert_id < 0 ||
-          expert_id >= static_cast<int32_t>(num_experts)) {
+      if (expert_id < 0 || expert_id >= static_cast<int32_t>(num_experts)) {
         continue;
       }
       expert_id = expert_map[expert_id];

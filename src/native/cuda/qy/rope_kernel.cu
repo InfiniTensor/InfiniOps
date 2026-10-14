@@ -1,13 +1,12 @@
-#include "native/cuda/qy/rope_kernel.h"
-
-#include "native/cuda/qy/data_type_.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/data_type_.h"
+#include "native/cuda/qy/rope_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -50,7 +49,8 @@ __device__ __forceinline__ cuda_bfloat16 fromFloat<cuda_bfloat16>(float v) {
 
 // Flattened over (token, head, rotary_pair). Avoids seqlen×nhead 2D/3D grids.
 template <typename T, bool IsGptJ>
-__global__ void ropeFlatKernel(T *y, const T *x, const int64_t *__restrict__ pos_ids,
+__global__ void ropeFlatKernel(T *y, const T *x,
+                               const int64_t *__restrict__ pos_ids,
                                const T *__restrict__ sin_table,
                                const T *__restrict__ cos_table, size_t seqlen,
                                size_t nhead, size_t head_dim, size_t table_dim,
@@ -133,12 +133,13 @@ void launchRope(void *out, const void *in, const int64_t *pos_ids,
 
   auto err = cudaGetLastError();
   if (err != cudaSuccess) {
-    throw std::runtime_error(
-        std::string("QY rope_launch failed: ") + cudaGetErrorString(err) +
-        " (seqlen=" + std::to_string(seqlen) + ", nhead=" +
-        std::to_string(nhead) + ", head_dim=" + std::to_string(head_dim) +
-        ", grid=" + std::to_string(grid) + ", block=" + std::to_string(block) +
-        ")");
+    throw std::runtime_error(std::string("QY rope_launch failed: ") +
+                             cudaGetErrorString(err) +
+                             " (seqlen=" + std::to_string(seqlen) +
+                             ", nhead=" + std::to_string(nhead) +
+                             ", head_dim=" + std::to_string(head_dim) +
+                             ", grid=" + std::to_string(grid) +
+                             ", block=" + std::to_string(block) + ")");
   }
 }
 

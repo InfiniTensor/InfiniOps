@@ -1,11 +1,11 @@
-#include "native/cuda/qy/rope_pack_kernel.h"
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 
-#include <cuda_runtime.h>
+#include "native/cuda/qy/rope_pack_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -61,9 +61,9 @@ __global__ void unpackVecKernel(T *dst, const T *src, size_t n_vecs, size_t dim,
 }
 
 template <typename T>
-void launchTyped(bool pack, void *dst, const void *src, size_t seq, size_t heads,
-                 size_t dim, int64_t stride0, int64_t stride1, int64_t stride2,
-                 void *stream) {
+void launchTyped(bool pack, void *dst, const void *src, size_t seq,
+                 size_t heads, size_t dim, int64_t stride0, int64_t stride1,
+                 int64_t stride2, void *stream) {
   if (stride2 != 1) {
     throw std::runtime_error(
         "QY rope_pack/unpack: only contiguous last-dim (stride2==1) supported");
