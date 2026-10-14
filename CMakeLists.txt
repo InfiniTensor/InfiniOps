@@ -22,6 +22,7 @@ option(WITH_MARS "Enable Mars backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
 option(WITH_ASCEND "Enable Ascend backend" OFF)
+option(WITH_QY "Enable Denglin QY GPU backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 option(WITH_LINKED "Enable linked third-party operator backends" OFF)
@@ -173,9 +174,24 @@ if(AUTO_DETECT_DEVICES)
         message(STATUS "Auto-detected Ascend environment.")
     endif()
 
+    set(_qy_root_detect "")
+    foreach(_qy_env QY_ROOT QY_HOME QY_PATH)
+        if(NOT _qy_root_detect AND DEFINED ENV{${_qy_env}} AND
+           NOT "$ENV{${_qy_env}}" STREQUAL "")
+            set(_qy_root_detect "$ENV{${_qy_env}}")
+        endif()
+    endforeach()
+    if(NOT _qy_root_detect AND EXISTS "/usr/local/denglin/sdk/bin/dlcc")
+        set(_qy_root_detect "/usr/local/denglin")
+    endif()
+    if(_qy_root_detect AND EXISTS "${_qy_root_detect}/sdk/bin/dlcc")
+        set(WITH_QY ON)
+        message(STATUS "Auto-detected Denglin QY environment from ${_qy_root_detect}.")
+    endif()
+
     if(WITH_NVIDIA)
         set(_non_nvidia_gpu_detected FALSE)
-        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND)
+        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND WITH_QY)
             if(${_gpu_backend})
                 set(_non_nvidia_gpu_detected TRUE)
             endif()
@@ -258,29 +274,37 @@ if(WITH_TORCH OR WITH_LINKED)
     # Query `torch` paths directly instead of using `find_package(Torch)`,
     # which pulls in Caffe2's CMake config and may fail on platforms with
     # non-standard CUDA toolchains.
+    # Denglin/torch may emit extra stdout lines during import; keep only the
+    # first line of each query so find_library HINTS stay valid.
     execute_process(
-        COMMAND ${_TORCH_PYTHON} -c "from torch.utils.cpp_extension import include_paths; print(';'.join(include_paths()))"
+        COMMAND ${_TORCH_PYTHON} -c "from torch.utils.cpp_extension import include_paths; print(';'.join(include_paths()), flush=True)"
         OUTPUT_VARIABLE TORCH_INCLUDE_DIRS
         OUTPUT_STRIP_TRAILING_WHITESPACE
         RESULT_VARIABLE _torch_result
+        ERROR_QUIET
     )
 
     if(NOT _torch_result EQUAL 0)
         message(FATAL_ERROR
             "`WITH_TORCH=ON` or `WITH_LINKED=ON` requires an installed `torch` package.")
     endif()
+    string(REGEX REPLACE "[\r\n].*" "" TORCH_INCLUDE_DIRS "${TORCH_INCLUDE_DIRS}")
 
     execute_process(
-        COMMAND ${_TORCH_PYTHON} -c "from torch.utils.cpp_extension import library_paths; print(';'.join(library_paths()))"
+        COMMAND ${_TORCH_PYTHON} -c "from torch.utils.cpp_extension import library_paths; print(';'.join(library_paths()), flush=True)"
         OUTPUT_VARIABLE _torch_lib_dirs
         OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
     )
+    string(REGEX REPLACE "[\r\n].*" "" _torch_lib_dirs "${_torch_lib_dirs}")
 
     execute_process(
-        COMMAND ${_TORCH_PYTHON} -c "import pathlib, torch; p = pathlib.Path(torch.__file__).resolve().parent.parent / 'torch.libs'; print(str(p) if p.exists() else '')"
+        COMMAND ${_TORCH_PYTHON} -c "import pathlib, torch; p = pathlib.Path(torch.__file__).resolve().parent.parent / 'torch.libs'; print(str(p) if p.exists() else '', flush=True)"
         OUTPUT_VARIABLE _torch_private_lib_dir
         OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
     )
+    string(REGEX REPLACE "[\r\n].*" "" _torch_private_lib_dir "${_torch_private_lib_dir}")
 
     set(TORCH_RUNTIME_DIRS ${_torch_lib_dirs})
     if(_torch_private_lib_dir)
@@ -292,7 +316,7 @@ if(WITH_TORCH OR WITH_LINKED)
     find_library(C10_LIB c10 HINTS ${_torch_lib_dirs} REQUIRED)
     set(TORCH_LIBRARIES ${TORCH_LIB} ${TORCH_CPU_LIB} ${C10_LIB})
 
-    if(WITH_NVIDIA OR WITH_ILUVATAR OR WITH_THEAD OR WITH_MARS)
+    if(WITH_NVIDIA OR WITH_ILUVATAR OR WITH_THEAD OR WITH_MARS OR WITH_QY)
         find_library(TORCH_CUDA_LIB torch_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         find_library(C10_CUDA_LIB c10_cuda HINTS ${_torch_lib_dirs} REQUIRED)
         # `torch_cuda` registers CUDA kernels through static initializers, so
@@ -364,14 +388,14 @@ endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND WITH_QY)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
 endforeach()
 
 if(_gpu_backend_count GREATER 1)
-    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_THEAD`, `WITH_METAX`, `WITH_MARS`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
+    message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_THEAD`, `WITH_METAX`, `WITH_MARS`, `WITH_MOORE`, `WITH_ASCEND`, and `WITH_QY` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
 if(WITH_NINETOOTHED AND NOT WITH_NVIDIA)
@@ -633,12 +657,73 @@ if(WITH_ASCEND)
     message(STATUS "Using Ascend from `${ASCEND_HOME}`.")
 endif()
 
+if(WITH_QY)
+    add_compile_definitions(WITH_QY=1)
+
+    set(QY_ROOT "")
+    foreach(_qy_env QY_ROOT QY_HOME QY_PATH)
+        if(NOT QY_ROOT AND DEFINED ENV{${_qy_env}} AND NOT "$ENV{${_qy_env}}" STREQUAL "")
+            set(QY_ROOT "$ENV{${_qy_env}}")
+        endif()
+    endforeach()
+    if(NOT QY_ROOT AND EXISTS "/usr/local/denglin/sdk/bin/dlcc")
+        set(QY_ROOT "/usr/local/denglin")
+    endif()
+    if(NOT QY_ROOT OR NOT EXISTS "${QY_ROOT}/sdk/bin/dlcc")
+        message(FATAL_ERROR
+            "`WITH_QY` is `ON` but Denglin QY SDK was not found. "
+            "Set `QY_ROOT` (expected `sdk/bin/dlcc`).")
+    endif()
+    set(QY_ROOT "${QY_ROOT}" CACHE PATH "Denglin QY SDK root" FORCE)
+    set(QY_SDK "${QY_ROOT}/sdk")
+    set(ENV{QY_ROOT} "${QY_ROOT}")
+    set(ENV{CUDA_HOME} "${QY_SDK}")
+    set(ENV{CUDA_PATH} "${QY_SDK}")
+    set(ENV{PATH} "${QY_SDK}/bin:$ENV{PATH}")
+
+    set(CMAKE_CUDA_COMPILER
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/dlcc_wrapper.sh"
+        CACHE FILEPATH "Denglin QY CUDA compiler (dlcc wrapper)" FORCE)
+    # Keep CMAKE_CUDA_FLAGS free of --cuda-gpu-arch; the wrapper always injects
+    # dlgput64 and strips CMake's sm_* detection probes.
+    set(CMAKE_CUDA_FLAGS "--cuda-path=${QY_SDK} -std=c++17 -fPIC -O2"
+        CACHE STRING "QY CUDA flags" FORCE)
+    set(CMAKE_CUDA_SEPARABLE_COMPILATION OFF CACHE BOOL "Disable RDC for QY" FORCE)
+    # Skip CMake's sm_20/30/52 Clang probes; wrapper maps all arches to dlgput64.
+    set(CMAKE_CUDA_ARCHITECTURES "80" CACHE STRING "QY placeholder arch" FORCE)
+
+    include_directories("${QY_SDK}/include")
+    link_directories("${QY_SDK}/lib")
+    find_library(QY_CURT_LIB NAMES curt HINTS "${QY_SDK}/lib" REQUIRED)
+    find_library(QY_CUBLAS_LIB NAMES cublas HINTS "${QY_SDK}/lib" REQUIRED)
+    find_library(QY_CUBLASLT_LIB NAMES cublasLt HINTS "${QY_SDK}/lib" REQUIRED)
+    find_library(QY_CUDNN_LIB NAMES cudnn HINTS "${QY_SDK}/lib" REQUIRED)
+
+    # Ensure CMake Clang CUDA toolkit discovery finds nvvm/libdevice.
+    file(MAKE_DIRECTORY "${QY_SDK}/nvvm/libdevice")
+    set(CMAKE_CUDA_COMPILER_TOOLKIT_ROOT "${QY_SDK}" CACHE PATH
+        "QY CUDA toolkit root" FORCE)
+    set(CMAKE_CUDA_COMPILER_LIBRARY_ROOT "${QY_SDK}" CACHE PATH
+        "QY CUDA library root" FORCE)
+    set(CUDAToolkit_ROOT "${QY_SDK}" CACHE PATH "QY CUDA toolkit root" FORCE)
+
+    # Final link goes through the host C++ driver, which would otherwise pull
+    # CMake's implicit -lcudadevrt/-lcudart_static (absent on Denglin).
+    set(CMAKE_CUDA_RUNTIME_LIBRARY "None" CACHE STRING
+        "QY links curt explicitly; do not inject CUDA runtime" FORCE)
+
+    message(STATUS "QY: SDK ${QY_SDK}, compiler ${CMAKE_CUDA_COMPILER}")
+    enable_language(CUDA)
+    set(CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES "")
+    set(CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES "")
+endif()
+
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_THEAD AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_THEAD AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND AND NOT WITH_QY)
     set(WITH_CPU ON)
 endif()
 
-if(WITH_TORCH OR WITH_METAX OR WITH_MARS OR WITH_MOORE)
+if(WITH_TORCH OR WITH_METAX OR WITH_MARS OR WITH_MOORE OR WITH_QY)
     set(PYBIND11_ENABLE_EXTRAS OFF)
 endif()
 

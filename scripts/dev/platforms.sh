@@ -10,6 +10,7 @@ INFINI_OPS_SUPPORTED_PLATFORMS=(
     moore
     cambricon
     ascend
+    qy
 )
 
 infini_ops_supported_platforms_usage() {
@@ -87,6 +88,12 @@ _infini_ops_detect_thead() {
     [[ -x "${cuda_root}/bin/nvcc" ]]
 }
 
+_infini_ops_detect_qy() {
+    local qy_root="${QY_ROOT:-${QY_HOME:-${QY_PATH:-/usr/local/denglin}}}"
+
+    [[ -x "${qy_root}/sdk/bin/dlcc" ]]
+}
+
 _infini_ops_detect_metax() {
     if [[ -n "${MACA_PATH:-}" ]]; then
         return 0
@@ -125,6 +132,10 @@ infini_ops_detect_platforms() {
 
     if _infini_ops_detect_thead; then
         detected+=("thead")
+    fi
+
+    if _infini_ops_detect_qy; then
+        detected+=("qy")
     fi
 
     if _infini_ops_detect_metax; then
