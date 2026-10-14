@@ -1,0 +1,146 @@
+#include <infini/rt/kunlun/data_type_.h>
+#include <xpu/kernel/xtdk.h>
+#include <xpu/kernel/xtdk_bf16.h>
+#include <xpu/kernel/xtdk_fp16.h>
+
+#include "launch.h"
+
+namespace infini::ops {
+namespace kunlun {
+
+template <typename T>
+struct KernelType {
+  using type = T;
+};
+template <>
+struct KernelType<infini::rt::Float16> {
+  using type = half;
+};
+template <>
+struct KernelType<infini::rt::BFloat16> {
+  using type = bfloat16_t;
+};
+
+template <typename T>
+__device__ float ToFloat(T value) {
+  if constexpr (xpu_std::is_same<T, bfloat16_t>::value) {
+    return __bfloat162float(value);
+  } else {
+    return static_cast<float>(value);
+  }
+}
+
+template <typename T>
+__device__ T FromFloat(float value) {
+  if constexpr (xpu_std::is_same<T, bfloat16_t>::value) {
+    return __float2bfloat16(value);
+  } else {
+    return static_cast<T>(value);
+  }
+}
+
+// XTDK uses 32-bit size_t on device; keep the launch ABI fixed-width.
+template <typename T, typename TCache>
+__global__ void RotaryEmbeddingKunlunKernel(
+    const int64_t* positions, T* data, const TCache* cos_sin_cache,
+    uint64_t cache_rows, uint64_t num_tokens, uint64_t sequence_length,
+    uint64_t num_heads, uint64_t rot_dim, uint64_t rope_dim_offset,
+    int64_t batch_stride, int64_t token_stride, int64_t head_stride,
+    int64_t cache_token_stride, bool is_neox, bool inverse) {
+  // Stripe adjacent workers across clusters to spread small workloads.
+  const uint64_t worker = core_id() * cluster_num() + cluster_id();
+  const uint64_t workers = core_num() * cluster_num();
+  const uint64_t tasks = num_tokens * num_heads;
+  const uint64_t count = tasks / workers + (worker < tasks % workers);
+  const uint64_t first = worker * (tasks / workers) +
+                         (worker < tasks % workers ? worker : tasks % workers);
+  constexpr uint64_t kPairs = 128;
+  __local__ T x[2 * kPairs];
+  __local__ T y[2 * kPairs];
+  __local__ TCache cos[kPairs];
+  __local__ TCache sin[kPairs];
+  __local__ int64_t position[1];
+  const uint64_t pairs = rot_dim / 2;
+
+  for (uint64_t task = first; task < first + count; ++task) {
+    const uint64_t token = task / num_heads;
+    const uint64_t head = task % num_heads;
+    const int64_t offset = (token / sequence_length) * batch_stride +
+                           (token % sequence_length) * token_stride +
+                           head * head_stride + rope_dim_offset;
+    GM2LM(positions + token, position, sizeof(int64_t));
+    // Clamp before narrowing so native int64 positions work during replay.
+    uint64_t row = position[0] < 0 ? 0 : static_cast<uint64_t>(position[0]);
+    if (row >= cache_rows) row = cache_rows - 1;
+    const auto* cache = cos_sin_cache + row * cache_token_stride;
+    for (uint64_t processed = 0; processed < pairs; processed += kPairs) {
+      const uint64_t n =
+          pairs - processed < kPairs ? pairs - processed : kPairs;
+      if (is_neox) {
+        GM2LM(data + offset + processed, x, n * sizeof(T));
+        GM2LM(data + offset + pairs + processed, x + kPairs, n * sizeof(T));
+      } else {
+        GM2LM(data + offset + 2 * processed, x, 2 * n * sizeof(T));
+      }
+      GM2LM(cache + processed, cos, n * sizeof(TCache));
+      GM2LM(cache + pairs + processed, sin, n * sizeof(TCache));
+      for (uint64_t k = 0; k < n; ++k) {
+        const uint64_t i = is_neox ? k : 2 * k;
+        const uint64_t j = is_neox ? k + kPairs : 2 * k + 1;
+        const float a = ToFloat(x[i]);
+        const float b = ToFloat(x[j]);
+        const float c = ToFloat(cos[k]);
+        const float s = inverse ? -ToFloat(sin[k]) : ToFloat(sin[k]);
+        y[i] = FromFloat<T>(a * c - b * s);
+        y[j] = FromFloat<T>(a * s + b * c);
+      }
+      mfence();
+      if (is_neox) {
+        LM2GM(y, data + offset + processed, n * sizeof(T));
+        LM2GM(y + kPairs, data + offset + pairs + processed, n * sizeof(T));
+      } else {
+        LM2GM(y, data + offset + 2 * processed, 2 * n * sizeof(T));
+      }
+    }
+  }
+}
+
+}  // namespace kunlun
+
+template <typename T, typename TCache>
+void LaunchRotaryEmbeddingKunlun(XPUStream stream, int cluster_count,
+                                 const int64_t* positions, T* data,
+                                 const TCache* cos_sin_cache, size_t cache_rows,
+                                 size_t num_tokens, size_t sequence_length,
+                                 size_t num_heads, size_t rot_dim,
+                                 size_t rope_dim_offset, ptrdiff_t batch_stride,
+                                 ptrdiff_t token_stride, ptrdiff_t head_stride,
+                                 ptrdiff_t cache_token_stride, bool is_neox,
+                                 bool inverse) {
+  using K = typename kunlun::KernelType<T>::type;
+  using KCache = typename kunlun::KernelType<TCache>::type;
+  kunlun::RotaryEmbeddingKunlunKernel<K, KCache><<<cluster_count, 64, stream>>>(
+      positions, reinterpret_cast<K*>(data),
+      reinterpret_cast<const KCache*>(cos_sin_cache), cache_rows, num_tokens,
+      sequence_length, num_heads, rot_dim, rope_dim_offset, batch_stride,
+      token_stride, head_stride, cache_token_stride, is_neox, inverse);
+}
+
+#define INSTANTIATE(T, TCACHE)                                           \
+  template void LaunchRotaryEmbeddingKunlun<T, TCACHE>(                  \
+      XPUStream, int, const int64_t*, T*, const TCACHE*, size_t, size_t, \
+      size_t, size_t, size_t, size_t, ptrdiff_t, ptrdiff_t, ptrdiff_t,   \
+      ptrdiff_t, bool, bool)
+
+INSTANTIATE(infini::rt::Float16, infini::rt::Float16);
+INSTANTIATE(infini::rt::Float16, infini::rt::BFloat16);
+INSTANTIATE(infini::rt::Float16, float);
+INSTANTIATE(infini::rt::BFloat16, infini::rt::Float16);
+INSTANTIATE(infini::rt::BFloat16, infini::rt::BFloat16);
+INSTANTIATE(infini::rt::BFloat16, float);
+INSTANTIATE(float, infini::rt::Float16);
+INSTANTIATE(float, infini::rt::BFloat16);
+INSTANTIATE(float, float);
+#undef INSTANTIATE
+
+}  // namespace infini::ops

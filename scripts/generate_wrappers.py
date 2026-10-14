@@ -1724,6 +1724,7 @@ def _device_marker_headers(devices):
         "nvidia": "infini/rt/nvidia/device_.h",
         "cambricon": "infini/rt/cambricon/device_.h",
         "ascend": "infini/rt/ascend/device_.h",
+        "kunlun": "infini/rt/kunlun/device_.h",
         "metax": "infini/rt/metax/device_.h",
         "mars": "infini/rt/mars/device_.h",
         "moore": "infini/rt/moore/device_.h",
@@ -2116,7 +2117,7 @@ if __name__ == "__main__":
         nargs="+",
         default="cpu",
         type=str,
-        help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `mars`, `moore`, `iluvatar`, `hygon`, and `thead`. (default: `cpu`)",
+        help="Devices to use. Please pick from `cpu`, `nvidia`, `cambricon`, `ascend`, `metax`, `mars`, `moore`, `iluvatar`, `hygon`, `thead`, and `kunlun`. (default: `cpu`)",
     )
 
     parser.add_argument(

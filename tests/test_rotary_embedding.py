@@ -260,6 +260,78 @@ def test_rotary_embedding_ascend_strided_fused_qkv_view(
         torch.testing.assert_close(key, expected_key, rtol=rtol, atol=atol)
 
 
+@pytest.mark.parametrize("dtype", (torch.float16, torch.bfloat16, torch.float32))
+@pytest.mark.parametrize("cache_dtype", (torch.float16, torch.bfloat16, torch.float32))
+@pytest.mark.parametrize("is_neox", (False, True))
+def test_rotary_embedding_kunlun_graph(
+    dtype, cache_dtype, is_neox, device, implementation_index
+):
+    if torch.device(device).type != "cuda" or not (
+        infini.ops.RotaryEmbedding.active_implementation_indices("kunlun")
+    ):
+        pytest.skip("requires the Kunlun backend")
+    # Exercise multiple tiles, partial rotation, batched QKV views, and inverse.
+    head_size, rot_dim, offset = 520, 512, 2
+    fused = torch.randn(2, 4, 8 * head_size, dtype=dtype, device=device)
+    query = fused[..., : 4 * head_size].view(2, 4, 4, head_size)
+    key = fused[..., 4 * head_size : 6 * head_size].view(2, 4, 2, head_size)
+    cache = torch.randn(16, rot_dim + 8, dtype=cache_dtype, device=device)[:, :rot_dim]
+    positions = torch.zeros((2, 4), dtype=torch.int64, device=device)
+
+    def apply():
+        infini.ops.rotary_embedding(
+            positions,
+            query,
+            key,
+            cache,
+            head_size,
+            is_neox,
+            offset,
+            True,
+            implementation_index=implementation_index,
+            stream=get_stream(query.device),
+        )
+
+    apply()
+    torch.cuda.synchronize()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        apply()
+    for values in ((-1, 0, 15, 16, 2**40, 3, 7, 2**63 - 1), (9, 8, 7, 6, 5, 4, 3, 2)):
+        original = torch.randn_like(fused)
+        fused.copy_(original)
+        positions.copy_(
+            torch.tensor(values, dtype=torch.int64, device=device).view(2, 4)
+        )
+        expected_query, expected_key = query.cpu(), key.cpu()
+        _torch_rotary_embedding(
+            positions.cpu().clamp(0, 15),
+            expected_query,
+            expected_key,
+            cache.cpu(),
+            head_size,
+            is_neox,
+            offset,
+            True,
+        )
+        graph.replay()
+        torch.cuda.synchronize()
+        tolerance = (
+            1e-5
+            if dtype == torch.float32
+            else (1e-3 if dtype == torch.float16 else 2e-2)
+        )
+        torch.testing.assert_close(
+            query.cpu(), expected_query, rtol=tolerance, atol=tolerance
+        )
+        torch.testing.assert_close(
+            key.cpu(), expected_key, rtol=tolerance, atol=tolerance
+        )
+        torch.testing.assert_close(
+            fused[..., 6 * head_size :], original[..., 6 * head_size :], rtol=0, atol=0
+        )
+
+
 def _torch_rotary_embedding(
     positions,
     query,

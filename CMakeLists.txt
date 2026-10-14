@@ -22,6 +22,7 @@ option(WITH_MARS "Enable Mars backend" OFF)
 option(WITH_CAMBRICON "Enable Cambricon backend" OFF)
 option(WITH_MOORE "Enable Moore backend" OFF)
 option(WITH_ASCEND "Enable Ascend backend" OFF)
+option(WITH_KUNLUN "Enable Kunlun backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 option(WITH_LINKED "Enable linked third-party operator backends" OFF)
@@ -175,7 +176,7 @@ if(AUTO_DETECT_DEVICES)
 
     if(WITH_NVIDIA)
         set(_non_nvidia_gpu_detected FALSE)
-        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND)
+        foreach(_gpu_backend WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_CAMBRICON WITH_MOORE WITH_ASCEND WITH_KUNLUN)
             if(${_gpu_backend})
                 set(_non_nvidia_gpu_detected TRUE)
             endif()
@@ -364,7 +365,7 @@ endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.
 set(_gpu_backend_count 0)
-foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND)
+foreach(_gpu_backend WITH_NVIDIA WITH_ILUVATAR WITH_HYGON WITH_THEAD WITH_METAX WITH_MARS WITH_MOORE WITH_ASCEND WITH_KUNLUN)
     if(${_gpu_backend})
         math(EXPR _gpu_backend_count "${_gpu_backend_count} + 1")
     endif()
@@ -633,8 +634,21 @@ if(WITH_ASCEND)
     message(STATUS "Using Ascend from `${ASCEND_HOME}`.")
 endif()
 
+if(WITH_KUNLUN)
+    add_compile_definitions(WITH_KUNLUN=1)
+    set(XRE_ROOT "$ENV{XRE_ROOT}" CACHE PATH "Kunlun XRE SDK root")
+    set(XTDK_ROOT "$ENV{XTDK_ROOT}" CACHE PATH "Kunlun XTDK compiler root")
+    set(KUNLUN_ARCH "xpu3" CACHE STRING "Kunlun device architecture")
+    find_path(KUNLUN_INCLUDE_DIR xpu/runtime.h
+        HINTS "${XRE_ROOT}" PATH_SUFFIXES include REQUIRED)
+    find_library(KUNLUN_RUNTIME_LIB xpurt
+        HINTS "${XRE_ROOT}" PATH_SUFFIXES lib lib64 so REQUIRED)
+    find_program(XTDK_COMPILER clang++ HINTS "${XTDK_ROOT}/bin"
+        NO_DEFAULT_PATH REQUIRED)
+endif()
+
 # If all other platforms are not enabled, CPU is enabled by default.
-if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_THEAD AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND)
+if(NOT WITH_NVIDIA AND NOT WITH_ILUVATAR AND NOT WITH_HYGON AND NOT WITH_THEAD AND NOT WITH_METAX AND NOT WITH_MARS AND NOT WITH_MOORE AND NOT WITH_CAMBRICON AND NOT WITH_ASCEND AND NOT WITH_KUNLUN)
     set(WITH_CPU ON)
 endif()
 
