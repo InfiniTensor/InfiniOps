@@ -18,6 +18,10 @@
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+#include "aclrtlaunch_rotary_embedding_qk.h"
+#endif
+
 namespace infini::ops {
 
 // NeoX/GPT-J RoPE. Positions select rows from the packed [cos, sin] cache,
@@ -42,6 +46,25 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     assert(cos_sin_cache_type_ == query_type_ &&
            "Ascend `RotaryEmbedding` requires cache and query dtypes to "
            "match");
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+    use_qk_kernel_ =
+        query_type_ == DataType::kBFloat16 && is_neox_ && head_size_ == 128 &&
+        rot_dim_ == 128 && num_heads_ > 0 && num_heads_ <= 32 &&
+        query_head_stride_ == 128 &&
+        query_token_stride_ >= static_cast<int64_t>(num_heads_ * 128) &&
+        cos_sin_cache.stride(0) >= 128 &&
+        (positions_ndim_ == 1 ||
+         query.stride(0) ==
+             static_cast<int64_t>(positions.size(1)) * query_token_stride_) &&
+        (!key.has_value() ||
+         (num_kv_heads_ <= 32 && key_head_stride_ == 128 &&
+          key_token_stride_ >= static_cast<int64_t>(num_kv_heads_ * 128) &&
+          (positions_ndim_ == 1 ||
+           key->stride(0) ==
+               static_cast<int64_t>(positions.size(1)) * key_token_stride_)));
+    if (use_qk_kernel_) return;
+#endif
+
     assert(cos_sin_cache.IsContiguous() &&
            "Ascend `RotaryEmbedding` requires a contiguous cache tensor");
 
@@ -148,6 +171,20 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
            "Ascend `RotaryEmbedding` key presence changed after planning");
     auto stream = static_cast<aclrtStream>(stream_);
 
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+    if (use_qk_kernel_) {
+      if (num_tokens_ == 0) return;
+
+      RunQkKernel(positions, query, cos_sin_cache, num_heads_,
+                  query_token_stride_, stream);
+      if (key.has_value()) {
+        RunQkKernel(positions, *key, cos_sin_cache, num_kv_heads_,
+                    key_token_stride_, stream);
+      }
+      return;
+    }
+#endif
+
     if (cos_sin_cache.data() != cos_sin_cache_data_) {
       UploadCosSinCache(cos_sin_cache);
       cos_sin_cache_data_ = cos_sin_cache.data();
@@ -203,6 +240,21 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
   }
 
  private:
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+  void RunQkKernel(const Tensor positions, Tensor data, const Tensor cache,
+                   int64_t heads, int64_t token_stride,
+                   aclrtStream stream) const {
+    auto blocks =
+        static_cast<uint32_t>(std::min<Tensor::Size>(num_tokens_, 64));
+    auto ret = aclrtlaunch_rotary_embedding_qk(
+        blocks, stream, const_cast<void*>(positions.data()), data.data(),
+        const_cast<void*>(cache.data()), static_cast<int64_t>(num_tokens_),
+        heads, token_stride, static_cast<int64_t>(cache.stride(0)));
+    assert(ret == ACL_SUCCESS &&
+           "Ascend Q/K `RotaryEmbedding` execution failed");
+  }
+#endif
+
   void RunOne(aclTensor* input, aclTensor* cos, aclTensor* sin,
               void* input_data, ascend::AclTensorCache& output_cache,
               void* output_data, aclOpExecutor*& executor,
@@ -300,6 +352,8 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       std::memcpy(destination, &one, sizeof(one));
     }
   }
+
+  bool use_qk_kernel_{false};
 
   int64_t max_seq_len_{0};
   size_t element_size_{0};

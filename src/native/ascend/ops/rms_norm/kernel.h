@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_ASCEND_RMS_NORM_KERNEL_H_
 #define INFINI_OPS_ASCEND_RMS_NORM_KERNEL_H_
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -13,6 +14,10 @@
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+#include "aclrtlaunch_rms_norm_qk.h"
+#endif
+
 namespace infini::ops {
 
 template <>
@@ -23,6 +28,19 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     assert(ndim_ >= 2 && "`RmsNorm` Ascend path requires rank >= 2");
     assert(input.strides().back() == 1 && out.strides().back() == 1 &&
            "`RmsNorm` Ascend path requires a contiguous last dimension");
+
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+    use_qk_kernel_ =
+        input.dtype() == DataType::kBFloat16 &&
+        weight.dtype() == input.dtype() && dim_ == 128 &&
+        (ndim_ == 2 || ndim_ == 3) && nhead_ > 0 && nhead_ <= 32 &&
+        input.shape() == out.shape() && weight.ndim() == 1 &&
+        weight.numel() == 128 && weight.stride(0) == 1 &&
+        (ndim_ == 2 || (input.stride(1) == 128 && out.stride(1) == 128)) &&
+        input.stride(0) >= static_cast<int64_t>(nhead_ * 128) &&
+        out.stride(0) >= static_cast<int64_t>(nhead_ * 128);
+    if (use_qk_kernel_) return;
+#endif
 
     needs_input_staging_ = !input.IsContiguous();
     needs_out_staging_ = !out.IsContiguous();
@@ -109,6 +127,23 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
+#ifdef INFINI_HAS_CUSTOM_KERNELS
+    if (use_qk_kernel_) {
+      if (input.size(0) == 0) return;
+
+      auto blocks =
+          static_cast<uint32_t>(std::min<Tensor::Size>(input.size(0), 64));
+      auto ret = aclrtlaunch_rms_norm_qk(
+          blocks, stream, const_cast<void*>(input.data()),
+          const_cast<void*>(weight.data()), out.data(),
+          static_cast<int64_t>(input.size(0)), static_cast<int64_t>(nhead_),
+          static_cast<int64_t>(input.stride(0)),
+          static_cast<int64_t>(out.stride(0)), eps);
+      assert(ret == ACL_SUCCESS && "Ascend Q/K `RmsNorm` execution failed");
+      return;
+    }
+#endif
+
     void* input_data = const_cast<void*>(input.data());
     void* out_data = out.data();
 
@@ -202,6 +237,8 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
   mutable ascend::AclTensorCache weight_cache_;
   mutable ascend::AclTensorCache norm_out_cache_;
   mutable ascend::AclTensorCache weight_fp32_cache_;
+  bool use_qk_kernel_{false};
+
   bool needs_input_staging_{false};
   bool needs_out_staging_{false};
   bool needs_weight_cast_{false};

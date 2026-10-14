@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_ASCEND_RESHAPE_AND_CACHE_FLASH_KERNEL_H_
 #define INFINI_OPS_ASCEND_RESHAPE_AND_CACHE_FLASH_KERNEL_H_
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -121,9 +122,11 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
                         const Tensor slot_mapping, Tensor key_cache,
                         Tensor value_cache, aclrtStream stream) const {
     auto ret = aclrtlaunch_reshape_and_cache_flash_strided(
-        1, stream, const_cast<void*>(key.data()),
-        const_cast<void*>(value.data()), const_cast<void*>(slot_mapping.data()),
-        key_cache.data(), value_cache.data(), static_cast<int64_t>(num_tokens_),
+        static_cast<uint32_t>(
+            std::min<std::size_t>(num_tokens_ * num_heads_, 64)),
+        stream, const_cast<void*>(key.data()), const_cast<void*>(value.data()),
+        const_cast<void*>(slot_mapping.data()), key_cache.data(),
+        value_cache.data(), static_cast<int64_t>(num_tokens_),
         static_cast<int64_t>(num_heads_), static_cast<int64_t>(head_size_),
         static_cast<int64_t>(block_size_), static_cast<int64_t>(num_blocks_),
         static_cast<int64_t>(key_token_stride_),

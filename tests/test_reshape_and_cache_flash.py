@@ -161,3 +161,56 @@ def _make_cache(num_blocks, block_size, num_heads, head_size, layout, dtype, dev
 
     physical_shape = (num_blocks, num_heads, block_size, head_size)
     return torch.randn(physical_shape, dtype=dtype, device=device).permute(0, 2, 1, 3)
+
+
+@pytest.mark.parametrize(
+    "tokens, heads, head_size",
+    ((1, 8, 128), (8191, 8, 128), (8192, 8, 128), (3, 2, 8193)),
+)
+@pytest.mark.parametrize("layout", ("NHD", "HND"))
+@pytest.mark.parametrize("padded_heads", (False, True))
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
+def test_reshape_and_cache_flash_ascend_grid_stride(
+    tokens, heads, head_size, layout, padded_heads, dtype, device, implementation_index
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("grid stride regression targets native Ascend")
+
+    head_stride = head_size + 3 if padded_heads else head_size
+    # Token padding selects the custom path even for NHD caches.
+    strides = (heads * head_stride + 128, head_stride, 1)
+    key = randn_strided((tokens, heads, head_size), strides, dtype=dtype, device=device)
+    value = randn_strided(
+        (tokens, heads, head_size), strides, dtype=dtype, device=device
+    )
+    block_size = 128
+    blocks = (tokens + block_size - 1) // block_size
+    key_cache = _make_cache(blocks, block_size, heads, head_size, layout, dtype, device)
+    value_cache = _make_cache(
+        blocks, block_size, heads, head_size, layout, dtype, device
+    )
+    slots = torch.arange(tokens, dtype=torch.int64, device=device)
+    slots[0] = -1
+    expected_key = key_cache.clone(memory_format=torch.preserve_format)
+    expected_value = value_cache.clone(memory_format=torch.preserve_format)
+    token_indices = torch.arange(1, tokens, dtype=torch.int64, device=device)
+    block_indices, offsets = token_indices // block_size, token_indices % block_size
+    expected_key[block_indices, offsets] = key[1:]
+    expected_value[block_indices, offsets] = value[1:]
+    scale = torch.ones((), dtype=torch.float32, device=device)
+
+    infini.ops.reshape_and_cache_flash(
+        key,
+        value,
+        slots,
+        scale,
+        scale,
+        "auto",
+        key_cache,
+        value_cache,
+        implementation_index=implementation_index,
+        stream=get_stream(key.device),
+    )
+
+    torch.testing.assert_close(key_cache, expected_key, rtol=0, atol=0)
+    torch.testing.assert_close(value_cache, expected_value, rtol=0, atol=0)
