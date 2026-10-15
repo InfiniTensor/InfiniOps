@@ -35,6 +35,12 @@ class CudaRmsNorm : public RmsNorm {
     assert(out.dtype() == input.dtype());
 
     int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
+    if constexpr (Backend::kDeviceType == Device::Type::kMetax) {
+      // Q/K rows need fewer reduction threads than the device-wide default.
+      if (dim_ <= 128) {
+        block_size = 128;
+      }
+    }
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,

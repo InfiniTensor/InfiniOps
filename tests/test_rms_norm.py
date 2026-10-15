@@ -15,6 +15,9 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
         ((2, 4, 2048), (2048,), None, None, None),
         ((1, 64), (64,), (64, 1), (1,), (64, 1)),
         ((4, 48, 64), (64,), (3072, 64, 1), (1,), (3072, 64, 1)),
+        ((64, 16, 128), (128,), (3072, 128, 1), None, None),
+        ((2048, 4, 128), (128,), (3072, 128, 1), None, None),
+        ((64, 16, 129), (129,), None, None, None),
     ),
 )
 @pytest.mark.parametrize("eps", (1e-6, 1e-5))
