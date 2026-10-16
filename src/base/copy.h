@@ -33,6 +33,11 @@ class Copy : public Operator<Copy> {
                           Tensor out) const = 0;
 
  protected:
+  static bool SameView(const Tensor& src, const Tensor& out) {
+    return src.data() == out.data() && src.shape() == out.shape() &&
+           src.strides() == out.strides();
+  }
+
   static Tensor::Strides BroadcastStrides(const Tensor src, const Tensor out) {
     assert(src.ndim() <= out.ndim() &&
            "`Copy` input rank must not exceed output rank");

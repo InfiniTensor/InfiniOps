@@ -1,0 +1,32 @@
+#include <bang.h>
+#include "native/cambricon/common.h"
+#include "native/cambricon/dense_triangle.h"
+namespace infini::ops {
+template<typename T>__mlu_global__ void DenseTriangleKernel(const T* src,T* dst,size_t count,size_t rows,size_t cols,int32_t diagonal,bool lower){
+ __nram__ T buffer[1024];
+ const int32_t rows32=static_cast<int32_t>(rows),cols32=static_cast<int32_t>(cols);
+ for(size_t start=static_cast<size_t>(taskId)*1024;start<count;start+=static_cast<size_t>(taskDim)*1024){size_t n=count-start<1024?count-start:1024;__memcpy(buffer,src+start,n*sizeof(T),GDRAM2NRAM);
+  int32_t cursor=0;
+  while(cursor<static_cast<int32_t>(n)){
+   const int32_t i=static_cast<int32_t>(start+cursor),col=i%cols32,row=(i/cols32)%rows32;
+   const int32_t remaining=static_cast<int32_t>(n)-cursor;
+   const int32_t segment=cols32-col<remaining?cols32-col:remaining;
+   const int64_t boundary=static_cast<int64_t>(row)+diagonal-col+(lower?1:0);
+   const int32_t split=boundary<=0?0:boundary>=segment?segment:static_cast<int32_t>(boundary);
+   const int32_t begin=cursor+(lower?split:0),end=cursor+(lower?segment:split);
+   for(int32_t j=begin;j<end;++j)buffer[j]=T(0);
+   cursor+=segment;
+  }
+  __memcpy(dst+start,buffer,n*sizeof(T),NRAM2GDRAM);
+ }
+}
+void DenseTriangleLaunch(cnrtQueue_t q,const void* src,void* dst,size_t count,size_t rows,size_t cols,int64_t diagonal,bool lower,size_t itemsize){
+ // Matrix differences are in [-(rows-1), cols-1]. Clamp on the host
+ // before converting to the native kernel scalar width; all int64 diagonals retain semantics.
+ const int32_t bounded=diagonal < -static_cast<int64_t>(rows) ? -static_cast<int32_t>(rows) : diagonal > static_cast<int64_t>(cols) ? static_cast<int32_t>(cols) : static_cast<int32_t>(diagonal);
+ int device=-1,cores=0,clusters=0;CNRT_CHECK(cnrtGetDevice(&device));cnrt_utils::GetLaunchConfig(Device{Device::Type::kCambricon,device},&cores,&clusters);
+ cnrtDim3_t dim={static_cast<unsigned>(cores*clusters),1,1};
+ if(itemsize==4)DenseTriangleKernel<uint32_t><<<dim,cnrtFuncTypeBlock,q>>>(static_cast<const uint32_t*>(src),static_cast<uint32_t*>(dst),count,rows,cols,bounded,lower);
+ else DenseTriangleKernel<uint16_t><<<dim,cnrtFuncTypeBlock,q>>>(static_cast<const uint16_t*>(src),static_cast<uint16_t*>(dst),count,rows,cols,bounded,lower);
+}
+}

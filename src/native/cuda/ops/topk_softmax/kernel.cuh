@@ -90,6 +90,12 @@ __device__ __forceinline__ float ToFloat(Input value) {
   return Caster<kDevice>::template Cast<float>(value);
 }
 
+template <Device::Type kDevice, typename Input>
+__device__ __forceinline__ float Score(Input value, float softcap) {
+  const float x = ToFloat<kDevice>(value);
+  return softcap == 0.0f ? x : tanhf(x / softcap) * softcap;
+}
+
 template <unsigned int kBlockSize, Device::Type kDevice, typename Input,
           typename Index>
 __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
@@ -99,7 +105,8 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
                                   Index* __restrict__ topk_indices,
                                   int32_t* __restrict__ token_expert_indices,
                                   int32_t num_tokens, int32_t num_experts,
-                                  int32_t topk, bool renormalize) {
+                                  int32_t topk, bool renormalize,
+                                  float softcap, float min_sum = 0.0f) {
   const int32_t token = static_cast<int32_t>(blockIdx.x);
   const int64_t input_offset = static_cast<int64_t>(token) * num_experts;
   const int64_t output_offset = static_cast<int64_t>(token) * topk;
@@ -108,14 +115,14 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
   for (int32_t expert = static_cast<int32_t>(threadIdx.x); expert < num_experts;
        expert += kBlockSize) {
     thread_max = fmaxf(thread_max,
-                       ToFloat<kDevice>(gating_output[input_offset + expert]));
+                       Score<kDevice>(gating_output[input_offset + expert], softcap));
   }
   const float row_max = BlockMax<kBlockSize>(thread_max);
 
   float thread_sum = 0.0f;
   for (int32_t expert = static_cast<int32_t>(threadIdx.x); expert < num_experts;
        expert += kBlockSize) {
-    const float value = ToFloat<kDevice>(gating_output[input_offset + expert]);
+    const float value = Score<kDevice>(gating_output[input_offset + expert], softcap);
     thread_sum += expf(value - row_max);
   }
   const float row_sum = BlockSum<kBlockSize>(thread_sum);
@@ -140,7 +147,7 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
       }
 
       const float value =
-          ToFloat<kDevice>(gating_output[input_offset + expert]);
+          Score<kDevice>(gating_output[input_offset + expert], softcap);
       float score = expf(value - row_max) / row_sum;
       if (!isfinite(score)) {
         score = 0.0f;
@@ -155,7 +162,7 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
     BlockBest<kBlockSize>(thread_best, thread_index);
     if (threadIdx.x == 0) {
       const float value =
-          ToFloat<kDevice>(gating_output[input_offset + thread_index]);
+          Score<kDevice>(gating_output[input_offset + thread_index], softcap);
       float weight = expf(value - row_max) / row_sum;
       if (!isfinite(weight)) {
         weight = 0.0f;
@@ -173,7 +180,11 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
         renormalize && selected_sum > 0.0f ? 1.0f / selected_sum : 1.0f;
     const bool padding = is_padding && is_padding[token] != 0;
     for (int32_t rank = 0; rank < topk; ++rank) {
-      topk_weights[output_offset + rank] *= scale;
+      if (renormalize && min_sum > 0.0f) {
+        topk_weights[output_offset + rank] /= fmaxf(selected_sum, min_sum);
+      } else {
+        topk_weights[output_offset + rank] *= scale;
+      }
       if (padding) {
         topk_indices[output_offset + rank] = static_cast<Index>(-1);
       }

@@ -80,7 +80,8 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
 
     cublasLtMatmulDesc_t op_desc{};
     auto status = cublasLtMatmulDescCreate(
-        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(y.dtype()),
+        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(
+                      y.dtype(), fp32_precision(a, b, y)),
         CUDA_R_32F);
     assert(status == CUBLAS_STATUS_SUCCESS &&
            "failed to create cuBLASLt matmul descriptor");

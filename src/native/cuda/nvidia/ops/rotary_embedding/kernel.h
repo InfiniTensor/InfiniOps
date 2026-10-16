@@ -13,6 +13,7 @@ class Operator<RotaryEmbedding, Device::Type::kNvidia>
  public:
   using CudaRotaryEmbedding<
       Runtime<Device::Type::kNvidia>>::CudaRotaryEmbedding;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

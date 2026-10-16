@@ -95,6 +95,16 @@ if(WITH_CPU)
 
     find_package(OpenMP REQUIRED COMPONENTS CXX)
     target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
+    # Generated Call/dispatch translation units use CUDA when NVIDIA is
+    # enabled, but also instantiate CPU kernels. OpenMP::OpenMP_CXX only adds
+    # compile flags to CXX sources; forward them to NVCC's host compiler too.
+    if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+        separate_arguments(_cpu_openmp_flags NATIVE_COMMAND "${OpenMP_CXX_FLAGS}")
+        foreach(_flag IN LISTS _cpu_openmp_flags)
+            target_compile_options(infiniops PRIVATE
+                "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_flag}>")
+        endforeach()
+    endif()
 
     list(APPEND DEVICE_LIST "cpu")
 endif()
@@ -148,6 +158,9 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    # Optional pinned kernels have their own include closure and CUDA TUs.
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
 
     # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
     # the extra code objects to this provider source so other CUDA operators
@@ -158,7 +171,15 @@ if(WITH_NVIDIA)
         COMPILE_OPTIONS
             "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
 
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/w4_marlin/")
     enable_language(CUDA)
+    include("${PROJECT_SOURCE_DIR}/cmake/NativeW4Marlin.cmake")
+
+    if(BUILD_NVIDIA_FLASH_INFERENCE)
+        include("${PROJECT_SOURCE_DIR}/cmake/NativeFlashAttention.cmake")
+        infiniops_add_native_flash(infiniops_native_flash)
+        target_link_libraries(infiniops PRIVATE infiniops_native_flash)
+    endif()
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
@@ -401,10 +422,12 @@ if(WITH_CAMBRICON)
     find_program(CNCC_COMPILER cncc HINTS "${NEUWARE_HOME}/bin" "$ENV{NEUWARE_HOME}/bin" /usr/local/neuware/bin)
     if(CNCC_COMPILER)
         message(STATUS "Found cncc: ${CNCC_COMPILER}")
+        separate_arguments(INFINI_MLU_HOST_ABI_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS}")
         set(MLU_COMPILE_OPTS
             -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
             -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
             ${INFINI_RT_INCLUDE_FLAGS}
+            ${INFINI_MLU_HOST_ABI_FLAGS}
             -idirafter /usr/local/neuware/lib/clang/11.1.0/include
         )
         function(compile_mlu_file src_file)
@@ -670,6 +693,12 @@ set(_infini_ops_linked_uses_torch FALSE)
 set(_infini_ops_linked_uses_tvm_ffi FALSE)
 
 if(WITH_LINKED)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    if(_TORCH_PYTHON)
+        set(_linked_python "${_TORCH_PYTHON}")
+    else()
+        set(_linked_python "${Python_EXECUTABLE}")
+    endif()
     if(NOT DEVICE_LIST)
         message(FATAL_ERROR
             "`WITH_LINKED=ON` requires an enabled device backend.")
@@ -716,7 +745,7 @@ if(WITH_LINKED)
     endif()
 
     execute_process(
-        COMMAND "${_TORCH_PYTHON}" ${_linked_resolver_args}
+        COMMAND "${_linked_python}" ${_linked_resolver_args}
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
         RESULT_VARIABLE _linked_resolution_result
     )
@@ -738,6 +767,10 @@ if(WITH_LINKED)
                 "Unsupported linked operator transport `${_linked_transport}`.")
         endif()
     endforeach()
+
+    if(_infini_ops_linked_uses_torch AND NOT WITH_TORCH)
+        infiniops_find_torch()
+    endif()
 
     list(REMOVE_DUPLICATES INFINI_OPS_LINKED_LIBRARIES)
     set(_linked_library_basenames)
@@ -1258,6 +1291,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     endif()
     if(WITH_LINKED)
         list(APPEND GENERATOR_ARGS --with-linked)
+    endif()
+    if(BUILD_NVIDIA_FLASH_INFERENCE)
+        list(APPEND GENERATOR_ARGS --with-native-flash)
     endif()
     if(WITH_NINETOOTHED)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)

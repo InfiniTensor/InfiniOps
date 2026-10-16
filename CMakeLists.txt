@@ -26,6 +26,12 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
+option(BUILD_NVIDIA_FLASH_INFERENCE "Build pinned Torch-free NVIDIA inference Attention" OFF)
+set(FLASH_ATTN_SOURCE_ARCHIVE "" CACHE FILEPATH "Exact flash_attn-2.8.3 source archive")
+if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
+endif()
+
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
 option(WITH_TRITON "Enable the Triton JIT backend" OFF)
@@ -239,7 +245,10 @@ if(AUTO_DETECT_BACKENDS)
     endif()
 endif()
 
-if(WITH_TORCH OR WITH_LINKED)
+ # A linked backend is not necessarily a Torch backend: TVM-FFI transports
+ # consume DLPack views and their own runtime. Discover Torch lazily only when
+ # native Torch wrappers or a selected linked Torch transport need it.
+macro(infiniops_find_torch)
     if(WITH_MARS AND WITH_TORCH AND WITH_LINKED)
         find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
     else()
@@ -267,7 +276,7 @@ if(WITH_TORCH OR WITH_LINKED)
 
     if(NOT _torch_result EQUAL 0)
         message(FATAL_ERROR
-            "`WITH_TORCH=ON` or `WITH_LINKED=ON` requires an installed `torch` package.")
+            "The selected Torch backend/transport requires an installed `torch` package.")
     endif()
 
     execute_process(
@@ -360,6 +369,10 @@ if(WITH_TORCH OR WITH_LINKED)
     endif()
 
     message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
+endmacro()
+
+if(WITH_TORCH)
+    infiniops_find_torch()
 endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.

@@ -14,6 +14,11 @@ class Operator<Copy, Device::Type::kNvidia>
     : public CudaCopy<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaCopy<Runtime<Device::Type::kNvidia>>::CudaCopy;
+  bool capture_safe() const override {
+    return output_size_ != 0 && ndim_ != 0 &&
+           (out_type_ == DataType::kFloat32 || out_type_ == DataType::kFloat16 ||
+            out_type_ == DataType::kBFloat16 || out_type_ == DataType::kInt32);
+  }
 };
 
 }  // namespace infini::ops

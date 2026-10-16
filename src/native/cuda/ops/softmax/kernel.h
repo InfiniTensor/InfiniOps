@@ -5,6 +5,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <exception>
+#include <new>
+#include <stdexcept>
 #include <vector>
 
 #include "base/softmax.h"
@@ -36,6 +39,12 @@ class CudaSoftmax : public Softmax {
     assert(!out.HasBroadcastDim() &&
            "`Softmax` output must not have broadcasted dimensions");
 
+    if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
+      throw std::runtime_error("CudaSoftmax cannot query metadata owner device");
+    block_size_ = std::min(
+        RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
+    if (row_count_ == 0 || dim_size_ == 0) return;
+
     const size_t shape_size = ndim_ * sizeof(*d_shape_);
     const size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = shape_size + 2 * strides_size;
@@ -44,28 +53,49 @@ class CudaSoftmax : public Softmax {
     }
 
     std::vector<std::byte> metadata(metadata_size);
-    Backend::Malloc(reinterpret_cast<void**>(&d_metadata_), metadata_size);
+    void* allocation = nullptr;
+    const auto status = Backend::Malloc(&allocation, metadata_size);
+    if (status != Backend::kSuccess || !allocation) {
+      if (allocation && Backend::Free(allocation) != Backend::kSuccess)
+        std::terminate();
+      throw std::bad_alloc();
+    }
+    d_metadata_ = static_cast<std::byte*>(allocation);
 
-    size_t offset = 0;
-    d_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
-    offset += shape_size;
+    try {
+      size_t offset = 0;
+      d_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
+      offset += shape_size;
 
-    d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
-    offset += strides_size;
+      d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+      offset += strides_size;
 
-    d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
+      d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
+      if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                          Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+        throw std::runtime_error("CudaSoftmax metadata copy failed");
+    } catch (...) {
+      if (Backend::Free(d_metadata_) != Backend::kSuccess) std::terminate();
+      d_metadata_ = nullptr;
+      throw;
+    }
   }
 
   ~CudaSoftmax() {
-    if (d_metadata_ != nullptr) {
-      Backend::Free(d_metadata_);
-    }
+    if (!d_metadata_) return;
+    int previous = -1;
+    if (Backend::GetDevice(&previous) != Backend::kSuccess) std::terminate();
+    const bool switched = previous != owner_device_;
+    if (switched && Backend::SetDevice(owner_device_) != Backend::kSuccess)
+      std::terminate();
+    const auto freed = Backend::Free(d_metadata_);
+    if (switched && Backend::SetDevice(previous) != Backend::kSuccess)
+      std::terminate();
+    if (freed != Backend::kSuccess) std::terminate();
   }
 
   void operator()(const Tensor input, const int64_t,
@@ -76,11 +106,9 @@ class CudaSoftmax : public Softmax {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
-    int block_size = std::min(
-        RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
 
     DispatchFunc<AllFloatTypes, List<128, 256, 512, 1024>>(
-        {static_cast<int64_t>(out_type_), block_size},
+        {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
@@ -102,6 +130,8 @@ class CudaSoftmax : public Softmax {
 
  private:
   std::byte* d_metadata_{nullptr};
+  int owner_device_{-1};
+  int block_size_{0};
 
   Tensor::Size* d_shape_{nullptr};
 

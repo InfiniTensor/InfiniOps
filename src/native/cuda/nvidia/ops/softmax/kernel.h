@@ -14,6 +14,7 @@ class Operator<Softmax, Device::Type::kNvidia>
     : public CudaSoftmax<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaSoftmax<Runtime<Device::Type::kNvidia>>::CudaSoftmax;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

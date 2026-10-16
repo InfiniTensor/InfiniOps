@@ -15,6 +15,7 @@ class Operator<FusedAddRmsNorm, Device::Type::kNvidia>
  public:
   using CudaFusedAddRmsNorm<
       Runtime<Device::Type::kNvidia>>::CudaFusedAddRmsNorm;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

@@ -14,6 +14,7 @@ class Operator<Sigmoid, Device::Type::kNvidia>
     : public CudaSigmoid<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaSigmoid<Runtime<Device::Type::kNvidia>>::CudaSigmoid;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

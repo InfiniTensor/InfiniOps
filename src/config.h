@@ -2,6 +2,7 @@
 #define INFINI_OPS_CONFIG_H_
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -17,6 +18,10 @@ class Config {
     return std::make_unique<Config>(*this);
   }
 
+  // A typed configuration may require a provider that consumes its metadata
+  // during construction. Legacy configurations and providers are unchanged.
+  virtual bool requires_config_aware_provider() const { return false; }
+
   std::size_t implementation_index() const {
     return implementation_index_.value_or(0);
   }
@@ -27,6 +32,16 @@ class Config {
 
   bool needs_implementation_resolution() const {
     return !implementation_index_.has_value();
+  }
+
+  // Opt-in metadata-based selection. Explicit indices retain their meaning.
+  static constexpr std::size_t kAutomaticImplementation =
+      std::numeric_limits<std::size_t>::max();
+
+  static Config Automatic() {
+    Config config;
+    config.set_implementation_index(kAutomaticImplementation);
+    return config;
   }
 
  private:

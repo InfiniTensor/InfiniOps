@@ -14,6 +14,7 @@ class Operator<Embedding, Device::Type::kNvidia>
     : public CudaEmbedding<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaEmbedding<Runtime<Device::Type::kNvidia>>::CudaEmbedding;
+  bool capture_safe() const override { return !max_norm_.has_value(); }
 };
 
 }  // namespace infini::ops

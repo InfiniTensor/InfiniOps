@@ -289,7 +289,8 @@ template <typename ValueType, typename Functor, typename... Args, auto... items>
 auto DispatchFuncListAliasImpl(ValueType value, Functor&& func,
                                std::string_view context_str, List<items...>,
                                Args&&... args) {
-  return DispatchFunc<static_cast<std::decay_t<ValueType>>(items)...>(
+  return DispatchFunc<std::decay_t<ValueType>,
+                      static_cast<std::decay_t<ValueType>>(items)...>(
       value, std::forward<Functor>(func), context_str,
       std::forward<Args>(args)...);
 }

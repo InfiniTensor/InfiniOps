@@ -15,6 +15,7 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kNvidia>
  public:
   using CudaReshapeAndCacheFlash<
       Runtime<Device::Type::kNvidia>>::CudaReshapeAndCacheFlash;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

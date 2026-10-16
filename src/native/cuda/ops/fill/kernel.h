@@ -5,6 +5,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <exception>
+#include <new>
+#include <stdexcept>
 #include <vector>
 
 #include "base/fill.h"
@@ -33,27 +36,55 @@ class CudaFill : public Fill {
            "`CudaFill` requires `input` and `out` on the same device.");
     assert(!out.HasBroadcastDim() &&
            "`CudaFill` output must not have broadcast dimensions.");
+    if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
+      throw std::runtime_error("CudaFill cannot query metadata owner device");
+    if (output_size_ == 0 || is_out_contiguous_) return;
 
     size_t shape_size = ndim_ * sizeof(*d_out_shape_);
     size_t strides_size = ndim_ * sizeof(*d_out_strides_);
     const size_t metadata_size = shape_size + strides_size;
     std::vector<std::byte> metadata(metadata_size);
 
-    Backend::Malloc((void**)&d_metadata_, metadata_size);
+    void* allocation = nullptr;
+    const auto allocation_status = Backend::Malloc(&allocation, metadata_size);
+    if (allocation_status != Backend::kSuccess || !allocation) {
+      if (allocation && Backend::Free(allocation) != Backend::kSuccess)
+        std::terminate();
+      throw std::bad_alloc();
+    }
+    d_metadata_ = static_cast<std::byte*>(allocation);
 
-    size_t offset = 0;
-    d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
-    offset += shape_size;
+    try {
+      size_t offset = 0;
+      d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
+      offset += shape_size;
 
-    d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-    std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
+      d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
+      if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                          Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+        throw std::runtime_error("CudaFill metadata copy failed");
+    } catch (...) {
+      if (Backend::Free(d_metadata_) != Backend::kSuccess) std::terminate();
+      d_metadata_ = nullptr;
+      throw;
+    }
   }
 
-  ~CudaFill() override { Backend::Free(d_metadata_); }
+  ~CudaFill() override {
+    if (!d_metadata_) return;
+    int previous = -1;
+    if (Backend::GetDevice(&previous) != Backend::kSuccess) std::terminate();
+    const bool switched = previous != owner_device_;
+    if (switched && Backend::SetDevice(owner_device_) != Backend::kSuccess)
+      std::terminate();
+    const auto freed = Backend::Free(d_metadata_);
+    if (switched && Backend::SetDevice(previous) != Backend::kSuccess)
+      std::terminate();
+    if (freed != Backend::kSuccess) std::terminate();
+  }
 
   void operator()(const Tensor input, const double value,
                   Tensor out) const override {
@@ -100,6 +131,8 @@ class CudaFill : public Fill {
   bool is_out_contiguous_{false};
 
   std::byte* d_metadata_{nullptr};
+
+  int owner_device_{-1};
 
   Tensor::Size* d_out_shape_{nullptr};
 

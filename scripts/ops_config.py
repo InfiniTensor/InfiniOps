@@ -86,6 +86,14 @@ def _normalize_selection(path, op_name, value):
             f"{path}: {op_name!r} must map to implementation path(s) or an object"
         )
 
+    if "public_api_only" in value:
+        if set(value) != {"public_api_only"} or value["public_api_only"] is not True:
+            raise OpsConfigError(
+                f"{path}: {op_name!r} public_api_only must be exactly true "
+                "without implementation selections"
+            )
+        return {"headers": None, "implementations": (), "public_api_only": True}
+
     unknown_keys = sorted(set(value) - {"implementations"})
     if unknown_keys:
         raise OpsConfigError(

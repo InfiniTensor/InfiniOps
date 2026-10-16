@@ -110,13 +110,16 @@ __mlu_global__ void SiluAndMulKernel(
 
 }  // namespace
 
-template <typename T>
+template <typename StorageT>
 void SiluAndMulUnion(void* workspace, int core_per_cluster, int cluster_count,
                      cnrtQueue_t queue, const void* input, void* out,
                      const size_t* input_shape, const ptrdiff_t* input_strides,
                      const size_t* out_shape, const ptrdiff_t* out_strides,
                      size_t output_size, size_t hidden_size, int ndim,
                      bool input_contiguous, bool out_contiguous) {
+  using T = cambricon::NativeScalarType<StorageT>;
+
+
   auto* workspace_bytes = static_cast<char*>(workspace);
   auto* device_input_shape = reinterpret_cast<size_t*>(workspace_bytes);
   auto* device_out_shape = device_input_shape + ndim;
@@ -153,8 +156,8 @@ void SiluAndMulUnion(void* workspace, int core_per_cluster, int cluster_count,
                                    const size_t*, const ptrdiff_t*, size_t,   \
                                    size_t, int, bool, bool)
 
-INSTANTIATE_SILU_AND_MUL(__half);
-INSTANTIATE_SILU_AND_MUL(__bang_bfloat16);
+INSTANTIATE_SILU_AND_MUL(Float16);
+INSTANTIATE_SILU_AND_MUL(BFloat16);
 INSTANTIATE_SILU_AND_MUL(float);
 
 #undef INSTANTIATE_SILU_AND_MUL

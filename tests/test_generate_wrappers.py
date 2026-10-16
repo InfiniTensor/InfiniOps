@@ -106,6 +106,14 @@ def test_operator_call_instantiations_externalize_default_implementation_lookup(
     assert f"extern template {signature}" in declarations
     assert f"template {signature}" in definitions
 
+    default_config_signature = (
+        "Config Operator<::infini::ops::Abs>::DefaultConfig(Device::Type);"
+    )
+    assert declarations.count(f"extern template {default_config_signature}") == 1
+    assert definitions.count(f"template {default_config_signature}") == 1
+    assert not any("::CanMake<" in entry for entry in declarations)
+    assert not any("::CanMake<" in entry for entry in definitions)
+
 
 def test_operator_call_instantiations_externalize_active_implementation_query():
     module = _load_generator_module()
@@ -371,6 +379,12 @@ class Mul {
 
     assert '#include "tuning.h"' in text
     assert "std::size_t DefaultImplementationIndexForMul" in text
+    assert (
+        "return ::infini::ops::Mul::DefaultConfig(dev_type).implementation_index();"
+    ) in text
+    assert "detail::AutomaticDefault<::infini::ops::Mul>::value" not in text
+    assert "return Config::kAutomaticImplementation;" not in text
+    assert "return indices.front();" not in text
     assert (
         "config.set_implementation_index("
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"

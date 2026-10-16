@@ -70,7 +70,8 @@ void Operator<MoeAlignBlockSize, Device::Type::kNvidia, 0>::Run(
       reinterpret_cast<int32_t*>(experts_ids.data()),
       reinterpret_cast<int32_t*>(num_tokens_post_pad.data()), numel_,
       static_cast<int32_t>(num_experts_), static_cast<int32_t>(block_size_),
-      sorted_token_ids_size_, experts_ids_size_);
+      sorted_token_ids_size_, experts_ids_size_,
+      maybe_expert_map ? static_cast<int32_t>(maybe_expert_map->numel()) : 0);
 
   const auto status = cudaGetLastError();
   assert(status == cudaSuccess &&
