@@ -1,0 +1,182 @@
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
+#include "kernel.h"
+
+__nram__ char topk_softmax_nram[NRAM_MAX_SIZE] __attribute__((aligned(128)));
+
+namespace infini::ops {
+namespace {
+
+constexpr std::size_t kAlignment = 128;
+
+__mlu_device__ std::size_t AlignUpDevice(std::size_t size) {
+  return (size + kAlignment - 1) / kAlignment * kAlignment;
+}
+
+template <typename T>
+__mlu_device__ void LoadAsFloat(float* destination, T* cache, const T* source,
+                                std::size_t count) {
+  __memcpy(cache, const_cast<T*>(source), count * sizeof(T), GDRAM2NRAM);
+  if constexpr (std::is_same_v<T, __half>) {
+    __bang_half2float(destination, reinterpret_cast<half*>(cache), count);
+  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
+    __bang_bfloat162float(destination, cache, count);
+  } else {
+    __memcpy(destination, cache, count * sizeof(float), NRAM2NRAM);
+  }
+}
+
+template <typename Index>
+__mlu_device__ void StoreIndex(Index* destination, bool padded,
+                               int32_t selected_index) {
+  if (!padded) {
+    *destination = static_cast<Index>(selected_index);
+  } else if constexpr (std::is_same_v<Index, int64_t>) {
+    auto* words = reinterpret_cast<uint32_t*>(destination);
+    words[0] = UINT32_MAX;
+    words[1] = UINT32_MAX;
+  } else {
+    *destination = static_cast<Index>(UINT32_MAX);
+  }
+}
+
+template <typename T, typename Index>
+__mlu_global__ void TopkSoftmaxKernel(const T* gating_output, const float* bias,
+                                      const uint8_t* is_padding,
+                                      float* topk_weights, Index* topk_indices,
+                                      int32_t* token_expert_indices,
+                                      int32_t num_tokens, int32_t num_experts,
+                                      int32_t topk, bool renormalize) {
+  char* cursor = topk_softmax_nram;
+  auto* input_cache = reinterpret_cast<T*>(cursor);
+  cursor += AlignUpDevice(static_cast<std::size_t>(num_experts) * sizeof(T));
+  auto* probabilities = reinterpret_cast<float*>(cursor);
+  cursor +=
+      AlignUpDevice(static_cast<std::size_t>(num_experts) * sizeof(float));
+  auto* selection = reinterpret_cast<float*>(cursor);
+  cursor +=
+      AlignUpDevice(static_cast<std::size_t>(num_experts) * sizeof(float));
+  auto* selected_weights = reinterpret_cast<float*>(cursor);
+  cursor += AlignUpDevice(static_cast<std::size_t>(topk) * sizeof(float));
+  auto* selected_indices = reinterpret_cast<int32_t*>(cursor);
+
+  for (int32_t token = taskId; token < num_tokens; token += taskDim) {
+    LoadAsFloat(probabilities, input_cache,
+                gating_output + static_cast<std::size_t>(token) * num_experts,
+                num_experts);
+
+    float max_value = -INFINITY;
+    for (int32_t expert = 0; expert < num_experts; ++expert) {
+      max_value = std::max(max_value, probabilities[expert]);
+    }
+    float sum = 0.0f;
+    for (int32_t expert = 0; expert < num_experts; ++expert) {
+      probabilities[expert] = expf(probabilities[expert] - max_value);
+      sum += probabilities[expert];
+    }
+    const float inverse_sum = 1.0f / sum;
+    for (int32_t expert = 0; expert < num_experts; ++expert) {
+      probabilities[expert] *= inverse_sum;
+    }
+
+    if (bias != nullptr) {
+      __memcpy(selection, const_cast<float*>(bias),
+               static_cast<std::size_t>(num_experts) * sizeof(float),
+               GDRAM2NRAM);
+      for (int32_t expert = 0; expert < num_experts; ++expert) {
+        const float bias_value = selection[expert];
+        selection[expert] = isnan(bias_value) || bias_value == -INFINITY
+                                ? probabilities[expert]
+                                : probabilities[expert] + bias_value;
+      }
+    } else {
+      __memcpy(selection, probabilities,
+               static_cast<std::size_t>(num_experts) * sizeof(float),
+               NRAM2NRAM);
+    }
+
+    float selected_sum = 0.0f;
+    for (int32_t rank = 0; rank < topk; ++rank) {
+      bool found = false;
+      float best_value = -INFINITY;
+      int32_t best_expert = 0;
+      for (int32_t expert = 0; expert < num_experts; ++expert) {
+        const float value = selection[expert];
+        if (isnan(value)) {
+          continue;
+        }
+        if (!found || value > best_value ||
+            (value == best_value && expert < best_expert)) {
+          found = true;
+          best_value = value;
+          best_expert = expert;
+        }
+      }
+      selected_indices[rank] = best_expert;
+      selected_weights[rank] = probabilities[best_expert];
+      selected_sum += selected_weights[rank];
+      selection[best_expert] = NAN;
+    }
+
+    const bool padded = is_padding != nullptr && is_padding[token] != 0;
+    const float weight_scale = renormalize ? 1.0f / selected_sum : 1.0f;
+    for (int32_t rank = 0; rank < topk; ++rank) {
+      const std::size_t output_index =
+          static_cast<std::size_t>(token) * topk + rank;
+      topk_weights[output_index] = selected_weights[rank] * weight_scale;
+      StoreIndex(topk_indices + output_index, padded, selected_indices[rank]);
+      token_expert_indices[output_index] = rank * num_tokens + token;
+    }
+  }
+}
+
+}  // namespace
+
+template <typename T, typename Index>
+void TopkSoftmaxUnion(cnrtQueue_t queue, int core_per_cluster,
+                      int cluster_count, const T* gating_output,
+                      const float* bias, const uint8_t* is_padding,
+                      float* topk_weights, Index* topk_indices,
+                      int32_t* token_expert_indices, int32_t num_tokens,
+                      int32_t num_experts, int32_t topk, bool renormalize) {
+  const auto align_up = [](std::size_t size) {
+    return (size + kAlignment - 1) / kAlignment * kAlignment;
+  };
+  const std::size_t required_bytes =
+      align_up(static_cast<std::size_t>(num_experts) * sizeof(T)) +
+      2 * align_up(static_cast<std::size_t>(num_experts) * sizeof(float)) +
+      align_up(static_cast<std::size_t>(topk) * sizeof(float)) +
+      static_cast<std::size_t>(topk) * sizeof(int32_t);
+  assert(required_bytes <= NRAM_MAX_SIZE &&
+         "TopkSoftmax inputs do not fit in NRAM");
+
+  const cnrtDim3_t kernel_dim = {static_cast<unsigned int>(core_per_cluster),
+                                 static_cast<unsigned int>(cluster_count), 1};
+  TopkSoftmaxKernel<T, Index><<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
+      gating_output, bias, is_padding, topk_weights, topk_indices,
+      token_expert_indices, num_tokens, num_experts, topk, renormalize);
+  CNRT_CHECK(cnrtGetLastError());
+}
+
+#define INSTANTIATE_TOPK_SOFTMAX(T, INDEX)                                   \
+  template void TopkSoftmaxUnion<T, INDEX>(                                  \
+      cnrtQueue_t, int, int, const T*, const float*, const uint8_t*, float*, \
+      INDEX*, int32_t*, int32_t, int32_t, int32_t, bool)
+
+INSTANTIATE_TOPK_SOFTMAX(__half, int32_t);
+INSTANTIATE_TOPK_SOFTMAX(__half, uint32_t);
+INSTANTIATE_TOPK_SOFTMAX(__half, int64_t);
+INSTANTIATE_TOPK_SOFTMAX(__bang_bfloat16, int32_t);
+INSTANTIATE_TOPK_SOFTMAX(__bang_bfloat16, uint32_t);
+INSTANTIATE_TOPK_SOFTMAX(__bang_bfloat16, int64_t);
+INSTANTIATE_TOPK_SOFTMAX(float, int32_t);
+INSTANTIATE_TOPK_SOFTMAX(float, uint32_t);
+INSTANTIATE_TOPK_SOFTMAX(float, int64_t);
+
+#undef INSTANTIATE_TOPK_SOFTMAX
+
+}  // namespace infini::ops
