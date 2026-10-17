@@ -3,7 +3,6 @@
 
 #include <torch/torch.h>
 #include <torch/version.h>
-
 #ifdef WITH_ASCEND
 #include <torch_npu/csrc/aten/common/from_blob.h>
 #endif
@@ -110,6 +109,7 @@ inline at::Tensor ToAtenTensor(
     if (dim == 0) return at::empty_strided(at_shape, at_strides, options);
   }
 
+  at::globalContext().lazyInitDevice(options.device().type());
 #ifdef WITH_ASCEND
   if constexpr (kDev == Device::Type::kAscend) {
     // NPU tensors require torch_npu's storage descriptor. Supplying the
@@ -119,7 +119,10 @@ inline at::Tensor ToAtenTensor(
                                      options.device());
   }
 #endif
-  return at::from_blob(data, at_shape, at_strides, options);
+  // The device is supplied by InfiniRT. Do not ask a PrivateUse1 backend to
+  // rediscover it from an external allocation (not every provider has that hook).
+  return at::for_blob(data, at_shape).strides(at_strides)
+      .options(options).target_device(options.device()).make_tensor();
 }
 
 }  // namespace infini::ops

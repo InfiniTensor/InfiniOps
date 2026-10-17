@@ -3,6 +3,7 @@
 
 #include <torch_npu/csrc/core/npu/NPUGuard.h>
 #include <torch_npu/csrc/core/npu/NPUStream.h>
+#include <torch_npu/csrc/core/npu/NPUFunctions.h>
 
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +20,14 @@ struct C10<Device::Type::kAscend> {
   static c10_npu::NPUStream GetStreamFromExternal(void* stream,
                                                   int device_index) {
     const auto device = static_cast<c10::DeviceIndex>(device_index);
+    // InfiniRT activates ACL directly; torch_npu also caches the current
+    // device in TLS. Synchronize that cache before NPUStreamGuard saves it,
+    // otherwise its destructor can restore device 0 after an external runtime
+    // selected device 1, invalidating subsequent native stream operations.
+    const auto status = c10_npu::SetDevice(device);
+    TORCH_CHECK(status == ACL_ERROR_NONE,
+                "torch_npu SetDevice for external runtime stream failed: ",
+                status);
     if (stream == nullptr) {
       return c10_npu::getCurrentNPUStream(device);
     }

@@ -1434,7 +1434,32 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 
         return api_param.api_name
 
-    if op.is_inplace:
+    if op.aten_name == "gelu":
+        # torch_npu does not implement aten::gelu.out and silently falls back
+        # to CPU, while its regular aten::gelu kernel is device-native.  Copy
+        # the returned tensor into InfiniOps-owned storage so every provider
+        # keeps the normal out-parameter contract without a hidden fallback.
+        out_param = next(p for p in op.params if p.is_out)
+        input_param = next(p for p in op.params if p.is_tensor and not p.is_out)
+        extra_args = [
+            _render_arg(index, p)
+            for index, p in enumerate(op.params)
+            if p is not out_param and p is not input_param
+        ]
+        rendered_extra = ", " + ", ".join(extra_args) if extra_args else ""
+        out_arg_order = [(index, p) for index, p in enumerate(op.params) if p.is_out] + [
+            (index, p) for index, p in enumerate(op.params) if not p.is_out
+        ]
+        out_args = ", ".join(_render_arg(index, p) for index, p in out_arg_order)
+        aten_call = (
+            "if constexpr (kDev == Device::Type::kAscend) {\n"
+            f"      at_{out_param.name}.copy_(at::gelu("
+            f"at_{input_param.name}{rendered_extra}));\n"
+            "    } else {\n"
+            f"      at::gelu_out({out_args});\n"
+            "    }"
+        )
+    elif op.is_inplace:
         # In-place ATen calls keep the mutable input in positional order,
         # unlike `_out` calls which place output tensors first.
         input_param = op.params[0]

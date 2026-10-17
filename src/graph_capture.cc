@@ -40,6 +40,14 @@ class AscendGraphCaptureMemory final : public GraphCaptureMemory {
       // The caller must destroy its graph executable before dropping this
       // owner. Until then empty_cache/OOM reclamation must not free the pool.
       c10_npu::NPUCachingAllocator::releasePool(device_, pool_.id());
+      // releasePool only marks a private pool freeable. Unlike the ordinary
+      // pool, its blocks cannot be reused by the next capture's distinct pool.
+      // Waiting for allocation failure is too late: allocator reclamation is
+      // forbidden while capture is underway. Reclaim at this safe boundary,
+      // after both graph handles have been destroyed and capture has ended.
+      // This releases only unused caches in this process, never live tensors
+      // or pools still owned by other graph executables.
+      c10_npu::NPUCachingAllocator::get()->emptyCache(true);
     } catch (const std::exception& error) {
       // If ending capture failed, retain the pool instead of making memory
       // available while the allocator might still be redirecting into it.
