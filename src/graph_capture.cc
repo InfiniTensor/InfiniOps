@@ -5,7 +5,6 @@
 
 #include <cstdio>
 #include <exception>
-#include <mutex>
 
 #include "torch/ascend/c10.h"
 #endif
@@ -73,26 +72,17 @@ std::shared_ptr<GraphCaptureMemory> BeginGraphCaptureMemory(
   if (device.type() == infini::rt::Device::Type::kAscend) {
     TORCH_CHECK(stream != nullptr,
                 "Ascend graph capture requires an explicit runtime stream");
+    // The caller warms up the graph before this scope. A graph containing
+    // only native/copy kernels has never used ATen, so there is no provider
+    // allocation to redirect. Do not partially initialize torch_npu here:
+    // its emptyCache also touches the separately initialized workspace
+    // allocator, and allocator-only init crashes that native C++ path.
+    if (!c10_npu::NPUCachingAllocator::get()->initialized()) {
+      return nullptr;
+    }
     const C10<Device::Type::kAscend>::StreamGuard guard{
         C10<Device::Type::kAscend>::GetStreamFromExternal(stream,
                                                           device.index())};
-    // Pure-copy C++ graphs may reach here before any ATen allocation. Stream
-    // initialization does not initialize the caching allocator's device pools.
-    // Serialize this initialization across independent runtime instances.
-    static std::mutex allocator_init_mutex;
-    {
-      const std::lock_guard<std::mutex> lock{allocator_init_mutex};
-      if (!c10_npu::NPUCachingAllocator::get()->initialized()) {
-        // The inline NPUCachingAllocator::init error macro references private
-        // symbols missing from wheels. Use ACL and the public virtual API.
-        uint32_t device_count = 0;
-        const auto status = aclrtGetDeviceCount(&device_count);
-        TORCH_CHECK(status == ACL_ERROR_NONE,
-                    "aclrtGetDeviceCount for graph capture failed: ", status);
-        c10_npu::NPUCachingAllocator::get()->init(
-            static_cast<int>(device_count));
-      }
-    }
     return std::make_shared<AscendGraphCaptureMemory>(
         static_cast<c10::DeviceIndex>(device.index()), stream);
   }
