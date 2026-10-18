@@ -8,15 +8,14 @@
 
 namespace infini::ops {
 
-// Native provider for the former LM zeros/ones CPU domain. Scalar values
-// outside this domain and Tensor-valued Fill remain explicitly unsupported.
+// Native scalar Fill provider. Tensor-valued Fill remains unsupported.
 template <>
 class Operator<Fill, Device::Type::kCpu, 0> : public Fill,
                                             Caster<Device::Type::kCpu> {
  public:
   static bool supports(const Tensor input, const double value, Tensor out) {
     return input.device().type() == Device::Type::kCpu &&
-           (value == 0.0 || value == 1.0) && Fill::supports(input, value, out) &&
+           Fill::supports(input, value, out) &&
            valid_output(out);
   }
 
@@ -59,7 +58,7 @@ class Operator<Fill, Device::Type::kCpu, 0> : public Fill,
         }
         std::memcpy(data + offset * sizeof(T), &scalar, sizeof(T));
       }
-    }, "CPU Fill zeros/ones");
+    }, "CPU scalar Fill");
   }
 
   void operator()(const Tensor, const Tensor, Tensor) const override {
@@ -69,7 +68,7 @@ class Operator<Fill, Device::Type::kCpu, 0> : public Fill,
  private:
   static Tensor Checked(const Tensor input, double value, Tensor out) {
     if (!supports(input, value, out))
-      throw std::invalid_argument("CPU Fill only supplies zero/one scalar fill with valid metadata");
+      throw std::invalid_argument("CPU Fill requires valid scalar fill metadata");
     return input;
   }
 };

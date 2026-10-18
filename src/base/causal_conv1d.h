@@ -56,8 +56,6 @@ class CausalConv1d : public Operator<CausalConv1d> {
     const size_t channels = q.shape()[2];
     if (w.shape() != Tensor::Shape{channels, 1, 4} || state.shape()[1] != channels || state.shape()[2] != 3)
       throw std::invalid_argument("causal conv requires K4 and state_len3");
-    if (q.strides()[2] != 1 || out.strides()[2] != 1)
-      throw std::invalid_argument("causal conv requires contiguous channels");
     if (v[6].has_value() == v[8].has_value())
       throw std::invalid_argument("causal conv requires exactly one final state destination mode");
     size_t requests = q.shape()[0];

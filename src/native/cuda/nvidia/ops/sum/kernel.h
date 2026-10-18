@@ -52,7 +52,7 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
     const auto rank = input.shape().size();
     if ((*dim)[0] < 0 || static_cast<std::size_t>((*dim)[0]) >= rank) return false;
     const auto axis = static_cast<std::size_t>((*dim)[0]);
-    if (input.shape()[axis] == 0 || input.shape()[axis] > 64 ||
+    if (input.shape()[axis] == 0 ||
         input.strides().size() != rank ||
         out.strides().size() != out.shape().size()) return false;
     std::size_t output_count = 1;

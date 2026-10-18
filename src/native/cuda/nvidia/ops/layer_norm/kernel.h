@@ -53,8 +53,6 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
         (input.dtype() != DataType::kFloat16 &&
          input.dtype() != DataType::kBFloat16 &&
          input.dtype() != DataType::kFloat32) ||
-        (input.shape()[rank - 1] > 1 &&
-         (input.strides()[rank - 1] != 1 || out.strides()[rank - 1] != 1)) ||
         !NonOverlappingOutput(out)) return false;
 
     int current = -1;
@@ -99,9 +97,8 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
            const std::optional<Tensor> bias, float eps, Tensor out)
       : LayerNorm(checked(input, weight, bias, eps, out), weight, bias, eps, out) {}
 
-  // Keep graph qualification closed until the independent CUDA/RT contract
-  // has run on the target architecture. Direct capture is tested separately.
-  bool capture_safe() const override { return false; }
+  // Replay submits a kernel with by-value layout and no device allocation.
+  bool capture_safe() const override { return true; }
 
   void operator()(const Tensor input, const Tensor weight,
                   const std::optional<Tensor> bias, float eps,

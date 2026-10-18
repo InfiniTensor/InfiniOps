@@ -48,6 +48,7 @@
   "topk_softmax": {"implementations": [0]},
   "tril": {"implementations": [0]},
   "triu": {"implementations": [0]},
+  "upsample_bicubic2d": {"public_api_only": true},
   "upsample_bilinear2d": {"implementations": [0]},
   "w4_marlin_gemm": {"implementations": [0]},
   "w4_marlin_parameters": {"implementations": [0]},

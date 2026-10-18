@@ -51,7 +51,6 @@ class SeparateTableRope : public Operator<SeparateTableRope> {
         sin_table.stride(0) != static_cast<Tensor::Stride>(sin_table.size(1)) ||
         cos_table.stride(0) != sin_table.stride(0) ||
         input.stride(rank - 1) != 1 || out.stride(rank - 1) != 1) return false;
-    if (nvidia && sin_table.size(0) < seq) return false;
     return true;
   }
   SeparateTableRope(const Tensor input, const Tensor positions,

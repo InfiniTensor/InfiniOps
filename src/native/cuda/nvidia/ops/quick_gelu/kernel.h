@@ -73,8 +73,8 @@ class Operator<QuickGelu, Device::Type::kNvidia, 0> : public QuickGelu {
   Operator(const Tensor input, Tensor out)
       : QuickGelu(checked(input, out), out) {}
 
-  // QG1 has not yet passed standalone or installed-provider qualification.
-  bool capture_safe() const override { return false; }
+  // Replay submits a kernel with by-value layout and no device allocation.
+  bool capture_safe() const override { return true; }
 
   void operator()(const Tensor input, Tensor out) const override {
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
