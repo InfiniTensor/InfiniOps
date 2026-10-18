@@ -56,7 +56,7 @@ export INFERENCE_ARTIFACTS="$PWD"
 cd ..
 python3.12 -m venv build-env
 source build-env/bin/activate
-python -m pip install cmake ninja libclang numpy packaging scikit-build-core pybind11
+python -m pip install cmake ninja libclang numpy packaging scikit-build-core pybind11 pyyaml
 python -m pip install --no-index --no-deps --target "$INFINI_ROOT/python" \
   "$INFERENCE_ARTIFACTS/flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl" \
   "$INFERENCE_ARTIFACTS/apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
