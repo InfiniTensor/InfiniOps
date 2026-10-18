@@ -1,5 +1,5 @@
 if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 12.3)
-    message(FATAL_ERROR "NativeW4Marlin candidate requires CUDA >=12.3 and C++20 source_location")
+    message(FATAL_ERROR "NVIDIA Marlin requires CUDA >=12.3 and C++20")
 endif()
 set(_w4_root "${PROJECT_SOURCE_DIR}/src/native/cuda/nvidia/ops/w4_marlin")
 add_library(infiniops_w4_marlin OBJECT

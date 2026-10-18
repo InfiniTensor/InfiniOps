@@ -1946,6 +1946,7 @@ def _get_all_ops(
     with_linked=False,
     with_triton=False,
     with_native_flash=False,
+    with_native_w4=False,
 ):
     scan_dirs = set(devices)
 
@@ -1976,16 +1977,20 @@ def _get_all_ops(
         impl_roots.append(_GENERATION_DIR)
 
     impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
+    excluded_headers = set()
     if not with_native_flash:
-        # These optional providers require their exact pinned kernel build.
-        # Never emit a specialization merely because a source header exists.
+        excluded_headers.update({
+            "src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
+            "src/native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
+        })
+    if not with_native_w4:
+        excluded_headers.add("src/native/cuda/nvidia/ops/w4_marlin/kernel.h")
+    if excluded_headers:
+        # Optional providers are emitted only with their compiled kernel target.
         for name, headers in impl_headers_by_operator.items():
             impl_headers_by_operator[name] = [
                 header for header in headers
-                if header.path.as_posix() not in {
-                    "src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
-                    "src/native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
-                }
+                if header.path.as_posix() not in excluded_headers
             ]
 
     for base_dir in base_dirs:
@@ -2184,6 +2189,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--with-native-flash", action="store_true",
                         help="Include the pinned native inference Attention provider.")
+    parser.add_argument("--with-native-w4", action="store_true",
+                        help="Include the compiled NVIDIA Marlin providers.")
     parser.add_argument(
         "--ops",
         nargs="+",
@@ -2221,6 +2228,7 @@ if __name__ == "__main__":
         with_linked=args.with_linked,
         with_triton=args.with_triton,
         with_native_flash=args.with_native_flash,
+        with_native_w4=args.with_native_w4,
     )
 
     if config_path is not None:
