@@ -206,10 +206,10 @@ __mlu_global__ void TopKTopPSamplingFromLogitsKernel(
 
 template <typename StorageT, typename OutputIndex>
 void TopKTopPSamplingFromLogitsUnion(
-    cnrtQueue_t queue, int core_per_cluster, int cluster_count, const StorageT* storage_logits,
-    const int32_t* top_k, const float* top_p, const int32_t* row_indices,
-    bool has_indices, bool joint, OutputIndex* out, int32_t batch_size,
-    int32_t vocab_size, uint32_t seed, uint32_t offset) {
+    cnrtQueue_t queue, int core_per_cluster, int cluster_count,
+    const StorageT* storage_logits, const int32_t* top_k, const float* top_p,
+    const int32_t* row_indices, bool has_indices, bool joint, OutputIndex* out,
+    int32_t batch_size, int32_t vocab_size, uint32_t seed, uint32_t offset) {
   using T = cambricon::NativeScalarType<StorageT>;
   auto logits = reinterpret_cast<const T*>(storage_logits);
 

@@ -27,8 +27,8 @@ struct Layout {
 };
 
 void Launch(const void* input, const void* weight, const void* bias, void* out,
-            DataType dtype, Layout layout, std::size_t rows,
-            float eps, cudaStream_t stream);
+            DataType dtype, Layout layout, std::size_t rows, float eps,
+            cudaStream_t stream);
 }  // namespace nvidia_layer_norm_detail
 
 template <>
@@ -40,10 +40,10 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
     const auto rank = input.shape().size();
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != weight.device() || input.device() != out.device() ||
-        (bias && input.device() != bias->device()) ||
-        rank < 1 || rank > 8 || rank != input.strides().size() ||
-        out.shape() != input.shape() || out.strides().size() != rank ||
-        weight.shape().size() != 1 || weight.strides().size() != 1 ||
+        (bias && input.device() != bias->device()) || rank < 1 || rank > 8 ||
+        rank != input.strides().size() || out.shape() != input.shape() ||
+        out.strides().size() != rank || weight.shape().size() != 1 ||
+        weight.strides().size() != 1 ||
         (bias && (bias->shape().size() != 1 || bias->strides().size() != 1)) ||
         input.shape()[rank - 1] == 0 ||
         weight.shape()[0] != input.shape()[rank - 1] ||
@@ -53,15 +53,18 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
         (input.dtype() != DataType::kFloat16 &&
          input.dtype() != DataType::kBFloat16 &&
          input.dtype() != DataType::kFloat32) ||
-        !NonOverlappingOutput(out)) return false;
+        !NonOverlappingOutput(out))
+      return false;
 
     int current = -1;
     if (cudaGetDevice(&current) != cudaSuccess ||
-        current != input.device().index()) return false;
+        current != input.device().index())
+      return false;
     if (input.dtype() == DataType::kBFloat16) {
       cudaDeviceProp prop{};
       if (cudaGetDeviceProperties(&prop, current) != cudaSuccess ||
-          prop.major < 8) return false;
+          prop.major < 8)
+        return false;
     }
     std::size_t rows = 1;
     for (std::size_t i = 0; i + 1 < rank; ++i) {
@@ -74,28 +77,32 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
     if (rows > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
         input.shape()[rank - 1] >
             static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
-        weight.strides()[0] < 0 ||
-        (bias && bias->strides()[0] < 0)) return false;
+        weight.strides()[0] < 0 || (bias && bias->strides()[0] < 0))
+      return false;
     std::size_t input_bytes, weight_bytes, out_bytes, bias_bytes = 0;
     if (!SpanBytes(input, &input_bytes) || !SpanBytes(weight, &weight_bytes) ||
-        !SpanBytes(out, &out_bytes) ||
-        (bias && !SpanBytes(*bias, &bias_bytes))) return false;
+        !SpanBytes(out, &out_bytes) || (bias && !SpanBytes(*bias, &bias_bytes)))
+      return false;
     const auto width = input.element_size();
-    if ((input_bytes && reinterpret_cast<std::uintptr_t>(input.data()) % width) ||
-        (weight_bytes && reinterpret_cast<std::uintptr_t>(weight.data()) % width) ||
+    if ((input_bytes &&
+         reinterpret_cast<std::uintptr_t>(input.data()) % width) ||
+        (weight_bytes &&
+         reinterpret_cast<std::uintptr_t>(weight.data()) % width) ||
         (out_bytes && reinterpret_cast<std::uintptr_t>(out.data()) % width) ||
         (bias_bytes && reinterpret_cast<std::uintptr_t>(bias->data()) % width))
       return false;
     const bool exact_inplace = input.data() == out.data() &&
-        input.strides() == out.strides() && NonOverlappingOutput(input);
+                               input.strides() == out.strides() &&
+                               NonOverlappingOutput(input);
     return !Overlaps(out, out_bytes, weight, weight_bytes) &&
-        (!bias || !Overlaps(out, out_bytes, *bias, bias_bytes)) &&
-        (!Overlaps(out, out_bytes, input, input_bytes) || exact_inplace);
+           (!bias || !Overlaps(out, out_bytes, *bias, bias_bytes)) &&
+           (!Overlaps(out, out_bytes, input, input_bytes) || exact_inplace);
   }
 
   Operator(const Tensor input, const Tensor weight,
            const std::optional<Tensor> bias, float eps, Tensor out)
-      : LayerNorm(checked(input, weight, bias, eps, out), weight, bias, eps, out) {}
+      : LayerNorm(checked(input, weight, bias, eps, out), weight, bias, eps,
+                  out) {}
 
   // Replay submits a kernel with by-value layout and no device allocation.
   bool capture_safe() const override { return true; }
@@ -104,15 +111,17 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
                   const std::optional<Tensor> bias, float eps,
                   Tensor out) const override {
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
-        weight.shape() != weight_shape_ || weight.strides() != weight_strides_ ||
-        out.shape() != out_shape_ || out.strides() != out_strides_ ||
-        input.dtype() != dtype_ || weight.dtype() != dtype_ ||
-        out.dtype() != dtype_ || input.device() != device_ ||
-        bias.has_value() != has_bias_ ||
-        (bias && (bias->shape() != bias_shape_ ||
-                  bias->strides() != bias_strides_ || bias->dtype() != dtype_)) ||
+        weight.shape() != weight_shape_ ||
+        weight.strides() != weight_strides_ || out.shape() != out_shape_ ||
+        out.strides() != out_strides_ || input.dtype() != dtype_ ||
+        weight.dtype() != dtype_ || out.dtype() != dtype_ ||
+        input.device() != device_ || bias.has_value() != has_bias_ ||
+        (bias &&
+         (bias->shape() != bias_shape_ || bias->strides() != bias_strides_ ||
+          bias->dtype() != dtype_)) ||
         bits(eps) != bits(eps_) || !supports(input, weight, bias, eps, out))
-      throw std::invalid_argument("NVIDIA LayerNorm call metadata or alias changed after Make");
+      throw std::invalid_argument(
+          "NVIDIA LayerNorm call metadata or alias changed after Make");
 
     std::size_t rows = 1;
     nvidia_layer_norm_detail::Layout layout{};
@@ -128,8 +137,8 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
     }
     if (!rows) return;
     nvidia_layer_norm_detail::Launch(
-        input.data(), weight.data(), bias ? bias->data() : nullptr,
-        out.data(), dtype_, layout, rows, eps,
+        input.data(), weight.data(), bias ? bias->data() : nullptr, out.data(),
+        dtype_, layout, rows, eps,
         static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
@@ -140,9 +149,11 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
     return result;
   }
   static Tensor checked(const Tensor input, const Tensor weight,
-                        const std::optional<Tensor> bias, float eps, Tensor out) {
+                        const std::optional<Tensor> bias, float eps,
+                        Tensor out) {
     if (!supports(input, weight, bias, eps, out))
-      throw std::invalid_argument("unsupported NVIDIA LayerNorm metadata, device or alias");
+      throw std::invalid_argument(
+          "unsupported NVIDIA LayerNorm metadata, device or alias");
     return input;
   }
 };

@@ -14,15 +14,23 @@ class Operator<Gemm, Device::Type::kNvidia, 0>
   Operator(const Tensor a, const Tensor b, const std::optional<Tensor> c,
            std::optional<float> alpha, std::optional<float> beta,
            std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
-      : BlasGemm<Blas<Device::Type::kNvidia>>{
-            a, b, c, alpha, beta, trans_a, trans_b, y},
-        handle_{NvidiaGemmHandle::Acquire(y.device().index(),
-                                        static_cast<cublasMath_t>(CUBLAS_DEFAULT_MATH |
-                                                                 CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION))} {}
+      : BlasGemm<Blas<Device::Type::kNvidia>>{a,    b,       c,       alpha,
+                                              beta, trans_a, trans_b, y},
+        handle_{NvidiaGemmHandle::Acquire(
+            y.device().index(),
+            static_cast<cublasMath_t>(
+                CUBLAS_DEFAULT_MATH |
+                CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION))} {}
 
   Operator(const Tensor a, const Tensor b, Tensor y)
-      : Operator{a, b, std::nullopt, std::nullopt, std::nullopt,
-                 std::nullopt, std::nullopt, y} {}
+      : Operator{a,
+                 b,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 std::nullopt,
+                 y} {}
 
   bool capture_safe() const override { return true; }
 

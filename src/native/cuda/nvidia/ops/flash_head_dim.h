@@ -6,11 +6,19 @@ namespace infini::ops::native_flash {
 // provider. The pinned FA 2.8.3 kernels round 160 and 224 to the next 64.
 inline int head_dim_bin(int dimension) {
   switch (dimension) {
-    case 32: case 64: case 96: case 128:
-    case 192: case 256: return dimension;
-    case 160: return 192;
-    case 224: return 256;
-    default: return 0;
+    case 32:
+    case 64:
+    case 96:
+    case 128:
+    case 192:
+    case 256:
+      return dimension;
+    case 160:
+      return 192;
+    case 224:
+      return 256;
+    default:
+      return 0;
   }
 }
 

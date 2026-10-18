@@ -62,8 +62,7 @@ class GemmConfig : public Config {
     if (precision == Fp32Precision::DefaultFast) return true;
     return SupportsFp32Precision(a.device().type(),
                                  config.implementation_index(), precision) &&
-           a.dtype() == DataType::kFloat32 &&
-           b.dtype() == DataType::kFloat32 &&
+           a.dtype() == DataType::kFloat32 && b.dtype() == DataType::kFloat32 &&
            y.dtype() == DataType::kFloat32;
   }
 
@@ -91,11 +90,12 @@ class Gemm : public Operator<Gemm> {
 
   template <typename... Tail>
   static std::unique_ptr<Operator<Gemm>> Make(const Config& config,
-                                               const Tensor a, const Tensor b,
-                                               Tail&&... tail) {
+                                              const Tensor a, const Tensor b,
+                                              Tail&&... tail) {
     static_assert(sizeof...(Tail) == 1 || sizeof...(Tail) == 6,
                   "GEMM requires short or full argument signature");
-    const auto& y = std::get<sizeof...(Tail) - 1>(std::forward_as_tuple(tail...));
+    const auto& y =
+        std::get<sizeof...(Tail) - 1>(std::forward_as_tuple(tail...));
     GemmConfig::RequireSupported(config, a, b, y);
     return Operator<Gemm>::Make(config, a, b, std::forward<Tail>(tail)...);
   }
@@ -157,9 +157,8 @@ class Gemm : public Operator<Gemm> {
  protected:
   GemmConfig::Fp32Precision fp32_precision(const Tensor& a, const Tensor& b,
                                            const Tensor& y) const {
-    const auto precision = config_ptr_
-        ? GemmConfig::PrecisionFrom(*config_ptr_)
-        : GemmConfig::Fp32Precision::DefaultFast;
+    const auto precision = config_ptr_ ? GemmConfig::PrecisionFrom(*config_ptr_)
+                                       : GemmConfig::Fp32Precision::DefaultFast;
     if (precision == GemmConfig::Fp32Precision::FullFp32 &&
         (a.dtype() != DataType::kFloat32 || b.dtype() != DataType::kFloat32 ||
          y.dtype() != DataType::kFloat32)) {
@@ -224,7 +223,8 @@ struct CacheKeyBuilder<Gemm> {
                               const Tensor b, const Tail&... tail) const {
     static_assert(sizeof...(Tail) == 1 || sizeof...(Tail) == 6,
                   "GEMM requires short or full argument signature");
-    const auto& y = std::get<sizeof...(Tail) - 1>(std::forward_as_tuple(tail...));
+    const auto& y =
+        std::get<sizeof...(Tail) - 1>(std::forward_as_tuple(tail...));
     GemmConfig::RequireSupported(config, a, b, y);
     return detail::CacheKey::Build(
         config.implementation_index(),

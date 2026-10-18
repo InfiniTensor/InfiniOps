@@ -61,8 +61,8 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
     }
 
     std::size_t count = 1;
-    constexpr auto max_offset = static_cast<std::size_t>(
-        std::numeric_limits<std::int64_t>::max());
+    constexpr auto max_offset =
+        static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max());
     for (std::size_t d = 0; d < ndim; ++d) {
       const auto extent = input.shape()[d];
       if (extent > max_offset || input.strides()[d] < 0 ||
@@ -77,13 +77,14 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
     if (!SpanBytes(input, &input_bytes) || !SpanBytes(out, &out_bytes) ||
         input_bytes > max_offset || out_bytes > max_offset)
       return false;
-    if (count && (reinterpret_cast<std::uintptr_t>(input.data()) %
-                      input.element_size() ||
-                  reinterpret_cast<std::uintptr_t>(out.data()) %
-                      out.element_size()))
+    if (count &&
+        (reinterpret_cast<std::uintptr_t>(input.data()) %
+             input.element_size() ||
+         reinterpret_cast<std::uintptr_t>(out.data()) % out.element_size()))
       return false;
     const bool exact_inplace = input.data() == out.data() &&
-        input.shape() == out.shape() && input.strides() == out.strides();
+                               input.shape() == out.shape() &&
+                               input.strides() == out.strides();
     return !Overlaps(input, input_bytes, out, out_bytes) || exact_inplace;
   }
 
@@ -118,12 +119,12 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
         current_device != device_.index() || !input.data() || !out.data() ||
         reinterpret_cast<std::uintptr_t>(input.data()) % input.element_size() ||
         reinterpret_cast<std::uintptr_t>(out.data()) % out.element_size() ||
-        (nvidia_binary_view::Overlaps(
-             input, input_span_bytes_, out, out_span_bytes_) &&
-         !(input.data() == out.data() &&
-           input_strides_ == out_strides_)))
+        (nvidia_binary_view::Overlaps(input, input_span_bytes_, out,
+                                      out_span_bytes_) &&
+         !(input.data() == out.data() && input_strides_ == out_strides_)))
       throw std::invalid_argument(
-          "NVIDIA MulScalar current device, pointer or alias changed after Make");
+          "NVIDIA MulScalar current device, pointer or alias changed after "
+          "Make");
     nvidia_mul_scalar_detail::Launch(
         input.data(), out.data(), dtype_, alpha_,
         layout_.contiguous ? nullptr : &layout_, count_,

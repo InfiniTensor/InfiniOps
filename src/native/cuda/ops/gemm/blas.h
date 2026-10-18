@@ -1,9 +1,9 @@
 #ifndef INFINI_OPS_CUDA_GEMM_BLAS_H_
 #define INFINI_OPS_CUDA_GEMM_BLAS_H_
 
-#include <utility>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "base/gemm.h"
 #include "native/cuda/blas_utils.h"
@@ -53,29 +53,31 @@ class BlasGemm : public Gemm {
     auto op_b{GetOpB(trans_a_value, trans_b_value)};
     const void* alpha_ptr{GetAlphaPtr(alpha_value, y.dtype())};
     const void* beta_ptr{GetBetaPtr(beta_value, y.dtype())};
-    auto compute_type = BlasUtils<Backend::kDeviceType>::GetComputeType(y.dtype());
+    auto compute_type =
+        BlasUtils<Backend::kDeviceType>::GetComputeType(y.dtype());
     if constexpr (Backend::kDeviceType == Device::Type::kNvidia) {
       compute_type = BlasUtils<Backend::kDeviceType>::GetComputeType(
           y.dtype(), fp32_precision(a, b, y));
     }
 
-    CheckStatus(Backend::BlasGemmStridedBatchedEx(
-        handle, op_a, op_b, swap_a_and_b_ ? n_ : m_,
-        swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
-        swap_a_and_b_ ? b.data() : a.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? b.dtype()
-                                                                   : a.dtype()),
-        swap_a_and_b_ ? ldb_ : lda_,
-        swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
-        swap_a_and_b_ ? a.data() : b.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(swap_a_and_b_ ? a.dtype()
-                                                                   : b.dtype()),
-        swap_a_and_b_ ? lda_ : ldb_,
-        swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr, y.data(),
-        BlasUtils<Backend::kDeviceType>::GetDataType(y.dtype()), ldy_,
-        batch_stride_y_, batch_count_,
-        compute_type,
-        Backend::BLAS_GEMM_DEFAULT), "submitting GEMM");
+    CheckStatus(
+        Backend::BlasGemmStridedBatchedEx(
+            handle, op_a, op_b, swap_a_and_b_ ? n_ : m_,
+            swap_a_and_b_ ? m_ : n_, k_, alpha_ptr,
+            swap_a_and_b_ ? b.data() : a.data(),
+            BlasUtils<Backend::kDeviceType>::GetDataType(
+                swap_a_and_b_ ? b.dtype() : a.dtype()),
+            swap_a_and_b_ ? ldb_ : lda_,
+            swap_a_and_b_ ? batch_stride_b_ : batch_stride_a_,
+            swap_a_and_b_ ? a.data() : b.data(),
+            BlasUtils<Backend::kDeviceType>::GetDataType(
+                swap_a_and_b_ ? a.dtype() : b.dtype()),
+            swap_a_and_b_ ? lda_ : ldb_,
+            swap_a_and_b_ ? batch_stride_a_ : batch_stride_b_, beta_ptr,
+            y.data(), BlasUtils<Backend::kDeviceType>::GetDataType(y.dtype()),
+            ldy_, batch_stride_y_, batch_count_, compute_type,
+            Backend::BLAS_GEMM_DEFAULT),
+        "submitting GEMM");
   }
 
  protected:

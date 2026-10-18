@@ -2,11 +2,11 @@
 #define INFINI_OPS_BASE_TOPK_SOFTMAX_H_
 
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <optional>
-#include <cmath>
 #include <stdexcept>
 
 #include "operator.h"
@@ -18,10 +18,12 @@ class TopkSoftmaxConfig : public Config {
   explicit TopkSoftmaxConfig(float softcap = 0.0f, float min_sum = 0.0f)
       : softcap_{softcap}, min_sum_{min_sum} {
     if (!std::isfinite(softcap) || softcap < 0.0f) {
-      throw std::invalid_argument("TopkSoftmax softcap must be finite and nonnegative");
+      throw std::invalid_argument(
+          "TopkSoftmax softcap must be finite and nonnegative");
     }
     if (!std::isfinite(min_sum) || min_sum < 0.0f) {
-      throw std::invalid_argument("TopkSoftmax min_sum must be finite and nonnegative");
+      throw std::invalid_argument(
+          "TopkSoftmax min_sum must be finite and nonnegative");
     }
   }
 
@@ -213,9 +215,9 @@ template <>
 struct CacheKeyBuilder<TopkSoftmax> {
   template <typename... Args>
   detail::CacheKey operator()(const Config& config, const Args&... args) const {
-    return detail::CacheKey::Build(config.implementation_index(),
-                                   TopkSoftmaxConfig::SoftcapFrom(config),
-                                   TopkSoftmaxConfig::MinSumFrom(config), args...);
+    return detail::CacheKey::Build(
+        config.implementation_index(), TopkSoftmaxConfig::SoftcapFrom(config),
+        TopkSoftmaxConfig::MinSumFrom(config), args...);
   }
 };
 

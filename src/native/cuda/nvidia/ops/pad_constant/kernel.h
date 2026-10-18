@@ -29,12 +29,11 @@ void Launch(const void* input, void* out, DataType dtype, double value,
 
 namespace infini::ops {
 template <>
-class Operator<PadConstant, Device::Type::kNvidia, 0>
-    : public PadConstant {
+class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
  public:
   static bool supports(const Tensor input,
-                       const std::vector<std::int64_t> padding,
-                       const double, Tensor out) {
+                       const std::vector<std::int64_t> padding, const double,
+                       Tensor out) {
     using namespace nvidia_binary_view;
     const auto ndim = input.shape().size();
     if (input.device().type() != Device::Type::kNvidia ||
@@ -50,7 +49,8 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
       return false;
     int current_device = -1;
     if (cudaGetDevice(&current_device) != cudaSuccess ||
-        current_device != input.device().index()) return false;
+        current_device != input.device().index())
+      return false;
     if (input.dtype() == DataType::kBFloat16) {
       // Device architecture is immutable, while supports() is on the Call hot
       // path. Keep the metadata-only qualification local to each host thread.
@@ -67,8 +67,8 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
       if (!cached_bf16) return false;
     }
 
-    const auto max_i64 = static_cast<std::uint64_t>(
-        std::numeric_limits<std::int64_t>::max());
+    const auto max_i64 =
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     std::size_t input_count = 1, output_count = 1;
     bool any_padding = false;
     for (std::size_t d = 0; d < ndim; ++d) {
@@ -88,8 +88,10 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
               max_i64 - in_size - static_cast<std::uint64_t>(left) ||
           out_size != in_size + static_cast<std::size_t>(left) +
                           static_cast<std::size_t>(right) ||
-          (in_size && input_count > std::numeric_limits<std::size_t>::max() / in_size) ||
-          (out_size && output_count > std::numeric_limits<std::size_t>::max() / out_size))
+          (in_size &&
+           input_count > std::numeric_limits<std::size_t>::max() / in_size) ||
+          (out_size &&
+           output_count > std::numeric_limits<std::size_t>::max() / out_size))
         return false;
       input_count *= in_size;
       output_count *= out_size;
@@ -99,7 +101,8 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
     if (!SpanBytes(input, &input_bytes) || !SpanBytes(out, &output_bytes))
       return false;
     const bool exact_inplace = !any_padding && input.data() == out.data() &&
-        input.shape() == out.shape() && input.strides() == out.strides();
+                               input.shape() == out.shape() &&
+                               input.strides() == out.strides();
     return !Overlaps(input, input_bytes, out, output_bytes) || exact_inplace;
   }
 
@@ -111,8 +114,7 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
 
   bool capture_safe() const override { return true; }
 
-  void operator()(const Tensor input,
-                  const std::vector<std::int64_t> padding,
+  void operator()(const Tensor input, const std::vector<std::int64_t> padding,
                   const double value, Tensor out) const override {
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
         out.shape() != out_shape_ || out.strides() != out_strides_ ||
@@ -120,9 +122,11 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
         input.device() != device_ || out.device() != device_ ||
         padding != padding_ || std::memcmp(&value, &value_, sizeof(value)) ||
         !supports(input, padding, value, out))
-      throw std::invalid_argument("NVIDIA PadConstant metadata or alias changed after Make");
-    if (out.numel() == 0 || (input.data() == out.data() &&
-        input.shape() == out.shape() && input.strides() == out.strides()))
+      throw std::invalid_argument(
+          "NVIDIA PadConstant metadata or alias changed after Make");
+    if (out.numel() == 0 ||
+        (input.data() == out.data() && input.shape() == out.shape() &&
+         input.strides() == out.strides()))
       return;
     nvidia_pad_constant_detail::Launch(
         input.data(), out.data(), dtype_, value_, layout_, out.numel(),
@@ -131,14 +135,15 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
 
  private:
   static Tensor Checked(const Tensor input,
-                        const std::vector<std::int64_t>& padding,
-                        double value, Tensor out) {
+                        const std::vector<std::int64_t>& padding, double value,
+                        Tensor out) {
     if (!supports(input, padding, value, out))
-      throw std::invalid_argument("unsupported NVIDIA PadConstant metadata, device or alias");
+      throw std::invalid_argument(
+          "unsupported NVIDIA PadConstant metadata, device or alias");
     return input;
   }
-  void BuildLayout(const Tensor input,
-                   const std::vector<std::int64_t>& padding, Tensor out) {
+  void BuildLayout(const Tensor input, const std::vector<std::int64_t>& padding,
+                   Tensor out) {
     layout_.ndim = static_cast<std::int64_t>(input.ndim());
     for (std::size_t d = 0; d < input.ndim(); ++d) {
       const auto pair = input.ndim() - 1 - d;
@@ -146,7 +151,8 @@ class Operator<PadConstant, Device::Type::kNvidia, 0>
       layout_.output_shape[d] = static_cast<std::int64_t>(out.shape()[d]);
       layout_.input_strides[d] = static_cast<std::int64_t>(input.strides()[d]);
       layout_.output_strides[d] = static_cast<std::int64_t>(out.strides()[d]);
-      layout_.left_padding[d] = pair < padding.size() / 2 ? padding[2 * pair] : 0;
+      layout_.left_padding[d] =
+          pair < padding.size() / 2 ? padding[2 * pair] : 0;
     }
   }
   nvidia_pad_constant_detail::Layout layout_{};

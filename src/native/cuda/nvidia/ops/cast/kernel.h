@@ -1,12 +1,13 @@
 #ifndef INFINI_OPS_NVIDIA_CAST_KERNEL_H_
 #define INFINI_OPS_NVIDIA_CAST_KERNEL_H_
 
+#include <cuda_runtime.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <string>
-#include <cuda_runtime.h>
 
 #include "base/cast.h"
 #include "native/cuda/nvidia/caster.cuh"
@@ -15,10 +16,12 @@ namespace infini::ops {
 namespace nvidia_cast_detail {
 template <typename InT, typename OutT>
 __global__ void Convert(const InT* input, OutT* out, std::size_t first,
-                       std::size_t count) {
-  const auto local = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+                        std::size_t count) {
+  const auto local =
+      static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (local < count)
-    out[first + local] = Caster<Device::Type::kNvidia>::template Cast<OutT>(input[first + local]);
+    out[first + local] = Caster<Device::Type::kNvidia>::template Cast<OutT>(
+        input[first + local]);
 }
 }  // namespace nvidia_cast_detail
 
@@ -28,18 +31,21 @@ class Operator<Cast, Device::Type::kNvidia> : public Cast {
   static bool supports(const Tensor input, Tensor out) {
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != out.device() || input.shape() != out.shape() ||
-        !SupportedDtype(input.dtype()) || !SupportedDtype(out.dtype())) return false;
+        !SupportedDtype(input.dtype()) || !SupportedDtype(out.dtype()))
+      return false;
     std::size_t input_bytes = 0, out_bytes = 0;
     if (!ContiguousBytes(input, &input_bytes) ||
         !ContiguousBytes(out, &out_bytes) ||
-        !ValidAddress(input, input_bytes) || !ValidAddress(out, out_bytes)) return false;
+        !ValidAddress(input, input_bytes) || !ValidAddress(out, out_bytes))
+      return false;
     int current = -1;
-    if (cudaGetDevice(&current) != cudaSuccess || current != input.device().index())
+    if (cudaGetDevice(&current) != cudaSuccess ||
+        current != input.device().index())
       return false;
     const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
     const auto op = reinterpret_cast<std::uintptr_t>(out.data());
-    const bool overlap = input_bytes && out_bytes &&
-        ip < op + out_bytes && op < ip + input_bytes;
+    const bool overlap = input_bytes && out_bytes && ip < op + out_bytes &&
+                         op < ip + input_bytes;
     return !overlap || SameView(input, out);
   }
 
@@ -53,11 +59,13 @@ class Operator<Cast, Device::Type::kNvidia> : public Cast {
         input.shape() != input_shape_ || out.shape() != out_shape_ ||
         input.strides() != input_strides_ || out.strides() != out_strides_ ||
         input.device() != device_ || !supports(input, out))
-      throw std::invalid_argument("NVIDIA Cast: call metadata or alias changed after Make");
+      throw std::invalid_argument(
+          "NVIDIA Cast: call metadata or alias changed after Make");
     if (output_size_ == 0 || SameView(input, out)) return;
     const auto stream = static_cast<cudaStream_t>(stream_);
-    DispatchFunc<List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>,
-                 List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
+    DispatchFunc<
+        List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>,
+        List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
         {static_cast<int64_t>(input_dtype_), static_cast<int64_t>(out_dtype_)},
         [&](auto list_tag) {
           using InT = TypeMapType<Device::Type::kNvidia, ListGet<0>(list_tag)>;
@@ -67,15 +75,17 @@ class Operator<Cast, Device::Type::kNvidia> : public Cast {
             const auto count = std::min(cap, output_size_ - first);
             const auto blocks = static_cast<unsigned>((count + 255) / 256);
             nvidia_cast_detail::Convert<InT, OutT><<<blocks, 256, 0, stream>>>(
-                static_cast<const InT*>(input.data()), static_cast<OutT*>(out.data()),
-                first, count);
+                static_cast<const InT*>(input.data()),
+                static_cast<OutT*>(out.data()), first, count);
             const auto status = cudaGetLastError();
             if (status != cudaSuccess)
-              throw std::runtime_error(std::string("NVIDIA Cast: launch failed: ") +
-                                       cudaGetErrorString(status));
+              throw std::runtime_error(
+                  std::string("NVIDIA Cast: launch failed: ") +
+                  cudaGetErrorString(status));
             first += count;
           }
-        }, "NVIDIA Cast");
+        },
+        "NVIDIA Cast");
   }
 
  private:
@@ -95,9 +105,13 @@ class Operator<Cast, Device::Type::kNvidia> : public Cast {
       if (t.stride(axis) < 0) return false;
       empty = empty || t.size(axis) == 0;
     }
-    if (empty) { *bytes = 0; return true; }
-    const auto limit = static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
-                       Width(t.dtype());
+    if (empty) {
+      *bytes = 0;
+      return true;
+    }
+    const auto limit =
+        static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
+        Width(t.dtype());
     std::size_t count = 1;
     for (std::size_t axis = t.ndim(); axis > 0; --axis) {
       const auto size = t.size(axis - 1);
@@ -114,17 +128,18 @@ class Operator<Cast, Device::Type::kNvidia> : public Cast {
     if (bytes == 0) return true;
     const auto start = reinterpret_cast<std::uintptr_t>(t.data());
     return start && start % Width(t.dtype()) == 0 &&
-        start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
+           start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
   }
 
   static bool SameView(const Tensor input, const Tensor out) {
     return input.dtype() == out.dtype() && input.data() == out.data() &&
-        input.shape() == out.shape() && input.strides() == out.strides();
+           input.shape() == out.shape() && input.strides() == out.strides();
   }
 
   static Tensor Checked(const Tensor input, const Tensor out) {
     if (!supports(input, out))
-      throw std::invalid_argument("NVIDIA Cast: unsupported dtype/device/layout or alias");
+      throw std::invalid_argument(
+          "NVIDIA Cast: unsupported dtype/device/layout or alias");
     return input;
   }
 

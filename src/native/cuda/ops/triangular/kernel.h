@@ -20,9 +20,10 @@ namespace infini::ops::triangular_detail {
 inline std::size_t CheckedElementCount(const Tensor& tensor) {
   std::size_t count = 1;
   for (const auto extent : tensor.shape()) {
-    if (extent > static_cast<std::size_t>(
-                     std::numeric_limits<std::int64_t>::max())) {
-      throw std::invalid_argument("triangular shape exceeds signed indexing range");
+    if (extent >
+        static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max())) {
+      throw std::invalid_argument(
+          "triangular shape exceeds signed indexing range");
     }
     if (extent && count > std::numeric_limits<std::size_t>::max() / extent) {
       throw std::invalid_argument("triangular element count overflows");
@@ -37,13 +38,15 @@ inline std::size_t MaxOffset(const Tensor& tensor) {
   for (std::size_t dim = 0; dim < tensor.ndim(); ++dim) {
     const auto stride = tensor.strides()[dim];
     if (stride < 0) {
-      throw std::invalid_argument("triangular negative strides are unsupported");
+      throw std::invalid_argument(
+          "triangular negative strides are unsupported");
     }
     const std::size_t extent = tensor.shape()[dim];
     const std::size_t positive_stride = static_cast<std::size_t>(stride);
-    if (extent > 1 && positive_stride >
-                          (static_cast<std::size_t>(
-                               std::numeric_limits<std::int64_t>::max()) - offset) /
+    if (extent > 1 &&
+        positive_stride > (static_cast<std::size_t>(
+                               std::numeric_limits<std::int64_t>::max()) -
+                           offset) /
                               (extent - 1)) {
       throw std::invalid_argument("triangular stride span overflows");
     }
@@ -53,11 +56,9 @@ inline std::size_t MaxOffset(const Tensor& tensor) {
 }
 
 inline bool SameView(const Tensor& input, const Tensor& output) {
-  return input.data() == output.data() &&
-         input.shape() == output.shape() &&
+  return input.data() == output.data() && input.shape() == output.shape() &&
          input.strides() == output.strides() &&
-         input.dtype() == output.dtype() &&
-         input.device() == output.device();
+         input.dtype() == output.dtype() && input.device() == output.device();
 }
 
 inline std::pair<std::uintptr_t, std::uintptr_t> ByteSpan(
@@ -65,8 +66,7 @@ inline std::pair<std::uintptr_t, std::uintptr_t> ByteSpan(
   if (!elements) return {0, 0};
   const auto maximum = MaxOffset(tensor);
   const auto bytes_per_element = tensor.element_size();
-  if (maximum >= std::numeric_limits<std::size_t>::max() /
-                     bytes_per_element) {
+  if (maximum >= std::numeric_limits<std::size_t>::max() / bytes_per_element) {
     throw std::invalid_argument("triangular byte span overflows");
   }
   const auto bytes = (maximum + 1) * bytes_per_element;
@@ -146,11 +146,11 @@ void Launch(const Tensor& input, Tensor output, Metadata meta,
             cudaStream_t stream) {
   constexpr unsigned kThreads = 256;
   const std::size_t blocks = 1 + (meta.elements - 1) / kThreads;
-  const unsigned grid = static_cast<unsigned>(
-      std::min<std::size_t>(blocks, 65535));
-  TriangularKernel<T, kUpper><<<grid, kThreads, 0, stream>>>(
-      static_cast<const T*>(input.data()), static_cast<T*>(output.data()),
-      meta);
+  const unsigned grid =
+      static_cast<unsigned>(std::min<std::size_t>(blocks, 65535));
+  TriangularKernel<T, kUpper>
+      <<<grid, kThreads, 0, stream>>>(static_cast<const T*>(input.data()),
+                                      static_cast<T*>(output.data()), meta);
   const auto status = cudaPeekAtLastError();
   if (status != cudaSuccess) {
     throw std::runtime_error(cudaGetErrorString(status));

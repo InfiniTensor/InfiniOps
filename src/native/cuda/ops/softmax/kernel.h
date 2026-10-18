@@ -40,7 +40,8 @@ class CudaSoftmax : public Softmax {
            "`Softmax` output must not have broadcasted dimensions");
 
     if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
-      throw std::runtime_error("CudaSoftmax cannot query metadata owner device");
+      throw std::runtime_error(
+          "CudaSoftmax cannot query metadata owner device");
     block_size_ = std::min(
         RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
     if (row_count_ == 0 || dim_size_ == 0) return;
@@ -68,8 +69,10 @@ class CudaSoftmax : public Softmax {
       std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
       offset += shape_size;
 
-      d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+      d_input_strides_ =
+          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, input_strides_.data(),
+                  strides_size);
       offset += strides_size;
 
       d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);

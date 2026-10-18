@@ -8,11 +8,11 @@ namespace infini::ops {
 
 template <>
 class Operator<Tril, Device::Type::kNvidia>
-    : public triangular_detail::CudaTriangular<
-          Runtime<Device::Type::kNvidia>, Tril, false> {
+    : public triangular_detail::CudaTriangular<Runtime<Device::Type::kNvidia>,
+                                               Tril, false> {
  public:
-  using triangular_detail::CudaTriangular<
-      Runtime<Device::Type::kNvidia>, Tril, false>::CudaTriangular;
+  using triangular_detail::CudaTriangular<Runtime<Device::Type::kNvidia>, Tril,
+                                          false>::CudaTriangular;
 };
 
 }  // namespace infini::ops

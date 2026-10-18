@@ -15,12 +15,18 @@ class LayerNorm : public Operator<LayerNorm> {
 
   LayerNorm(const Tensor input, const Tensor weight,
             const std::optional<Tensor> bias, float eps, Tensor out)
-      : input_shape_{input.shape()}, input_strides_{input.strides()},
-        weight_shape_{weight.shape()}, weight_strides_{weight.strides()},
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        weight_shape_{weight.shape()},
+        weight_strides_{weight.strides()},
         bias_shape_{bias ? Tensor::Shape{bias->shape()} : Tensor::Shape{}},
-        bias_strides_{bias ? Tensor::Strides{bias->strides()} : Tensor::Strides{}},
-        out_shape_{out.shape()}, out_strides_{out.strides()},
-        dtype_{input.dtype()}, device_{input.device()}, has_bias_{bias.has_value()},
+        bias_strides_{bias ? Tensor::Strides{bias->strides()}
+                           : Tensor::Strides{}},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        dtype_{input.dtype()},
+        device_{input.device()},
+        has_bias_{bias.has_value()},
         eps_{eps} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,

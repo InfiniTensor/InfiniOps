@@ -257,7 +257,8 @@ void EmbeddingKernelLaunch(
       {input_dtype, weight_dtype},
       [&](auto input_tag, auto weight_tag) {
         using IndexT = typename decltype(input_tag)::type;
-        using T = cambricon::NativeScalarType<typename decltype(weight_tag)::type>;
+        using T =
+            cambricon::NativeScalarType<typename decltype(weight_tag)::type>;
 
         if (apply_max_norm && vocab_size > 0) {
           (void)cnrtGetLastError();

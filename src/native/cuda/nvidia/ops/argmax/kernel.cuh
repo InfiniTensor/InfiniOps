@@ -6,8 +6,8 @@
 #include <cuda_runtime.h>
 #include <math_constants.h>
 
-#include <cstdint>
 #include <climits>
+#include <cstdint>
 
 namespace infini::ops::nvidia_argmax_detail {
 
@@ -15,10 +15,14 @@ constexpr int kThreads = 256;
 constexpr int kChunkWidth = 2048;
 
 template <typename T>
-__device__ float ToFloat(T value) { return static_cast<float>(value); }
+__device__ float ToFloat(T value) {
+  return static_cast<float>(value);
+}
 
 template <>
-__device__ inline float ToFloat<half>(half value) { return __half2float(value); }
+__device__ inline float ToFloat<half>(half value) {
+  return __half2float(value);
+}
 
 template <>
 __device__ inline float ToFloat<__nv_bfloat16>(__nv_bfloat16 value) {
@@ -67,8 +71,8 @@ __global__ void RowsKernel(const T* input, std::int64_t* output, int width) {
 }
 
 template <typename T>
-__global__ void PartialsKernel(const T* input, Candidate* partials,
-                               int rows, int width, int chunks) {
+__global__ void PartialsKernel(const T* input, Candidate* partials, int rows,
+                               int width, int chunks) {
   const std::size_t tasks = static_cast<std::size_t>(rows) * chunks;
   __shared__ Candidate reduced[kThreads];
   for (std::size_t task = blockIdx.x; task < tasks; task += gridDim.x) {
@@ -97,7 +101,8 @@ __global__ void PartialsKernel(const T* input, Candidate* partials,
 }
 
 static __global__ void FinishKernel(const Candidate* partials,
-                             std::int64_t* output, int rows, int chunks) {
+                                    std::int64_t* output, int rows,
+                                    int chunks) {
   __shared__ Candidate reduced[kThreads];
   for (std::int64_t row = blockIdx.x; row < rows; row += gridDim.x) {
     const Candidate* values = partials + static_cast<std::size_t>(row) * chunks;

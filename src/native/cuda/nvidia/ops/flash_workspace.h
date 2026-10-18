@@ -43,16 +43,19 @@ class WorkspaceLease {
       : data_{external}, stream_{stream} {
     if (external || available) {
       if (!external || available < required)
-        throw std::invalid_argument("native FlashAttention workspace is missing or too small");
+        throw std::invalid_argument(
+            "native FlashAttention workspace is missing or too small");
       if (reinterpret_cast<std::uintptr_t>(external) % kWorkspaceAlignment)
-        throw std::invalid_argument("native FlashAttention workspace is not 256-byte aligned");
+        throw std::invalid_argument(
+            "native FlashAttention workspace is not 256-byte aligned");
       return;
     }
     cudaStreamCaptureStatus capture{cudaStreamCaptureStatusNone};
     check(cudaStreamIsCapturing(stream, &capture), "cudaStreamIsCapturing");
     if (capture != cudaStreamCaptureStatusNone)
       throw std::invalid_argument(
-          "native FlashAttention graph capture requires stable external workspace");
+          "native FlashAttention graph capture requires stable external "
+          "workspace");
     const auto status = cudaMallocAsync(&data_, required, stream);
     if (status != cudaSuccess) {
       int supported = 0;
@@ -60,7 +63,8 @@ class WorkspaceLease {
           &supported, cudaDevAttrMemoryPoolsSupported, device);
       if (attr == cudaSuccess && !supported)
         throw std::runtime_error(
-            "native FlashAttention eager workspace requires CUDA async memory pools");
+            "native FlashAttention eager workspace requires CUDA async memory "
+            "pools");
       check(status, "cudaMallocAsync");
     }
     owned_ = true;
@@ -75,10 +79,11 @@ class WorkspaceLease {
     if (status == cudaSuccess) return;
     // Failure path only: wait for any submitted work before conventional free.
     const auto synchronized = cudaStreamSynchronize(stream_);
-    const auto freed = synchronized == cudaSuccess ? cudaFree(data_) : synchronized;
-    std::fprintf(stderr,
-                 "native FlashAttention async release failed: %s; cleanup: %s\n",
-                 cudaGetErrorString(status), cudaGetErrorString(freed));
+    const auto freed =
+        synchronized == cudaSuccess ? cudaFree(data_) : synchronized;
+    std::fprintf(
+        stderr, "native FlashAttention async release failed: %s; cleanup: %s\n",
+        cudaGetErrorString(status), cudaGetErrorString(freed));
   }
 
   void* data() const { return data_; }

@@ -135,11 +135,11 @@ class MoeAlignBlockSize : public Operator<MoeAlignBlockSize> {
            "`MoeAlignBlockSize` output tensors are too small");
 
     if (maybe_expert_map) {
-      assert(maybe_expert_map->ndim() == 1 &&
-             maybe_expert_map->numel() > 0 &&
-             maybe_expert_map->numel() <=
-                 static_cast<Tensor::Size>(std::numeric_limits<int32_t>::max()) &&
-             "`MoeAlignBlockSize` requires an int32-addressable `expert_map`");
+      assert(
+          maybe_expert_map->ndim() == 1 && maybe_expert_map->numel() > 0 &&
+          maybe_expert_map->numel() <=
+              static_cast<Tensor::Size>(std::numeric_limits<int32_t>::max()) &&
+          "`MoeAlignBlockSize` requires an int32-addressable `expert_map`");
       assert(maybe_expert_map->dtype() == DataType::kInt32 &&
              "`MoeAlignBlockSize` currently requires int32 `expert_map`");
       assert(maybe_expert_map->IsContiguous() &&

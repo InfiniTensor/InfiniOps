@@ -45,8 +45,8 @@ __global__ void MoeAlignBlockSizeKernel(
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < numel; i += blockDim.x) {
-    const auto expert_id = MapExpertId(topk_ids[i], expert_map,
-                                       num_experts, map_size);
+    const auto expert_id =
+        MapExpertId(topk_ids[i], expert_map, num_experts, map_size);
     if (expert_id >= 0) {
       atomicAdd(&expert_offsets[expert_id], 1);
     }
@@ -71,8 +71,8 @@ __global__ void MoeAlignBlockSizeKernel(
 
   if (threadIdx.x == 0) {
     for (size_t i = 0; i < numel; ++i) {
-      const auto expert_id = MapExpertId(topk_ids[i], expert_map,
-                                         num_experts, map_size);
+      const auto expert_id =
+          MapExpertId(topk_ids[i], expert_map, num_experts, map_size);
       if (expert_id >= 0) {
         sorted_token_ids[expert_offsets[expert_id]++] = static_cast<int32_t>(i);
       }

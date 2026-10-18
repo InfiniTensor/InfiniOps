@@ -216,7 +216,9 @@ def _hide_definition(text: str, signature: re.Pattern[str], name: str) -> str:
 
 
 def generate_public_operator_header(source: Path, output: Path) -> None:
-    public_text = _hide_definition(source.read_text(), _CALL_SIGNATURE_RE, "Operator::Call")
+    public_text = _hide_definition(
+        source.read_text(), _CALL_SIGNATURE_RE, "Operator::Call"
+    )
     for name, signature in _PROVIDER_SIGNATURES:
         public_text = _hide_definition(public_text, signature, name)
     public_text = public_text.replace('#include "host_range_profiler.h"\n', "")

@@ -105,8 +105,8 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
                                   Index* __restrict__ topk_indices,
                                   int32_t* __restrict__ token_expert_indices,
                                   int32_t num_tokens, int32_t num_experts,
-                                  int32_t topk, bool renormalize,
-                                  float softcap, float min_sum = 0.0f) {
+                                  int32_t topk, bool renormalize, float softcap,
+                                  float min_sum = 0.0f) {
   const int32_t token = static_cast<int32_t>(blockIdx.x);
   const int64_t input_offset = static_cast<int64_t>(token) * num_experts;
   const int64_t output_offset = static_cast<int64_t>(token) * topk;
@@ -114,15 +114,17 @@ __global__ void TopkSoftmaxKernel(const Input* __restrict__ gating_output,
   float thread_max = -FLT_MAX;
   for (int32_t expert = static_cast<int32_t>(threadIdx.x); expert < num_experts;
        expert += kBlockSize) {
-    thread_max = fmaxf(thread_max,
-                       Score<kDevice>(gating_output[input_offset + expert], softcap));
+    thread_max =
+        fmaxf(thread_max,
+              Score<kDevice>(gating_output[input_offset + expert], softcap));
   }
   const float row_max = BlockMax<kBlockSize>(thread_max);
 
   float thread_sum = 0.0f;
   for (int32_t expert = static_cast<int32_t>(threadIdx.x); expert < num_experts;
        expert += kBlockSize) {
-    const float value = Score<kDevice>(gating_output[input_offset + expert], softcap);
+    const float value =
+        Score<kDevice>(gating_output[input_offset + expert], softcap);
     thread_sum += expf(value - row_max);
   }
   const float row_sum = BlockSum<kBlockSize>(thread_sum);

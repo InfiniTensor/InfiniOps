@@ -5,8 +5,8 @@
 #include "cublas_v2.h"
 // clang-format on
 
-#include "data_type.h"
 #include "base/gemm.h"
+#include "data_type.h"
 #include "native/cuda/blas_utils.h"
 
 namespace infini::ops {

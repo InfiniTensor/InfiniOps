@@ -27,7 +27,6 @@ class Operator<RmsNorm, Device::Type::kNvidia>
     if (out.numel() == 0) return;
     Base::operator()(input, weight, eps, out);
   }
-
 };
 
 }  // namespace infini::ops

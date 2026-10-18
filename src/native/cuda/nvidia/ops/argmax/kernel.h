@@ -4,8 +4,8 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
-#include <cstdint>
 #include <climits>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -31,13 +31,16 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
                      sizeof(nvidia_argmax_detail::Candidate)) {
         throw std::invalid_argument("NVIDIA Argmax workspace size overflows");
       }
-      workspace_bytes_ = rows * chunks * sizeof(nvidia_argmax_detail::Candidate);
+      workspace_bytes_ =
+          rows * chunks * sizeof(nvidia_argmax_detail::Candidate);
     }
   }
 
   bool capture_safe() const override { return true; }
 
-  std::size_t workspace_size_in_bytes() const override { return workspace_bytes_; }
+  std::size_t workspace_size_in_bytes() const override {
+    return workspace_bytes_;
+  }
 
   bool requires_workspace() const override { return workspace_bytes_ != 0; }
 
@@ -48,10 +51,12 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
         out.strides() != out_strides_ || out.dtype() != out_type_ ||
         dim != dim_ || keepdim != keepdim_ ||
         out.device().index() != device_index_) {
-      throw std::invalid_argument("NVIDIA Argmax call metadata changed after Make");
+      throw std::invalid_argument(
+          "NVIDIA Argmax call metadata changed after Make");
     }
     Validate(input, dim, keepdim, out);
-    const auto rows = static_cast<unsigned>(input.ndim() == 2 ? input.shape()[0] : 1);
+    const auto rows =
+        static_cast<unsigned>(input.ndim() == 2 ? input.shape()[0] : 1);
     const auto width = static_cast<int>(input.shape().back());
     const auto stream = static_cast<cudaStream_t>(stream_ ? stream_ : 0);
     if (workspace_bytes_) CheckWorkspace(input, out);
@@ -65,8 +70,8 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
                width, stream, workspace_);
         break;
       case DataType::kFloat32:
-        Launch(static_cast<const float*>(input.data()), out, rows, width, stream,
-               workspace_);
+        Launch(static_cast<const float*>(input.data()), out, rows, width,
+               stream, workspace_);
         break;
       default:
         throw std::invalid_argument("NVIDIA Argmax unsupported dtype");
@@ -78,7 +83,8 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
     if (!workspace_ || workspace_size_in_bytes_ < workspace_bytes_ ||
         reinterpret_cast<std::uintptr_t>(workspace_) %
             alignof(nvidia_argmax_detail::Candidate)) {
-      throw std::invalid_argument("NVIDIA Argmax workspace is missing or too small");
+      throw std::invalid_argument(
+          "NVIDIA Argmax workspace is missing or too small");
     }
     const auto begin = reinterpret_cast<std::uintptr_t>(workspace_);
     if (workspace_bytes_ > std::numeric_limits<std::uintptr_t>::max() - begin) {
@@ -87,7 +93,8 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
     const auto end = begin + workspace_bytes_;
     const auto overlaps = [begin, end](const Tensor tensor) {
       const auto tensor_begin = reinterpret_cast<std::uintptr_t>(tensor.data());
-      const auto tensor_end = tensor_begin + tensor.numel() * tensor.element_size();
+      const auto tensor_end =
+          tensor_begin + tensor.numel() * tensor.element_size();
       return begin < tensor_end && tensor_begin < end;
     };
     if (overlaps(input) || overlaps(out)) {
@@ -118,8 +125,8 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
       throw std::invalid_argument("NVIDIA Argmax has empty or invalid storage");
     }
     if (rows > std::numeric_limits<std::size_t>::max() / width ||
-        rows * width > std::numeric_limits<std::size_t>::max() /
-                           input.element_size() ||
+        rows * width >
+            std::numeric_limits<std::size_t>::max() / input.element_size() ||
         rows > std::numeric_limits<std::size_t>::max() / sizeof(std::int64_t)) {
       throw std::invalid_argument("NVIDIA Argmax storage size overflows");
     }
@@ -131,13 +138,16 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
         output_bytes > std::numeric_limits<std::uintptr_t>::max() - out_begin ||
         (in_begin < out_begin + output_bytes &&
          out_begin < in_begin + input_bytes)) {
-      throw std::invalid_argument("NVIDIA Argmax input/output storage overlaps");
+      throw std::invalid_argument(
+          "NVIDIA Argmax input/output storage overlaps");
     }
     int current_device = -1;
     const auto status = cudaGetDevice(&current_device);
-    if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
+    if (status != cudaSuccess)
+      throw std::runtime_error(cudaGetErrorString(status));
     if (current_device != input.device().index()) {
-      throw std::invalid_argument("NVIDIA Argmax tensor device is not current device");
+      throw std::invalid_argument(
+          "NVIDIA Argmax tensor device is not current device");
     }
   }
 
@@ -152,8 +162,8 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
       const int chunks = (width - 1) / nvidia_argmax_detail::kChunkWidth + 1;
       const auto tasks = static_cast<std::size_t>(rows) * chunks;
       auto* partials = static_cast<nvidia_argmax_detail::Candidate*>(workspace);
-      const auto partial_grid = static_cast<unsigned>(
-          std::min<std::size_t>(tasks, 65535));
+      const auto partial_grid =
+          static_cast<unsigned>(std::min<std::size_t>(tasks, 65535));
       const auto final_grid = std::min<unsigned>(rows, 65535);
       nvidia_argmax_detail::PartialsKernel<T>
           <<<partial_grid, nvidia_argmax_detail::kThreads, 0, stream>>>(
@@ -162,13 +172,14 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
       if (partial_status != cudaSuccess) {
         throw std::runtime_error(cudaGetErrorString(partial_status));
       }
-      nvidia_argmax_detail::FinishKernel
-          <<<final_grid, nvidia_argmax_detail::kThreads, 0, stream>>>(
-              partials, static_cast<std::int64_t*>(out.data()),
-              static_cast<int>(rows), chunks);
+      nvidia_argmax_detail::FinishKernel<<<
+          final_grid, nvidia_argmax_detail::kThreads, 0, stream>>>(
+          partials, static_cast<std::int64_t*>(out.data()),
+          static_cast<int>(rows), chunks);
     }
     const auto status = cudaPeekAtLastError();
-    if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
+    if (status != cudaSuccess)
+      throw std::runtime_error(cudaGetErrorString(status));
   }
 
   std::size_t workspace_bytes_{0};

@@ -30,8 +30,8 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
       return false;
     const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
     const auto op = reinterpret_cast<std::uintptr_t>(out.data());
-    const bool overlap = input_bytes && out_bytes &&
-        ip < op + out_bytes && op < ip + input_bytes;
+    const bool overlap = input_bytes && out_bytes && ip < op + out_bytes &&
+                         op < ip + input_bytes;
     return !overlap || (ip == op && input.strides() == out.strides());
   }
 
@@ -51,13 +51,17 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
           "CPU RowL2Normalize: call metadata or eps changed after Make");
     if (!supports(input, eps, out))
       throw std::invalid_argument(
-          "CPU RowL2Normalize: call pointer, layout or alias changed after Make");
+          "CPU RowL2Normalize: call pointer, layout or alias changed after "
+          "Make");
     if (input.size(0) == 0 || input.size(1) == 0) return;
     const float epsilon = eps_ > std::numeric_limits<float>::max()
-        ? std::numeric_limits<float>::infinity() : static_cast<float>(eps_);
-    DispatchFunc<Device::Type::kCpu,
-                 List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
-        dtype_, [&](auto tag) {
+                              ? std::numeric_limits<float>::infinity()
+                              : static_cast<float>(eps_);
+    DispatchFunc<
+        Device::Type::kCpu,
+        List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
+        dtype_,
+        [&](auto tag) {
           using T = typename decltype(tag)::type;
           const auto* src = static_cast<const T*>(input.data());
           auto* dst = static_cast<T*>(out.data());
@@ -66,17 +70,18 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
 #pragma omp parallel for
           for (std::size_t row = 0; row < rows; ++row) {
             const auto offset = row * cols;
-            const float norm = Cast<float>(Round<T>(
-                std::sqrt(SumSquares(src + offset, cols))));
+            const float norm = Cast<float>(
+                Round<T>(std::sqrt(SumSquares(src + offset, cols))));
             // Preserve NaNs and the norm's T rounding before division.
-            const float denominator = std::isnan(norm) ? norm
-                : (norm < eps_t ? eps_t : norm);
+            const float denominator =
+                std::isnan(norm) ? norm : (norm < eps_t ? eps_t : norm);
             for (std::size_t col = 0; col < cols; ++col) {
               const float value = Cast<float>(src[offset + col]);
               dst[offset + col] = Round<T>(value / denominator);
             }
           }
-        }, "CPU RowL2Normalize");
+        },
+        "CPU RowL2Normalize");
   }
 
  private:
@@ -121,19 +126,23 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
 
   static bool ContiguousBytes(const Tensor t, std::size_t* bytes) {
     if (t.shape().size() != t.strides().size()) return false;
-    const auto limit = static_cast<std::size_t>(
-        std::numeric_limits<std::ptrdiff_t>::max()) / Width(t.dtype());
+    const auto limit =
+        static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
+        Width(t.dtype());
     bool empty = false;
     for (std::size_t axis = 0; axis < t.ndim(); ++axis) {
       if (t.stride(axis) < 0 || t.size(axis) > limit) return false;
       empty = empty || t.size(axis) == 0;
     }
-    if (empty) { *bytes = 0; return true; }
+    if (empty) {
+      *bytes = 0;
+      return true;
+    }
     std::size_t count = 1;
     for (std::size_t axis = t.ndim(); axis > 0; --axis) {
       const auto size = t.size(axis - 1);
-      if ((size > 1 && t.stride(axis - 1) !=
-                           static_cast<std::ptrdiff_t>(count)) ||
+      if ((size > 1 &&
+           t.stride(axis - 1) != static_cast<std::ptrdiff_t>(count)) ||
           size > limit / count)
         return false;
       count *= size;
@@ -146,7 +155,7 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
     if (bytes == 0) return true;
     const auto start = reinterpret_cast<std::uintptr_t>(t.data());
     return start && start % Width(t.dtype()) == 0 &&
-        start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
+           start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
   }
 
   static Tensor Checked(const Tensor input, const double eps, Tensor out) {

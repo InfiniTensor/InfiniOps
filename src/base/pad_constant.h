@@ -16,10 +16,14 @@ class PadConstant : public Operator<PadConstant> {
 
   PadConstant(const Tensor input, const std::vector<std::int64_t> padding,
               const double value, Tensor out)
-      : input_shape_(input.shape()), input_strides_(input.strides()),
-        out_shape_(out.shape()), out_strides_(out.strides()),
-        dtype_(input.dtype()), device_(input.device()),
-        padding_(padding), value_(value) {}
+      : input_shape_(input.shape()),
+        input_strides_(input.strides()),
+        out_shape_(out.shape()),
+        out_strides_(out.strides()),
+        dtype_(input.dtype()),
+        device_(input.device()),
+        padding_(padding),
+        value_(value) {}
 
   virtual void operator()(const Tensor input,
                           const std::vector<std::int64_t> padding,

@@ -27,8 +27,10 @@ class Operator<Cat, Device::Type::kNvidia> : public Cat {
   static bool supports(const std::vector<Tensor>& tensors, int64_t dim,
                        Tensor out) {
     if (out.device().type() != Device::Type::kNvidia ||
-        !Cat::supports(tensors, dim, out)) return false;
-    const auto normalized = dim < 0 ? dim + static_cast<int64_t>(out.ndim()) : dim;
+        !Cat::supports(tensors, dim, out))
+      return false;
+    const auto normalized =
+        dim < 0 ? dim + static_cast<int64_t>(out.ndim()) : dim;
     if (FastAxis0(tensors, normalized, out)) return true;
     return true;
   }
@@ -36,7 +38,8 @@ class Operator<Cat, Device::Type::kNvidia> : public Cat {
   Operator(const std::vector<Tensor> tensors, int64_t dim, Tensor out)
       : Cat(tensors, dim, out) {
     if (!supports(tensors, dim, out))
-      throw std::invalid_argument("NVIDIA Cat metadata or Copy provider unsupported");
+      throw std::invalid_argument(
+          "NVIDIA Cat metadata or Copy provider unsupported");
     fast_axis0_ = FastAxis0(tensors, dim_, out);
     if (fast_axis0_) {
       first_bytes_ = tensors[0].numel() * out.element_size();
@@ -47,7 +50,8 @@ class Operator<Cat, Device::Type::kNvidia> : public Cat {
     const auto slices = Slices(tensors, dim_, out);
     copies_.reserve(tensors.size());
     for (size_t i = 0; i < tensors.size(); ++i)
-      copies_.push_back(Copy::Make(Config::Automatic(), tensors[i], false, slices[i]));
+      copies_.push_back(
+          Copy::Make(Config::Automatic(), tensors[i], false, slices[i]));
     capture_safe_ = !copies_.empty();
     for (const auto& copy : copies_) capture_safe_ &= copy->capture_safe();
   }
@@ -84,8 +88,9 @@ class Operator<Cat, Device::Type::kNvidia> : public Cat {
     for (const auto& tensor : tensors) {
       void* data = out.data();
       if (tensor.numel())
-        data = static_cast<std::byte*>(data) +
-               offset * static_cast<size_t>(out.stride(dim)) * out.element_size();
+        data =
+            static_cast<std::byte*>(data) +
+            offset * static_cast<size_t>(out.stride(dim)) * out.element_size();
       slices.emplace_back(data, tensor.shape(), out.dtype(), out.device(),
                           out.strides());
       offset += tensor.size(dim);

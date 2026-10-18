@@ -36,31 +36,39 @@ class Operator<QuickGelu, Device::Type::kNvidia, 0> : public QuickGelu {
         input.shape() != out.shape() || input.dtype() != out.dtype() ||
         (input.dtype() != DataType::kFloat16 &&
          input.dtype() != DataType::kBFloat16 &&
-         input.dtype() != DataType::kFloat32) || !NonOverlappingOutput(out))
+         input.dtype() != DataType::kFloat32) ||
+        !NonOverlappingOutput(out))
       return false;
     std::size_t count = 1;
     for (std::size_t axis = 0; axis < rank; ++axis) {
       if (input.strides()[axis] < 0 || out.strides()[axis] < 0 ||
-          (input.shape()[axis] && count >
-              std::numeric_limits<std::size_t>::max() / input.shape()[axis]))
+          (input.shape()[axis] &&
+           count >
+               std::numeric_limits<std::size_t>::max() / input.shape()[axis]))
         return false;
       count *= input.shape()[axis];
     }
     std::size_t input_bytes = 0, out_bytes = 0;
     if (!SpanBytes(input, &input_bytes) || !SpanBytes(out, &out_bytes) ||
-        input_bytes > static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max()) ||
-        out_bytes > static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max())) return false;
+        input_bytes > static_cast<std::size_t>(
+                          std::numeric_limits<std::ptrdiff_t>::max()) ||
+        out_bytes > static_cast<std::size_t>(
+                        std::numeric_limits<std::ptrdiff_t>::max()))
+      return false;
     const auto width = input.element_size();
-    if ((input_bytes && reinterpret_cast<std::uintptr_t>(input.data()) % width) ||
+    if ((input_bytes &&
+         reinterpret_cast<std::uintptr_t>(input.data()) % width) ||
         (out_bytes && reinterpret_cast<std::uintptr_t>(out.data()) % width))
       return false;
     const bool exact_inplace = input.data() == out.data() &&
-        input.strides() == out.strides() && NonOverlappingOutput(input);
+                               input.strides() == out.strides() &&
+                               NonOverlappingOutput(input);
     if (Overlaps(input, input_bytes, out, out_bytes) && !exact_inplace)
       return false;
     int current = -1;
     if (cudaGetDevice(&current) != cudaSuccess ||
-        current != input.device().index()) return false;
+        current != input.device().index())
+      return false;
     if (input.dtype() != DataType::kFloat32) {
       cudaDeviceProp prop{};
       if (cudaGetDeviceProperties(&prop, current) != cudaSuccess) return false;
@@ -82,25 +90,29 @@ class Operator<QuickGelu, Device::Type::kNvidia, 0> : public QuickGelu {
         input.dtype() != dtype_ || out.dtype() != dtype_ ||
         input.device() != device_ || out.device() != device_ ||
         !supports(input, out))
-      throw std::invalid_argument("NVIDIA QuickGelu call metadata or alias changed after Make");
+      throw std::invalid_argument(
+          "NVIDIA QuickGelu call metadata or alias changed after Make");
     std::size_t count = 1;
     nvidia_quick_gelu_detail::Layout layout{};
     layout.rank = static_cast<unsigned>(input.ndim());
     for (std::size_t axis = 0; axis < input.ndim(); ++axis) {
       layout.shape[axis] = input.shape()[axis];
-      layout.input_strides[axis] = static_cast<std::size_t>(input.strides()[axis]);
+      layout.input_strides[axis] =
+          static_cast<std::size_t>(input.strides()[axis]);
       layout.out_strides[axis] = static_cast<std::size_t>(out.strides()[axis]);
       count *= input.shape()[axis];
     }
     if (!count) return;
-    nvidia_quick_gelu_detail::Launch(input.data(), out.data(), dtype_, layout,
-        count, static_cast<cudaStream_t>(stream_ ? stream_ : 0));
+    nvidia_quick_gelu_detail::Launch(
+        input.data(), out.data(), dtype_, layout, count,
+        static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
  private:
   static Tensor checked(const Tensor input, Tensor out) {
     if (!supports(input, out))
-      throw std::invalid_argument("unsupported NVIDIA QuickGelu metadata, device or alias");
+      throw std::invalid_argument(
+          "unsupported NVIDIA QuickGelu metadata, device or alias");
     return input;
   }
 };

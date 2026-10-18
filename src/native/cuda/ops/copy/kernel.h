@@ -51,8 +51,10 @@ class CudaCopy : public Copy {
       std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
       offset += shape_size;
 
-      d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+      d_input_strides_ =
+          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, input_strides_.data(),
+                  strides_size);
       offset += strides_size;
 
       d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
@@ -61,8 +63,7 @@ class CudaCopy : public Copy {
       const bool copied =
           Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
                           Backend::kMemcpyHostToDevice) == Backend::kSuccess;
-      if (!copied)
-        throw std::runtime_error("CudaCopy metadata copy failed");
+      if (!copied) throw std::runtime_error("CudaCopy metadata copy failed");
     } catch (...) {
       if (Backend::Free(d_metadata_) != Backend::kSuccess) std::terminate();
       d_metadata_ = nullptr;

@@ -27,18 +27,20 @@ class Operator<Tril, Device::Type::kAscend> : public Tril {
     uint64_t workspace_size = 0;
     aclOpExecutor* executor = nullptr;
     const bool inplace = input.data() == out.data();
-    auto ret = inplace
-        ? aclnnInplaceTrilGetWorkspaceSize(t_out, diagonal, &workspace_size, &executor)
-        : aclnnTrilGetWorkspaceSize(t_input, diagonal, t_out, &workspace_size, &executor);
+    auto ret = inplace ? aclnnInplaceTrilGetWorkspaceSize(
+                             t_out, diagonal, &workspace_size, &executor)
+                       : aclnnTrilGetWorkspaceSize(t_input, diagonal, t_out,
+                                                   &workspace_size, &executor);
     if (ret != ACL_SUCCESS || !executor) FailStop("workspace query", ret);
     void* workspace = nullptr;
     if (workspace_size) {
       ret = aclrtMalloc(&workspace, workspace_size, ACL_MEM_MALLOC_NORMAL_ONLY);
-      if (ret != ACL_SUCCESS || !workspace) FailStop("workspace allocation", ret);
+      if (ret != ACL_SUCCESS || !workspace)
+        FailStop("workspace allocation", ret);
     }
     ret = inplace
-        ? aclnnInplaceTril(workspace, workspace_size, executor, stream)
-        : aclnnTril(workspace, workspace_size, executor, stream);
+              ? aclnnInplaceTril(workspace, workspace_size, executor, stream)
+              : aclnnTril(workspace, workspace_size, executor, stream);
     if (ret != ACL_SUCCESS) FailStop("execution", ret);
     // Phase two consumes a non-repeatable executor. Retain caller descriptors
     // and backing until successful completion before releasing local resources.
@@ -58,8 +60,8 @@ class Operator<Tril, Device::Type::kAscend> : public Tril {
   // ACL failures may leave executor ownership or queued work uncertain.
   // Retain resources and stop this process without freeing in-flight backing.
   [[noreturn]] static void FailStop(const char* phase, int64_t status) {
-    std::fprintf(stderr, "Ascend Tril %s failed (%lld)\n",
-                 phase, static_cast<long long>(status));
+    std::fprintf(stderr, "Ascend Tril %s failed (%lld)\n", phase,
+                 static_cast<long long>(status));
     std::abort();
   }
 };

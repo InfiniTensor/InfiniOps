@@ -52,8 +52,10 @@ class CudaSilu : public Silu {
       std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
       offset += shape_size;
 
-      d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+      d_input_strides_ =
+          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, input_strides_.data(),
+                  strides_size);
       offset += strides_size;
 
       d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);

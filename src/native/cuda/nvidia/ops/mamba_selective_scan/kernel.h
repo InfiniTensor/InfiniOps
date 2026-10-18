@@ -9,10 +9,10 @@ struct MambaScanNvidiaBackend : Runtime<Device::Type::kNvidia> {
       throw std::runtime_error("MambaSelectiveScan CUDA launch failed");
   }
 };
-template<>
+template <>
 class Operator<MambaSelectiveScan, Device::Type::kNvidia>
     : public CudaMambaSelectiveScan<MambaScanNvidiaBackend> {
  public:
   using CudaMambaSelectiveScan<MambaScanNvidiaBackend>::CudaMambaSelectiveScan;
 };
-}
+}  // namespace infini::ops

@@ -13,9 +13,13 @@ class RowL2Normalize : public Operator<RowL2Normalize> {
   static constexpr bool kAutomaticDefault = true;
 
   RowL2Normalize(const Tensor input, const double eps, Tensor out)
-      : input_shape_(input.shape()), input_strides_(input.strides()),
-        out_shape_(out.shape()), out_strides_(out.strides()),
-        dtype_(input.dtype()), device_(input.device()), eps_(eps) {}
+      : input_shape_(input.shape()),
+        input_strides_(input.strides()),
+        out_shape_(out.shape()),
+        out_strides_(out.strides()),
+        dtype_(input.dtype()),
+        device_(input.device()),
+        eps_(eps) {}
 
   virtual void operator()(const Tensor input, const double eps,
                           Tensor out) const = 0;
@@ -35,8 +39,8 @@ struct CacheKeyBuilder<RowL2Normalize> {
     std::uint64_t bits;
     static_assert(sizeof(bits) == sizeof(eps));
     std::memcpy(&bits, &eps, sizeof(bits));
-    return detail::CacheKey::Build(config.implementation_index(), input,
-                                   bits, out);
+    return detail::CacheKey::Build(config.implementation_index(), input, bits,
+                                   out);
   }
 };
 

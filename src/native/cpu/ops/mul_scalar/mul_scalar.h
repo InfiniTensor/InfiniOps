@@ -15,7 +15,7 @@ namespace infini::ops {
 
 template <>
 class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
-                                                 Caster<Device::Type::kCpu> {
+                                                   Caster<Device::Type::kCpu> {
  public:
   static bool supports(const Tensor input, const double, Tensor out) {
     if (input.device().type() != Device::Type::kCpu ||
@@ -29,8 +29,8 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
       return false;
     const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
     const auto op = reinterpret_cast<std::uintptr_t>(out.data());
-    const bool overlap = input_bytes && out_bytes &&
-        ip < op + out_bytes && op < ip + input_bytes;
+    const bool overlap = input_bytes && out_bytes && ip < op + out_bytes &&
+                         op < ip + input_bytes;
     return !overlap || (ip == op && input.strides() == out.strides());
   }
 
@@ -58,9 +58,11 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
     if (count_ == 0) return;
     // CPU scalar arithmetic retains float opmath precision even for half/BF16.
     const float multiplier = FloatAlpha(alpha_);
-    DispatchFunc<Device::Type::kCpu,
-                 List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
-        dtype_, [&](auto tag) {
+    DispatchFunc<
+        Device::Type::kCpu,
+        List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
+        dtype_,
+        [&](auto tag) {
           using T = typename decltype(tag)::type;
           const auto* src = static_cast<const T*>(input.data());
           auto* dst = static_cast<T*>(out.data());
@@ -76,7 +78,8 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
               dst[i] = Cast<T>(product);
             }
           }
-        }, "CPU MulScalar");
+        },
+        "CPU MulScalar");
   }
 
  private:
@@ -91,19 +94,23 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
 
   static bool ContiguousBytes(const Tensor t, std::size_t* bytes) {
     if (t.shape().size() != t.strides().size()) return false;
-    const auto limit = static_cast<std::size_t>(
-        std::numeric_limits<std::ptrdiff_t>::max()) / Width(t.dtype());
+    const auto limit =
+        static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
+        Width(t.dtype());
     bool empty = false;
     for (std::size_t axis = 0; axis < t.ndim(); ++axis) {
       if (t.stride(axis) < 0 || t.size(axis) > limit) return false;
       empty = empty || t.size(axis) == 0;
     }
-    if (empty) { *bytes = 0; return true; }
+    if (empty) {
+      *bytes = 0;
+      return true;
+    }
     std::size_t count = 1;
     for (std::size_t axis = t.ndim(); axis > 0; --axis) {
       const auto size = t.size(axis - 1);
-      if ((size > 1 && t.stride(axis - 1) !=
-                           static_cast<std::ptrdiff_t>(count)) ||
+      if ((size > 1 &&
+           t.stride(axis - 1) != static_cast<std::ptrdiff_t>(count)) ||
           size > limit / count)
         return false;
       count *= size;
@@ -116,7 +123,7 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
     if (bytes == 0) return true;
     const auto start = reinterpret_cast<std::uintptr_t>(t.data());
     return start && start % Width(t.dtype()) == 0 &&
-        start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
+           start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
   }
 
   static float FloatAlpha(double alpha) {

@@ -35,18 +35,40 @@ def write_if_changed(path, content):
 
 def adapt(name, text):
     if name == "flash.h":
-        text = replace_once(text, "#include <ATen/cuda/CUDAGeneratorImpl.h> // For at::Generator and at::PhiloxCudaState", "")
-        text = replace_once(text, "    at::PhiloxCudaState philox_args;", "    // Inference-only build: dropout and its Torch RNG state are absent.")
+        text = replace_once(
+            text,
+            "#include <ATen/cuda/CUDAGeneratorImpl.h> // For at::Generator and at::PhiloxCudaState",
+            "",
+        )
+        text = replace_once(
+            text,
+            "    at::PhiloxCudaState philox_args;",
+            "    // Inference-only build: dropout and its Torch RNG state are absent.",
+        )
     elif name == "flash_fwd_kernel.h":
-        text = replace_once(text, '#include "philox_unpack.cuh" // For at::cuda::philox::unpack', "")
-        text = replace_once(text, "    auto seed_offset = at::cuda::philox::unpack(params.philox_args);", "    static_assert(!Is_dropout, \"InfiniOps inference build does not support dropout\");\n    const auto seed_offset = std::make_tuple(uint64_t{0}, uint64_t{0});")
+        text = replace_once(
+            text, '#include "philox_unpack.cuh" // For at::cuda::philox::unpack', ""
+        )
+        text = replace_once(
+            text,
+            "    auto seed_offset = at::cuda::philox::unpack(params.philox_args);",
+            '    static_assert(!Is_dropout, "InfiniOps inference build does not support dropout");\n    const auto seed_offset = std::make_tuple(uint64_t{0}, uint64_t{0});',
+        )
     elif name == "flash_fwd_launch_template.h":
-        text = replace_once(text, "#include <c10/cuda/CUDAException.h>  // For C10_CUDA_CHECK and C10_CUDA_KERNEL_LAUNCH_CHECK", '#include "infini_flash_cuda.h"')
+        text = replace_once(
+            text,
+            "#include <c10/cuda/CUDAException.h>  // For C10_CUDA_CHECK and C10_CUDA_KERNEL_LAUNCH_CHECK",
+            '#include "infini_flash_cuda.h"',
+        )
         text = text.replace("C10_CUDA_KERNEL_LAUNCH_CHECK", "INFINI_FLASH_KERNEL_CHECK")
         text = text.replace("C10_CUDA_CHECK", "INFINI_FLASH_CUDA_CHECK")
     elif name == "hardware_info.h":
-        text = replace_once(text, "#include <tuple>", '#include <tuple>\n#include "infini_flash_cuda.h"')
-        text = replace_once(text, "      exit(1);", "      INFINI_FLASH_CUDA_CHECK(status_);")
+        text = replace_once(
+            text, "#include <tuple>", '#include <tuple>\n#include "infini_flash_cuda.h"'
+        )
+        text = replace_once(
+            text, "      exit(1);", "      INFINI_FLASH_CUDA_CHECK(status_);"
+        )
     return text
 
 
@@ -54,7 +76,9 @@ def prepare(archive, output):
     archive, output = pathlib.Path(archive), pathlib.Path(output)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if digest != ARCHIVE_SHA256:
-        raise ValueError(f"expected pinned flash_attn-2.8.3 archive {ARCHIVE_SHA256}, got {digest}")
+        raise ValueError(
+            f"expected pinned flash_attn-2.8.3 archive {ARCHIVE_SHA256}, got {digest}"
+        )
     with tarfile.open(archive, "r:gz") as source:
         members = {member.name: member for member in source.getmembers()}
 
@@ -75,7 +99,9 @@ def prepare(archive, output):
             if pathlib.PurePosixPath(name).name != name:
                 raise ValueError(f"unexpected upstream include: {name}")
             text = adapt(name, read(KERNEL_ROOT + name).decode())
-            if re.search(r"#\s*include\s*[<\"](?:ATen|c10|torch)/|\bat::|\bc10::", text):
+            if re.search(
+                r"#\s*include\s*[<\"](?:ATen|c10|torch)/|\bat::|\bc10::", text
+            ):
                 raise ValueError(f"unremoved Torch dependency in {name}")
             headers[name] = text
             for include in re.findall(r'#\s*include\s*"([^"]+)"', text):
@@ -86,7 +112,9 @@ def prepare(archive, output):
         # do not invent a second split-KV tuning policy in LM.
         api = read(ROOT + "csrc/flash_attn/flash_api.cpp").decode()
         begin = api.index("inline int num_splits_heuristic(")
-        end = api.index("\nstd::tuple<at::Tensor, at::Tensor> set_params_splitkv", begin)
+        end = api.index(
+            "\nstd::tuple<at::Tensor, at::Tensor> set_params_splitkv", begin
+        )
         headers["num_splits.h"] = (
             "// Copyright (c) 2023, Tri Dao. See accompanying LICENSE.\n"
             "#pragma once\n#include <algorithm>\n#include <cmath>\n#include <vector>\n"
@@ -99,7 +127,7 @@ def prepare(archive, output):
         for member in source.getmembers():
             prefix = ROOT + "csrc/cutlass/include/"
             if member.name.startswith(prefix) and member.isfile():
-                relative = pathlib.PurePosixPath(member.name[len(prefix):])
+                relative = pathlib.PurePosixPath(member.name[len(prefix) :])
                 if relative.is_absolute() or ".." in relative.parts:
                     raise ValueError("unsafe CUTLASS archive path")
                 path = output / "cutlass" / pathlib.Path(*relative.parts)
@@ -108,13 +136,20 @@ def prepare(archive, output):
         for name in ("LICENSE", "AUTHORS"):
             write_if_changed(output / name, read(ROOT + name))
         manifest = {
-            "upstream": "flash-attn", "version": "2.8.3",
-            "archive_sha256": digest, "namespace": "infini_flash",
-            "inference_only": True, "dropout": False,
-            "headers_sha256": {name: hashlib.sha256(text.encode()).hexdigest()
-                               for name, text in sorted(headers.items())},
+            "upstream": "flash-attn",
+            "version": "2.8.3",
+            "archive_sha256": digest,
+            "namespace": "infini_flash",
+            "inference_only": True,
+            "dropout": False,
+            "headers_sha256": {
+                name: hashlib.sha256(text.encode()).hexdigest()
+                for name, text in sorted(headers.items())
+            },
         }
-        write_if_changed(output / "source-manifest.json", json.dumps(manifest, indent=2) + "\n")
+        write_if_changed(
+            output / "source-manifest.json", json.dumps(manifest, indent=2) + "\n"
+        )
     return manifest
 
 

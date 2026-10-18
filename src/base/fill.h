@@ -1,7 +1,6 @@
 #ifndef INFINI_OPS_BASE_FILL_H_
 #define INFINI_OPS_BASE_FILL_H_
 
-
 #include "data_type.h"
 #include "operator.h"
 
@@ -14,7 +13,8 @@ class Fill : public Operator<Fill> {
   static bool valid_output(const Tensor& out, bool require_storage = true) {
     const auto dtype = static_cast<int>(out.dtype());
     if (dtype < 0 || dtype > static_cast<int>(DataType::kFloat64) ||
-        out.shape().size() != out.strides().size()) return false;
+        out.shape().size() != out.strides().size())
+      return false;
     for (std::size_t i = 0; i < out.ndim(); ++i)
       if (out.size(i) > 1 && out.stride(i) == 0) return false;
     return !require_storage || !out.numel() || out.data();
@@ -76,7 +76,6 @@ class Fill : public Operator<Fill> {
   DataType out_type_;
 
   int device_index_{0};
-
 };
 
 }  // namespace infini::ops

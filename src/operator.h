@@ -39,7 +39,8 @@ struct AutomaticDefault<Key, std::void_t<decltype(Key::kAutomaticDefault)>>
     : std::bool_constant<Key::kAutomaticDefault> {};
 
 // Providers may reject unsupported metadata before construction or execution.
-// Legacy providers retain their existing domain; this is not capture eligibility.
+// Legacy providers retain their existing domain; this is not capture
+// eligibility.
 template <typename Provider, typename... Args>
 auto ProviderSupports(int, const Args&... args)
     -> decltype(Provider::supports(args...), bool{}) {
@@ -54,9 +55,9 @@ bool ProviderSupports(long, const Args&...) {
 template <typename Provider, typename... Args>
 class HasConfigAwareSupports {
   template <typename P>
-  static auto Test(int)
-      -> decltype(P::supports(std::declval<const Config&>(),
-                             std::declval<const Args&>()...), std::true_type{});
+  static auto Test(int) -> decltype(P::supports(std::declval<const Config&>(),
+                                                std::declval<const Args&>()...),
+                                    std::true_type{});
   template <typename>
   static std::false_type Test(long);
 
@@ -390,13 +391,14 @@ class Operator : public OperatorBase {
   // Metadata eligibility only. This never constructs a provider and does not
   // predict allocation success or capture safety. No eligible provider returns
   // false; an inactive explicit implementation index throws invalid_argument.
-  // Providers without supports() retain their legacy, interface-only eligibility.
+  // Providers without supports() retain their legacy, interface-only
+  // eligibility.
   template <typename... Args>
   static bool CanMake(const Config& config, const Tensor tensor,
                       const Args&... args) {
-    return SelectWithDevice(config, tensor.device().type(), false,
-                            [](auto, auto, auto, auto&...) {}, tensor,
-                            args...);
+    return SelectWithDevice(
+        config, tensor.device().type(), false,
+        [](auto, auto, auto, auto&...) {}, tensor, args...);
   }
 
   template <typename... Args>
@@ -473,11 +475,13 @@ class Operator : public OperatorBase {
     }
     // An explicit workspace takes precedence. Preserve legacy optional
     // workspace behavior unless this provider declares it mandatory.
-    if (handle.workspace() != nullptr || handle.workspace_size_in_bytes() != 0) {
+    if (handle.workspace() != nullptr ||
+        handle.workspace_size_in_bytes() != 0) {
       if (op->requires_workspace() &&
           (handle.workspace() == nullptr ||
            handle.workspace_size_in_bytes() < required_workspace)) {
-        throw std::invalid_argument("operator workspace is missing or too small");
+        throw std::invalid_argument(
+            "operator workspace is missing or too small");
       }
       return (*op)(handle, args...);
     }
@@ -489,7 +493,8 @@ class Operator : public OperatorBase {
       return (*op)(handle, args...);
     }
     if (lease.size_in_bytes < required_workspace) {
-      throw std::invalid_argument("operator workspace lease is missing or too small");
+      throw std::invalid_argument(
+          "operator workspace lease is missing or too small");
     }
     auto invocation_handle = handle.Clone();
     invocation_handle->set_workspace(lease.data.get());
@@ -623,7 +628,8 @@ class Operator : public OperatorBase {
         std::forward<Args>(args)...);
 
     if (!op_ptr) {
-      throw std::invalid_argument("no active operator implementation supports these parameters");
+      throw std::invalid_argument(
+          "no active operator implementation supports these parameters");
     }
 
     return op_ptr;
@@ -631,9 +637,8 @@ class Operator : public OperatorBase {
 
   template <typename Selected, typename... Args>
   static bool SelectWithDevice(const Config& config,
-                               Device::Type dispatch_device_type,
-                               bool strict, Selected&& selected,
-                               Args&&... args) {
+                               Device::Type dispatch_device_type, bool strict,
+                               Selected&& selected, Args&&... args) {
     bool matched = false;
     auto cache_args = std::forward_as_tuple(args...);
 
@@ -648,65 +653,75 @@ class Operator : public OperatorBase {
         dispatch_device_type,
         [&](auto device_tag) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
-          using Implementations = typename ActiveImplementations<Key, kDev>::type;
-          const bool automatic = config.implementation_index() ==
-                                 Config::kAutomaticImplementation;
+          using Implementations =
+              typename ActiveImplementations<Key, kDev>::type;
+          const bool automatic =
+              config.implementation_index() == Config::kAutomaticImplementation;
           const auto construct = [&](auto implementation_tag) {
-                constexpr std::size_t kImplementationIndex =
-                    decltype(implementation_tag)::value;
-                using Provider = Operator<Key, kDev, kImplementationIndex>;
-                constexpr bool kConfigAware =
-                    std::is_constructible_v<Provider, const Config&, Args...> &&
-                    detail::HasConfigAwareSupports<Provider, Args...>::value;
-                if constexpr (kConfigAware ||
-                              std::is_constructible_v<Provider, Args...>) {
-                  bool supported = false;
-                  if constexpr (kConfigAware) {
-                    supported = std::apply(
-                        [&](const auto&... cached_args) {
-                          return Provider::supports(config, cached_args...);
-                        }, cache_args);
-                  } else if (!config.requires_config_aware_provider()) {
-                    supported = std::apply(
-                        [](const auto&... cached_args) {
-                          return detail::ProviderSupports<Provider>(0, cached_args...);
-                        }, cache_args);
-                  }
-                  if (!supported) {
-                    if (automatic) return;
-                    if (strict) {
-                      throw std::invalid_argument(
-                          "requested operator implementation does not support these parameters");
-                    }
-                    return;
-                  }
-                  std::apply(
-                      [&](auto&... cached_args) {
-                        matched = true;
-                        selected(device_tag, implementation_tag,
-                                 std::bool_constant<kConfigAware>{},
-                                 cached_args...);
-                      },
-                      cache_args);
-                } else {
-                  if (!automatic && strict) {
-                    throw std::invalid_argument("operator implementation has no matching interface");
-                  }
+            constexpr std::size_t kImplementationIndex =
+                decltype(implementation_tag)::value;
+            using Provider = Operator<Key, kDev, kImplementationIndex>;
+            constexpr bool kConfigAware =
+                std::is_constructible_v<Provider, const Config&, Args...> &&
+                detail::HasConfigAwareSupports<Provider, Args...>::value;
+            if constexpr (kConfigAware ||
+                          std::is_constructible_v<Provider, Args...>) {
+              bool supported = false;
+              if constexpr (kConfigAware) {
+                supported = std::apply(
+                    [&](const auto&... cached_args) {
+                      return Provider::supports(config, cached_args...);
+                    },
+                    cache_args);
+              } else if (!config.requires_config_aware_provider()) {
+                supported = std::apply(
+                    [](const auto&... cached_args) {
+                      return detail::ProviderSupports<Provider>(0,
+                                                                cached_args...);
+                    },
+                    cache_args);
+              }
+              if (!supported) {
+                if (automatic) return;
+                if (strict) {
+                  throw std::invalid_argument(
+                      "requested operator implementation does not support "
+                      "these parameters");
                 }
-              };
+                return;
+              }
+              std::apply(
+                  [&](auto&... cached_args) {
+                    matched = true;
+                    selected(device_tag, implementation_tag,
+                             std::bool_constant<kConfigAware>{},
+                             cached_args...);
+                  },
+                  cache_args);
+            } else {
+              if (!automatic && strict) {
+                throw std::invalid_argument(
+                    "operator implementation has no matching interface");
+              }
+            }
+          };
           if (automatic) {
             // Selection has no kernel side effects. A constructor failure is
             // propagated, never treated as permission to try another provider.
             for (const auto index : detail::ListToVector(Implementations{})) {
               detail::DispatchImplementation(index, construct,
-                  "Operator::Make(automatic)", Implementations{});
+                                             "Operator::Make(automatic)",
+                                             Implementations{});
               if (matched) break;
             }
           } else {
-            if (!detail::ListContains(config.implementation_index(), Implementations{})) {
-              throw std::invalid_argument("requested operator implementation is not active");
+            if (!detail::ListContains(config.implementation_index(),
+                                      Implementations{})) {
+              throw std::invalid_argument(
+                  "requested operator implementation is not active");
             }
-            detail::DispatchImplementation(config.implementation_index(), construct,
+            detail::DispatchImplementation(
+                config.implementation_index(), construct,
                 "Operator::Make(implementation_index)", Implementations{});
           }
         },

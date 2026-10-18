@@ -160,9 +160,9 @@ void LaunchRotaryEmbeddingCambricon(
   RotaryEmbeddingCambriconKernel<NativeT, NativeCache>
       <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
           positions, reinterpret_cast<NativeT*>(data),
-          reinterpret_cast<const NativeCache*>(cos_sin_cache), num_tokens, sequence_length,
-          num_heads, rot_dim, rope_dim_offset, batch_stride, token_stride,
-          head_stride, cache_token_stride, is_neox, inverse);
+          reinterpret_cast<const NativeCache*>(cos_sin_cache), num_tokens,
+          sequence_length, num_heads, rot_dim, rope_dim_offset, batch_stride,
+          token_stride, head_stride, cache_token_stride, is_neox, inverse);
 }
 
 #define INSTANTIATE_ROTARY_EMBEDDING(T, TCACHE)                         \

@@ -12,9 +12,13 @@ namespace infini::ops::nvidia_upsample_bilinear2d_detail {
 template <typename T>
 __device__ float ToFloat(T value);
 template <>
-__device__ inline float ToFloat<float>(float value) { return value; }
+__device__ inline float ToFloat<float>(float value) {
+  return value;
+}
 template <>
-__device__ inline float ToFloat<__half>(__half value) { return __half2float(value); }
+__device__ inline float ToFloat<__half>(__half value) {
+  return __half2float(value);
+}
 template <>
 __device__ inline float ToFloat<__nv_bfloat16>(__nv_bfloat16 value) {
   return __bfloat162float(value);
@@ -23,7 +27,9 @@ __device__ inline float ToFloat<__nv_bfloat16>(__nv_bfloat16 value) {
 template <typename T>
 __device__ T FromFloat(float value);
 template <>
-__device__ inline float FromFloat<float>(float value) { return value; }
+__device__ inline float FromFloat<float>(float value) {
+  return value;
+}
 template <>
 __device__ inline __half FromFloat<__half>(float value) {
   return __float2half_rn(value);
@@ -40,10 +46,11 @@ __device__ inline std::size_t Clamp(std::int64_t value, std::size_t maximum) {
 }
 
 template <typename T>
-__global__ void UpsampleBilinear2dKernel(
-    const T* input, T* out, Layout layout, std::size_t output_count) {
+__global__ void UpsampleBilinear2dKernel(const T* input, T* out, Layout layout,
+                                         std::size_t output_count) {
   const auto step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
-  for (auto pos = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  for (auto pos =
+           static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
        pos < output_count; pos += step) {
     auto remainder = pos;
     const auto w = remainder % layout.output_width;
@@ -53,12 +60,14 @@ __global__ void UpsampleBilinear2dKernel(
     const auto c = remainder % layout.channels;
     const auto n = remainder / layout.channels;
 
-    const float source_h = layout.align_corners
-        ? static_cast<float>(h) * layout.scale_height
-        : (static_cast<float>(h) + 0.5F) * layout.scale_height - 0.5F;
-    const float source_w = layout.align_corners
-        ? static_cast<float>(w) * layout.scale_width
-        : (static_cast<float>(w) + 0.5F) * layout.scale_width - 0.5F;
+    const float source_h =
+        layout.align_corners
+            ? static_cast<float>(h) * layout.scale_height
+            : (static_cast<float>(h) + 0.5F) * layout.scale_height - 0.5F;
+    const float source_w =
+        layout.align_corners
+            ? static_cast<float>(w) * layout.scale_width
+            : (static_cast<float>(w) + 0.5F) * layout.scale_width - 0.5F;
     const auto h0_raw = static_cast<std::int64_t>(floorf(source_h));
     const auto w0_raw = static_cast<std::int64_t>(floorf(source_w));
     const float h1_weight = source_h - static_cast<float>(h0_raw);

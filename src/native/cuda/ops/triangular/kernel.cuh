@@ -24,30 +24,28 @@ struct Metadata {
 template <typename T, bool kUpper>
 __global__ void TriangularKernel(const T* input, T* output, Metadata meta) {
   const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
-  for (std::size_t index = static_cast<std::size_t>(blockIdx.x) * blockDim.x +
-                           threadIdx.x;
+  for (std::size_t index =
+           static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
        index < meta.elements; index += step) {
     const std::size_t column = index % meta.columns;
     const std::size_t row = index / meta.columns % meta.rows;
     std::int64_t input_offset = 0;
     std::int64_t output_offset = 0;
     if (meta.rank <= 3) {
-      const std::size_t batch = meta.rank == 3
-                                    ? index / (meta.columns * meta.rows)
-                                    : 0;
-      input_offset = static_cast<std::int64_t>(row) *
-                         meta.input_strides[meta.rank - 2] +
-                     static_cast<std::int64_t>(column) *
-                         meta.input_strides[meta.rank - 1];
-      output_offset = static_cast<std::int64_t>(row) *
-                          meta.output_strides[meta.rank - 2] +
-                      static_cast<std::int64_t>(column) *
-                          meta.output_strides[meta.rank - 1];
+      const std::size_t batch =
+          meta.rank == 3 ? index / (meta.columns * meta.rows) : 0;
+      input_offset =
+          static_cast<std::int64_t>(row) * meta.input_strides[meta.rank - 2] +
+          static_cast<std::int64_t>(column) * meta.input_strides[meta.rank - 1];
+      output_offset =
+          static_cast<std::int64_t>(row) * meta.output_strides[meta.rank - 2] +
+          static_cast<std::int64_t>(column) *
+              meta.output_strides[meta.rank - 1];
       if (meta.rank == 3) {
-        input_offset += static_cast<std::int64_t>(batch) *
-                        meta.input_strides[0];
-        output_offset += static_cast<std::int64_t>(batch) *
-                         meta.output_strides[0];
+        input_offset +=
+            static_cast<std::int64_t>(batch) * meta.input_strides[0];
+        output_offset +=
+            static_cast<std::int64_t>(batch) * meta.output_strides[0];
       }
     } else {
       std::size_t remaining = index;
@@ -60,10 +58,10 @@ __global__ void TriangularKernel(const T* input, T* output, Metadata meta) {
                          meta.output_strides[dimension];
       }
     }
-    const std::int64_t relative = static_cast<std::int64_t>(column) -
-                                  static_cast<std::int64_t>(row);
-    const bool keep = kUpper ? relative >= meta.diagonal
-                             : relative <= meta.diagonal;
+    const std::int64_t relative =
+        static_cast<std::int64_t>(column) - static_cast<std::int64_t>(row);
+    const bool keep =
+        kUpper ? relative >= meta.diagonal : relative <= meta.diagonal;
     output[output_offset] = keep ? input[input_offset] : T{};
   }
 }

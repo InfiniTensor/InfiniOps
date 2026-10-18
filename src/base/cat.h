@@ -9,15 +9,20 @@ namespace infini::ops {
 
 class Cat : public Operator<Cat> {
  public:
-  static bool supports(const std::vector<Tensor>& tensors, int64_t dim, Tensor out) {
+  static bool supports(const std::vector<Tensor>& tensors, int64_t dim,
+                       Tensor out) {
     if (tensors.empty() || dim < -static_cast<int64_t>(out.ndim()) ||
-        dim >= static_cast<int64_t>(out.ndim())) return false;
+        dim >= static_cast<int64_t>(out.ndim()))
+      return false;
     dim = dim < 0 ? dim + static_cast<int64_t>(out.ndim()) : dim;
     Tensor::Size total = 0;
     for (const auto& tensor : tensors) {
-      if (tensor.ndim() != out.ndim() || tensor.dtype() != out.dtype()) return false;
+      if (tensor.ndim() != out.ndim() || tensor.dtype() != out.dtype())
+        return false;
       for (Tensor::Size axis = 0; axis < out.ndim(); ++axis)
-        if (axis != static_cast<Tensor::Size>(dim) && tensor.size(axis) != out.size(axis)) return false;
+        if (axis != static_cast<Tensor::Size>(dim) &&
+            tensor.size(axis) != out.size(axis))
+          return false;
       total += tensor.size(dim);
     }
     return total == out.size(dim);

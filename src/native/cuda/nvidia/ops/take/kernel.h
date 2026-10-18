@@ -25,21 +25,26 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != index.device() || input.device() != out.device() ||
         !CheckedContiguous(input) || !CheckedContiguous(index) ||
-        !CheckedContiguous(out) ||
-        index.dtype() != DataType::kInt64 || input.dtype() != out.dtype() ||
-        index.shape() != out.shape()) {
+        !CheckedContiguous(out) || index.dtype() != DataType::kInt64 ||
+        input.dtype() != out.dtype() || index.shape() != out.shape()) {
       return false;
     }
     int current_device = -1;
     if (cudaGetDevice(&current_device) != cudaSuccess ||
-        current_device != input.device().index()) return false;
+        current_device != input.device().index())
+      return false;
     switch (input.dtype()) {
-      case DataType::kInt8: case DataType::kUInt8:
-      case DataType::kInt16: case DataType::kUInt16:
-      case DataType::kFloat16: case DataType::kBFloat16:
-      case DataType::kInt32: case DataType::kUInt32:
+      case DataType::kInt8:
+      case DataType::kUInt8:
+      case DataType::kInt16:
+      case DataType::kUInt16:
+      case DataType::kFloat16:
+      case DataType::kBFloat16:
+      case DataType::kInt32:
+      case DataType::kUInt32:
       case DataType::kFloat32:
-      case DataType::kInt64: case DataType::kUInt64:
+      case DataType::kInt64:
+      case DataType::kUInt64:
       case DataType::kFloat64:
         break;
       default:
@@ -48,21 +53,27 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
     std::size_t input_count, output_count;
     if (!CheckedNumel(input, &input_count) ||
         !CheckedNumel(index, &output_count) ||
-        input_count > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) ||
+        input_count > static_cast<std::size_t>(
+                          std::numeric_limits<std::int64_t>::max()) ||
         (output_count && !input_count)) {
       return false;
     }
     const auto width = input.element_size();
-    if (!width || input_count > std::numeric_limits<std::size_t>::max() / width ||
+    if (!width ||
+        input_count > std::numeric_limits<std::size_t>::max() / width ||
         output_count > std::numeric_limits<std::size_t>::max() / width ||
-        output_count > std::numeric_limits<std::size_t>::max() / sizeof(std::int64_t)) {
+        output_count >
+            std::numeric_limits<std::size_t>::max() / sizeof(std::int64_t)) {
       return false;
     }
     if ((input_count && !input.data()) ||
         (output_count && (!index.data() || !out.data())) ||
-        (input_count && reinterpret_cast<std::uintptr_t>(input.data()) % width) ||
-        (output_count && (reinterpret_cast<std::uintptr_t>(out.data()) % width ||
-                          reinterpret_cast<std::uintptr_t>(index.data()) % alignof(std::int64_t)))) {
+        (input_count &&
+         reinterpret_cast<std::uintptr_t>(input.data()) % width) ||
+        (output_count &&
+         (reinterpret_cast<std::uintptr_t>(out.data()) % width ||
+          reinterpret_cast<std::uintptr_t>(index.data()) %
+              alignof(std::int64_t)))) {
       return false;
     }
     return !Overlaps(input.data(), input_count * width, index.data(),
@@ -80,22 +91,23 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
 
   bool capture_safe() const override { return true; }
 
-  void operator()(const Tensor input, const Tensor index, Tensor out) const override {
+  void operator()(const Tensor input, const Tensor index,
+                  Tensor out) const override {
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
         input.dtype() != input_type_ || index.shape() != index_shape_ ||
         index.strides() != index_strides_ || index.dtype() != index_type_ ||
         out.shape() != out_shape_ || out.strides() != out_strides_ ||
         out.dtype() != out_type_ || out.device().index() != device_index_) {
-      throw std::invalid_argument("NVIDIA Take call metadata changed after Make");
+      throw std::invalid_argument(
+          "NVIDIA Take call metadata changed after Make");
     }
     Validate(input, index, out);
     const auto output_count = out.numel();
     if (!output_count) return;
-    nvidia_take_detail::Launch(input.data(),
-                               static_cast<const std::int64_t*>(index.data()),
-                               out.data(), input.numel(), output_count,
-                               input.element_size(),
-                               static_cast<cudaStream_t>(stream_ ? stream_ : 0));
+    nvidia_take_detail::Launch(
+        input.data(), static_cast<const std::int64_t*>(index.data()),
+        out.data(), input.numel(), output_count, input.element_size(),
+        static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
  private:
@@ -107,7 +119,8 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
     for (std::size_t i = shape.size(); i > 0; --i) {
       if (expected > static_cast<std::size_t>(
                          std::numeric_limits<Tensor::Stride>::max()) ||
-          strides[i - 1] != static_cast<Tensor::Stride>(expected)) return false;
+          strides[i - 1] != static_cast<Tensor::Stride>(expected))
+        return false;
       if (shape[i - 1] &&
           expected > std::numeric_limits<std::size_t>::max() / shape[i - 1])
         return false;
@@ -119,14 +132,15 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
   static bool CheckedNumel(const Tensor tensor, std::size_t* result) {
     *result = 1;
     for (const auto dim : tensor.shape()) {
-      if (dim && *result > std::numeric_limits<std::size_t>::max() / dim) return false;
+      if (dim && *result > std::numeric_limits<std::size_t>::max() / dim)
+        return false;
       *result *= dim;
     }
     return true;
   }
 
-  static bool Overlaps(const void* a, std::size_t a_bytes,
-                       const void* b, std::size_t b_bytes) {
+  static bool Overlaps(const void* a, std::size_t a_bytes, const void* b,
+                       std::size_t b_bytes) {
     if (!a_bytes || !b_bytes) return false;
     const auto start_a = reinterpret_cast<std::uintptr_t>(a);
     const auto start_b = reinterpret_cast<std::uintptr_t>(b);
@@ -137,7 +151,8 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
 
   static void Validate(const Tensor input, const Tensor index, Tensor out) {
     if (!supports(input, index, out))
-      throw std::invalid_argument("unsupported NVIDIA Take metadata, device or alias");
+      throw std::invalid_argument(
+          "unsupported NVIDIA Take metadata, device or alias");
   }
 };
 

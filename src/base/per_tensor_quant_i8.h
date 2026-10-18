@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+
 #include "operator.h"
 namespace infini::ops {
 class PerTensorQuantI8 : public Operator<PerTensorQuantI8> {
@@ -11,4 +12,4 @@ class PerTensorQuantI8 : public Operator<PerTensorQuantI8> {
                           const std::optional<Tensor> zero,
                           const bool is_static) const = 0;
 };
-}
+}  // namespace infini::ops

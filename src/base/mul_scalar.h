@@ -13,9 +13,13 @@ class MulScalar : public Operator<MulScalar> {
   static constexpr bool kAutomaticDefault = true;
 
   MulScalar(const Tensor input, const double alpha, Tensor out)
-      : input_shape_(input.shape()), input_strides_(input.strides()),
-        out_shape_(out.shape()), out_strides_(out.strides()),
-        dtype_(input.dtype()), device_(input.device()), alpha_(alpha) {}
+      : input_shape_(input.shape()),
+        input_strides_(input.strides()),
+        out_shape_(out.shape()),
+        out_strides_(out.strides()),
+        dtype_(input.dtype()),
+        device_(input.device()),
+        alpha_(alpha) {}
 
   virtual void operator()(const Tensor input, const double alpha,
                           Tensor out) const = 0;
@@ -37,8 +41,8 @@ struct CacheKeyBuilder<MulScalar> {
     std::uint64_t bits;
     static_assert(sizeof(bits) == sizeof(alpha));
     std::memcpy(&bits, &alpha, sizeof(bits));
-    return detail::CacheKey::Build(config.implementation_index(), input,
-                                   bits, out);
+    return detail::CacheKey::Build(config.implementation_index(), input, bits,
+                                   out);
   }
 };
 

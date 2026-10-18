@@ -32,7 +32,8 @@ class FlashAttnWithKvcacheConfig : public Config {
   int64_t logical_kv_upper_bound() const { return logical_kv_upper_bound_; }
 
   static int64_t BoundFrom(const Config& config) {
-    const auto* typed = dynamic_cast<const FlashAttnWithKvcacheConfig*>(&config);
+    const auto* typed =
+        dynamic_cast<const FlashAttnWithKvcacheConfig*>(&config);
     return typed ? typed->logical_kv_upper_bound() : 0;
   }
 
@@ -49,20 +50,22 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
   // Common metadata contract only; each provider retains its own qualification.
   // Null storage is legal for planning, but never for a nonempty invocation.
   template <typename Lengths>
-  static bool supports(
-      const Tensor q, Tensor k_cache, Tensor v_cache,
-      const std::optional<Tensor> k, const std::optional<Tensor> v,
-      const std::optional<Tensor> rotary_cos,
-      const std::optional<Tensor> rotary_sin, const Lengths cache_seqlens,
-      const std::optional<Tensor> cache_batch_idx,
-      const std::optional<Tensor> cache_leftpad,
-      const std::optional<Tensor> block_table,
-      const std::optional<Tensor> alibi_slopes,
-      const std::optional<double> softmax_scale, const bool causal,
-      const std::vector<int64_t> window_size, const double softcap,
-      const bool rotary_interleaved, const int64_t num_splits,
-      const bool return_softmax_lse, Tensor out,
-      std::optional<Tensor> softmax_lse) {
+  static bool supports(const Tensor q, Tensor k_cache, Tensor v_cache,
+                       const std::optional<Tensor> k,
+                       const std::optional<Tensor> v,
+                       const std::optional<Tensor> rotary_cos,
+                       const std::optional<Tensor> rotary_sin,
+                       const Lengths cache_seqlens,
+                       const std::optional<Tensor> cache_batch_idx,
+                       const std::optional<Tensor> cache_leftpad,
+                       const std::optional<Tensor> block_table,
+                       const std::optional<Tensor> alibi_slopes,
+                       const std::optional<double> softmax_scale,
+                       const bool causal,
+                       const std::vector<int64_t> window_size,
+                       const double softcap, const bool rotary_interleaved,
+                       const int64_t num_splits, const bool return_softmax_lse,
+                       Tensor out, std::optional<Tensor> softmax_lse) {
     const auto lengths = [&] {
       if constexpr (std::is_convertible_v<Lengths, int64_t>)
         return std::optional<Tensor>{};
@@ -77,9 +80,9 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
     };
     for (const auto& tensor : {q, k_cache, v_cache, out})
       if (!metadata(tensor)) return false;
-    for (const auto& tensor : {k, v, rotary_cos, rotary_sin, lengths,
-                              cache_batch_idx, cache_leftpad, block_table,
-                              alibi_slopes, softmax_lse})
+    for (const auto& tensor :
+         {k, v, rotary_cos, rotary_sin, lengths, cache_batch_idx, cache_leftpad,
+          block_table, alibi_slopes, softmax_lse})
       if (tensor && !metadata(*tensor)) return false;
     if (q.ndim() != 4 || k_cache.ndim() != 4 || v_cache.ndim() != 4 ||
         out.shape() != q.shape() || k_cache.shape() != v_cache.shape() ||
@@ -95,39 +98,46 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
         rotary_cos.has_value() != rotary_sin.has_value() ||
         return_softmax_lse != softmax_lse.has_value() ||
         window_size.size() != 2 || window_size[0] < -1 || window_size[1] < -1 ||
-        !(softcap >= 0.0) || num_splits < 0) return false;
-    if (k && (k->ndim() != 4 || k->shape() != v->shape() ||
-              k->size(0) != q.size(0) || k->size(2) != k_cache.size(2) ||
-              k->size(3) != q.size(3) || k->dtype() != q.dtype() ||
-              v->dtype() != q.dtype() || k->stride(-1) != 1 ||
-              v->stride(-1) != 1)) return false;
+        !(softcap >= 0.0) || num_splits < 0)
+      return false;
+    if (k &&
+        (k->ndim() != 4 || k->shape() != v->shape() ||
+         k->size(0) != q.size(0) || k->size(2) != k_cache.size(2) ||
+         k->size(3) != q.size(3) || k->dtype() != q.dtype() ||
+         v->dtype() != q.dtype() || k->stride(-1) != 1 || v->stride(-1) != 1))
+      return false;
     if (rotary_cos &&
         (!k || rotary_cos->ndim() != 2 ||
          rotary_cos->shape() != rotary_sin->shape() ||
          rotary_cos->dtype() != q.dtype() || rotary_sin->dtype() != q.dtype() ||
          rotary_cos->size(1) == 0 || rotary_cos->size(1) > q.size(3) / 2 ||
-         rotary_cos->size(1) % 8 != 0)) return false;
+         rotary_cos->size(1) % 8 != 0))
+      return false;
     const auto index_vector = [&](const std::optional<Tensor>& tensor) {
-      return !tensor || (tensor->ndim() == 1 && tensor->size(0) == q.size(0) &&
-                         tensor->dtype() == DataType::kInt32 &&
-                         tensor->IsContiguous());
+      return !tensor ||
+             (tensor->ndim() == 1 && tensor->size(0) == q.size(0) &&
+              tensor->dtype() == DataType::kInt32 && tensor->IsContiguous());
     };
     if (!index_vector(lengths) || !index_vector(cache_batch_idx) ||
-        !index_vector(cache_leftpad)) return false;
+        !index_vector(cache_leftpad))
+      return false;
     if (block_table) {
       if (block_table->ndim() != 2 || block_table->size(0) != q.size(0) ||
           block_table->dtype() != DataType::kInt32 ||
-          !block_table->IsContiguous() || k_cache.size(1) % 256 != 0) return false;
-    } else if (!cache_batch_idx && k_cache.size(0) < q.size(0)) return false;
+          !block_table->IsContiguous() || k_cache.size(1) % 256 != 0)
+        return false;
+    } else if (!cache_batch_idx && k_cache.size(0) < q.size(0))
+      return false;
     if (alibi_slopes &&
         (alibi_slopes->dtype() != DataType::kFloat32 ||
          !alibi_slopes->IsContiguous() ||
          !((alibi_slopes->ndim() == 1 && alibi_slopes->size(0) == q.size(2)) ||
            (alibi_slopes->ndim() == 2 && alibi_slopes->size(0) == q.size(0) &&
-            alibi_slopes->size(1) == q.size(2))))) return false;
-    if (softmax_lse &&
-        (softmax_lse->dtype() != DataType::kFloat32 ||
-         softmax_lse->shape() != Tensor::Shape{q.size(0), q.size(2), q.size(1)}))
+            alibi_slopes->size(1) == q.size(2)))))
+      return false;
+    if (softmax_lse && (softmax_lse->dtype() != DataType::kFloat32 ||
+                        softmax_lse->shape() !=
+                            Tensor::Shape{q.size(0), q.size(2), q.size(1)}))
       return false;
     (void)softmax_scale;
     (void)causal;
@@ -135,7 +145,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
     return true;
   }
 
-  static bool supports(const Tensor q, Tensor k_cache, Tensor v_cache, Tensor out) {
+  static bool supports(const Tensor q, Tensor k_cache, Tensor v_cache,
+                       Tensor out) {
     return supports(q, k_cache, v_cache, std::nullopt, std::nullopt,
                     std::nullopt, std::nullopt, std::optional<Tensor>{},
                     std::nullopt, std::nullopt, std::nullopt, std::nullopt,

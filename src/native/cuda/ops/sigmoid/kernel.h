@@ -34,7 +34,8 @@ class CudaSigmoid : public Sigmoid {
            "`Sigmoid` output must not have broadcasted dimensions");
 
     if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
-      throw std::runtime_error("CudaSigmoid cannot query metadata owner device");
+      throw std::runtime_error(
+          "CudaSigmoid cannot query metadata owner device");
     if (output_size_ == 0 || (is_input_contiguous_ && is_out_contiguous_))
       return;
 
@@ -65,8 +66,10 @@ class CudaSigmoid : public Sigmoid {
       std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
       offset += shape_size;
 
-      d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+      d_input_strides_ =
+          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+      std::memcpy(metadata.data() + offset, input_strides_.data(),
+                  strides_size);
       offset += strides_size;
 
       d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);

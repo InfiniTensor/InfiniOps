@@ -4,19 +4,20 @@
 
 #include "base/flash_attn_varlen_func.h"
 
-#define INFINI_NATIVE_VARLEN_ARGS                                                \
-  const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q,     \
-      const Tensor cu_seqlens_k, const std::optional<Tensor> alibi_slopes,       \
-      const std::optional<Tensor> block_table, const int64_t max_seqlen_q,      \
-      const int64_t max_seqlen_k, const double dropout_p,                       \
-      const std::optional<double> softmax_scale, const bool causal,             \
-      const std::vector<int64_t> window_size, const double softcap,             \
-      const bool deterministic, const bool return_attn_probs, Tensor out,       \
+#define INFINI_NATIVE_VARLEN_ARGS                                            \
+  const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q, \
+      const Tensor cu_seqlens_k, const std::optional<Tensor> alibi_slopes,   \
+      const std::optional<Tensor> block_table, const int64_t max_seqlen_q,   \
+      const int64_t max_seqlen_k, const double dropout_p,                    \
+      const std::optional<double> softmax_scale, const bool causal,          \
+      const std::vector<int64_t> window_size, const double softcap,          \
+      const bool deterministic, const bool return_attn_probs, Tensor out,    \
       std::optional<Tensor> softmax_lse, std::optional<Tensor> s_dmask
-#define INFINI_NATIVE_VARLEN_VALUES                                              \
-  q, k, v, cu_seqlens_q, cu_seqlens_k, alibi_slopes, block_table, max_seqlen_q, \
-      max_seqlen_k, dropout_p, softmax_scale, causal, window_size, softcap,      \
-      deterministic, return_attn_probs, out, softmax_lse, s_dmask
+#define INFINI_NATIVE_VARLEN_VALUES                                 \
+  q, k, v, cu_seqlens_q, cu_seqlens_k, alibi_slopes, block_table,   \
+      max_seqlen_q, max_seqlen_k, dropout_p, softmax_scale, causal, \
+      window_size, softcap, deterministic, return_attn_probs, out,  \
+      softmax_lse, s_dmask
 
 namespace infini::ops {
 
@@ -30,12 +31,11 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 0>
   static bool supports(INFINI_NATIVE_VARLEN_ARGS);
 
   Operator(INFINI_NATIVE_VARLEN_ARGS)
-      : FlashAttnVarlenFunc(checked_q(INFINI_NATIVE_VARLEN_VALUES), k, v,
-                            cu_seqlens_q, cu_seqlens_k, alibi_slopes,
-                            block_table, max_seqlen_q, max_seqlen_k,
-                            dropout_p, softmax_scale, causal, window_size,
-                            softcap, deterministic, return_attn_probs, out,
-                            softmax_lse, s_dmask) {
+      : FlashAttnVarlenFunc(
+            checked_q(INFINI_NATIVE_VARLEN_VALUES), k, v, cu_seqlens_q,
+            cu_seqlens_k, alibi_slopes, block_table, max_seqlen_q, max_seqlen_k,
+            dropout_p, softmax_scale, causal, window_size, softcap,
+            deterministic, return_attn_probs, out, softmax_lse, s_dmask) {
     prepare(INFINI_NATIVE_VARLEN_VALUES);
   }
   ~Operator() override;
@@ -50,7 +50,8 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 0>
  private:
   static Tensor checked_q(INFINI_NATIVE_VARLEN_ARGS) {
     if (!supports(INFINI_NATIVE_VARLEN_VALUES))
-      throw std::invalid_argument("unsupported native varlen Attention configuration");
+      throw std::invalid_argument(
+          "unsupported native varlen Attention configuration");
     return q;
   }
   void prepare(INFINI_NATIVE_VARLEN_ARGS);

@@ -12,9 +12,12 @@ class QuickGelu : public Operator<QuickGelu> {
   static constexpr bool kAutomaticDefault = true;
 
   QuickGelu(const Tensor input, Tensor out)
-      : input_shape_{input.shape()}, input_strides_{input.strides()},
-        out_shape_{out.shape()}, out_strides_{out.strides()},
-        dtype_{input.dtype()}, device_{input.device()} {}
+      : input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        out_shape_{out.shape()},
+        out_strides_{out.strides()},
+        dtype_{input.dtype()},
+        device_{input.device()} {}
 
   virtual void operator()(const Tensor input, Tensor out) const = 0;
 

@@ -1,8 +1,8 @@
 #ifndef INFINI_OPS_NVIDIA_GEMM_HANDLE_OWNER_H_
 #define INFINI_OPS_NVIDIA_GEMM_HANDLE_OWNER_H_
 
-#include <cuda.h>
 #include <cublas_v2.h>
+#include <cuda.h>
 
 #include <cstdio>
 #include <map>
@@ -20,23 +20,30 @@ namespace infini::ops {
 // The caller must not reset/destroy the CUDA context while such instances live.
 class NvidiaGemmHandle {
  public:
-  static std::shared_ptr<NvidiaGemmHandle> Acquire(int device, cublasMath_t math_mode = CUBLAS_DEFAULT_MATH) {
+  static std::shared_ptr<NvidiaGemmHandle> Acquire(
+      int device, cublasMath_t math_mode = CUBLAS_DEFAULT_MATH) {
     const auto context = CurrentContext();
     CUdevice current_device{};
     const auto status = cuCtxGetDevice(&current_device);
     if (status != CUDA_SUCCESS || current_device != device) {
-      throw std::invalid_argument("GEMM tensor device differs from the active CUDA context");
+      throw std::invalid_argument(
+          "GEMM tensor device differs from the active CUDA context");
     }
     const auto key = std::make_pair(context, math_mode);
-    static thread_local std::map<std::pair<CUcontext, cublasMath_t>, std::weak_ptr<NvidiaGemmHandle>> owners;
+    static thread_local std::map<std::pair<CUcontext, cublasMath_t>,
+                                 std::weak_ptr<NvidiaGemmHandle>>
+        owners;
     for (auto it = owners.begin(); it != owners.end();) {
-      if (it->second.expired()) it = owners.erase(it);
-      else ++it;
+      if (it->second.expired())
+        it = owners.erase(it);
+      else
+        ++it;
     }
     if (auto it = owners.find(key); it != owners.end()) {
       if (auto owner = it->second.lock()) return owner;
     }
-    auto owner = std::shared_ptr<NvidiaGemmHandle>(new NvidiaGemmHandle(context, math_mode));
+    auto owner = std::shared_ptr<NvidiaGemmHandle>(
+        new NvidiaGemmHandle(context, math_mode));
     owners[key] = owner;
     return owner;
   }
@@ -65,10 +72,12 @@ class NvidiaGemmHandle {
 
   cublasHandle_t get() const {
     if (worker_ != std::this_thread::get_id()) {
-      throw std::invalid_argument("GEMM instance used by a different worker thread");
+      throw std::invalid_argument(
+          "GEMM instance used by a different worker thread");
     }
     if (CurrentContext() != context_) {
-      throw std::invalid_argument("GEMM instance used with a different CUDA context");
+      throw std::invalid_argument(
+          "GEMM instance used with a different CUDA context");
     }
     return handle_;
   }
@@ -81,7 +90,8 @@ class NvidiaGemmHandle {
       if (handle_ != nullptr) {
         const auto cleanup = cublasDestroy(handle_);
         if (cleanup != CUBLAS_STATUS_SUCCESS) {
-          ReportCleanupError("cleaning failed creation", static_cast<int>(cleanup));
+          ReportCleanupError("cleaning failed creation",
+                             static_cast<int>(cleanup));
         }
       }
       throw std::runtime_error("creating GEMM BLAS handle failed: " +
@@ -93,10 +103,12 @@ class NvidiaGemmHandle {
         const auto cleanup = cublasDestroy(handle_);
         handle_ = nullptr;
         if (cleanup != CUBLAS_STATUS_SUCCESS) {
-          ReportCleanupError("cleaning failed math mode setup", static_cast<int>(cleanup));
+          ReportCleanupError("cleaning failed math mode setup",
+                             static_cast<int>(cleanup));
         }
-        throw std::runtime_error("setting GEMM BLAS reduction math mode failed: " +
-                                 std::to_string(static_cast<int>(math_status)));
+        throw std::runtime_error(
+            "setting GEMM BLAS reduction math mode failed: " +
+            std::to_string(static_cast<int>(math_status)));
       }
     }
   }
@@ -112,7 +124,8 @@ class NvidiaGemmHandle {
   }
 
   static void ReportCleanupError(const char* operation, int status) noexcept {
-    std::fprintf(stderr, "InfiniOps GEMM cleanup: %s failed (%d)\n", operation, status);
+    std::fprintf(stderr, "InfiniOps GEMM cleanup: %s failed (%d)\n", operation,
+                 status);
   }
 
   CUcontext context_{};

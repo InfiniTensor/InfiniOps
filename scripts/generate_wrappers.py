@@ -1623,10 +1623,8 @@ def _generate_operator_call_instantiation_entries(operator):
     )
 
     _append_unique(
-        f"extern template Config "
-        f"Operator<{op_type}>::DefaultConfig(Device::Type);",
-        f"template Config "
-        f"Operator<{op_type}>::DefaultConfig(Device::Type);",
+        f"extern template Config Operator<{op_type}>::DefaultConfig(Device::Type);",
+        f"template Config Operator<{op_type}>::DefaultConfig(Device::Type);",
     )
 
     _append_unique(
@@ -1680,7 +1678,11 @@ def _generate_operator_call_instantiation_entries(operator):
             f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
             f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
         )
-        if operator.name in ("flash_attn_with_kvcache", "reshape_and_cache_flash", "flash_attn_varlen_func"):
+        if operator.name in (
+            "flash_attn_with_kvcache",
+            "reshape_and_cache_flash",
+            "flash_attn_varlen_func",
+        ):
             _append_unique(
                 f"extern template bool {can_make_instantiation};",
                 f"template bool {can_make_instantiation};",
@@ -1889,8 +1891,10 @@ def _select_ops_from_config(ops, config, config_path):
     for op_name, selection in config.items():
         if selection.get("public_api_only") is True:
             base_header = _BASE_DIR / f"{op_name}.h"
-            if (base_header.resolve().parent != _BASE_DIR.resolve()
-                    or not base_header.is_file()):
+            if (
+                base_header.resolve().parent != _BASE_DIR.resolve()
+                or not base_header.is_file()
+            ):
                 raise ValueError(
                     f"{config_path}: public API-only operator {op_name!r} "
                     "has no hand-written base header"
@@ -1979,17 +1983,20 @@ def _get_all_ops(
     impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
     excluded_headers = set()
     if not with_native_flash:
-        excluded_headers.update({
-            "src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
-            "src/native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
-        })
+        excluded_headers.update(
+            {
+                "src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
+                "src/native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
+            }
+        )
     if not with_native_w4:
         excluded_headers.add("src/native/cuda/nvidia/ops/w4_marlin/kernel.h")
     if excluded_headers:
         # Optional providers are emitted only with their compiled kernel target.
         for name, headers in impl_headers_by_operator.items():
             impl_headers_by_operator[name] = [
-                header for header in headers
+                header
+                for header in headers
                 if header.path.as_posix() not in excluded_headers
             ]
 
@@ -2187,10 +2194,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Include linked third-party backend implementations.",
     )
-    parser.add_argument("--with-native-flash", action="store_true",
-                        help="Include the pinned native inference Attention provider.")
-    parser.add_argument("--with-native-w4", action="store_true",
-                        help="Include the compiled NVIDIA Marlin providers.")
+    parser.add_argument(
+        "--with-native-flash",
+        action="store_true",
+        help="Include the pinned native inference Attention provider.",
+    )
+    parser.add_argument(
+        "--with-native-w4",
+        action="store_true",
+        help="Include the compiled NVIDIA Marlin providers.",
+    )
     parser.add_argument(
         "--ops",
         nargs="+",
