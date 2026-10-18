@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace infini::ops {
 
@@ -19,23 +20,24 @@ namespace infini::ops {
 // The caller must not reset/destroy the CUDA context while such instances live.
 class NvidiaGemmHandle {
  public:
-  static std::shared_ptr<NvidiaGemmHandle> Acquire(int device) {
+  static std::shared_ptr<NvidiaGemmHandle> Acquire(int device, cublasMath_t math_mode = CUBLAS_DEFAULT_MATH) {
     const auto context = CurrentContext();
     CUdevice current_device{};
     const auto status = cuCtxGetDevice(&current_device);
     if (status != CUDA_SUCCESS || current_device != device) {
       throw std::invalid_argument("GEMM tensor device differs from the active CUDA context");
     }
-    static thread_local std::map<CUcontext, std::weak_ptr<NvidiaGemmHandle>> owners;
+    const auto key = std::make_pair(context, math_mode);
+    static thread_local std::map<std::pair<CUcontext, cublasMath_t>, std::weak_ptr<NvidiaGemmHandle>> owners;
     for (auto it = owners.begin(); it != owners.end();) {
       if (it->second.expired()) it = owners.erase(it);
       else ++it;
     }
-    if (auto it = owners.find(context); it != owners.end()) {
+    if (auto it = owners.find(key); it != owners.end()) {
       if (auto owner = it->second.lock()) return owner;
     }
-    auto owner = std::shared_ptr<NvidiaGemmHandle>(new NvidiaGemmHandle(context));
-    owners[context] = owner;
+    auto owner = std::shared_ptr<NvidiaGemmHandle>(new NvidiaGemmHandle(context, math_mode));
+    owners[key] = owner;
     return owner;
   }
 
@@ -72,7 +74,7 @@ class NvidiaGemmHandle {
   }
 
  private:
-  explicit NvidiaGemmHandle(CUcontext context)
+  explicit NvidiaGemmHandle(CUcontext context, cublasMath_t math_mode)
       : context_(context), worker_(std::this_thread::get_id()) {
     const auto status = cublasCreate(&handle_);
     if (status != CUBLAS_STATUS_SUCCESS || handle_ == nullptr) {
@@ -84,6 +86,18 @@ class NvidiaGemmHandle {
       }
       throw std::runtime_error("creating GEMM BLAS handle failed: " +
                                std::to_string(static_cast<int>(status)));
+    }
+    if (math_mode != CUBLAS_DEFAULT_MATH) {
+      const auto math_status = cublasSetMathMode(handle_, math_mode);
+      if (math_status != CUBLAS_STATUS_SUCCESS) {
+        const auto cleanup = cublasDestroy(handle_);
+        handle_ = nullptr;
+        if (cleanup != CUBLAS_STATUS_SUCCESS) {
+          ReportCleanupError("cleaning failed math mode setup", static_cast<int>(cleanup));
+        }
+        throw std::runtime_error("setting GEMM BLAS reduction math mode failed: " +
+                                 std::to_string(static_cast<int>(math_status)));
+      }
     }
   }
 

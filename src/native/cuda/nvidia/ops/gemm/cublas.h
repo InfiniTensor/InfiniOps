@@ -16,7 +16,9 @@ class Operator<Gemm, Device::Type::kNvidia, 0>
            std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
       : BlasGemm<Blas<Device::Type::kNvidia>>{
             a, b, c, alpha, beta, trans_a, trans_b, y},
-        handle_{NvidiaGemmHandle::Acquire(y.device().index())} {}
+        handle_{NvidiaGemmHandle::Acquire(y.device().index(),
+                                        static_cast<cublasMath_t>(CUBLAS_DEFAULT_MATH |
+                                                                 CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION))} {}
 
   Operator(const Tensor a, const Tensor b, Tensor y)
       : Operator{a, b, std::nullopt, std::nullopt, std::nullopt,

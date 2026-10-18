@@ -1680,7 +1680,7 @@ def _generate_operator_call_instantiation_entries(operator):
             f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
             f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
         )
-        if operator.name in ("flash_attn_with_kvcache", "reshape_and_cache_flash"):
+        if operator.name in ("flash_attn_with_kvcache", "reshape_and_cache_flash", "flash_attn_varlen_func"):
             _append_unique(
                 f"extern template bool {can_make_instantiation};",
                 f"template bool {can_make_instantiation};",
