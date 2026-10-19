@@ -2016,7 +2016,11 @@ def _get_all_ops(
                 impl_headers_by_operator.get(_op_relative_type(op_name), ())
             )
 
-            if not implementations:
+            if not implementations and op_name not in {
+                "w4_marlin_gemm",
+                "w4_marlin_repack",
+                "w4_marlin_parameters",
+            }:
                 continue
 
             ops[op_name] = implementations
@@ -2246,6 +2250,11 @@ if __name__ == "__main__":
 
     if config_path is not None:
         config = ops_config.load_ops_config(config_path)
+        # Optional Marlin providers do not remove the public checkpoint API.
+        # Reuse the existing empty-provider generation path when none is built.
+        for name in ("w4_marlin_gemm", "w4_marlin_repack", "w4_marlin_parameters"):
+            if name not in config or (name in ops and not ops[name]):
+                config[name] = {"public_api_only": True}
         ops = _select_ops_from_config(ops, config, config_path)
 
     ops = _filter_ops(
