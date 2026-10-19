@@ -132,7 +132,6 @@ class Operator<CausalConv1d, Device::Type::kNvidia> : public CausalConv1d {
   }
   // Device capture/state-pool lifetime is not supported for this stateful path.
   // Zero device allocations does not alone establish capture eligibility.
-  bool capture_safe() const override { return false; }
   void operator()(const Tensor qkv, const Tensor weight, Tensor conv_state,
                   const std::optional<Tensor> bias,
                   const std::optional<Tensor> cu_seqlens,

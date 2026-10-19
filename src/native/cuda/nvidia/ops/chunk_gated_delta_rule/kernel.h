@@ -84,7 +84,6 @@ class Operator<ChunkGatedDeltaRule, Device::Type::kNvidia>
         p_.s[i][j] = metadata_[i].strides[j];
   }
   size_t workspace_size_in_bytes() const override { return bytes_; }
-  bool capture_safe() const override { return false; }
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,
                   const std::optional<Tensor> cu_seqlens,

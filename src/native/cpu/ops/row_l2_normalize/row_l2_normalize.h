@@ -38,8 +38,6 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
   Operator(const Tensor input, const double eps, Tensor out)
       : RowL2Normalize{Checked(input, eps, out), eps, out} {}
 
-  bool capture_safe() const override { return false; }
-
   void operator()(const Tensor input, const double eps,
                   Tensor out) const override {
     if (input.shape() != input_shape_ || out.shape() != out_shape_ ||

@@ -52,8 +52,6 @@ class Operator<Cast, Device::Type::kNvidia> : public Cast {
   Operator(const Tensor input, Tensor out)
       : Cast{Checked(input, out), out}, device_{input.device()} {}
 
-  bool capture_safe() const override { return false; }
-
   void operator()(const Tensor input, Tensor out) const override {
     if (input.dtype() != input_dtype_ || out.dtype() != out_dtype_ ||
         input.shape() != input_shape_ || out.shape() != out_shape_ ||

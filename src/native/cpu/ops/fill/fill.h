@@ -30,9 +30,6 @@ class Operator<Fill, Device::Type::kCpu, 0> : public Fill,
         "CPU Fill does not supply a Tensor-valued provider");
   }
 
-  // The former CPU fill boundary qualified host replay and reported true here.
-  bool capture_safe() const override { return true; }
-
   void operator()(const Tensor input, const double value,
                   Tensor out) const override {
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||

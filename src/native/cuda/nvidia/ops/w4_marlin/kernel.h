@@ -14,7 +14,6 @@ class Operator<W4MarlinRepack, Device::Type::kNvidia, 0>
   void operator()(const Tensor qweight, const Tensor perm, const int64_t scheme,
                   const int64_t size_k, const int64_t size_n,
                   Tensor out) const override;
-  bool capture_safe() const override { return false; }
 
  private:
   int sms_{0}, shared_{0}, device_{0};
@@ -31,7 +30,6 @@ class Operator<W4MarlinParameters, Device::Type::kNvidia, 0>
                   const int64_t scheme, const int64_t size_k,
                   const int64_t size_n, const int64_t group_size,
                   Tensor scales_out, Tensor zeros_out) const override;
-  bool capture_safe() const override { return false; }
 
  private:
   int device_{0};
@@ -53,7 +51,6 @@ class Operator<W4MarlinGemm, Device::Type::kNvidia, 0> : public W4MarlinGemm {
   bool requires_workspace() const override { return true; }
   // Original host selector still sets CUDA function attributes and queries the
   // device at invocation. No capture promise without a qualified frozen launch.
-  bool capture_safe() const override { return false; }
 
  private:
   int device_{0}, sms_{0};

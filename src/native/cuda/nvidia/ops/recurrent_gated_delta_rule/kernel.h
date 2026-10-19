@@ -69,7 +69,6 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
       for (size_t j = 0; j < metadata_[i].strides.size(); ++j)
         p_.s[i][j] = metadata_[i].strides[j];
   }
-  bool capture_safe() const override { return false; }
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,
                   const std::optional<Tensor> initial_state_indices,

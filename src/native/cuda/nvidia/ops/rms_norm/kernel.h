@@ -12,12 +12,7 @@ class Operator<RmsNorm, Device::Type::kNvidia>
     : public CudaRmsNorm<Runtime<Device::Type::kNvidia>> {
  public:
   using Base = CudaRmsNorm<Runtime<Device::Type::kNvidia>>;
-
-  Operator(const Tensor input, const Tensor weight, float eps, Tensor out)
-      : Base(input, weight, eps, out) {}
-
-  Operator(const Tensor input, const Tensor weight, Tensor out)
-      : Operator(input, weight, 1e-6f, out) {}
+  using Base::Base;
 
   // Mixed weight types dispatch to kernels too; replay allocates no metadata.
   bool capture_safe() const override { return true; }

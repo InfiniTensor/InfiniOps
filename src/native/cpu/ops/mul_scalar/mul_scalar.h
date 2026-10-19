@@ -41,8 +41,6 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
     count_ = bytes / Width(dtype_);
   }
 
-  bool capture_safe() const override { return false; }
-
   void operator()(const Tensor input, const double alpha,
                   Tensor out) const override {
     if (input.shape() != input_shape_ || out.shape() != out_shape_ ||

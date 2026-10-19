@@ -10,29 +10,32 @@ Earlier upstream revisions are not asserted where only the fixed direct Core don
 Path prefixes:
 P = src/native/cuda/nvidia/ops/
 C = src/infiniop/ops/ in the pinned direct Core donor
-W = P/w4_marlin/vendor/
 
 W4 / Marlin
 Upstream projects: https://github.com/IST-DASLab/marlin and https://github.com/vllm-project/vllm
-Current kernel source: third_party/vllm, pinned gitlink
+Current kernel source: the fixed vLLM source archive at commit
 ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab,
-csrc/libtorch_stable/quantization/marlin. Only its source kernels and generator
+SHA256 d8f3d663347dff35ea8123d3eb570f67d2dd6c4258ee8b8a8ec2996c42ada678,
+csrc/libtorch_stable/quantization/marlin and csrc/core/scalar_type.hpp.
+Its source kernels, native pointer host entry, scalar definition and generator
 are consumed; the vLLM/Torch runtime is not a dependency of this native target.
+cmake/MarlinSource.cmake acquires that archive through standard FetchContent.
+Complete source distributions contain LICENSE plus the same eleven inputs under
+third_party/marlin-source, and use those files without downloading.
 The original Ops port came through the fixed Core donor above; this selected
 vLLM revision is not asserted to be the unique historical origin of that port.
 Preparation applies patches/marlin to build-directory copies, retaining the
 existing Torch-free includes, repack bindings and activation-order index behavior.
 CUDA template instances and their selector are generated together in the build
-directory. The four host/type adaptations below remain in Ops.
+directory. The upstream marlin.cu native pointer entry and scalar_type.hpp are
+prepared alongside the kernels; no copied host/type/helper subtree is retained
+in Ops. A private declaration and small local check helper adapt the native
+entry without Torch types, while existing CUDA error propagation is retained.
 Marlin notices retain Copyright 2024 Elias Frantar, modifications by Neural Magic, Apache-2.0.
 The original generator identifies Apache-2.0 / Copyright contributors to the vLLM project.
-Marlin original Apache headers remain in the prepared source and nvidia/kernel.cuh;
+Marlin original Apache headers remain in the prepared source, including marlin.cu;
 Apache text: LICENSE. Original source notices remain in prepared files.
-Remaining adaptations <- direct Core donor:
-COPY W/gemm/core/scalar_type.hpp <- C/awq_marlin_gemm/core/scalar_type.hpp
-COPY W/gemm/core/source_location.h <- C/awq_marlin_gemm/core/source_location.h
-ADAPTED W/gemm/core/utils.h <- C/awq_marlin_gemm/core/utils.h (unused pointer/range/dtype helpers removed; runtime checks unchanged)
-The prepared marlin/dequant.h INT4/INT8 conversion portions also derive from NVIDIA FasterTransformer:
+The prepared dequant.h INT4/INT8 conversion portions also derive from NVIDIA FasterTransformer:
 https://github.com/NVIDIA/FasterTransformer/blob/release/v5.3_tag/src/fastertransformer/cutlass_extensions/include/cutlass_extensions/interleaved_numeric_conversion.h
 The dequant.h references map INT4 FP16/BF16 to upstream lines 215-287/327-385
 and INT8 FP16/BF16 to upstream lines 53-85/125-175; packing, bias and scalar
@@ -41,7 +44,6 @@ Original Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES and the
 complete BSD-3-Clause terms are retained in the prepared dequant.h and
 LICENSES/FasterTransformer-BSD-3-Clause.txt. The separate CUTLASS dependency's
 2017-2026 notice does not replace this original copyright notice.
-COPY W/gemm/nvidia/kernel.cuh <- C/awq_marlin_gemm/nvidia/kernel.cuh
 ADAPTED P/w4_marlin/parameters.cu implements the scale/zero permutations from
 vLLM's vllm/model_executor/layers/quantization/utils/marlin_utils.py;
 the fixed reference revision and loading-only CUDA adaptation are noted in that file.
@@ -91,14 +93,21 @@ CUTLASS-BSD-3-Clause.txt records the separate CMake dependency at
 Linked libraries are not relicensed by Ops: distributions bundling sampling.so or
 libtvm_ffi.so must retain the resolved FlashInfer/TVM-FFI licenses, NOTICE files and
 applicable third-party notices. See docs/build-nvidia-inference.md for the pinned recipe.
-LICENSES/Apache-2.0-components.txt maps the corresponding release components
-and copyrights to the complete common Apache terms in LICENSE, and preserves
-their original secondary-component lists. LICENSES/FlashInfer-0.6.7 and
-LICENSES/TVM-FFI-0.1.10 retain the upstream NOTICE and secondary-license texts
-verbatim; the repeated common Apache terms are consolidated, not omitted.
-They are not a substitute for the notices of a different resolved binary version.
-These release bundles conservatively retain upstream secondary notices, including
-PyTorch-derived TVM-FFI code; not importing Torch does not remove source-derived
-obligations. The full Python wheels contain more components than sampling.so and
-libtvm_ffi.so alone. Do not infer a native-only notice subset from Python imports
-or from an absent wheel license directory; check the compiled source provenance.
+LICENSES/Apache-2.0-components.txt records the fixed native recipe's copyrights
+and maps the common Apache terms to LICENSE. The original FlashInfer and TVM-FFI
+NOTICE files and libbacktrace terms are retained verbatim. DLPack's Apache terms
+are shared, with its distinct copyright recorded in that component list.
+FlashInfer v0.6.7 (56ed54098411946525da17eca2bcfd7ec72a515e) generates sampling
+from csrc/{sampling.cu,renorm.cu,flashinfer_sampling_binding.cu}; their source
+include closure does not contain FA3, CUTLASS, fmt or spdlog. TVM-FFI v0.1.10
+(1fed0ae0421e614d45662e8ee6bcae353d3ab2ea) builds libtvm_ffi from the native
+object lists in CMakeLists.txt, including DLPack interfaces and optional
+libbacktrace. Its PyTorch-derived optional Python DLPack addon is not in those
+object lists. These source-based distinctions, not Python import behavior,
+scope the checked-in fallback materials to the two native artifacts.
+They do not cover arbitrary replacement binaries or the complete Python wheels.
+The resolver additionally collects existing license/NOTICE/COPYING materials
+from actual package metadata. That conservative package inventory can include
+materials for components outside these two DSOs; it is intentionally not filtered
+by fixed hashes or used to restrict build capability. A complete wheel or SDK
+redistribution must retain its own applicable notices, including secondary ones.

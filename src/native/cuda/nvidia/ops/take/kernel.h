@@ -83,9 +83,7 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
               alignof(std::int64_t)))) {
       return false;
     }
-    return !Overlaps(input.data(), input_count * width, index.data(),
-                     output_count * sizeof(std::int64_t)) &&
-           !Overlaps(input.data(), input_count * width, out.data(),
+    return !Overlaps(input.data(), input_count * width, out.data(),
                      output_count * width) &&
            !Overlaps(index.data(), output_count * sizeof(std::int64_t),
                      out.data(), output_count * width);

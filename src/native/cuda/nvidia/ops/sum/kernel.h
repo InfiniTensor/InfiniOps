@@ -71,7 +71,7 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
     for (std::size_t d = 0; d < rank; ++d) {
       const auto extent = input.shape()[d];
       const auto stride = input.strides()[d];
-      if (!extent || stride < 0 || (extent > 1 && stride == 0) ||
+      if (!extent || stride < 0 ||
           extent > static_cast<std::size_t>(
                        std::numeric_limits<std::int64_t>::max()) ||
           static_cast<std::uint64_t>(stride) >

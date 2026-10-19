@@ -45,8 +45,8 @@ class CudaSeparateTableRope : public SeparateTableRope {
           using Angle = TypeMapType<Backend::kDeviceType, ListGet<1>(tag)>;
           constexpr int kBlock = ListGet<2>(tag);
           // Existing kernel true = interleaved pair (GPT-J), false = split
-          // half (GPT-NeoX). Preserve Rs4's bool neox, not the old wrapper
-          // name.
+          // half (GPT-NeoX). Preserve the public bool neox convention, not the
+          // old wrapper name.
           auto launch = [&](auto interleaved) {
             LaunchRopeKernel<decltype(interleaved)::value, Backend, Data,
                              Angle>(

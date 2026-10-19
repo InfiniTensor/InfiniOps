@@ -15,7 +15,8 @@ execute their Python inference APIs. No `flashinfer-python` or Torch is required
 | TVM FFI | `apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `73d478395a8625dd92fde7b7fd92b4719f18f480b78336e422cb66cc7985213d` |
 | CUTLASS | commit `087c84df83d254b5fb295a7a408f1a1d554085cf` archive | `99340f7a8c87f5295b91aecf8295df6693ad954807672c3869a7fb3d0084f709` |
 
-Native Attention and W4 kernels use the fixed submodule revisions below. They
+Native Attention uses the fixed submodule revisions below. W4 kernels use the
+fixed vLLM source archive through CMake FetchContent. They
 are source inputs only; neither the Torch extension nor the vLLM Python package
 is built or installed.
 
@@ -23,7 +24,22 @@ is built or installed.
 |---|---|
 | `third_party/flash-attention` | `060c9188beec3a8b62b33a3bfa6d5d2d44975fab` |
 | Its `csrc/cutlass` submodule | `dc4817921edda44a549197ff3a9dcf5df0636e7b` |
-| `third_party/vllm` (Marlin only) | `ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab` |
+| vLLM source archive (Marlin only) | `ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab` |
+
+The vLLM archive SHA256 is
+`d8f3d663347dff35ea8123d3eb570f67d2dd6c4258ee8b8a8ec2996c42ada678`.
+It is a build source input, not a Git submodule or an installed package.
+The upstream project is never configured. For an offline checkout build, pass
+`-DFETCHCONTENT_SOURCE_DIR_VLLM_MARLIN=/absolute/path/to/pinned/extracted/vllm`;
+the standard `FETCHCONTENT_FULLY_DISCONNECTED=ON` can then disable downloading.
+Complete sdists bundle LICENSE and the eleven original Marlin inputs under
+`third_party/marlin-source`, which CMake selects automatically without network.
+This includes the native `marlin.cu` host entry and `csrc/core/scalar_type.hpp`;
+Ops keeps only its private declaration and small error adaptation, not copies.
+Building an sdist uses the standard scikit-build `sdist.cmake` flow and
+`build/sdist` staging; an offline packager can pass the same source override.
+Keep that sdist build directory unless also overriding its force-include path.
+No generated Marlin CUDA files are stored in the source package.
 
 The other CUTLASS input above remains the existing dependency of ordinary Ops
 providers. Its version is not substituted for FlashAttention's private headers.
@@ -41,7 +57,7 @@ version/hash and run the corresponding direct operator tests again.
 `LICENSES/Apache-2.0-components.txt` records the release component copyrights
 and maps their shared Apache terms to `LICENSE`.
 `LICENSES/FlashInfer-0.6.7` and `LICENSES/TVM-FFI-0.1.10` retain the original
-release NOTICE and secondary-license texts for these exact inputs.
+NOTICE files and native-runtime libbacktrace terms for these exact inputs.
 If replacing either wheel, update those redistribution materials from the
 actual release as well. SDK installation puts these materials, the native
 FlashAttention notices and the Ops attribution list in `share/licenses/InfiniOps`;
@@ -59,7 +75,7 @@ export INFINI_ROOT="$PWD/sdk"
 export CUDA_HOME=/usr/local/cuda
 export INFINI_RT_ROOT="$INFINI_ROOT"
 git -C "$CORE/submodules/InfiniOps" submodule update --init \
-  third_party/flash-attention third_party/vllm
+  third_party/flash-attention
 git -C "$CORE/submodules/InfiniOps/third_party/flash-attention" \
   submodule update --init csrc/cutlass
 mkdir artifacts
@@ -146,15 +162,21 @@ FlashInfer 0.6.7 and TVM-FFI 0.1.10 inputs into
 SDK license directory when bundling the native libraries. No additional
 download or manual copy into the LM source tree is needed for these inputs.
 
-The checked-in release notices cover a conservative superset of the two native
-libraries. `sampling.so` is one JIT-cache artifact, not the entire FlashInfer
-wheel; `libtvm_ffi.so` is the TVM-FFI runtime, not its full Python package.
-In particular, TVM-FFI contains code adapted from PyTorch, and can compile
-libbacktrace and DLPack interfaces into its runtime. A Torch-free execution path
-does not establish that these secondary notices can be removed. Retain the
-release bundles unless a source-to-binary audit establishes a smaller set for
-the exact library hashes. Distributing the complete wheels requires their
-complete applicable notices, independently of the Ops SDK.
+The fixed fallback is installed only for a linked TVM-FFI transport, not for
+every linked backend. `sampling.so` is one JIT-cache artifact, not the entire
+FlashInfer wheel; `libtvm_ffi.so` is the native runtime, not its Python package.
+The fixed source closures described in `THIRD_PARTY.txt` exclude FlashInfer's
+FA3/CUTLASS/fmt/spdlog components and TVM-FFI's separate PyTorch-derived Python
+addon. Their six secondary license/notice copies are therefore not part of the
+checked-in native fallback. Common Apache terms, original project NOTICEs,
+DLPack attribution and libbacktrace terms remain.
+
+The resolver also preserves real license inventories from the distributions
+actually selected. They can conservatively include full-package materials
+beyond these DSOs; the final installed SDK is not claimed to be reduced to the
+fixed fallback alone. For different binaries, validate source correspondence
+and preserve the actual applicable materials. Complete wheel/SDK distributions
+retain their own applicable notices independently of this native-only recipe.
 
 Preserve the separate FlashAttention/CUTLASS and Marlin notices described in
 `THIRD_PARTY.txt` when distributing those compiled providers. Do not treat this

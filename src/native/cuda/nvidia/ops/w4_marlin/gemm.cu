@@ -1,6 +1,9 @@
+#include <cuda_bf16.h>
+
 #include "kernel.h"
 #include "launch.h"
-#include "vendor/gemm/nvidia/kernel.cuh"
+#include "core/scalar_type.hpp"
+#include "marlin.cuh"
 
 namespace infini::ops::native_w4 {
 inline std::size_t align256(std::size_t bytes) {

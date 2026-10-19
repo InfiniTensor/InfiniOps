@@ -25,10 +25,6 @@ class FlashAttnWithKvcacheConfig : public Config {
     return std::make_unique<FlashAttnWithKvcacheConfig>(*this);
   }
 
-  bool requires_config_aware_provider() const override {
-    return logical_kv_upper_bound_ != 0;
-  }
-
   int64_t logical_kv_upper_bound() const { return logical_kv_upper_bound_; }
 
   static int64_t BoundFrom(const Config& config) {

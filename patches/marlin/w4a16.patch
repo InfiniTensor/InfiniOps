@@ -1,5 +1,5 @@
---- a/gemm/marlin/dequant.h
-+++ b/gemm/marlin/dequant.h
+--- a/dequant.h
++++ b/dequant.h
 @@ -1,3 +1,39 @@
 +// Source: InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e,
 +// src/infiniop/ops/awq_marlin_gemm/marlin/dequant.h.
@@ -40,27 +40,8 @@
  /*
  Fast Dequantization (Converting INT4/INT8/FP4/FP8 to FP16/BF16)
  
---- a/gemm/marlin/marlin.cuh
-+++ b/gemm/marlin/marlin.cuh
-@@ -10,6 +10,16 @@
-   #ifndef MARLIN_NAMESPACE_NAME
-     #define MARLIN_NAMESPACE_NAME marlin
-   #endif
-+
-+template <typename T>
-+__device__ __forceinline__ uint32_t __cvta_generic_to_shared(T *ptr) {
-+    size_t smem_addr;
-+    asm volatile(
-+        "cvta.to.shared.u64 %0, %1;"
-+        : "=l"(smem_addr)
-+        : "l"(ptr));
-+    return static_cast<uint32_t>(smem_addr);
-+}
- 
- namespace MARLIN_NAMESPACE_NAME {
- 
---- a/gemm/marlin/marlin_template.h
-+++ b/gemm/marlin/marlin_template.h
+--- a/marlin_template.h
++++ b/marlin_template.h
 @@ -1035,7 +1035,7 @@
      cur_k = 0;
  
@@ -70,240 +51,78 @@
  
      // Determine "position" inside the thread-block (based on warp and
      // thread-id)
---- a/awq_repack/cuda/kernel.cuh
-+++ b/awq_repack/cuda/kernel.cuh
-@@ -1,18 +1,9 @@
--#include "marlin.cuh"
--
--#include <torch/csrc/stable/accelerator.h>
--#include <torch/csrc/stable/library.h>
--#include <torch/csrc/stable/ops.h>
--#include <torch/csrc/stable/tensor.h>
--#include <torch/headeronly/core/ScalarType.h>
--#include <torch/headeronly/util/Exception.h>
--
--#include "libtorch_stable/torch_utils.h"
-+#include "../../gemm/marlin/marlin.cuh"
+--- a/awq_marlin_repack.cu
++++ b/awq_marlin_repack.cu
+@@ -1,5 +1,6 @@
+ #include "marlin.cuh"
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ #include <torch/csrc/stable/accelerator.h>
+ #include <torch/csrc/stable/library.h>
+ #include <torch/csrc/stable/ops.h>
+@@ -8,6 +9,7 @@
+ #include <torch/headeronly/util/Exception.h>
+ 
+ #include "libtorch_stable/torch_utils.h"
++#endif
  
  namespace marlin {
  
- template <int const num_threads, int const num_bits, bool is_a_8bit>
--__global__ void awq_marlin_repack_kernel(
-+__device__ void awq_marlin_repack_kernel(
-     uint32_t const* __restrict__ b_q_weight_ptr, uint32_t* __restrict__ out_ptr,
-     int size_k, int size_n) {
-   constexpr int pack_factor = 32 / num_bits;
-@@ -212,83 +203,3 @@
- }
+@@ -213,6 +215,7 @@
  
  }  // namespace marlin
--
--#define CALL_IF(NUM_BITS, IS_A_8BIT)                                       \
--  else if (num_bits == NUM_BITS && is_a_8bit == IS_A_8BIT) {               \
--    cudaFuncSetAttribute(                                                  \
--        marlin::awq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS, \
--                                         IS_A_8BIT>,                       \
--        cudaFuncAttributeMaxDynamicSharedMemorySize, max_shared_mem);      \
--    marlin::awq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS,     \
--                                     IS_A_8BIT>                            \
--        <<<blocks, marlin::repack_threads, max_shared_mem, stream>>>(      \
--            b_q_weight_ptr, out_ptr, size_k, size_n);                      \
--  }
--
--torch::stable::Tensor awq_marlin_repack(torch::stable::Tensor& b_q_weight,
--                                        int64_t size_k, int64_t size_n,
--                                        int64_t num_bits, bool is_a_8bit) {
--  // Verify compatibility with marlin tile of 16x64
--  STD_TORCH_CHECK(size_k % marlin::tile_k_size == 0, "size_k = ", size_k,
--                  " is not divisible by tile_k_size = ", marlin::tile_k_size);
--  STD_TORCH_CHECK(size_n % marlin::tile_n_size == 0, "size_n = ", size_n,
--                  " is not divisible by tile_n_size = ", marlin::tile_n_size);
--
--  STD_TORCH_CHECK(num_bits == 4 || num_bits == 8,
--                  "num_bits must be 4 or 8. Got = ", num_bits);
--  int const pack_factor = 32 / num_bits;
--
--  // Verify B
--  STD_TORCH_CHECK(b_q_weight.size(0) == size_k,
--                  "b_q_weight.size(0) = ", b_q_weight.size(0),
--                  " is not size_k = ", size_k);
--  STD_TORCH_CHECK((size_n / pack_factor) == b_q_weight.size(1),
--                  "Shape mismatch: b_q_weight.size(1) = ", b_q_weight.size(1),
--                  ", size_n = ", size_n, ", pack_factor = ", pack_factor);
--
--  // Verify device and strides
--  STD_TORCH_CHECK(b_q_weight.is_cuda(), "b_q_weight is not on GPU");
--  STD_TORCH_CHECK(b_q_weight.is_contiguous(), "b_q_weight is not contiguous");
--  STD_TORCH_CHECK(
--      b_q_weight.scalar_type() == torch::headeronly::ScalarType::Int,
--      "b_q_weight type is not kInt");
--
--  const int32_t device_index = b_q_weight.get_device_index();
--  torch::stable::accelerator::DeviceGuard device_guard(device_index);
--  const cudaStream_t stream = get_current_cuda_stream(device_index);
--
--  // Alloc buffers
--  torch::stable::Tensor out = torch::stable::empty(
--      {size_k / marlin::tile_size, size_n * marlin::tile_size / pack_factor},
--      b_q_weight.scalar_type(), std::nullopt, b_q_weight.device());
--
--  // Get ptrs
--  uint32_t const* b_q_weight_ptr =
--      reinterpret_cast<uint32_t const*>(b_q_weight.const_data_ptr());
--  uint32_t* out_ptr = reinterpret_cast<uint32_t*>(out.mutable_data_ptr());
--
--  int blocks;
--  cudaDeviceGetAttribute(&blocks, cudaDevAttrMultiProcessorCount, device_index);
--
--  int max_shared_mem = 0;
--  cudaDeviceGetAttribute(&max_shared_mem,
--                         cudaDevAttrMaxSharedMemoryPerBlockOptin, device_index);
--  STD_TORCH_CHECK(max_shared_mem > 0);
--
--  if (false) {
--  }
--  CALL_IF(4, false)
--  CALL_IF(8, false)
--  CALL_IF(4, true)
--  CALL_IF(8, true)
--  else {
--    STD_TORCH_CHECK(false, "Unsupported repack config: num_bits = ", num_bits,
--                    ", is_a_8bit = ", is_a_8bit);
--  }
--
--  return out;
--}
--
--STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, m) {
--  m.impl("awq_marlin_repack", TORCH_BOX(&awq_marlin_repack));
--}
---- a/gptq_repack/cuda/kernel.cuh
-+++ b/gptq_repack/cuda/kernel.cuh
-@@ -1,19 +1,10 @@
--#include "marlin.cuh"
--
--#include <torch/csrc/stable/accelerator.h>
--#include <torch/csrc/stable/library.h>
--#include <torch/csrc/stable/ops.h>
--#include <torch/csrc/stable/tensor.h>
--#include <torch/headeronly/core/ScalarType.h>
--#include <torch/headeronly/util/Exception.h>
--
--#include "libtorch_stable/torch_utils.h"
-+#include "../../gemm/marlin/marlin.cuh"
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ #define CALL_IF(NUM_BITS, IS_A_8BIT)                                       \
+   else if (num_bits == NUM_BITS && is_a_8bit == IS_A_8BIT) {               \
+     cudaFuncSetAttribute(                                                  \
+@@ -292,3 +295,4 @@
+ STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, m) {
+   m.impl("awq_marlin_repack", TORCH_BOX(&awq_marlin_repack));
+ }
++#endif
+--- a/gptq_marlin_repack.cu
++++ b/gptq_marlin_repack.cu
+@@ -1,5 +1,6 @@
+ #include "marlin.cuh"
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ #include <torch/csrc/stable/accelerator.h>
+ #include <torch/csrc/stable/library.h>
+ #include <torch/csrc/stable/ops.h>
+@@ -8,6 +9,7 @@
+ #include <torch/headeronly/util/Exception.h>
+ 
+ #include "libtorch_stable/torch_utils.h"
++#endif
  
  namespace marlin {
  
- template <int const num_threads, int const num_bits, bool const has_perm,
-           bool is_a_8bit>
--__global__ void gptq_marlin_repack_kernel(
-+__device__ void gptq_marlin_repack_kernel(
-     uint32_t const* __restrict__ b_q_weight_ptr,
-     uint32_t const* __restrict__ perm_ptr, uint32_t* __restrict__ out_ptr,
-     int size_k, int size_n) {
-@@ -268,99 +259,3 @@
- }
+@@ -269,6 +271,7 @@
  
  }  // namespace marlin
--
--#define CALL_IF(NUM_BITS, HAS_PERM, IS_A_8BIT)                              \
--  else if (num_bits == NUM_BITS && has_perm == HAS_PERM &&                  \
--           is_a_8bit == IS_A_8BIT) {                                        \
--    cudaFuncSetAttribute(                                                   \
--        marlin::gptq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS, \
--                                          HAS_PERM, IS_A_8BIT>,             \
--        cudaFuncAttributeMaxDynamicSharedMemorySize, max_shared_mem);       \
--    marlin::gptq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS,     \
--                                      HAS_PERM, IS_A_8BIT>                  \
--        <<<blocks, marlin::repack_threads, max_shared_mem, stream>>>(       \
--            b_q_weight_ptr, perm_ptr, out_ptr, size_k, size_n);             \
--  }
--
--torch::stable::Tensor gptq_marlin_repack(torch::stable::Tensor& b_q_weight,
--                                         torch::stable::Tensor& perm,
--                                         int64_t size_k, int64_t size_n,
--                                         int64_t num_bits, bool is_a_8bit) {
--  // Verify compatibility with marlin tile of 16x64
--  STD_TORCH_CHECK(size_k % marlin::tile_k_size == 0, "size_k = ", size_k,
--                  " is not divisible by tile_k_size = ", marlin::tile_k_size);
--  STD_TORCH_CHECK(size_n % marlin::tile_n_size == 0, "size_n = ", size_n,
--                  " is not divisible by tile_n_size = ", marlin::tile_n_size);
--
--  STD_TORCH_CHECK(num_bits == 4 || num_bits == 8,
--                  "num_bits must be 4 or 8. Got = ", num_bits);
--  int const pack_factor = 32 / num_bits;
--
--  // Verify B
--  STD_TORCH_CHECK((size_k / pack_factor) == b_q_weight.size(0),
--                  "Shape mismatch: b_q_weight.size(0) = ", b_q_weight.size(0),
--                  ", size_k = ", size_k, ", pack_factor = ", pack_factor);
--  STD_TORCH_CHECK(b_q_weight.size(1) == size_n,
--                  "b_q_weight.size(1) = ", b_q_weight.size(1),
--                  " is not size_n = ", size_n);
--
--  // Verify device and strides
--  STD_TORCH_CHECK(b_q_weight.is_cuda(), "b_q_weight is not on GPU");
--  STD_TORCH_CHECK(b_q_weight.is_contiguous(), "b_q_weight is not contiguous");
--  STD_TORCH_CHECK(
--      b_q_weight.scalar_type() == torch::headeronly::ScalarType::Int,
--      "b_q_weight type is not kInt");
--
--  STD_TORCH_CHECK(perm.is_cuda(), "perm is not on GPU");
--  STD_TORCH_CHECK(perm.is_contiguous(), "perm is not contiguous");
--  STD_TORCH_CHECK(perm.scalar_type() == torch::headeronly::ScalarType::Int,
--                  "perm type is not at::kInt");
--
--  const int32_t device_index = b_q_weight.get_device_index();
--  torch::stable::accelerator::DeviceGuard device_guard(device_index);
--  const cudaStream_t stream = get_current_cuda_stream(device_index);
--
--  // Alloc buffers
--  torch::stable::Tensor out = torch::stable::empty(
--      {size_k / marlin::tile_size, size_n * marlin::tile_size / pack_factor},
--      b_q_weight.scalar_type(), std::nullopt, b_q_weight.device());
--
--  // Detect if there is act_order
--  bool has_perm = perm.size(0) != 0;
--
--  // Get ptrs
--  uint32_t const* b_q_weight_ptr =
--      reinterpret_cast<uint32_t const*>(b_q_weight.const_data_ptr());
--  uint32_t const* perm_ptr =
--      reinterpret_cast<uint32_t const*>(perm.const_data_ptr());
--  uint32_t* out_ptr = reinterpret_cast<uint32_t*>(out.mutable_data_ptr());
--
--  int blocks;
--  cudaDeviceGetAttribute(&blocks, cudaDevAttrMultiProcessorCount, device_index);
--
--  int max_shared_mem = 0;
--  cudaDeviceGetAttribute(&max_shared_mem,
--                         cudaDevAttrMaxSharedMemoryPerBlockOptin, device_index);
--  STD_TORCH_CHECK(max_shared_mem > 0);
--
--  if (false) {
--  }
--  CALL_IF(4, false, false)
--  CALL_IF(4, true, false)
--  CALL_IF(8, false, false)
--  CALL_IF(8, true, false)
--
--  CALL_IF(4, false, true)
--  CALL_IF(8, false, true)
--
--  else {
--    STD_TORCH_CHECK(false, "Unsupported repack config: num_bits = ", num_bits,
--                    ", has_perm = ", has_perm, ", is_a_8bit = ", is_a_8bit);
--  }
--
--  return out;
--}
--
--STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, m) {
--  m.impl("gptq_marlin_repack", TORCH_BOX(&gptq_marlin_repack));
--}
---- a/gemm/nvidia/generate_kernels.py
-+++ b/gemm/nvidia/generate_kernels.py
-@@ -27,15 +27,17 @@
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ #define CALL_IF(NUM_BITS, HAS_PERM, IS_A_8BIT)                              \
+   else if (num_bits == NUM_BITS && has_perm == HAS_PERM &&                  \
+            is_a_8bit == IS_A_8BIT) {                                        \
+@@ -364,3 +367,4 @@
+ STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, m) {
+   m.impl("gptq_marlin_repack", TORCH_BOX(&gptq_marlin_repack));
+ }
++#endif
+--- a/generate_kernels.py
++++ b/generate_kernels.py
+@@ -3,7 +3,7 @@
+ import glob
+ import itertools
+ import os
+-import subprocess
++import pathlib
+ import sys
+ 
+ import jinja2
+@@ -27,7 +27,9 @@
          SUPPORT_SM75 = True
  
  FILE_HEAD_COMMENT = """
@@ -314,17 +133,7 @@
  // clang-format off
  """.lstrip()
  
- FILE_HEAD = (
-     FILE_HEAD_COMMENT
-     + """
--#include "kernel.h"
--#include "marlin_template.h"
-+#include "../marlin/kernel.h"
-+#include "../marlin/marlin_template.h"
- 
- namespace MARLIN_NAMESPACE_NAME {
- """
-@@ -162,6 +164,10 @@
+@@ -162,12 +164,16 @@
  ]
  
  
@@ -334,8 +143,16 @@
 +
  def remove_old_kernels():
      for filename in glob.glob(os.path.dirname(__file__) + "/*kernel_*.cu"):
-         subprocess.call(["rm", "-f", filename])
-@@ -300,17 +306,9 @@
+-        subprocess.call(["rm", "-f", filename])
++        pathlib.Path(filename).unlink(missing_ok=True)
+ 
+     filename = os.path.dirname(__file__) + "/kernel_selector.h"
+-    subprocess.call(["rm", "-f", filename])
++    pathlib.Path(filename).unlink(missing_ok=True)
+ 
+ 
+ def generate_new_kernels():
+@@ -300,13 +306,6 @@
              with open(os.path.join(os.path.dirname(__file__), filename), "w") as f:
                  f.write(file_content)
  
@@ -349,7 +166,261 @@
      with open(os.path.join(os.path.dirname(__file__), "kernel_selector.h"), "w") as f:
          f.write(kernel_selector_str)
  
+--- a/marlin.cu
++++ b/marlin.cu
+@@ -1,3 +1,4 @@
++// Modified by InfiniOps: isolate the native host entry and preserve CUDA error propagation.
+ /*
+  * Modified by Neural Magic
+  * Copyright (C) Marlin.2024 Elias Frantar
+@@ -24,7 +25,9 @@
+ #endif
  
- if __name__ == "__main__":
--    remove_old_kernels()
-     generate_new_kernels()
+ #include "kernel.h"
+-
++#include "launch.h"
++
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ #include <torch/csrc/stable/accelerator.h>
+ #include <torch/csrc/stable/library.h>
+ #include <torch/csrc/stable/ops.h>
+@@ -33,6 +36,7 @@
+ #include <torch/headeronly/util/Exception.h>
+ 
+ #include "libtorch_stable/torch_utils.h"
++#endif
+ 
+ #define STATIC_ASSERT_SCALAR_TYPE_VALID(scalar_t)               \
+   static_assert(std::is_same<scalar_t, half>::value ||          \
+@@ -54,6 +58,7 @@
+ 
+ }  // namespace marlin
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ torch::stable::Tensor marlin_gemm(
+     torch::stable::Tensor& a, std::optional<torch::stable::Tensor> c_or_none,
+     torch::stable::Tensor& b_q_weight,
+@@ -72,6 +77,8 @@
+   return torch::stable::empty({1, 1});
+ }
+ 
++#endif  // INFINI_OPS_MARLIN_KERNEL_ONLY
++
+ #else
+ 
+ // For a given "a" of size [M,K] performs a permutation of the K columns based
+@@ -334,18 +341,18 @@
+                int thread_n_init, int sms, bool use_atomic_add,
+                bool use_fp32_reduce, bool is_zp_float) {
+   bool is_a_8bit = a_type.size_bits() == 8;
+-  STD_TORCH_CHECK(prob_m > 0 && prob_n > 0 && prob_k > 0, "Invalid MNK = [",
++  INFINI_MARLIN_CHECK(prob_m > 0 && prob_n > 0 && prob_k > 0, "Invalid MNK = [",
+                   prob_m, ", ", prob_n, ", ", prob_k, "]");
+ 
+   int group_blocks = 0;
+   if (has_act_order) {
+     if (is_k_full) {
+-      STD_TORCH_CHECK(group_size != -1);
++      INFINI_MARLIN_CHECK(group_size != -1);
+       group_blocks = group_size / 16;
+-      STD_TORCH_CHECK(prob_k % group_blocks == 0, "prob_k = ", prob_k,
++      INFINI_MARLIN_CHECK(prob_k % group_blocks == 0, "prob_k = ", prob_k,
+                       " is not divisible by group_blocks = ", group_blocks);
+     } else {
+-      STD_TORCH_CHECK(group_size == 0);
++      INFINI_MARLIN_CHECK(group_size == 0);
+       group_blocks = 0;
+     }
+   } else {
+@@ -353,7 +360,7 @@
+       group_blocks = -1;
+     } else {
+       group_blocks = group_size / 16;
+-      STD_TORCH_CHECK(prob_k % group_blocks == 0, "prob_k = ", prob_k,
++      INFINI_MARLIN_CHECK(prob_k % group_blocks == 0, "prob_k = ", prob_k,
+                       " is not divisible by group_blocks = ", group_blocks);
+     }
+   }
+@@ -395,25 +402,25 @@
+   int max_shared_mem = 0;
+   cudaDeviceGetAttribute(&max_shared_mem,
+                          cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+-  STD_TORCH_CHECK(max_shared_mem > 0);
++  INFINI_MARLIN_CHECK(max_shared_mem > 0);
+ 
+   int major_capability, minor_capability;
+   cudaDeviceGetAttribute(&major_capability, cudaDevAttrComputeCapabilityMajor,
+                          dev);
+   cudaDeviceGetAttribute(&minor_capability, cudaDevAttrComputeCapabilityMinor,
+                          dev);
+-  STD_TORCH_CHECK(major_capability * 10 + minor_capability >= 75,
++  INFINI_MARLIN_CHECK(major_capability * 10 + minor_capability >= 75,
+                   "marlin kernel only support Turing or newer GPUs.");
+   int stages = 4;
+   if (major_capability == 7 && minor_capability == 5) {
+     stages = 2;
+-    STD_TORCH_CHECK(a_type == vllm::kFloat16 || a_type == vllm::kS8,
++    INFINI_MARLIN_CHECK(a_type == vllm::kFloat16 || a_type == vllm::kS8,
+                     "Turing only support FP16 or INT8 activation.");
+   }
+   if (a_type == vllm::kFE4M3fn) {
+-    STD_TORCH_CHECK(major_capability * 10 + minor_capability >= 89,
++    INFINI_MARLIN_CHECK(major_capability * 10 + minor_capability >= 89,
+                     "FP8 only support Ada Lovelace or newer GPUs.");
+-    STD_TORCH_CHECK(
++    INFINI_MARLIN_CHECK(
+         major_capability * 10 + minor_capability == 89 ||
+             major_capability == 12,
+         "Marlin W4A8-FP8 only support SM89 or SM12x device (It is slower than "
+@@ -443,9 +450,9 @@
+     if (thread_k != -1 && thread_n != -1) {
+       thread_tfg = thread_config_t{thread_k, thread_n, default_threads};
+       exec_cfg = exec_config_t{1, thread_tfg};
+-      STD_TORCH_CHECK(prob_n % thread_n == 0, "prob_n = ", prob_n,
++      INFINI_MARLIN_CHECK(prob_n % thread_n == 0, "prob_n = ", prob_n,
+                       " is not divisible by thread_n = ", thread_n);
+-      STD_TORCH_CHECK(prob_k % thread_k == 0, "prob_k = ", prob_k,
++      INFINI_MARLIN_CHECK(prob_k % thread_k == 0, "prob_k = ", prob_k,
+                       " is not divisible by thread_k = ", thread_k);
+     } else {
+       // Auto config
+@@ -485,7 +492,7 @@
+     int thread_k_blocks = thread_k / 16;
+     int thread_n_blocks = thread_n / 16;
+ 
+-    STD_TORCH_CHECK(
++    INFINI_MARLIN_CHECK(
+         is_valid_config(thread_tfg, thread_m_blocks, prob_m_split, prob_n,
+                         prob_k, num_bits, group_size, has_act_order, is_k_full,
+                         has_zp, is_zp_float, is_a_8bit, stages,
+@@ -506,7 +513,7 @@
+         num_threads, is_zp_float, stages);
+ 
+     if (kernel == MarlinDefault) {
+-      STD_TORCH_CHECK(
++      INFINI_MARLIN_CHECK(
+           false, "Unsupported shapes: MNK = [", prob_m, ", ", prob_n, ", ",
+           prob_k, "]", ", has_act_order = ", has_act_order,
+           ", num_groups = ", num_groups, ", group_size = ", group_size,
+@@ -517,8 +524,14 @@
+           ", num_threads = ", num_threads, ", num_bits = ", num_bits);
+     }
+ 
+-    cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+-                         max_shared_mem_new);
++    cudaStreamCaptureStatus capture_status = cudaStreamCaptureStatusNone;
++    ::infini::ops::native_w4::check(
++        cudaStreamIsCapturing(stream, &capture_status), "cudaStreamIsCapturing");
++    if (capture_status == cudaStreamCaptureStatusNone) {
++      ::infini::ops::native_w4::check(
++          cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
++                               max_shared_mem_new), "cudaFuncSetAttribute");
++    }
+ 
+     bool part_use_atomic_add =
+         use_atomic_add && div_ceil(prob_m_split, 64) * prob_n <= 2048;
+@@ -542,6 +555,7 @@
+ 
+ }  // namespace marlin
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ torch::stable::Tensor marlin_gemm(
+     torch::stable::Tensor& a, std::optional<torch::stable::Tensor> c_or_none,
+     torch::stable::Tensor& b_q_weight,
+@@ -893,8 +907,12 @@
+   return c;
+ }
+ 
++#endif  // INFINI_OPS_MARLIN_KERNEL_ONLY
++
+ #endif
+ 
++#ifndef INFINI_OPS_MARLIN_KERNEL_ONLY
+ STABLE_TORCH_LIBRARY_IMPL(_C, CUDA, m) {
+   m.impl("marlin_gemm", TORCH_BOX(&marlin_gemm));
+ }
++#endif  // INFINI_OPS_MARLIN_KERNEL_ONLY
+--- a/core/scalar_type.hpp
++++ b/core/scalar_type.hpp
+@@ -1,3 +1,4 @@
++// Modified by InfiniOps: replace Torch-only error checks with a private standard-C++ helper.
+ #pragma once
+ 
+ #include <cstdint>
+@@ -6,8 +7,7 @@
+ #include <utility>
+ #include <variant>
+ 
+-// For STD_TORCH_CHECK
+-#include <torch/headeronly/util/Exception.h>
++#include "marlin_check.h"
+ 
+ namespace vllm {
+ 
+@@ -51,7 +51,7 @@
+   // IEEE 754 compliant floating point type
+   static constexpr ScalarType float_IEEE754(uint8_t exponent,
+                                             uint8_t mantissa) {
+-    STD_TORCH_CHECK(mantissa > 0 && exponent > 0);
++    INFINI_MARLIN_CHECK(mantissa > 0 && exponent > 0);
+     return ScalarType(exponent, mantissa, true, 0, false, NAN_IEEE_754);
+   }
+ 
+@@ -59,9 +59,9 @@
+   static constexpr ScalarType float_(uint8_t exponent, uint8_t mantissa,
+                                      bool finite_values_only,
+                                      NanRepr nan_repr) {
+-    STD_TORCH_CHECK(nan_repr < NAN_REPR_ID_MAX, "Invalid NanRepr");
+-    STD_TORCH_CHECK(mantissa > 0 && exponent > 0);
+-    STD_TORCH_CHECK(
++    INFINI_MARLIN_CHECK(nan_repr < NAN_REPR_ID_MAX, "Invalid NanRepr");
++    INFINI_MARLIN_CHECK(mantissa > 0 && exponent > 0);
++    INFINI_MARLIN_CHECK(
+         nan_repr != NAN_IEEE_754,
+         "use `float_IEEE754` constructor for floating point types that "
+         "follow IEEE 754 conventions");
+@@ -183,7 +183,7 @@
+ 
+  private:
+   double _floating_point_max() const {
+-    STD_TORCH_CHECK(mantissa <= 52 && exponent <= 11,
++    INFINI_MARLIN_CHECK(mantissa <= 52 && exponent <= 11,
+                     "Cannot represent max/min as a double for type ", str());
+ 
+     uint64_t max_mantissa = (uint64_t(1) << mantissa) - 1;
+@@ -193,7 +193,7 @@
+ 
+     uint64_t max_exponent = (uint64_t(1) << exponent) - 2;
+     if (nan_repr == NAN_EXTD_RANGE_MAX_MIN || nan_repr == NAN_NONE) {
+-      STD_TORCH_CHECK(exponent < 11,
++      INFINI_MARLIN_CHECK(exponent < 11,
+                       "Cannot represent max/min as a double for type ", str());
+       max_exponent += 1;
+     }
+@@ -223,7 +223,7 @@
+     if (is_floating_point()) {
+       return {_floating_point_max()};
+     } else {
+-      STD_TORCH_CHECK(size_bits() < 64 || size_bits() == 64 && is_signed(),
++      INFINI_MARLIN_CHECK(size_bits() < 64 || size_bits() == 64 && is_signed(),
+                       "Cannot represent max as a int64_t");
+       return {(int64_t(1) << mantissa) - 1};
+     }
+@@ -231,7 +231,7 @@
+ 
+   constexpr std::variant<int64_t, double> _raw_min() const {
+     if (is_floating_point()) {
+-      STD_TORCH_CHECK(
++      INFINI_MARLIN_CHECK(
+           is_signed(),
+           "We currently assume all floating point types are signed");
+       constexpr uint64_t sign_bit_double = (uint64_t(1) << 63);
+@@ -241,7 +241,7 @@
+       uint64_t min_raw = max_raw | sign_bit_double;
+       return {*reinterpret_cast<double*>(&min_raw)};
+     } else {
+-      STD_TORCH_CHECK(!is_signed() || size_bits() <= 64,
++      INFINI_MARLIN_CHECK(!is_signed() || size_bits() <= 64,
+                       "Cannot represent min as a int64_t");
+       if (is_signed()) {
+         // set the top bit to 1 (i.e. INT64_MIN) and the rest to 0

@@ -9,4 +9,3 @@ jobs:
         with:
           clang-format-version: "21"
           include-regex: '^.*\.(h|cc|cuh|mlu)$'
-          exclude-regex: '^\./src/native/cuda/nvidia/ops/(native_flash|w4_marlin)/vendor/'

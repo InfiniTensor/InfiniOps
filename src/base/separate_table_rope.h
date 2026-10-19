@@ -20,7 +20,7 @@ class SeparateTableRope : public Operator<SeparateTableRope> {
                        const Tensor sin_table, const Tensor cos_table,
                        bool /*is_neox*/, const Tensor out) {
     const auto rank = input.ndim();
-    // Preserve the installed Rs4 CPU domain. NVIDIA additionally retains LM's
+    // Preserve the CPU table dtype domain. NVIDIA additionally retains LM's
     // independently typed tables and padded per-batch position rows.
     const bool nvidia = input.device().type() == Device::Type::kNvidia;
     if ((rank != 3 && rank != 4) || out.shape() != input.shape() ||

@@ -85,7 +85,6 @@ class Operator<UpsampleBilinear2d, Device::Type::kNvidia, 0>
       const auto extent = input.shape()[d];
       const auto stride = input.strides()[d];
       if (!extent || !out.shape()[d] || stride < 0 ||
-          (extent > 1 && stride == 0) ||
           static_cast<std::uint64_t>(stride) >
               static_cast<std::uint64_t>(
                   std::numeric_limits<std::int64_t>::max()) ||

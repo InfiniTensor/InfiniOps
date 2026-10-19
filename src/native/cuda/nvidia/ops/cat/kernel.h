@@ -29,9 +29,6 @@ class Operator<Cat, Device::Type::kNvidia> : public Cat {
     if (out.device().type() != Device::Type::kNvidia ||
         !Cat::supports(tensors, dim, out))
       return false;
-    const auto normalized =
-        dim < 0 ? dim + static_cast<int64_t>(out.ndim()) : dim;
-    if (FastAxis0(tensors, normalized, out)) return true;
     return true;
   }
 

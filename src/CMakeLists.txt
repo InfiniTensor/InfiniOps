@@ -1704,14 +1704,17 @@ if(WITH_NVIDIA)
         DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
 endif()
 if(WITH_LINKED)
-    # Keep the fixed recipe's secondary notices as a conservative fallback;
-    # additionally preserve the inventory of the distributions actually used.
-    install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/Apache-2.0-components.txt"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
-    install(DIRECTORY
-        "${PROJECT_SOURCE_DIR}/LICENSES/FlashInfer-0.6.7"
-        "${PROJECT_SOURCE_DIR}/LICENSES/TVM-FFI-0.1.10"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+    if(_infini_ops_linked_uses_tvm_ffi)
+        # Fixed native sampling/runtime recipe; not the complete Python wheels.
+        install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/Apache-2.0-components.txt"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+        install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/FlashInfer-0.6.7/NOTICE.txt"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps/FlashInfer-0.6.7")
+        install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/TVM-FFI-0.1.10/NOTICE.txt"
+            "${PROJECT_SOURCE_DIR}/LICENSES/TVM-FFI-0.1.10/LICENSE.libbacktrace.txt"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps/TVM-FFI-0.1.10")
+    endif()
+    # Keep the real inventory for resolved packages, including unknown versions.
     foreach(_notice IN LISTS INFINI_OPS_LINKED_NOTICE_FILES)
         get_filename_component(_notice_dir "${_notice}" DIRECTORY)
         string(SHA256 _notice_group "${_notice_dir}")

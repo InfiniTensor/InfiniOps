@@ -11,7 +11,7 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parents[1]
 UPSTREAM = pathlib.Path("csrc/libtorch_stable/quantization/marlin")
 SOURCES = {
-    pathlib.Path("gemm/marlin") / name: UPSTREAM / name
+    pathlib.Path(name): UPSTREAM / name
     for name in (
         "dequant.h",
         "kernel.h",
@@ -19,15 +19,14 @@ SOURCES = {
         "marlin_dtypes.cuh",
         "marlin_mma.h",
         "marlin_template.h",
+        "awq_marlin_repack.cu",
+        "gptq_marlin_repack.cu",
+        "generate_kernels.py",
+        "marlin.cu",
     )
 }
-SOURCES.update(
-    {
-        pathlib.Path("awq_repack/cuda/kernel.cuh"): UPSTREAM / "awq_marlin_repack.cu",
-        pathlib.Path("gptq_repack/cuda/kernel.cuh"): UPSTREAM / "gptq_marlin_repack.cu",
-        pathlib.Path("gemm/nvidia/generate_kernels.py"): UPSTREAM
-        / "generate_kernels.py",
-    }
+SOURCES[pathlib.Path("core/scalar_type.hpp")] = pathlib.Path(
+    "csrc/core/scalar_type.hpp"
 )
 GENERATED = (
     "kernel_selector.h",
@@ -55,7 +54,7 @@ def prepare(source, output, patch_executable):
             if not upstream.is_file():
                 raise ValueError(
                     f"Missing pinned vLLM Marlin source: {upstream}; "
-                    "initialize third_party/vllm (or include it in the source archive)"
+                    "check the pinned source archive or offline FetchContent override"
                 )
             target = staging / destination
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -85,16 +84,14 @@ def prepare(source, output, patch_executable):
         # The upstream generator's single result/config list emits both CUDA
         # instantiations and the selector. The patch retains only its W4A16 set.
         subprocess.run(
-            [sys.executable, str(staging / "gemm/nvidia/generate_kernels.py"), "8.0"],
+            [sys.executable, str(staging / "generate_kernels.py"), "8.0"],
             cwd=staging,
             check=True,
         )
         prepared = [path for path in SOURCES if path.suffix != ".py"]
-        prepared.extend(pathlib.Path("gemm/nvidia") / name for name in GENERATED)
+        prepared.extend(pathlib.Path(name) for name in GENERATED)
         for destination in prepared:
-            write_if_changed(
-                output / "vendor" / destination, (staging / destination).read_bytes()
-            )
+            write_if_changed(output / destination, (staging / destination).read_bytes())
 
 
 def main():

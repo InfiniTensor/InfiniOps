@@ -1,4 +1,14 @@
 cmake_minimum_required(VERSION 3.18)
+if(SKBUILD_STATE STREQUAL "sdist")
+    # Source packaging must not probe compilers, GPUs or installed SDKs.
+    project(InfiniOps LANGUAGES NONE)
+    include(cmake/MarlinSource.cmake)
+    foreach(_marlin_file IN LISTS _marlin_source_files)
+        configure_file("${vllm_marlin_SOURCE_DIR}/${_marlin_file}"
+            "${CMAKE_BINARY_DIR}/marlin-source/${_marlin_file}" COPYONLY)
+    endforeach()
+    return()
+endif()
 project(InfiniOps LANGUAGES CXX)
 
 if(POLICY CMP0116)
