@@ -220,7 +220,8 @@ __global__ void moe_fused_gate_kernel_dynamic(
 void Operator<MoeFusedGate, Device::Type::kNvidia, 0>::operator()(Tensor weights, Tensor indices, const Tensor input, const Tensor bias, size_t groups, size_t selected_groups, size_t shared, float scale, bool apply_scale) const {
   MoeDeviceGuard device_guard{metadata_[0].device().index()};
   Invocation(weights, indices, input, bias, groups, selected_groups, shared, scale, apply_scale); if(input.size(0)==0) return;
-  moe_detail::Require(!(input.size(1)&(input.size(1)-1)) && groups<=32 && !(groups&(groups-1)) && input.size(1)/groups<=32);
+  moe_detail::Require(groups <= 32 && !(groups & (groups - 1)) &&
+                      input.size(1) / groups <= 32);
   const auto stream=static_cast<cudaStream_t>(stream_);
   auto run=[&](auto value) { using T=decltype(value);
     moe_fused_gate_kernel_dynamic<T><<<input.size(0), groups, 0, stream>>>(

@@ -51,14 +51,6 @@ class GemmConfig : public Config {
            y.dtype() == DataType::kFloat32;
   }
 
-  static void RequireSupported(const Config& config, const Tensor& a,
-                               const Tensor& b, const Tensor& y) {
-    if (!SupportsMetadata(config, a, b, y)) {
-      throw std::invalid_argument(
-          "FullFp32 GEMM requires float32 A, B, and output");
-    }
-  }
-
  private:
   static bool IsValid(Fp32Precision precision) {
     return precision == Fp32Precision::DefaultFast ||
@@ -71,18 +63,6 @@ class GemmConfig : public Config {
 class Gemm : public Operator<Gemm> {
  public:
   using Operator<Gemm>::Make;
-
-  template <typename... Tail>
-  static std::unique_ptr<Operator<Gemm>> Make(const Config& config,
-                                              const Tensor a, const Tensor b,
-                                              Tail&&... tail) {
-    static_assert(sizeof...(Tail) == 1 || sizeof...(Tail) == 6,
-                  "GEMM requires short or full argument signature");
-    const auto& y =
-        std::get<sizeof...(Tail) - 1>(std::forward_as_tuple(tail...));
-    GemmConfig::RequireSupported(config, a, b, y);
-    return Operator<Gemm>::Make(config, a, b, std::forward<Tail>(tail)...);
-  }
 
   Gemm(const Tensor a, const Tensor b, const std::optional<Tensor> c,
        std::optional<float> alpha, std::optional<float> beta,
@@ -205,11 +185,6 @@ struct CacheKeyBuilder<Gemm> {
   template <typename... Tail>
   detail::CacheKey operator()(const Config& config, const Tensor a,
                               const Tensor b, const Tail&... tail) const {
-    static_assert(sizeof...(Tail) == 1 || sizeof...(Tail) == 6,
-                  "GEMM requires short or full argument signature");
-    const auto& y =
-        std::get<sizeof...(Tail) - 1>(std::forward_as_tuple(tail...));
-    GemmConfig::RequireSupported(config, a, b, y);
     return detail::CacheKey::Build(
         config.implementation_index(),
         static_cast<int>(GemmConfig::PrecisionFrom(config)), a, b, tail...);

@@ -40,7 +40,7 @@ inline void info(int device, int& sms, int& shared) {
       cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device),
       "W4 SM query");
   if (major < 8)
-    throw std::runtime_error("W4 candidate builds SM80+ kernels only");
+    throw std::runtime_error("W4 Marlin builds SM80+ kernels only");
   check(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, device),
         "W4 SM count");
   check(cudaDeviceGetAttribute(&shared, cudaDevAttrMaxSharedMemoryPerBlockOptin,

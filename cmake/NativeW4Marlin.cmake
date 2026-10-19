@@ -10,14 +10,14 @@ set(_w4_prepared "${CMAKE_CURRENT_BINARY_DIR}/native-w4-marlin")
 set(_w4_inputs
     "${PROJECT_SOURCE_DIR}/scripts/prepare_marlin.py"
     "${PROJECT_SOURCE_DIR}/patches/marlin/w4a16.patch")
-foreach(_w4_input IN LISTS _marlin_source_files)
-    list(APPEND _w4_inputs "${_w4_upstream}/${_w4_input}")
-endforeach()
 foreach(_w4_input IN LISTS _w4_inputs)
     if(NOT EXISTS "${_w4_input}")
         message(FATAL_ERROR
             "Native Marlin is missing ${_w4_input}. Check the pinned source archive or FETCHCONTENT_SOURCE_DIR_VLLM_MARLIN.")
     endif()
+endforeach()
+foreach(_w4_input IN LISTS _marlin_source_files)
+    list(APPEND _w4_inputs "${_w4_upstream}/${_w4_input}")
 endforeach()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_w4_inputs})
 execute_process(

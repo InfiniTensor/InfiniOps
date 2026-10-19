@@ -1,6 +1,6 @@
 // Copied from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
 // src/infiniop/ops/recurrent_gated_delta_rule/cuda/kernel.cuh.
-// Modified for InfiniOps: formatting and this source notice only.
+// Modified for InfiniOps: retain the scalar, single-token decode path.
 // Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #ifndef __RECURRENT_GATED_DELTA_RULE_KERNEL_CUH__
 #define __RECURRENT_GATED_DELTA_RULE_KERNEL_CUH__
@@ -66,14 +66,13 @@ __device__ void recurrentGatedDeltaRuleIndexedPoolWarpKernel(
   };
   op::recurrent_gated_delta_rule::cuda::recurrentDeltaRuleWarpSequence<
       Tdata, Tcompute, Dk, Dv, WARPS_PER_BLOCK>(
-      out, initial_state, final_state, q, k, v, nullptr, initial_state_indices,
-      final_state_indices, false, initial_state_indices_i64,
-      final_state_indices_i64, use_qk_l2norm, false, indexed_state_pool, 1,
-      pool_size, num_key_heads, value_heads_per_key_head,
-      rsqrtf(static_cast<Tcompute>(Dk)), out_s0, out_s1, out_s2, initial_s0,
-      initial_s1, initial_s2, initial_s3, final_s0, final_s1, final_s2,
-      final_s3, q_s0, q_s1, q_s2, k_s0, k_s1, k_s2, v_s0, v_s1, v_s2,
-      gate_policy, shared);
+      out, initial_state, final_state, q, k, v, initial_state_indices,
+      final_state_indices, initial_state_indices_i64, final_state_indices_i64,
+      use_qk_l2norm, indexed_state_pool, pool_size, num_key_heads,
+      value_heads_per_key_head, rsqrtf(static_cast<Tcompute>(Dk)), out_s0,
+      out_s1, out_s2, initial_s0, initial_s1, initial_s2, initial_s3, final_s0,
+      final_s1, final_s2, final_s3, q_s0, q_s1, q_s2, k_s0, k_s1, k_s2, v_s0,
+      v_s1, v_s2, gate_policy, shared);
 }
 
 #endif  // __RECURRENT_GATED_DELTA_RULE_KERNEL_CUH__

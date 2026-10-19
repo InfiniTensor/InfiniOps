@@ -15,8 +15,8 @@ class Operator<Triu, Device::Type::kCambricon> : public Triu {
     if (x.device().type() != Device::Type::kCambricon ||
         x.device().index() < 0 || x.dtype() != DataType::kFloat32 ||
         y.dtype() != x.dtype() || x.shape() != y.shape() ||
-        x.device() != y.device() || x.ndim() < 2 || x.ndim() > 3 ||
-        !x.IsContiguous() || !y.IsContiguous() || !x.data() || !y.data())
+        x.device() != y.device() || x.ndim() < 2 || !x.IsContiguous() ||
+        !y.IsContiguous() || !x.data() || !y.data())
       return false;
     size_t count = 1;
     for (auto n : x.shape()) {

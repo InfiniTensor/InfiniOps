@@ -60,7 +60,7 @@ __device__ void chunkGatedDeltaRuleRecurrentKernel(
     const void* initial_state_indices, const void* final_state_indices,
     bool cu_seqlens_i64, bool initial_state_indices_i64,
     bool final_state_indices_i64, bool use_qk_l2norm, bool has_cu_seqlens,
-    bool indexed_state_pool, size_t T, size_t, size_t pool_size, size_t Hk,
+    bool indexed_state_pool, size_t T, size_t pool_size, size_t Hk,
     size_t value_heads_per_key_head, ptrdiff_t out_s0, ptrdiff_t out_s1,
     ptrdiff_t out_s2, ptrdiff_t initial_s0, ptrdiff_t initial_s1,
     ptrdiff_t initial_s2, ptrdiff_t initial_s3, ptrdiff_t final_s0,

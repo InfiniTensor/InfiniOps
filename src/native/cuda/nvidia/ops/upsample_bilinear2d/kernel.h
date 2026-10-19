@@ -175,6 +175,7 @@ class Operator<UpsampleBilinear2d, Device::Type::kNvidia, 0>
   static bool CheckedContiguous(const Tensor tensor) {
     std::size_t expected = 1;
     for (std::size_t i = 4; i > 0; --i) {
+      if (tensor.shape()[i - 1] == 1) continue;
       if (expected > static_cast<std::size_t>(
                          std::numeric_limits<Tensor::Stride>::max()) ||
           tensor.strides()[i - 1] != static_cast<Tensor::Stride>(expected) ||

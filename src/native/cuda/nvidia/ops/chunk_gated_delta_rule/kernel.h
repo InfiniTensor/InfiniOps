@@ -14,7 +14,7 @@ namespace chunk_native_detail {
 struct Layout {
   ptrdiff_t s[11][4]{};
   bool cu_i64, initial_i64, final_i64, norm, indexed, packed;
-  size_t T, chunk, pool, Hk, ratio;
+  size_t T, pool, Hk, ratio;
 };
 template <typename Data, typename Gate, size_t D>
 __global__ void kernel(float* workspace, const Data* q, const Data* k,
@@ -25,11 +25,11 @@ __global__ void kernel(float* workspace, const Data* q, const Data* k,
   chunkGatedDeltaRuleRecurrentKernel<Data, Gate, float, D, D, D>(
       workspace, out, state, final_state, q, k, v, g, beta, cu, initial_indices,
       final_indices, p.cu_i64, p.initial_i64, p.final_i64, p.norm, p.packed,
-      p.indexed, p.T, p.chunk, p.pool, p.Hk, p.ratio, p.s[9][0], p.s[9][1],
-      p.s[9][2], p.s[5][0], p.s[5][1], p.s[5][2], p.s[5][3], p.s[10][0],
-      p.s[10][1], p.s[10][2], p.s[10][3], p.s[0][0], p.s[0][1], p.s[0][2],
-      p.s[1][0], p.s[1][1], p.s[1][2], p.s[2][0], p.s[2][1], p.s[2][2],
-      p.s[3][0], p.s[3][1], p.s[3][2], p.s[4][0], p.s[4][1], p.s[4][2]);
+      p.indexed, p.T, p.pool, p.Hk, p.ratio, p.s[9][0], p.s[9][1], p.s[9][2],
+      p.s[5][0], p.s[5][1], p.s[5][2], p.s[5][3], p.s[10][0], p.s[10][1],
+      p.s[10][2], p.s[10][3], p.s[0][0], p.s[0][1], p.s[0][2], p.s[1][0],
+      p.s[1][1], p.s[1][2], p.s[2][0], p.s[2][1], p.s[2][2], p.s[3][0],
+      p.s[3][1], p.s[3][2], p.s[4][0], p.s[4][1], p.s[4][2]);
 }
 }  // namespace chunk_native_detail
 template <>
@@ -73,15 +73,15 @@ class Operator<ChunkGatedDeltaRule, Device::Type::kNvidia>
     p_.ratio = Hv_ / Hk_;
     p_.norm = norm_;
     p_.T = T_;
-    p_.chunk = chunk_;
-    p_.packed = metadata_[6].present;
-    p_.indexed = metadata_[7].present || metadata_[8].present;
-    p_.cu_i64 = metadata_[6].dtype == DataType::kInt64;
-    p_.initial_i64 = metadata_[7].dtype == DataType::kInt64;
-    p_.final_i64 = metadata_[8].dtype == DataType::kInt64;
+    p_.packed = metadata_[6].has_value();
+    p_.indexed = metadata_[7].has_value() || metadata_[8].has_value();
+    p_.cu_i64 = metadata_[6] && metadata_[6]->dtype() == DataType::kInt64;
+    p_.initial_i64 = metadata_[7] && metadata_[7]->dtype() == DataType::kInt64;
+    p_.final_i64 = metadata_[8] && metadata_[8]->dtype() == DataType::kInt64;
     for (size_t i = 0; i < metadata_.size(); ++i)
-      for (size_t j = 0; j < metadata_[i].strides.size(); ++j)
-        p_.s[i][j] = metadata_[i].strides[j];
+      if (metadata_[i])
+        for (size_t j = 0; j < metadata_[i]->strides().size(); ++j)
+          p_.s[i][j] = metadata_[i]->strides()[j];
   }
   size_t workspace_size_in_bytes() const override { return bytes_; }
   void operator()(const Tensor q, const Tensor k, const Tensor v,
@@ -164,13 +164,12 @@ class Operator<ChunkGatedDeltaRule, Device::Type::kNvidia>
     };
     dim3 grid(static_cast<unsigned int>(B_), static_cast<unsigned int>(Hv_), 1);
     const auto stream = static_cast<cudaStream_t>(stream_ ? stream_ : nullptr);
-    chunk_native_detail::kernel<Data, Gate, D>
-        <<<grid, D, (D + D + D) * sizeof(float), stream>>>(
-            static_cast<float*>(workspace_), static_cast<const Data*>(ptr(0)),
-            static_cast<const Data*>(ptr(1)), static_cast<const Data*>(ptr(2)),
-            static_cast<const Gate*>(ptr(3)), static_cast<const Gate*>(ptr(4)),
-            static_cast<Data*>(ptr(5)), ptr(6), ptr(7), ptr(8),
-            static_cast<Data*>(ptr(9)), static_cast<Data*>(ptr(10)), p_);
+    chunk_native_detail::kernel<Data, Gate, D><<<grid, D, 0, stream>>>(
+        static_cast<float*>(workspace_), static_cast<const Data*>(ptr(0)),
+        static_cast<const Data*>(ptr(1)), static_cast<const Data*>(ptr(2)),
+        static_cast<const Gate*>(ptr(3)), static_cast<const Gate*>(ptr(4)),
+        static_cast<Data*>(ptr(5)), ptr(6), ptr(7), ptr(8),
+        static_cast<Data*>(ptr(9)), static_cast<Data*>(ptr(10)), p_);
   }
 };
 }  // namespace infini::ops

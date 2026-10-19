@@ -206,7 +206,9 @@ def _find_matching_brace(text: str, open_brace: int) -> int:
     raise RuntimeError("Could not find the end of `Operator::Call`.")
 
 
-def _hide_definition(text: str, signature: re.Pattern[str], name: str) -> str:
+def _hide_definition(
+    text: str, signature: re.Pattern[str], name: str, replacement: str = ";"
+) -> str:
     match = signature.search(text)
 
     if match is None:
@@ -223,15 +225,26 @@ def _hide_definition(text: str, signature: re.Pattern[str], name: str) -> str:
     body_end = _find_matching_brace(text, body_start)
     signature = text[match.start() : match.end()].rstrip()
 
-    return f"{text[: match.start()]}{signature};{text[body_end + 1 :]}"
+    return f"{text[: match.start()]}{signature}{replacement}{text[body_end + 1 :]}"
 
 
 def generate_public_operator_header(source: Path, output: Path) -> None:
     public_text = _hide_definition(
-        source.read_text(), _CALL_SIGNATURE_RE, "Operator::Call"
+        source.read_text(),
+        _CALL_SIGNATURE_RE,
+        "Operator::Call",
+        " {\n    return detail::OperatorFactory<Key>::Call(handle, config, args...);\n  }",
     )
     for name, signature in _PROVIDER_SIGNATURES:
-        public_text = _hide_definition(public_text, signature, name)
+        replacement = ";"
+        if name.startswith("Operator::Make(") or name.startswith("Operator::CanMake("):
+            method = "CanMake" if "CanMake" in name else "Make"
+            first = "tensors" if "vector<Tensor>" in name else "tensor"
+            replacement = (
+                " {\n    return detail::OperatorFactory<Key>::"
+                f"{method}(config, {first}, args...);\n  }}"
+            )
+        public_text = _hide_definition(public_text, signature, name, replacement)
     public_text = public_text.replace('#include "host_range_profiler.h"\n', "")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(public_text)

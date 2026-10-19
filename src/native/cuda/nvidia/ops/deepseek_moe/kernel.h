@@ -10,7 +10,6 @@ class Operator<DeepseekMoe, Device::Type::kNvidia, 0> : public DeepseekMoe {
            const std::vector<Tensor> up, const std::vector<Tensor> down,
            size_t intermediate, size_t num_experts);
   size_t workspace_size_in_bytes() const override;
-  bool requires_workspace() const override { return true; }
 
  private:
   std::shared_ptr<NvidiaGemmHandle> blas_;

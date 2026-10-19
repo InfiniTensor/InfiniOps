@@ -43,8 +43,9 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
                        Tensor out, bool invocation) {
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != out.device() || input.dtype() != out.dtype() ||
-        !dim || dim->size() != 1 || keepdim || dtype ||
-        input.shape().size() < 2 || input.shape().size() > 4 ||
+        !dim || dim->size() != 1 || keepdim ||
+        (dtype && *dtype != input.dtype()) || input.shape().size() < 1 ||
+        input.shape().size() > 4 ||
         out.shape().size() + 1 != input.shape().size())
       return false;
     if (input.dtype() != DataType::kFloat16 &&
@@ -151,6 +152,7 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
   static bool CheckedContiguous(const Tensor tensor) {
     std::size_t expected = 1;
     for (std::size_t i = tensor.shape().size(); i > 0; --i) {
+      if (tensor.shape()[i - 1] == 1) continue;
       if (expected > static_cast<std::size_t>(
                          std::numeric_limits<Tensor::Stride>::max()) ||
           tensor.strides()[i - 1] != static_cast<Tensor::Stride>(expected))

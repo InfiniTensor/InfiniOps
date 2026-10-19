@@ -12,17 +12,17 @@ function(infiniops_add_native_flash target)
     set(_cutlass_include "${flash_attention_cutlass_SOURCE_DIR}/include")
     set(_prepared "${CMAKE_CURRENT_BINARY_DIR}/native-flash-inference")
     set(_inputs "${_source}/scripts/prepare_flash_attention_inference.py"
-        "${_source}/patches/flash-attention/inference.patch"
-        "${flash_attention_cutlass_SOURCE_DIR}/LICENSE.txt"
-        "${_cutlass_include}/cutlass/cutlass.h")
-    foreach(_flash_file IN LISTS _flash_source_files)
-        list(APPEND _inputs "${_upstream}/${_flash_file}")
-    endforeach()
+        "${_source}/patches/flash-attention/inference.patch")
     foreach(_input IN LISTS _inputs)
         if(NOT EXISTS "${_input}")
             message(FATAL_ERROR
                 "Native FlashAttention is missing ${_input}. Check the fixed source archives or FetchContent SOURCE_DIR overrides.")
         endif()
+    endforeach()
+    list(APPEND _inputs "${flash_attention_cutlass_SOURCE_DIR}/LICENSE.txt"
+        "${_cutlass_include}/cutlass/cutlass.h")
+    foreach(_flash_file IN LISTS _flash_source_files)
+        list(APPEND _inputs "${_upstream}/${_flash_file}")
     endforeach()
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_inputs})
     execute_process(COMMAND "${Python_EXECUTABLE}"

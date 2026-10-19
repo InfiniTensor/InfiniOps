@@ -47,12 +47,6 @@ option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
 option(BUILD_NVIDIA_FLASH_INFERENCE "Build pinned Torch-free NVIDIA inference Attention" OFF)
 option(BUILD_NVIDIA_W4_MARLIN "Build NVIDIA AWQ/GPTQ Marlin providers (CUDA >= 12.3)" OFF)
-if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
-    message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
-endif()
-if(BUILD_NVIDIA_W4_MARLIN AND NOT WITH_NVIDIA)
-    message(FATAL_ERROR "Marlin requires WITH_NVIDIA")
-endif()
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
@@ -214,6 +208,13 @@ if(AUTO_DETECT_DEVICES)
             message(STATUS "Skipping auto-detected NVIDIA environment because another GPU backend was detected.")
         endif()
     endif()
+endif()
+
+if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
+endif()
+if(BUILD_NVIDIA_W4_MARLIN AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "Marlin requires WITH_NVIDIA")
 endif()
 
 if(AUTO_DETECT_BACKENDS)

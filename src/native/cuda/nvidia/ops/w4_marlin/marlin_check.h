@@ -24,3 +24,6 @@ template <typename... Args>
       ::infini::ops::native_w4::marlin_fail(__VA_ARGS__); \
     }                                                     \
   } while (false)
+
+// Keep upstream check call sites intact inside the private prepared sources.
+#define STD_TORCH_CHECK INFINI_MARLIN_CHECK

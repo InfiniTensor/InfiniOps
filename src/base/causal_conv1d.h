@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -15,16 +16,17 @@ class CausalConv1d : public Operator<CausalConv1d> {
                const std::optional<Tensor> cu_seqlens,
                const std::optional<Tensor> initial_state_indices,
                const std::optional<Tensor> final_state_indices, Tensor out,
-               std::optional<Tensor> final_conv_state) {
-    const Views views{qkv,
-                      weight,
-                      conv_state,
-                      bias,
-                      cu_seqlens,
-                      initial_state_indices,
-                      final_state_indices,
-                      out,
-                      final_conv_state};
+               std::optional<Tensor> final_conv_state)
+      : metadata_{qkv,
+                  weight,
+                  conv_state,
+                  bias,
+                  cu_seqlens,
+                  initial_state_indices,
+                  final_state_indices,
+                  out,
+                  final_conv_state} {
+    const auto& views = metadata_;
     Validate(views);
     device_ = qkv.device();
     dtype_ = qkv.dtype();
@@ -32,15 +34,6 @@ class CausalConv1d : public Operator<CausalConv1d> {
     channels_ = qkv.shape()[2];
     pool_ = conv_state.shape()[0];
     requests_ = cu_seqlens ? cu_seqlens->numel() - 1 : qkv.shape()[0];
-    for (size_t i = 0; i < views.size(); ++i) {
-      metadata_[i].present = views[i].has_value();
-      if (!views[i]) continue;
-      metadata_[i].shape.assign(views[i]->shape().begin(),
-                                views[i]->shape().end());
-      metadata_[i].strides.assign(views[i]->strides().begin(),
-                                  views[i]->strides().end());
-      metadata_[i].dtype = views[i]->dtype();
-    }
   }
   virtual void operator()(const Tensor qkv, const Tensor weight,
                           Tensor conv_state, const std::optional<Tensor> bias,
@@ -52,16 +45,10 @@ class CausalConv1d : public Operator<CausalConv1d> {
 
  protected:
   using Views = std::array<std::optional<Tensor>, 9>;
-  struct Metadata {
-    bool present{false};
-    Tensor::Shape shape;
-    Tensor::Strides strides;
-    DataType dtype{DataType::kFloat32};
-  };
   Device device_;
   DataType dtype_;
   size_t tokens_, channels_, pool_, requests_;
-  std::array<Metadata, 9> metadata_;
+  const Views metadata_;
   static void Validate(const Views& v) {
     for (const auto& view : v)
       if (view && view->shape().size() != view->strides().size())

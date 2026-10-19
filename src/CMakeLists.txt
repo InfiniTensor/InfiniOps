@@ -269,6 +269,8 @@ if(WITH_ILUVATAR)
     )
 
     file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
+    list(FILTER ILUVATAR_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|mars|metax|moore|nvidia|thead)/.*")
 
     target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
     target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
@@ -348,6 +350,8 @@ if(WITH_METAX)
     )
 
     file(GLOB_RECURSE METAX_SOURCES CONFIGURE_DEPENDS ${METAX_PATTERNS})
+    list(FILTER METAX_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|mars|moore|nvidia|thead)/.*")
 
     set_source_files_properties(${METAX_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -374,6 +378,8 @@ if(WITH_MARS)
     )
 
     file(GLOB_RECURSE MARS_SOURCES CONFIGURE_DEPENDS ${MARS_PATTERNS})
+    list(FILTER MARS_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|metax|moore|nvidia|thead)/.*")
 
     set_source_files_properties(${MARS_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -407,6 +413,8 @@ if(WITH_MOORE)
     )
 
     file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
+    list(FILTER MOORE_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|mars|metax|nvidia|thead)/.*")
 
     set_source_files_properties(${MOORE_SOURCES} PROPERTIES LANGUAGE CXX)
 

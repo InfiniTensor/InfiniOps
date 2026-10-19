@@ -135,6 +135,33 @@ def test_operator_call_instantiations_externalize_active_implementation_query():
     assert f"template {signature}" in definitions
 
 
+def test_public_factory_normalizes_formal_scalar_and_tensor_list_arguments():
+    module = _load_generator_module()
+    signature = module._ParsedFunction(
+        [
+            module._ParsedArgument("const std::vector<Tensor>", "inputs"),
+            module._ParsedArgument("const double", "alpha"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    operator = module._Operator("cat", constructors=[signature], calls=[signature])
+    declarations, definitions = module._generate_operator_call_instantiation_entries(
+        operator
+    )
+    header = "\n".join(declarations)
+    source = "\n".join(definitions)
+    assert "struct detail::OperatorFactory<::infini::ops::Cat>" in header
+    assert (
+        "Make(const Config& config, const std::vector<Tensor>& inputs, const double& alpha, const Tensor& out)"
+        in header
+    )
+    assert "Operator<::infini::ops::Cat>::Make(config, inputs, alpha, out)" in source
+    assert (
+        "Operator<::infini::ops::Cat>::Call(handle, config, inputs, alpha, out)"
+        in source
+    )
+
+
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):
@@ -681,6 +708,7 @@ def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
         "      HostRangeLayer::kDispatchCall};"
     )
     assert '#include "host_range_profiler.h"' in text
+    assert '#include "infini/operator_call_instantiations.h"' in text
     dispatch_call_bodies = re.findall(
         r"void CallProfileOp\([^)]*\) \{\n(.*?)\n\}",
         text,

@@ -12,8 +12,7 @@ class Operator<MoeFusedGate, Device::Type::kNvidia, 0> : public MoeFusedGate {
     return MoeFusedGate::supports(weights, indices, input, bias, groups,
                                   selected_groups, shared, scale,
                                   apply_scale) &&
-           !(e & (e - 1)) && groups <= 32 && !(groups & (groups - 1)) &&
-           e / groups <= 32;
+           groups <= 32 && !(groups & (groups - 1)) && e / groups <= 32;
   }
   void operator()(Tensor weights, Tensor indices, const Tensor input,
                   const Tensor bias, size_t groups, size_t selected_groups,

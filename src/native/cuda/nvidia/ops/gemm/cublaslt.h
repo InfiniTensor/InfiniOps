@@ -18,15 +18,6 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
  public:
-  Operator(const Config&, const Tensor a, const Tensor b,
-           const std::optional<Tensor> c, std::optional<float> alpha,
-           std::optional<float> beta, std::optional<int> trans_a,
-           std::optional<int> trans_b, Tensor y)
-      : Operator(a, b, c, alpha, beta, trans_a, trans_b, y) {}
-
-  Operator(const Config&, const Tensor a, const Tensor b, Tensor y)
-      : Operator(a, b, y) {}
-
   template <typename... Tail>
   static bool supports(const Config& config, const Tensor a, const Tensor b,
                        const Tail&... tail) {

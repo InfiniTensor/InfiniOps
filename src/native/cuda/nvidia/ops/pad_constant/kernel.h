@@ -94,27 +94,35 @@ class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
            const double value, Tensor out)
       : PadConstant(Checked(input, padding, value, out), padding, value, out) {
     BuildLayout(input, padding, out);
+    nvidia_binary_view::SpanBytes(input, &input_bytes_);
+    nvidia_binary_view::SpanBytes(out, &out_bytes_);
+    exact_inplace_layout_ =
+        input.shape() == out.shape() && input.strides() == out.strides();
   }
 
   bool capture_safe() const override { return true; }
 
   void operator()(const Tensor input, const std::vector<std::int64_t> padding,
                   const double value, Tensor out) const override {
-    if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
-        out.shape() != out_shape_ || out.strides() != out_strides_ ||
-        input.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || out.device() != device_ ||
-        padding != padding_ || std::memcmp(&value, &value_, sizeof(value)) ||
-        !supports(input, padding, value, out))
+    if (!std::equal_to<Tensor>{}(input, input_meta_) ||
+        !std::equal_to<Tensor>{}(out, out_meta_) || padding != padding_ ||
+        std::memcmp(&value, &value_, sizeof(value)))
       throw std::invalid_argument(
           "NVIDIA PadConstant metadata or alias changed after Make");
+    int current = -1;
+    if (cudaGetDevice(&current) != cudaSuccess || current != device_.index() ||
+        (input_bytes_ && !input.data()) || (out_bytes_ && !out.data()) ||
+        (nvidia_binary_view::Overlaps(input, input_bytes_, out, out_bytes_) &&
+         !(input.data() == out.data() && exact_inplace_layout_)))
+      throw std::invalid_argument(
+          "NVIDIA PadConstant current device, pointer or alias changed after "
+          "Make");
     if (out.numel() == 0 ||
-        (input.data() == out.data() && input.shape() == out.shape() &&
-         input.strides() == out.strides()))
+        (input.data() == out.data() && exact_inplace_layout_))
       return;
     nvidia_pad_constant_detail::Launch(
-        input.data(), out.data(), dtype_, value_, layout_, out.numel(),
-        static_cast<cudaStream_t>(stream_ ? stream_ : 0));
+        input.data(), out.data(), input_meta_.dtype(), value_, layout_,
+        out.numel(), static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
  private:
@@ -140,6 +148,8 @@ class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
     }
   }
   nvidia_pad_constant_detail::Layout layout_{};
+  std::size_t input_bytes_ = 0, out_bytes_ = 0;
+  bool exact_inplace_layout_ = false;
 };
 }  // namespace infini::ops
 

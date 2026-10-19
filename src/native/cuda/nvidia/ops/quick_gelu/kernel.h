@@ -31,7 +31,7 @@ class Operator<QuickGelu, Device::Type::kNvidia, 0> : public QuickGelu {
     using namespace nvidia_binary_view;
     const auto rank = input.shape().size();
     if (input.device().type() != Device::Type::kNvidia ||
-        input.device() != out.device() || rank < 1 || rank > 8 ||
+        input.device() != out.device() || rank > 8 ||
         input.strides().size() != rank || out.strides().size() != rank ||
         input.shape() != out.shape() || input.dtype() != out.dtype() ||
         (input.dtype() != DataType::kFloat16 &&
@@ -79,36 +79,52 @@ class Operator<QuickGelu, Device::Type::kNvidia, 0> : public QuickGelu {
   }
 
   Operator(const Tensor input, Tensor out)
-      : QuickGelu(checked(input, out), out) {}
+      : QuickGelu(checked(input, out), out) {
+    nvidia_binary_view::SpanBytes(input, &input_bytes_);
+    nvidia_binary_view::SpanBytes(out, &out_bytes_);
+    exact_inplace_layout_ = input.strides() == out.strides();
+    layout_.rank = static_cast<unsigned>(input.ndim());
+    for (std::size_t axis = 0; axis < input.ndim(); ++axis) {
+      layout_.shape[axis] = input.shape()[axis];
+      layout_.input_strides[axis] =
+          static_cast<std::size_t>(input.strides()[axis]);
+      layout_.out_strides[axis] = static_cast<std::size_t>(out.strides()[axis]);
+    }
+  }
 
   // Replay submits a kernel with by-value layout and no device allocation.
   bool capture_safe() const override { return true; }
 
   void operator()(const Tensor input, Tensor out) const override {
-    if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
-        out.shape() != out_shape_ || out.strides() != out_strides_ ||
-        input.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || out.device() != device_ ||
-        !supports(input, out))
+    if (!std::equal_to<Tensor>{}(input, input_meta_) ||
+        !std::equal_to<Tensor>{}(out, out_meta_))
       throw std::invalid_argument(
           "NVIDIA QuickGelu call metadata or alias changed after Make");
-    std::size_t count = 1;
-    nvidia_quick_gelu_detail::Layout layout{};
-    layout.rank = static_cast<unsigned>(input.ndim());
-    for (std::size_t axis = 0; axis < input.ndim(); ++axis) {
-      layout.shape[axis] = input.shape()[axis];
-      layout.input_strides[axis] =
-          static_cast<std::size_t>(input.strides()[axis]);
-      layout.out_strides[axis] = static_cast<std::size_t>(out.strides()[axis]);
-      count *= input.shape()[axis];
-    }
+    int current = -1;
+    const auto bound = [](Tensor tensor, std::size_t bytes) {
+      return !bytes ||
+             (tensor.data() && reinterpret_cast<std::uintptr_t>(tensor.data()) %
+                                       tensor.element_size() ==
+                                   0);
+    };
+    if (cudaGetDevice(&current) != cudaSuccess || current != device_.index() ||
+        !bound(input, input_bytes_) || !bound(out, out_bytes_) ||
+        (nvidia_binary_view::Overlaps(input, input_bytes_, out, out_bytes_) &&
+         !(input.data() == out.data() && exact_inplace_layout_)))
+      throw std::invalid_argument(
+          "NVIDIA QuickGelu current device, pointer or alias changed after "
+          "Make");
+    const auto count = input_meta_.numel();
     if (!count) return;
     nvidia_quick_gelu_detail::Launch(
-        input.data(), out.data(), dtype_, layout, count,
+        input.data(), out.data(), input_meta_.dtype(), layout_, count,
         static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
  private:
+  nvidia_quick_gelu_detail::Layout layout_{};
+  std::size_t input_bytes_ = 0, out_bytes_ = 0;
+  bool exact_inplace_layout_ = false;
   static Tensor checked(const Tensor input, Tensor out) {
     if (!supports(input, out))
       throw std::invalid_argument(

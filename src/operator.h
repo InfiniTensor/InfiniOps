@@ -29,6 +29,10 @@
 
 namespace infini::ops::detail {
 
+// Generated formal overloads normalize public calls before crossing the ABI.
+template <typename Key>
+struct OperatorFactory;
+
 // A key with providers covering different domains may opt into metadata-based
 // defaults. Explicit implementation indices and other keys remain unchanged.
 template <typename Key, typename = void>
@@ -291,10 +295,6 @@ class OperatorBase {
 
   virtual std::size_t workspace_size_in_bytes() const { return 0; }
 
-  // Existing providers may treat workspace as optional. Only providers that
-  // opt in here make an absent/undersized Call workspace an error.
-  virtual bool requires_workspace() const { return false; }
-
   // Capture is opt-in for each prepared implementation. In particular, an
   // operator's device type alone does not establish resource lifetime safety.
   virtual bool capture_safe() const { return false; }
@@ -482,23 +482,14 @@ class Operator : public OperatorBase {
     if (required_workspace == 0) {
       return (*op)(handle, args...);
     }
-    // An explicit workspace takes precedence. Preserve legacy optional
-    // workspace behavior unless this provider declares it mandatory.
+    // An explicit workspace takes precedence. Providers validate their own
+    // workspace requirements before accessing it.
     if (handle.workspace() != nullptr ||
         handle.workspace_size_in_bytes() != 0) {
-      if (op->requires_workspace() &&
-          (handle.workspace() == nullptr ||
-           handle.workspace_size_in_bytes() < required_workspace)) {
-        throw std::invalid_argument(
-            "operator workspace is missing or too small");
-      }
       return (*op)(handle, args...);
     }
     auto lease = handle.acquire_workspace(required_workspace);
     if (!lease.data) {
-      if (op->requires_workspace()) {
-        throw std::invalid_argument("operator workspace lease is missing");
-      }
       return (*op)(handle, args...);
     }
     if (lease.size_in_bytes < required_workspace) {
@@ -582,11 +573,14 @@ class Operator : public OperatorBase {
   }
 
   static std::size_t FirstActiveImplementationIndex(List<>) {
-    assert(false && "operator has no active implementation for this device");
-    std::abort();
+    throw std::invalid_argument(
+        "operator has no active implementation for this device");
   }
 
   static std::size_t DefaultImplementationIndex(Device::Type dev_type) {
+    if (!detail::ListContains(dev_type, ActiveDevices<Key>{})) {
+      throw std::invalid_argument("operator device is not enabled");
+    }
     std::size_t default_index{0};
 
     DispatchFunc<ActiveDevices<Key>>(
@@ -649,7 +643,6 @@ class Operator : public OperatorBase {
                                Device::Type dispatch_device_type, bool strict,
                                Selected&& selected, Args&&... args) {
     bool matched = false;
-    auto cache_args = std::forward_as_tuple(args...);
 
     if (!detail::ListContains(dispatch_device_type, ActiveDevices<Key>{})) {
       if (strict) {
@@ -670,25 +663,18 @@ class Operator : public OperatorBase {
             constexpr std::size_t kImplementationIndex =
                 decltype(implementation_tag)::value;
             using Provider = Operator<Key, kDev, kImplementationIndex>;
+            constexpr bool kConfigConstructor =
+                std::is_constructible_v<Provider, const Config&, Args...>;
             constexpr bool kConfigAware =
-                std::is_constructible_v<Provider, const Config&, Args...> &&
                 detail::HasConfigAwareSupports<Provider, Args...>::value;
-            if constexpr (kConfigAware ||
+            if constexpr (kConfigConstructor ||
                           std::is_constructible_v<Provider, Args...>) {
               bool supported = false;
               if constexpr (kConfigAware) {
-                supported = std::apply(
-                    [&](const auto&... cached_args) {
-                      return Provider::supports(config, cached_args...);
-                    },
-                    cache_args);
+                supported = Provider::supports(config, std::as_const(args)...);
               } else if (!config.requires_config_aware_provider()) {
-                supported = std::apply(
-                    [](const auto&... cached_args) {
-                      return detail::ProviderSupports<Provider>(0,
-                                                                cached_args...);
-                    },
-                    cache_args);
+                supported = detail::ProviderSupports<Provider>(
+                    0, std::as_const(args)...);
               }
               if (!supported) {
                 if (automatic) return;
@@ -699,14 +685,9 @@ class Operator : public OperatorBase {
                 }
                 return;
               }
-              std::apply(
-                  [&](auto&... cached_args) {
-                    matched = true;
-                    selected(device_tag, implementation_tag,
-                             std::bool_constant<kConfigAware>{},
-                             cached_args...);
-                  },
-                  cache_args);
+              matched = true;
+              selected(device_tag, implementation_tag,
+                       std::bool_constant<kConfigConstructor>{}, args...);
             } else {
               if (!automatic && strict) {
                 throw std::invalid_argument(

@@ -48,7 +48,6 @@ class Operator<W4MarlinGemm, Device::Type::kNvidia, 0> : public W4MarlinGemm {
                   const int64_t group_size, const bool is_k_full,
                   const float alpha, Tensor out) const override;
   std::size_t workspace_size_in_bytes() const override { return bytes_; }
-  bool requires_workspace() const override { return true; }
   // Original host selector still sets CUDA function attributes and queries the
   // device at invocation. No capture promise without a qualified frozen launch.
 

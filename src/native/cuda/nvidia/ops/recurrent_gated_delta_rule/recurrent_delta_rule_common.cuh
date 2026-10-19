@@ -1,6 +1,6 @@
 // Ported from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
 // src/infiniop/ops/recurrent_gated_delta_rule/cuda/recurrent_delta_rule_common.cuh.
-// Modified for InfiniOps: NVIDIA-only warp definitions and backend integration.
+// Modified for InfiniOps: NVIDIA single-token decode and backend integration.
 // Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #ifndef __RECURRENT_DELTA_RULE_COMMON_CUH__
 #define __RECURRENT_DELTA_RULE_COMMON_CUH__
@@ -67,25 +67,22 @@ __device__ inline Tcompute blockReduceSum(Tcompute value, Tcompute* scratch) {
   return result;
 }
 
-// GatePolicy prepares one decay value per key dimension and a scalar beta for
-// the current token. This keeps the state-update implementation shared while
-// allowing scalar GDR and vector-decay KDA to retain their own gate semantics.
+// The NVIDIA provider submits one decode token per batch row.
 template <typename Tdata, typename Tcompute, size_t Dk, size_t Dv,
           size_t WARPS_PER_BLOCK, typename GatePolicy>
 __device__ void recurrentDeltaRuleWarpSequence(
     Tdata* out, Tdata* initial_state, Tdata* final_state, const Tdata* q,
-    const Tdata* k, const Tdata* v, const void* cu_seqlens,
-    const void* initial_state_indices, const void* final_state_indices,
-    bool cu_seqlens_i64, bool initial_state_indices_i64,
-    bool final_state_indices_i64, bool use_qk_l2norm, bool has_cu_seqlens,
-    bool indexed_state_pool, size_t total_tokens, size_t pool_size,
-    size_t num_key_heads, size_t value_heads_per_key_head, Tcompute query_scale,
-    ptrdiff_t out_s0, ptrdiff_t out_s1, ptrdiff_t out_s2, ptrdiff_t initial_s0,
-    ptrdiff_t initial_s1, ptrdiff_t initial_s2, ptrdiff_t initial_s3,
-    ptrdiff_t final_s0, ptrdiff_t final_s1, ptrdiff_t final_s2,
-    ptrdiff_t final_s3, ptrdiff_t q_s0, ptrdiff_t q_s1, ptrdiff_t q_s2,
-    ptrdiff_t k_s0, ptrdiff_t k_s1, ptrdiff_t k_s2, ptrdiff_t v_s0,
-    ptrdiff_t v_s1, ptrdiff_t v_s2, GatePolicy gate_policy, Tcompute* shared) {
+    const Tdata* k, const Tdata* v, const void* initial_state_indices,
+    const void* final_state_indices, bool initial_state_indices_i64,
+    bool final_state_indices_i64, bool use_qk_l2norm, bool indexed_state_pool,
+    size_t pool_size, size_t num_key_heads, size_t value_heads_per_key_head,
+    Tcompute query_scale, ptrdiff_t out_s0, ptrdiff_t out_s1, ptrdiff_t out_s2,
+    ptrdiff_t initial_s0, ptrdiff_t initial_s1, ptrdiff_t initial_s2,
+    ptrdiff_t initial_s3, ptrdiff_t final_s0, ptrdiff_t final_s1,
+    ptrdiff_t final_s2, ptrdiff_t final_s3, ptrdiff_t q_s0, ptrdiff_t q_s1,
+    ptrdiff_t q_s2, ptrdiff_t k_s0, ptrdiff_t k_s1, ptrdiff_t k_s2,
+    ptrdiff_t v_s0, ptrdiff_t v_s1, ptrdiff_t v_s2, GatePolicy gate_policy,
+    Tcompute* shared) {
   constexpr int WARP_SIZE = INFINIOP_RECURRENT_DELTA_RULE_WARP_SIZE;
   constexpr int NUM_THREADS = WARPS_PER_BLOCK * WARP_SIZE;
   constexpr int STATE_VALUES_PER_LANE = (Dk + WARP_SIZE - 1) / WARP_SIZE;
@@ -103,17 +100,6 @@ __device__ void recurrentDeltaRuleWarpSequence(
     return;
   }
 
-  int64_t token_begin = 0;
-  int64_t token_end = static_cast<int64_t>(total_tokens);
-  if (has_cu_seqlens) {
-    token_begin = loadOptionalIndex(cu_seqlens, cu_seqlens_i64, batch_idx, 0);
-    token_end = loadOptionalIndex(cu_seqlens, cu_seqlens_i64, batch_idx + 1, 0);
-    if (token_begin < 0 || token_end < token_begin ||
-        token_end > static_cast<int64_t>(total_tokens)) {
-      return;
-    }
-  }
-
   int64_t read_slot = batch_idx;
   int64_t write_slot = batch_idx;
   if (indexed_state_pool) {
@@ -129,15 +115,10 @@ __device__ void recurrentDeltaRuleWarpSequence(
         (final_state_indices != nullptr &&
          (write_slot < 0 || write_slot >= static_cast<int64_t>(pool_size)))) {
       if (valid_value_dim && lane_idx == 0) {
-        const int token_batch = has_cu_seqlens ? 0 : batch_idx;
-        for (int64_t token_idx = token_begin; token_idx < token_end;
-             ++token_idx) {
-          const ptrdiff_t out_base =
-              static_cast<ptrdiff_t>(token_batch) * out_s0 +
-              static_cast<ptrdiff_t>(token_idx) * out_s1 +
-              static_cast<ptrdiff_t>(value_head_idx) * out_s2;
-          out[out_base + value_dim_idx] = static_cast<Tdata>(0.0f);
-        }
+        const ptrdiff_t out_base =
+            static_cast<ptrdiff_t>(batch_idx) * out_s0 +
+            static_cast<ptrdiff_t>(value_head_idx) * out_s2;
+        out[out_base + value_dim_idx] = static_cast<Tdata>(0.0f);
       }
       return;
     }
@@ -179,8 +160,9 @@ __device__ void recurrentDeltaRuleWarpSequence(
   Tcompute* reduction_scratch = decay_local + Dk;
   Tcompute* beta_shared = reduction_scratch + NUM_THREADS;
 
-  const int token_batch = has_cu_seqlens ? 0 : batch_idx;
-  for (int64_t token_idx = token_begin; token_idx < token_end; ++token_idx) {
+  const int token_batch = batch_idx;
+  {
+    constexpr int64_t token_idx = 0;
     const ptrdiff_t q_base = static_cast<ptrdiff_t>(token_batch) * q_s0 +
                              static_cast<ptrdiff_t>(token_idx) * q_s1 +
                              static_cast<ptrdiff_t>(key_head_idx) * q_s2;

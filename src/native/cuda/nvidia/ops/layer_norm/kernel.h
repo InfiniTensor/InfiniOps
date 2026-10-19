@@ -109,7 +109,7 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
     SpanBytes(out, &out_bytes_);
     if (bias) SpanBytes(*bias, &bias_bytes_);
     // An identical input layout inherits the validated output non-overlap.
-    exact_inplace_layout_ = input_strides_ == out_strides_;
+    exact_inplace_layout_ = input_meta_.strides() == out_meta_.strides();
     layout_.rank = static_cast<unsigned>(input.ndim());
     layout_.dim = input.size(-1);
     layout_.weight_stride = static_cast<std::size_t>(weight.stride(0));
@@ -128,16 +128,11 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
   void operator()(const Tensor input, const Tensor weight,
                   const std::optional<Tensor> bias, float eps,
                   Tensor out) const override {
-    if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
-        weight.shape() != weight_shape_ ||
-        weight.strides() != weight_strides_ || out.shape() != out_shape_ ||
-        out.strides() != out_strides_ || input.dtype() != dtype_ ||
-        weight.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || weight.device() != device_ ||
-        out.device() != device_ || bias.has_value() != has_bias_ ||
-        (bias &&
-         (bias->shape() != bias_shape_ || bias->strides() != bias_strides_ ||
-          bias->dtype() != dtype_ || bias->device() != device_)) ||
+    if (!std::equal_to<Tensor>{}(input, input_meta_) ||
+        !std::equal_to<Tensor>{}(weight, weight_meta_) ||
+        !std::equal_to<Tensor>{}(out, out_meta_) ||
+        bias.has_value() != bias_meta_.has_value() ||
+        (bias && !std::equal_to<Tensor>{}(*bias, *bias_meta_)) ||
         bits(eps) != bits(eps_))
       throw std::invalid_argument(
           "NVIDIA LayerNorm call metadata or alias changed after Make");
@@ -163,7 +158,7 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
     if (!rows_) return;
     nvidia_layer_norm_detail::Launch(
         input.data(), weight.data(), bias ? bias->data() : nullptr, out.data(),
-        dtype_, layout_, rows_, eps_,
+        input_meta_.dtype(), layout_, rows_, eps_,
         static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 

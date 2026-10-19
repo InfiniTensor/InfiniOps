@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 
 #include "operator.h"
 
@@ -13,11 +14,8 @@ class MulScalar : public Operator<MulScalar> {
   static constexpr bool kAutomaticDefault = true;
 
   MulScalar(const Tensor input, const double alpha, Tensor out)
-      : input_shape_(input.shape()),
-        input_strides_(input.strides()),
-        out_shape_(out.shape()),
-        out_strides_(out.strides()),
-        dtype_(input.dtype()),
+      : input_meta_(input),
+        out_meta_(out),
         device_(input.device()),
         alpha_(alpha) {}
 
@@ -25,9 +23,7 @@ class MulScalar : public Operator<MulScalar> {
                           Tensor out) const = 0;
 
  protected:
-  Tensor::Shape input_shape_, out_shape_;
-  Tensor::Strides input_strides_, out_strides_;
-  DataType dtype_;
+  const Tensor input_meta_, out_meta_;
   Device device_;
   double alpha_;
 };

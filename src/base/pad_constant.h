@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_PAD_CONSTANT_H_
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "operator.h"
@@ -16,11 +17,8 @@ class PadConstant : public Operator<PadConstant> {
 
   PadConstant(const Tensor input, const std::vector<std::int64_t> padding,
               const double value, Tensor out)
-      : input_shape_(input.shape()),
-        input_strides_(input.strides()),
-        out_shape_(out.shape()),
-        out_strides_(out.strides()),
-        dtype_(input.dtype()),
+      : input_meta_(input),
+        out_meta_(out),
         device_(input.device()),
         padding_(padding),
         value_(value) {}
@@ -30,9 +28,7 @@ class PadConstant : public Operator<PadConstant> {
                           const double value, Tensor out) const = 0;
 
  protected:
-  Tensor::Shape input_shape_, out_shape_;
-  Tensor::Strides input_strides_, out_strides_;
-  DataType dtype_;
+  const Tensor input_meta_, out_meta_;
   Device device_;
   std::vector<std::int64_t> padding_;
   double value_;

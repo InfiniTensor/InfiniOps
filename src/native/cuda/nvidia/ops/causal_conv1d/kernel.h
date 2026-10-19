@@ -124,11 +124,12 @@ class Operator<CausalConv1d, Device::Type::kNvidia> : public CausalConv1d {
     p_.channels = channels_;
     p_.pool = pool_;
     for (size_t i = 0; i < metadata_.size(); ++i)
-      for (size_t j = 0; j < metadata_[i].strides.size(); ++j)
-        p_.strides[i][j] = metadata_[i].strides[j];
-    p_.cu_i64 = metadata_[4].dtype == DataType::kInt64;
-    p_.initial_i64 = metadata_[5].dtype == DataType::kInt64;
-    p_.final_i64 = metadata_[6].dtype == DataType::kInt64;
+      if (metadata_[i])
+        for (size_t j = 0; j < metadata_[i]->strides().size(); ++j)
+          p_.strides[i][j] = metadata_[i]->strides()[j];
+    p_.cu_i64 = metadata_[4] && metadata_[4]->dtype() == DataType::kInt64;
+    p_.initial_i64 = metadata_[5] && metadata_[5]->dtype() == DataType::kInt64;
+    p_.final_i64 = metadata_[6] && metadata_[6]->dtype() == DataType::kInt64;
   }
   // Device capture/state-pool lifetime is not supported for this stateful path.
   // Zero device allocations does not alone establish capture eligibility.
@@ -149,11 +150,9 @@ class Operator<CausalConv1d, Device::Type::kNvidia> : public CausalConv1d {
                       final_conv_state};
     for (size_t i = 0; i < views.size(); ++i) {
       const auto& t = views[i];
-      if (t.has_value() != metadata_[i].present ||
-          (t &&
-           (t->device() != device_ || t->shape() != metadata_[i].shape ||
-            t->strides() != metadata_[i].strides ||
-            t->dtype() != metadata_[i].dtype || (t->numel() && !t->data()))))
+      if (t.has_value() != metadata_[i].has_value() ||
+          (t && (!std::equal_to<Tensor>{}(*t, *metadata_[i]) ||
+                 (t->numel() && !t->data()))))
         throw std::invalid_argument(
             "causal conv metadata changed or nonempty storage is null");
     }

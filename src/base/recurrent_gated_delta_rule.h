@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -16,17 +17,18 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
                           const std::optional<Tensor> final_state_indices,
                           Tensor out, std::optional<Tensor> final_state,
                           bool use_qk_l2norm)
-      : norm_(use_qk_l2norm) {
-    const Views views{q,
-                      k,
-                      v,
-                      g,
-                      beta,
-                      initial_state,
-                      initial_state_indices,
-                      final_state_indices,
-                      out,
-                      final_state};
+      : norm_(use_qk_l2norm),
+        metadata_{q,
+                  k,
+                  v,
+                  g,
+                  beta,
+                  initial_state,
+                  initial_state_indices,
+                  final_state_indices,
+                  out,
+                  final_state} {
+    const auto& views = metadata_;
     Validate(views);
     device_ = q.device();
     data_type_ = q.dtype();
@@ -36,15 +38,6 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
     Hv_ = v.shape()[2];
     D_ = q.shape()[3];
     pool_ = initial_state.shape()[0];
-    for (size_t i = 0; i < views.size(); ++i)
-      if (views[i]) {
-        metadata_[i].present = true;
-        metadata_[i].shape.assign(views[i]->shape().begin(),
-                                  views[i]->shape().end());
-        metadata_[i].strides.assign(views[i]->strides().begin(),
-                                    views[i]->strides().end());
-        metadata_[i].dtype = views[i]->dtype();
-      }
   }
   virtual void operator()(const Tensor q, const Tensor k, const Tensor v,
                           const Tensor g, const Tensor beta,
@@ -56,17 +49,11 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
 
  protected:
   using Views = std::array<std::optional<Tensor>, 10>;
-  struct Metadata {
-    bool present{false};
-    Tensor::Shape shape;
-    Tensor::Strides strides;
-    DataType dtype{DataType::kFloat32};
-  };
   Device device_;
   DataType data_type_, gate_type_;
   bool norm_;
   size_t B_, Hk_, Hv_, D_, pool_;
-  std::array<Metadata, 10> metadata_;
+  const Views metadata_;
   static bool floating(DataType dtype) {
     return dtype == DataType::kFloat16 || dtype == DataType::kBFloat16 ||
            dtype == DataType::kFloat32;
@@ -130,11 +117,8 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
       throw std::invalid_argument(
           "recurrent delta normalization changed after Make");
     for (size_t i = 0; i < views.size(); ++i) {
-      if (views[i].has_value() != metadata_[i].present ||
-          (views[i] && (views[i]->device() != device_ ||
-                        views[i]->shape() != metadata_[i].shape ||
-                        views[i]->strides() != metadata_[i].strides ||
-                        views[i]->dtype() != metadata_[i].dtype)))
+      if (views[i].has_value() != metadata_[i].has_value() ||
+          (views[i] && !std::equal_to<Tensor>{}(*views[i], *metadata_[i])))
         throw std::invalid_argument(
             "recurrent delta metadata changed after Make");
       if (views[i] && views[i]->numel() && !views[i]->data())

@@ -10,7 +10,6 @@ class Operator<MoeFusedDense, Device::Type::kNvidia, 0> : public MoeFusedDense {
            size_t block_size, const std::optional<Tensor> bias1 = std::nullopt,
            const std::optional<Tensor> bias2 = std::nullopt);
   size_t workspace_size_in_bytes() const override;
-  bool requires_workspace() const override { return true; }
   static bool supports(Tensor output, const Tensor hidden, const Tensor w13,
                        const Tensor w2, const Tensor weights, const Tensor ids,
                        const Tensor sorted, const Tensor experts,

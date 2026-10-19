@@ -62,12 +62,13 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
     p_.Hk = Hk_;
     p_.ratio = Hv_ / Hk_;
     p_.norm = norm_;
-    p_.indexed = metadata_[6].present || metadata_[7].present;
-    p_.initial_i64 = metadata_[6].dtype == DataType::kInt64;
-    p_.final_i64 = metadata_[7].dtype == DataType::kInt64;
+    p_.indexed = metadata_[6].has_value() || metadata_[7].has_value();
+    p_.initial_i64 = metadata_[6] && metadata_[6]->dtype() == DataType::kInt64;
+    p_.final_i64 = metadata_[7] && metadata_[7]->dtype() == DataType::kInt64;
     for (size_t i = 0; i < metadata_.size(); ++i)
-      for (size_t j = 0; j < metadata_[i].strides.size(); ++j)
-        p_.s[i][j] = metadata_[i].strides[j];
+      if (metadata_[i])
+        for (size_t j = 0; j < metadata_[i]->strides().size(); ++j)
+          p_.s[i][j] = metadata_[i]->strides()[j];
   }
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,

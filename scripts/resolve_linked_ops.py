@@ -388,14 +388,7 @@ def _load_distribution(config):
 
 
 def _locate_distribution_notices(config):
-    try:
-        distribution = importlib.metadata.distribution(
-            config.python_distribution_package
-        )
-    except importlib.metadata.PackageNotFoundError:
-        # A custom library locator can supply a DSO without package metadata.
-        # Retain the static conservative redistribution notices in that case.
-        return []
+    distribution = importlib.metadata.distribution(config.python_distribution_package)
     distribution_root = pathlib.Path(distribution.locate_file("")).resolve()
     notices = set()
     # Use only this resolved package's inventory. Sparse RECORDs and editable

@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_BASE_LAYER_NORM_H_
 #define INFINI_OPS_BASE_LAYER_NORM_H_
 
+#include <functional>
 #include <optional>
 
 #include "operator.h"
@@ -15,18 +16,11 @@ class LayerNorm : public Operator<LayerNorm> {
 
   LayerNorm(const Tensor input, const Tensor weight,
             const std::optional<Tensor> bias, float eps, Tensor out)
-      : input_shape_{input.shape()},
-        input_strides_{input.strides()},
-        weight_shape_{weight.shape()},
-        weight_strides_{weight.strides()},
-        bias_shape_{bias ? Tensor::Shape{bias->shape()} : Tensor::Shape{}},
-        bias_strides_{bias ? Tensor::Strides{bias->strides()}
-                           : Tensor::Strides{}},
-        out_shape_{out.shape()},
-        out_strides_{out.strides()},
-        dtype_{input.dtype()},
+      : input_meta_{input},
+        weight_meta_{weight},
+        bias_meta_{bias},
+        out_meta_{out},
         device_{input.device()},
-        has_bias_{bias.has_value()},
         eps_{eps} {}
 
   virtual void operator()(const Tensor input, const Tensor weight,
@@ -34,11 +28,10 @@ class LayerNorm : public Operator<LayerNorm> {
                           Tensor out) const = 0;
 
  protected:
-  Tensor::Shape input_shape_, weight_shape_, bias_shape_, out_shape_;
-  Tensor::Strides input_strides_, weight_strides_, bias_strides_, out_strides_;
-  DataType dtype_;
+  const Tensor input_meta_, weight_meta_;
+  const std::optional<Tensor> bias_meta_;
+  const Tensor out_meta_;
   Device device_;
-  bool has_bias_;
   float eps_;
 };
 

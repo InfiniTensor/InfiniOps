@@ -1426,6 +1426,7 @@ def _generate_generated_dispatch_source(impl_paths, definitions):
     impl_includes = "\n".join(f'#include "{impl_path}"' for impl_path in impl_paths)
 
     return f"""#include "generated_dispatch.h"
+#include "infini/operator_call_instantiations.h"
 #include "host_range_profiler.h"
 
 #include <utility>
@@ -1604,6 +1605,8 @@ def _generate_operator_call_instantiation_entries(operator):
     op_type = _op_cpp_type(operator.name)
     declarations = []
     definitions = []
+    factory_declarations = []
+    factory_definitions = []
 
     seen_entries = set()
 
@@ -1686,6 +1689,42 @@ def _generate_operator_call_instantiation_entries(operator):
             f"extern template void {operator_instantiation};",
             f"template void {operator_instantiation};",
         )
+
+        factory_declarations.append(f"  static void Call({function_params});")
+        factory_definitions.append(
+            f"void detail::OperatorFactory<{op_type}>::Call({function_params}) {{\n"
+            f"  return Operator<{op_type}>::Call(handle, config, "
+            f"{', '.join(arg.spelling for arg in args)});\n}}"
+        )
+
+    for constructor in operator.constructors or operator.calls:
+        args = [arg for arg in constructor.get_arguments() if arg.spelling != "stream"]
+        params = ", ".join(
+            f"const {_normalized_type(arg)}& {arg.spelling}" for arg in args
+        )
+        formal_params = _append_optional_params("const Config& config", params)
+        arguments = ", ".join(arg.spelling for arg in args)
+        factory_declarations.extend(
+            [
+                f"  static std::unique_ptr<Operator<{op_type}>> Make({formal_params});",
+                f"  static bool CanMake({formal_params});",
+            ]
+        )
+        factory_definitions.extend(
+            [
+                f"std::unique_ptr<Operator<{op_type}>> detail::OperatorFactory<{op_type}>::Make({formal_params}) {{\n"
+                f"  return Operator<{op_type}>::Make(config, {arguments});\n}}",
+                f"bool detail::OperatorFactory<{op_type}>::CanMake({formal_params}) {{\n"
+                f"  return Operator<{op_type}>::CanMake(config, {arguments});\n}}",
+            ]
+        )
+
+    declarations.append(
+        f"template <>\nstruct detail::OperatorFactory<{op_type}> {{\n"
+        + "\n".join(dict.fromkeys(factory_declarations))
+        + "\n};"
+    )
+    definitions.extend(dict.fromkeys(factory_definitions))
 
     return declarations, definitions
 

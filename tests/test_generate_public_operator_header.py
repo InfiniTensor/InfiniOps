@@ -31,8 +31,6 @@ def test_public_operator_header_omits_host_range_profiler(tmp_path):
         "static void Call(const Handle& handle, const Config& config," in public_header
     )
     for name in (
-        "Make",
-        "CanMake",
         "active_implementation_indices",
         "DefaultConfig",
         "DefaultImplementationIndex",
@@ -42,6 +40,8 @@ def test_public_operator_header_omits_host_range_profiler(tmp_path):
         assert re.search(rf"\b{name}\s*\([^{{;]*\)\s*;", public_header)
     assert "DispatchFunc<ActiveDevices<Key>>(\n" not in public_header
     assert "Config::Automatic()" not in public_header
+    for name in ("Make", "CanMake", "Call"):
+        assert f"detail::OperatorFactory<Key>::{name}(" in public_header
     public_section = public_header.split("class Operator : public OperatorBase {", 1)[1]
     public_section = public_section.split(" protected:", 1)[0]
     assert "static Config DefaultConfig(Device::Type dev_type);" in public_section

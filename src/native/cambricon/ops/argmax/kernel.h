@@ -16,9 +16,8 @@ class Operator<Argmax, Device::Type::kCambricon> : public Argmax {
                        bool keepdim, const Tensor y) {
     if (x.device().type() != Device::Type::kCambricon ||
         x.device().index() < 0 || x.dtype() != DataType::kFloat32 ||
-        x.ndim() != 1 || !x.numel() || x.numel() > INT_MAX ||
-        !x.IsContiguous() || !x.data() || dim || keepdim ||
-        x.device() != y.device() || y.ndim() != 0 ||
+        !x.numel() || x.numel() > INT_MAX || !x.IsContiguous() || !x.data() ||
+        dim || keepdim || x.device() != y.device() || y.ndim() != 0 ||
         y.dtype() != DataType::kInt64 || !y.IsContiguous() || !y.data())
       return false;
     const auto a = reinterpret_cast<uintptr_t>(x.data()),

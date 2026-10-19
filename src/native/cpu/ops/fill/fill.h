@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_CPU_FILL_FILL_H_
 #define INFINI_OPS_CPU_FILL_FILL_H_
 
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 
@@ -35,7 +36,8 @@ class Operator<Fill, Device::Type::kCpu, 0> : public Fill,
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
         input.dtype() != input_type_ || out.shape() != out_shape_ ||
         out.strides() != out_strides_ || out.dtype() != out_type_ ||
-        out.device().index() != device_index_ || value != value_ ||
+        out.device().index() != device_index_ ||
+        !(value == value_ || (std::isnan(value) && std::isnan(value_))) ||
         !supports(input, value, out))
       throw std::invalid_argument("CPU Fill metadata/value changed after Make");
     if (out.numel() == 0) return;

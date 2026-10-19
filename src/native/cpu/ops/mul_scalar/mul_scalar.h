@@ -35,23 +35,27 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
 
   void operator()(const Tensor input, const double alpha,
                   Tensor out) const override {
-    if (input.shape() != input_shape_ || out.shape() != out_shape_ ||
-        input.strides() != input_strides_ || out.strides() != out_strides_ ||
-        input.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || out.device() != device_ ||
+    if (!std::equal_to<Tensor>{}(input, input_meta_) ||
+        !std::equal_to<Tensor>{}(out, out_meta_) ||
         std::memcmp(&alpha, &alpha_, sizeof(alpha)))
       throw std::invalid_argument(
           "CPU MulScalar: call metadata or alpha changed after Make");
-    if (!supports(input, alpha, out))
+    const auto bytes = count_ * input_meta_.element_size();
+    const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
+    const auto op = reinterpret_cast<std::uintptr_t>(out.data());
+    if (!cpu_dense_view::ValidAddress(input, bytes) ||
+        !cpu_dense_view::ValidAddress(out, bytes) ||
+        (bytes && ip < op + bytes && op < ip + bytes &&
+         !(ip == op && input_meta_.strides() == out_meta_.strides())))
       throw std::invalid_argument(
-          "CPU MulScalar: call pointer, layout or alias changed after Make");
+          "CPU MulScalar: call pointer or alias changed after Make");
     if (count_ == 0) return;
     // CPU scalar arithmetic retains float opmath precision even for half/BF16.
     const float multiplier = FloatAlpha(alpha_);
     DispatchFunc<
         Device::Type::kCpu,
         List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
-        dtype_,
+        input_meta_.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
           const auto* src = static_cast<const T*>(input.data());

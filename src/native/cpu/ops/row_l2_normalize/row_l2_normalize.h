@@ -28,20 +28,25 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
   }
 
   Operator(const Tensor input, const double eps, Tensor out)
-      : RowL2Normalize{Checked(input, eps, out), eps, out} {}
+      : RowL2Normalize{Checked(input, eps, out), eps, out} {
+    cpu_dense_view::ContiguousBytes(input, &bytes_);
+  }
 
   void operator()(const Tensor input, const double eps,
                   Tensor out) const override {
-    if (input.shape() != input_shape_ || out.shape() != out_shape_ ||
-        input.strides() != input_strides_ || out.strides() != out_strides_ ||
-        input.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || out.device() != device_ ||
+    if (!std::equal_to<Tensor>{}(input, input_meta_) ||
+        !std::equal_to<Tensor>{}(out, out_meta_) ||
         std::memcmp(&eps, &eps_, sizeof(eps)))
       throw std::invalid_argument(
           "CPU RowL2Normalize: call metadata or eps changed after Make");
-    if (!supports(input, eps, out))
+    const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
+    const auto op = reinterpret_cast<std::uintptr_t>(out.data());
+    if (!cpu_dense_view::ValidAddress(input, bytes_) ||
+        !cpu_dense_view::ValidAddress(out, bytes_) ||
+        (bytes_ && ip < op + bytes_ && op < ip + bytes_ &&
+         !(ip == op && input_meta_.strides() == out_meta_.strides())))
       throw std::invalid_argument(
-          "CPU RowL2Normalize: call pointer, layout or alias changed after "
+          "CPU RowL2Normalize: call pointer or alias changed after "
           "Make");
     if (input.size(0) == 0 || input.size(1) == 0) return;
     const float epsilon = eps_ > std::numeric_limits<float>::max()
@@ -50,7 +55,7 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
     DispatchFunc<
         Device::Type::kCpu,
         List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
-        dtype_,
+        input_meta_.dtype(),
         [&](auto tag) {
           using T = typename decltype(tag)::type;
           const auto* src = static_cast<const T*>(input.data());
@@ -75,6 +80,7 @@ class Operator<RowL2Normalize, Device::Type::kCpu, 0>
   }
 
  private:
+  std::size_t bytes_ = 0;
   template <typename T>
   static T Round(float value) {
     if constexpr (IsBFloat16<Device::Type::kCpu, T>) {

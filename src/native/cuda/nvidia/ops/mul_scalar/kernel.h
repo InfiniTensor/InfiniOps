@@ -106,10 +106,8 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
 
   void operator()(const Tensor input, const double alpha,
                   Tensor out) const override {
-    if (input.shape() != input_shape_ || out.shape() != out_shape_ ||
-        input.strides() != input_strides_ || out.strides() != out_strides_ ||
-        input.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || out.device() != device_ ||
+    if (!std::equal_to<Tensor>{}(input, input_meta_) ||
+        !std::equal_to<Tensor>{}(out, out_meta_) ||
         std::memcmp(&alpha, &alpha_, sizeof(alpha)))
       throw std::invalid_argument(
           "NVIDIA MulScalar metadata or alpha changed after Make");
@@ -121,12 +119,13 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
         reinterpret_cast<std::uintptr_t>(out.data()) % out.element_size() ||
         (nvidia_binary_view::Overlaps(input, input_span_bytes_, out,
                                       out_span_bytes_) &&
-         !(input.data() == out.data() && input_strides_ == out_strides_)))
+         !(input.data() == out.data() &&
+           input_meta_.strides() == out_meta_.strides())))
       throw std::invalid_argument(
           "NVIDIA MulScalar current device, pointer or alias changed after "
           "Make");
     nvidia_mul_scalar_detail::Launch(
-        input.data(), out.data(), dtype_, alpha_,
+        input.data(), out.data(), input_meta_.dtype(), alpha_,
         layout_.contiguous ? nullptr : &layout_, count_,
         static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }

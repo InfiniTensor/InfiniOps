@@ -14,3 +14,7 @@ inline void infini_flash_check(cudaError_t error, const char* operation) {
 
 #define INFINI_FLASH_CUDA_CHECK(call) infini_flash_check((call), #call)
 #define INFINI_FLASH_KERNEL_CHECK() INFINI_FLASH_CUDA_CHECK(cudaGetLastError())
+
+// Preserve the upstream call sites in the private inference source target.
+#define C10_CUDA_CHECK INFINI_FLASH_CUDA_CHECK
+#define C10_CUDA_KERNEL_LAUNCH_CHECK INFINI_FLASH_KERNEL_CHECK
