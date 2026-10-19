@@ -87,6 +87,8 @@ def test_generate_rms_norm_uses_ntops_premake_with_rank_configs(monkeypatch):
             for block_size in (256, 512)
         )
         assert kwargs["caller"] == "cuda"
+        assert kwargs["backend"] == "triton"
+        assert kwargs["platform"] is None
         assert kwargs["kernel_name"] == "infini_ops_ninetoothed_rms_norm"
         assert kwargs["output_dir"] == tmp_path / "rms_norm"
         assert kwargs["lazy"] is False
@@ -117,3 +119,36 @@ def test_generate_rms_norm_uses_ntops_premake_with_rank_configs(monkeypatch):
                 },
             )
         ]
+
+
+def test_generate_rms_norm_selects_ascend(monkeypatch):
+    calls = []
+    fake_ninetoothed = types.SimpleNamespace(
+        float32="ninetoothed.float32",
+        float16="ninetoothed.float16",
+        bfloat16="ninetoothed.bfloat16",
+        build=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    module = _load_generator_module(fake_ninetoothed, monkeypatch)
+    fake_ntops = types.SimpleNamespace(
+        kernels=types.SimpleNamespace(
+            rms_norm=types.SimpleNamespace(
+                premake=lambda *args, **kwargs: (args, kwargs, ())
+            )
+        )
+    )
+    monkeypatch.setitem(sys.modules, "ntops", fake_ntops)
+    monkeypatch.setattr(module, "_build_manifest", lambda output_dir: ["kernel.cpp"])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        assert module.generate(
+            ["rms_norm"],
+            output_dir=pathlib.Path(tmpdir),
+            backend="ascend",
+            platform="ascend-910b4",
+        ) == ["kernel.cpp"]
+
+    kwargs = calls[0][1]
+    assert kwargs["backend"] == "ascend"
+    assert kwargs["platform"] == "ascend-910b4"
+    assert kwargs["caller"] == "npu"

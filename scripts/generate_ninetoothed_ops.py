@@ -47,7 +47,7 @@ def _load_op_module(op):
     return module
 
 
-def generate(ops, *, output_dir):
+def generate(ops, *, output_dir, backend="triton", platform=None):
     op_modules = _find_op_modules()
     unknown_ops = tuple(op for op in ops if op not in op_modules)
 
@@ -60,7 +60,7 @@ def generate(ops, *, output_dir):
 
     for op in ops:
         module = _load_op_module(op)
-        module.build(output_dir)
+        module.build(output_dir, backend=backend, platform=platform)
 
     sources = _build_manifest(output_dir)
     _write_cmake_manifest(output_dir, sources)
@@ -74,13 +74,28 @@ def _parse_args():
     )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--ops", nargs="+", default=tuple(_find_op_modules()))
+    parser.add_argument(
+        "--backend",
+        choices=("triton", "ascend"),
+        default="triton",
+        help="NineToothed backend used for generated kernels.",
+    )
+    parser.add_argument(
+        "--platform",
+        help="NineToothed platform, such as ascend-910b4.",
+    )
 
     return parser.parse_args()
 
 
 def main():
     args = _parse_args()
-    generate(args.ops, output_dir=args.output_dir)
+    generate(
+        args.ops,
+        output_dir=args.output_dir,
+        backend=args.backend,
+        platform=args.platform,
+    )
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 import infini.ops
 import pytest
-import torch
 
+import torch
 from tests.utils import Payload, empty_strided, get_stream, randn_strided
 
 
@@ -39,6 +39,9 @@ def test_rms_norm(
     rtol,
     atol,
 ):
+    if device == "npu" and implementation_index == 9 and dtype == torch.bfloat16:
+        pytest.skip("Ascend NineToothed RMSNorm does not support bfloat16 yet")
+
     input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     weight = randn_strided(weight_shape, weight_strides, dtype=dtype, device=device)
     out = empty_strided(input_shape, out_strides, dtype=dtype, device=device)

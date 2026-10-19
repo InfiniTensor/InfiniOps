@@ -190,6 +190,14 @@ if(WITH_NINETOOTHED)
         "${PROJECT_SOURCE_DIR}/scripts/generate_ninetoothed_ops.py"
         --output-dir "${_ninetoothed_output_dir}")
 
+    if(WITH_ASCEND)
+        list(APPEND _ninetoothed_generator_args
+            --backend ascend
+            --platform "${NINETOOTHED_PLATFORM}")
+    else()
+        list(APPEND _ninetoothed_generator_args --backend triton)
+    endif()
+
     execute_process(
         COMMAND "${_ninetoothed_python}" ${_ninetoothed_generator_args}
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
@@ -203,6 +211,13 @@ if(WITH_NINETOOTHED)
     include("${_ninetoothed_output_dir}/manifest.cmake")
     target_include_directories(infiniops PRIVATE
         ${INFINI_OPS_NINETOOTHED_INCLUDE_DIRS})
+    if(WITH_ASCEND)
+        target_include_directories(infiniops PRIVATE
+            "${ASCEND_HOME}/pkg_inc"
+            "${ASCEND_HOME}/pkg_inc/profiling")
+        target_link_libraries(infiniops PRIVATE
+            "${ASCEND_HOME}/lib64/libruntime.so")
+    endif()
     target_sources(infiniops PRIVATE ${INFINI_OPS_NINETOOTHED_SOURCES})
 endif()
 
