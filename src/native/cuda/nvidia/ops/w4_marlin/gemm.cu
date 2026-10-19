@@ -33,6 +33,7 @@ Operator<W4MarlinGemm, Device::Type::kNvidia, 0>::Operator(
     const float alpha, Tensor out)
     : W4MarlinGemm(a,b,scales,zeros,g_idx,perm,bias,scheme,group_size,is_k_full,alpha,out), device_{a.device().index()} {
   w4::require(a.device().type() == Device::Type::kNvidia, "W4 requires one NVIDIA device");
+  if (!is_k_full && perm.numel() && g_idx.data()) w4::address(g_idx, 16);
   int shared; native_w4::info(device_,sms_,shared);
   // Exactly the original FP32 reduction requirement plus A permutation temp.
   const auto max_m = std::min<int64_t>(((m_+15)/16)*16,64);
@@ -49,6 +50,7 @@ void Operator<W4MarlinGemm, Device::Type::kNvidia, 0>::operator()(
   w4::require(scheme == scheme_ && group_size == group_ && is_k_full == full_ && alpha == alpha_, "W4 GEMM attributes changed");
   for (const auto& t : {a,b,scales,zeros,out}) w4::address(t,16);
   for (const auto& t : {g_idx,perm,bias}) w4::address(t,4);
+  if (!full_ && perm.numel()) w4::address(g_idx,16);
   for (const auto& t : {a,b,scales,zeros,g_idx,perm,bias}) w4::disjoint(out,t);
   w4::require(workspace_ && workspace_size_in_bytes_ >= bytes_ &&
               reinterpret_cast<std::uintptr_t>(workspace_)%256 == 0, "W4 GEMM requires aligned external workspace");

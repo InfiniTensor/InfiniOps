@@ -28,7 +28,10 @@ HEADERS = (
     "static_switch.h",
     "utils.h",
 )
-PATCH = pathlib.Path(__file__).resolve().parents[1] / "patches/flash-attention/inference.patch"
+PATCH = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "patches/flash-attention/inference.patch"
+)
 
 
 def write_if_changed(path, content):
@@ -51,7 +54,9 @@ def read_source(path):
 def prepare(source, output, patch_executable="patch"):
     source, output = pathlib.Path(source).resolve(), pathlib.Path(output).resolve()
     if output == source or source in output.parents:
-        raise ValueError("FlashAttention preparation output must be outside its source tree")
+        raise ValueError(
+            "FlashAttention preparation output must be outside its source tree"
+        )
     kernel_source = source / "csrc/flash_attn/src"
     headers = {name: read_source(kernel_source / name) for name in HEADERS}
     api = read_source(source / "csrc/flash_attn/flash_api.cpp")
@@ -61,15 +66,22 @@ def prepare(source, output, patch_executable="patch"):
         raise ValueError(f"missing FlashAttention inference adaptation: {PATCH}")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="flash-inference-", dir=output.parent) as temp:
+    with tempfile.TemporaryDirectory(
+        prefix="flash-inference-", dir=output.parent
+    ) as temp:
         staging = pathlib.Path(temp)
         for name, text in headers.items():
             write_if_changed(staging / name, text)
         try:
             applied = subprocess.run(
                 [
-                    str(patch_executable), "--batch", "--forward", "--fuzz=0",
-                    "-p1", "--input", str(PATCH),
+                    str(patch_executable),
+                    "--batch",
+                    "--forward",
+                    "--fuzz=0",
+                    "-p1",
+                    "--input",
+                    str(PATCH),
                 ],
                 cwd=staging,
                 text=True,
@@ -86,9 +98,12 @@ def prepare(source, output, patch_executable="patch"):
         if applied.returncode:
             raise ValueError(
                 "pinned FlashAttention inference patch failed:\n"
-                + applied.stdout + applied.stderr
+                + applied.stdout
+                + applied.stderr
             )
-        headers = {name: (staging / name).read_text(encoding="utf-8") for name in HEADERS}
+        headers = {
+            name: (staging / name).read_text(encoding="utf-8") for name in HEADERS
+        }
 
     # Keep the upstream scheduling heuristic, without introducing another policy.
     begin = api.index("inline int num_splits_heuristic(")

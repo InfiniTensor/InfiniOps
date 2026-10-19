@@ -13,15 +13,22 @@ UPSTREAM = pathlib.Path("csrc/libtorch_stable/quantization/marlin")
 SOURCES = {
     pathlib.Path("gemm/marlin") / name: UPSTREAM / name
     for name in (
-        "dequant.h", "kernel.h", "marlin.cuh", "marlin_dtypes.cuh",
-        "marlin_mma.h", "marlin_template.h",
+        "dequant.h",
+        "kernel.h",
+        "marlin.cuh",
+        "marlin_dtypes.cuh",
+        "marlin_mma.h",
+        "marlin_template.h",
     )
 }
-SOURCES.update({
-    pathlib.Path("awq_repack/cuda/kernel.cuh"): UPSTREAM / "awq_marlin_repack.cu",
-    pathlib.Path("gptq_repack/cuda/kernel.cuh"): UPSTREAM / "gptq_marlin_repack.cu",
-    pathlib.Path("gemm/nvidia/generate_kernels.py"): UPSTREAM / "generate_kernels.py",
-})
+SOURCES.update(
+    {
+        pathlib.Path("awq_repack/cuda/kernel.cuh"): UPSTREAM / "awq_marlin_repack.cu",
+        pathlib.Path("gptq_repack/cuda/kernel.cuh"): UPSTREAM / "gptq_marlin_repack.cu",
+        pathlib.Path("gemm/nvidia/generate_kernels.py"): UPSTREAM
+        / "generate_kernels.py",
+    }
+)
 GENERATED = (
     "kernel_selector.h",
     "sm80_kernel_float16_u4_float16.cu",
@@ -52,24 +59,42 @@ def prepare(source, output, patch_executable):
                 )
             target = staging / destination
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(upstream.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+            target.write_text(
+                upstream.read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+            )
         applied = subprocess.run(
-            [str(patch_executable), "--batch", "--forward", "--fuzz=0", "-p1",
-             "--input", str(REPO / "patches/marlin/w4a16.patch")],
-            cwd=staging, text=True, capture_output=True, check=False, timeout=60,
+            [
+                str(patch_executable),
+                "--batch",
+                "--forward",
+                "--fuzz=0",
+                "-p1",
+                "--input",
+                str(REPO / "patches/marlin/w4a16.patch"),
+            ],
+            cwd=staging,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
         )
         if applied.returncode:
-            raise ValueError("Pinned Marlin adaptation failed:\n" + applied.stdout + applied.stderr)
+            raise ValueError(
+                "Pinned Marlin adaptation failed:\n" + applied.stdout + applied.stderr
+            )
         # The upstream generator's single result/config list emits both CUDA
         # instantiations and the selector. The patch retains only its W4A16 set.
         subprocess.run(
             [sys.executable, str(staging / "gemm/nvidia/generate_kernels.py"), "8.0"],
-            cwd=staging, check=True,
+            cwd=staging,
+            check=True,
         )
         prepared = [path for path in SOURCES if path.suffix != ".py"]
         prepared.extend(pathlib.Path("gemm/nvidia") / name for name in GENERATED)
         for destination in prepared:
-            write_if_changed(output / "vendor" / destination, (staging / destination).read_bytes())
+            write_if_changed(
+                output / "vendor" / destination, (staging / destination).read_bytes()
+            )
 
 
 def main():

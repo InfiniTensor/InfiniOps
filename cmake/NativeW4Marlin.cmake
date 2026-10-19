@@ -2,7 +2,7 @@ if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 12.3)
     message(FATAL_ERROR "NVIDIA Marlin requires CUDA >=12.3 and C++20")
 endif()
 set(_w4_root "${PROJECT_SOURCE_DIR}/src/native/cuda/nvidia/ops/w4_marlin")
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(Python REQUIRED COMPONENTS Interpreter)
 find_program(_w4_patch NAMES patch REQUIRED)
 set(_w4_upstream "${PROJECT_SOURCE_DIR}/third_party/vllm")
 set(_w4_upstream_marlin "${_w4_upstream}/csrc/libtorch_stable/quantization/marlin")
@@ -23,7 +23,7 @@ foreach(_w4_input IN LISTS _w4_inputs)
 endforeach()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_w4_inputs})
 execute_process(
-    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/prepare_marlin.py"
+    COMMAND "${Python_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/prepare_marlin.py"
         --source-dir "${_w4_upstream}" --output "${_w4_prepared}"
         --patch-executable "${_w4_patch}"
     RESULT_VARIABLE _w4_status ERROR_VARIABLE _w4_prepare_error)

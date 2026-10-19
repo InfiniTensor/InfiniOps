@@ -9,6 +9,7 @@ Operator<W4MarlinRepack, Device::Type::kNvidia, 0>::Operator(
       device_{qweight.device().index()} {
   w4::require(qweight.device().type() == Device::Type::kNvidia,
               "W4 requires one NVIDIA device");
+  if (scheme == 1 && perm.numel() && perm.data()) w4::address(perm, 16);
   native_w4::info(device_, sms_, shared_);
   native_w4::DeviceGuard guard(device_);
   if (scheme == 0)
@@ -23,7 +24,7 @@ void Operator<W4MarlinRepack, Device::Type::kNvidia, 0>::operator()(
               "W4 repack attributes changed");
   w4::address(qweight, 16);
   w4::address(out, 16);
-  w4::address(perm, 4);
+  w4::address(perm, scheme == 1 && perm.numel() ? 16 : 4);
   w4::disjoint(out, qweight);
   w4::disjoint(out, perm);
   native_w4::DeviceGuard guard(device_);

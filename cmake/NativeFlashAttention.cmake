@@ -1,7 +1,7 @@
 # Build the pinned inference kernels separately. No Torch include/link flags or
 # Python runtime enter this target; Python is used only to prepare pinned source.
 function(infiniops_add_native_flash target)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    find_package(Python REQUIRED COMPONENTS Interpreter)
     find_package(CUDAToolkit REQUIRED)
     find_program(_flash_patch NAMES patch REQUIRED)
     set(_provider "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../src/native/cuda/nvidia/ops/flash_attn_with_kvcache")
@@ -30,7 +30,7 @@ function(infiniops_add_native_flash target)
         endif()
     endforeach()
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_inputs})
-    execute_process(COMMAND "${Python3_EXECUTABLE}"
+    execute_process(COMMAND "${Python_EXECUTABLE}"
         "${_source}/scripts/prepare_flash_attention_inference.py"
         --source-dir "${_upstream}" --output "${_prepared}"
         --patch-executable "${_flash_patch}"

@@ -133,9 +133,10 @@ __device__ void recurrentDeltaRuleWarpSequence(
             ? static_cast<int64_t>(batch_idx)
             : loadOptionalIndex(final_state_indices, final_state_indices_i64,
                                 batch_idx, batch_idx);
-    if (read_slot < 0 || write_slot < 0 ||
+    if (read_slot < 0 ||
         read_slot >= static_cast<int64_t>(pool_size) ||
-        write_slot >= static_cast<int64_t>(pool_size)) {
+        (final_state_indices != nullptr &&
+         (write_slot < 0 || write_slot >= static_cast<int64_t>(pool_size)))) {
       if (valid_value_dim && lane_idx == 0) {
         const int token_batch = has_cu_seqlens ? 0 : batch_idx;
         for (int64_t token_idx = token_begin; token_idx < token_end;

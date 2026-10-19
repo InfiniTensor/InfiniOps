@@ -1221,6 +1221,32 @@ def test_optional_provider_flags_with_absolute_source_root(monkeypatch):
     monkeypatch.setattr(module, "_BASE_DIR", source / "base")
     off = module._get_all_ops(["nvidia"])
     on = module._get_all_ops(["nvidia"], with_native_flash=True, with_native_w4=True)
-    for name in ("flash_attn_with_kvcache", "flash_attn_varlen_func", "w4_marlin_gemm"):
-        assert not off.get(name)
+    for name in (
+        "flash_attn_with_kvcache",
+        "flash_attn_varlen_func",
+        "w4_marlin_gemm",
+        "w4_marlin_repack",
+        "w4_marlin_parameters",
+    ):
+        assert name not in off
         assert on[name]
+
+
+def test_w4_public_api_selection_is_explicit(tmp_path):
+    module = _load_generator_module()
+    name = "w4_marlin_gemm"
+    external = module._Implementation(tmp_path / "w4.h", "custom")
+    config = {
+        name: {
+            "headers": [{"path": str(external.path), "backend": "custom"}],
+            "implementations": None,
+        }
+    }
+    assert module._select_ops_from_config({}, config, "ops.json") == {name: [external]}
+    assert module._select_ops_from_config(
+        {}, {name: {"public_api_only": True}}, "ops.json"
+    ) == {name: []}
+    with pytest.raises(ValueError, match="not available"):
+        module._select_ops_from_config(
+            {}, {name: {"headers": None, "implementations": (0,)}}, "ops.json"
+        )

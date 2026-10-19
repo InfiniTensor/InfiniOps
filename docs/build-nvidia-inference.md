@@ -123,8 +123,11 @@ cmake --install build/ops
 ```
 
 Marlin is enabled here because the LM profile explicitly contains W4 operators.
-A dense-only SDK can set it `OFF` and use an allowlist without `w4_marlin_*`;
-then its CUDA >=12.3/C++20 check and provider registration are both omitted.
+A dense-only SDK can set it `OFF`. When building LM with its checkpoint
+adapters, select `infiniops_ops_nvidia_dense_sampling_torch_free_no_marlin.json`:
+its explicit `public_api_only` entries preserve the three W4 API symbols without
+providers. Other consumers can omit those entries entirely. Disabled Marlin
+has no CUDA >=12.3/C++20 check or provider registration and cannot execute W4.
 Both native components require the standard `patch` command when enabled.
 Their preparation scripts patch build-directory copies, leaving submodules
 unchanged. Jinja2 is used only to generate Marlin instances at build time.

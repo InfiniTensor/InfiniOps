@@ -103,9 +103,10 @@ __device__ void chunkGatedDeltaRuleRecurrentKernel(
             : loadOptionalIndex(final_state_indices, final_state_indices_i64,
                                 batch_idx, batch_idx);
 
-    if (read_slot < 0 || write_slot < 0 ||
+    if (read_slot < 0 ||
         read_slot >= static_cast<int64_t>(pool_size) ||
-        write_slot >= static_cast<int64_t>(pool_size)) {
+        (final_state_indices != nullptr &&
+         (write_slot < 0 || write_slot >= static_cast<int64_t>(pool_size)))) {
       return;
     }
   }
