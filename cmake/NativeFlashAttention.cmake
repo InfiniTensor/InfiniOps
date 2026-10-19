@@ -49,4 +49,13 @@ function(infiniops_add_native_flash target)
         # Match the pinned upstream setup.py numerical compilation mode.
         "$<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr;--expt-extended-lambda;--use_fast_math>")
     target_link_libraries(${target} PRIVATE CUDA::cudart)
+    install(FILES "${_prepared}/LICENSE"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps"
+        RENAME FlashAttention-LICENSE.txt)
+    install(FILES "${_prepared}/AUTHORS"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps"
+        RENAME FlashAttention-AUTHORS.txt)
+    install(FILES "${_prepared}/CUTLASS-LICENSE.txt"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps"
+        RENAME FlashAttention-CUTLASS-LICENSE.txt)
 endfunction()

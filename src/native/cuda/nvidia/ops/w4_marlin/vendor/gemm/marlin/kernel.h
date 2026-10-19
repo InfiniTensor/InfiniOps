@@ -1,4 +1,8 @@
 
+// Source: InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e,
+// src/infiniop/ops/awq_marlin_gemm/marlin/kernel.h.
+// Donor implementation retained; this attribution notice was added by InfiniOps.
+// Marlin/vLLM and direct-donor licenses: repository THIRD_PARTY.txt.
 #ifndef MARLIN_NAMESPACE_NAME
 #define MARLIN_NAMESPACE_NAME marlin
 #endif

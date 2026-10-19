@@ -1,3 +1,7 @@
+// Adapted from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/awq_marlin_gemm/marlin/marlin_template.h.
+// Modified for InfiniOps: native launcher integration; original notices retained.
+// See repository THIRD_PARTY.txt and LICENSE (Apache-2.0).
 /*
  * Modified by Neural Magic
  * Copyright (C) Marlin.2024 Elias Frantar

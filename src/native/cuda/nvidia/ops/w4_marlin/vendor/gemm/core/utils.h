@@ -1,3 +1,7 @@
+// Adapted from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/awq_marlin_gemm/core/utils.h.
+// Modified for InfiniOps: unused pointer, range and dtype helpers removed.
+// See repository THIRD_PARTY.txt and LICENSES/InfiniCore-MIT.txt.
 /// \file utils.h
 /// \brief Host-side C++ utilities used by JIT kernel wrappers.
 ///

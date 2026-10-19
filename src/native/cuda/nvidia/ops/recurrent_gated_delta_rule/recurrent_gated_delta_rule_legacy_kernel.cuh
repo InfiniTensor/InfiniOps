@@ -1,3 +1,7 @@
+// Copied from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/recurrent_gated_delta_rule/cuda/kernel.cuh.
+// Modified for InfiniOps: formatting and this source notice only.
+// Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #ifndef __RECURRENT_GATED_DELTA_RULE_KERNEL_CUH__
 #define __RECURRENT_GATED_DELTA_RULE_KERNEL_CUH__
 

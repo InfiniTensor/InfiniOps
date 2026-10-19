@@ -1,4 +1,8 @@
-// CUDA/CUTLASS body ported from frozen InfiniCore 0.2.9. See THIRD_PARTY.txt for source and license details.
+// Adapted from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/moe_fused_dense/nvidia/moe_fused_dense_nvidia.cu.
+// Modified for InfiniOps: backend, layout and resource integration.
+// Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
+// CUTLASS headers retain their own license; see repository THIRD_PARTY.txt.
 #include "native/cuda/nvidia/ops/moe_fused_dense/kernel.h"
 #include "native/cuda/nvidia/ops/moe_fused_gate/device_guard.cuh"
 #include <cuda_runtime.h>

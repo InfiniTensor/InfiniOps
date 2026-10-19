@@ -1,4 +1,9 @@
-// Derived from fixed original generate_kernels.py; W4A16 only.
+// SPDX-License-Identifier: Apache-2.0
+// Copyright contributors to the vLLM project.
+// Generated from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e,
+// src/infiniop/ops/awq_marlin_gemm/nvidia/generate_kernels.py.
+// Modified for InfiniOps: W4A16-only instantiations and relative includes.
+// See repository THIRD_PARTY.txt and LICENSE.
 #include "../marlin/kernel.h"
 #include "../marlin/marlin_template.h"
 namespace MARLIN_NAMESPACE_NAME {

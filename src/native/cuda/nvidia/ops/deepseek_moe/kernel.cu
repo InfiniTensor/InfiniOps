@@ -1,4 +1,8 @@
-// Actual fused decode, batched cuBLAS, expert grouped/chunked CUDA bodies ported from frozen InfiniCore 0.2.9.
+// Adapted from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/deepseek_moe/nvidia/deepseek_moe_nvidia.cu.
+// Modified for InfiniOps: backend, layout and resource integration.
+// Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
+// Additional upstream notices are retained; see repository THIRD_PARTY.txt.
 #include "native/cuda/nvidia/ops/deepseek_moe/kernel.h"
 #include "native/cuda/nvidia/ops/moe_fused_gate/device_guard.cuh"
 #include <cuda_runtime.h>

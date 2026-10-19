@@ -1,3 +1,7 @@
+// Source: InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e,
+// src/infiniop/ops/awq_marlin_gemm/core/source_location.h.
+// Donor implementation retained; this attribution notice was added by InfiniOps.
+// Marlin/vLLM and direct-donor licenses: repository THIRD_PARTY.txt.
 /// \file source_location.h
 /// \brief Portable `source_location` wrapper.
 ///

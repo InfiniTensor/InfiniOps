@@ -1,3 +1,7 @@
+// Adapted from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/awq_marlin_repack/cuda/kernel.cuh (Marlin/vLLM).
+// Modified for InfiniOps: relative include paths; kernel mathematics retained.
+// Original licenses and copyright notices: repository THIRD_PARTY.txt and LICENSE.
 #include "../../gemm/marlin/marlin.cuh"
 
 namespace marlin {

@@ -1,8 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright contributors to the vLLM project.
+// Scale/zero permutations follow vLLM's Marlin utilities:
+// https://github.com/vllm-project/vllm/blob/ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab/vllm/model_executor/layers/quantization/utils/marlin_utils.py
+// Modified for InfiniOps: loading-only CUDA kernels, bit-preserving FP16/BF16 output.
+// See repository THIRD_PARTY.txt and LICENSE.
 #include "kernel.h"
 #include "launch.h"
 
 namespace infini::ops::native_w4 {
-// These are the byte permutations from the original marlin_utils.cpp; the
+// These are the byte permutations from the vLLM Marlin utilities cited above; the
 // arithmetic keeps FP16/BF16 bit patterns unchanged.
 __device__ int scale_source(int i, bool single) {
   if (!single) return (i / 8) + 8 * (i % 8);

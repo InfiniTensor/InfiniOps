@@ -1,3 +1,7 @@
+// Ported from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/chunk_gated_delta_rule/cuda/kernel.cuh.
+// Modified for InfiniOps: active helpers/state kernel and namespace adaptation.
+// Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #pragma once
 #include <cstdint>
 // Exact baseline helpers and active state-workspace kernel. The baseline

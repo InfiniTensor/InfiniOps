@@ -26,6 +26,12 @@ Installed library hashes for the two wheels above:
 The YAML version ranges describe the provider's accepted packages, not a lock
 for a release. A release using a different wheel must record its resolved
 version/hash and run the corresponding direct operator tests again.
+`LICENSES/FlashInfer-0.6.7` and `LICENSES/TVM-FFI-0.1.10` retain the original
+release licenses, notices and third-party license texts for these exact inputs.
+If replacing either wheel, update those redistribution materials from the
+actual release as well. SDK installation puts these materials, the native
+FlashAttention notices and the Ops attribution list in `share/licenses/InfiniOps`;
+downstream binary packages must retain that directory's contents.
 
 ## Acquire and install the fixed inputs
 

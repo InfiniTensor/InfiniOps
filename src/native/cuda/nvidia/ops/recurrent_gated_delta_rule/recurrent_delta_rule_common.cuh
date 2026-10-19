@@ -1,3 +1,7 @@
+// Ported from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/recurrent_gated_delta_rule/cuda/recurrent_delta_rule_common.cuh.
+// Modified for InfiniOps: NVIDIA-only warp definitions and backend integration.
+// Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #ifndef __RECURRENT_DELTA_RULE_COMMON_CUH__
 #define __RECURRENT_DELTA_RULE_COMMON_CUH__
 

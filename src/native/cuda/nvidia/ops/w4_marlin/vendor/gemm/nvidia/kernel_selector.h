@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright contributors to the vLLM project.
+// Generated from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e,
+// src/infiniop/ops/awq_marlin_gemm/nvidia/generate_kernels.py.
+// Modified for InfiniOps: W4A16-only dispatch. See THIRD_PARTY.txt and LICENSE.
 if (a_type == vllm::kFloat16 && b_type == vllm::kU4 && c_type == vllm::kFloat16 && s_type == vllm::kFloat16 && threads == 256 && thread_m_blocks == 1 && thread_n_blocks == 8 && thread_k_blocks == 8 && m_block_size_8 == true && stages == 4 && group_blocks == -1 && is_zp_float == false)
   kernel = Marlin<vllm::kFloat16.id(), vllm::kU4.id(), vllm::kFloat16.id(), vllm::kFloat16.id(), 256, 1, 8, 8, true, 4, -1, false>;
 else if (a_type == vllm::kFloat16 && b_type == vllm::kU4 && c_type == vllm::kFloat16 && s_type == vllm::kFloat16 && threads == 128 && thread_m_blocks == 1 && thread_n_blocks == 8 && thread_k_blocks == 4 && m_block_size_8 == true && stages == 4 && group_blocks == -1 && is_zp_float == false)

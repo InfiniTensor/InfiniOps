@@ -1,4 +1,8 @@
 
+// Source: InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e,
+// src/infiniop/ops/awq_marlin_gemm/marlin/marlin_dtypes.cuh.
+// Donor implementation retained; this attribution notice was added by InfiniOps.
+// Marlin/vLLM and direct-donor licenses: repository THIRD_PARTY.txt.
 #ifndef _data_types_cuh
 #define _data_types_cuh
 #include "../core/scalar_type.hpp"

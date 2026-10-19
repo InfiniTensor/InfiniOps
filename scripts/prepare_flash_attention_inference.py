@@ -69,6 +69,17 @@ def adapt(name, text):
         text = replace_once(
             text, "      exit(1);", "      INFINI_FLASH_CUDA_CHECK(status_);"
         )
+    if name in (
+        "flash.h",
+        "flash_fwd_kernel.h",
+        "flash_fwd_launch_template.h",
+        "hardware_info.h",
+    ):
+        text = (
+            "// Modified by InfiniOps from FlashAttention 2.8.3: inference-only native runtime integration.\n"
+            "// Upstream: https://github.com/Dao-AILab/flash-attention/tree/v2.8.3/csrc/flash_attn/src\n"
+            "// Original copyright and license notices below are retained.\n" + text
+        )
     return text
 
 
@@ -117,6 +128,8 @@ def prepare(archive, output):
         )
         headers["num_splits.h"] = (
             "// Copyright (c) 2023, Tri Dao. See accompanying LICENSE.\n"
+            "// Extracted from flash_attn-2.8.3/csrc/flash_attn/flash_api.cpp;\n"
+            "// modified by InfiniOps to remove Torch dependencies and use a private namespace.\n"
             "#pragma once\n#include <algorithm>\n#include <cmath>\n#include <vector>\n"
             "namespace infini_flash {\n" + api[begin:end] + "\n}\n"
         )
@@ -135,6 +148,13 @@ def prepare(archive, output):
                 write_if_changed(path, read(member.name))
         for name in ("LICENSE", "AUTHORS"):
             write_if_changed(output / name, read(ROOT + name))
+        # The sdist omits CUTLASS's root LICENSE.txt; preserve the full license
+        # block from its actual bundled header, rather than substituting main.
+        cutlass_header = read(ROOT + "csrc/cutlass/include/cutlass/cutlass.h").decode()
+        cutlass_notice = re.match(r"\s*(/\*.*?\*/)", cutlass_header, re.DOTALL)
+        if cutlass_notice is None or "Redistribution" not in cutlass_notice.group(1):
+            raise ValueError("missing pinned CUTLASS copyright/license block")
+        write_if_changed(output / "CUTLASS-LICENSE.txt", cutlass_notice.group(1) + "\n")
         manifest = {
             "upstream": "flash-attn",
             "version": "2.8.3",

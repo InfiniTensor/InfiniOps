@@ -1,3 +1,7 @@
+// Adapted via InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/moe_fused_gate/nvidia/moe_fused_gate_nvidia.cu.
+// Modified for InfiniOps: native backend and resource integration.
+// Original SGLang notice below applies; see repository THIRD_PARTY.txt.
 /*
  * Portions of the CUDA kernels in this file are adapted from SGLang:
  * /sgl-kernel/csrc/moe/moe_fused_gate.cu

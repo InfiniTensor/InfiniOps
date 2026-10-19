@@ -1,3 +1,7 @@
+// Adapted from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
+// src/infiniop/ops/mamba_selective_scan/nvidia/mamba_selective_scan_nvidia.cu.
+// Modified for InfiniOps: layout, type dispatch and runtime integration.
+// Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #ifndef INFINI_OPS_CUDA_MAMBA_SELECTIVE_SCAN_KERNEL_H_
 #define INFINI_OPS_CUDA_MAMBA_SELECTIVE_SCAN_KERNEL_H_
 #include <algorithm>
