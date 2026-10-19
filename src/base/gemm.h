@@ -39,36 +39,20 @@ class GemmConfig : public Config {
     return precision;
   }
 
-  static bool SupportsFp32Precision(Device::Type device,
-                                    std::size_t implementation_index,
-                                    Fp32Precision precision) {
-    if (!IsValid(precision)) return false;
-    return precision == Fp32Precision::DefaultFast ||
-           (device == Device::Type::kNvidia &&
-            (implementation_index == 0 || implementation_index == 1));
-  }
-
-  static void RequireSupported(const Config& config, Device::Type device) {
-    if (!SupportsFp32Precision(device, config.implementation_index(),
-                               PrecisionFrom(config))) {
-      throw std::invalid_argument(
-          "FullFp32 GEMM requires NVIDIA implementation 0 or 1");
-    }
+  bool requires_config_aware_provider() const override {
+    return fp32_precision_ == Fp32Precision::FullFp32;
   }
 
   static bool SupportsMetadata(const Config& config, const Tensor& a,
                                const Tensor& b, const Tensor& y) {
     const auto precision = PrecisionFrom(config);
     if (precision == Fp32Precision::DefaultFast) return true;
-    return SupportsFp32Precision(a.device().type(),
-                                 config.implementation_index(), precision) &&
-           a.dtype() == DataType::kFloat32 && b.dtype() == DataType::kFloat32 &&
+    return a.dtype() == DataType::kFloat32 && b.dtype() == DataType::kFloat32 &&
            y.dtype() == DataType::kFloat32;
   }
 
   static void RequireSupported(const Config& config, const Tensor& a,
                                const Tensor& b, const Tensor& y) {
-    RequireSupported(config, a.device().type());
     if (!SupportsMetadata(config, a, b, y)) {
       throw std::invalid_argument(
           "FullFp32 GEMM requires float32 A, B, and output");

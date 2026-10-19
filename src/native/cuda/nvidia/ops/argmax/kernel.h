@@ -19,6 +19,11 @@ namespace infini::ops {
 template <>
 class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
  public:
+  static bool supports(const Tensor input, const std::optional<int64_t> dim,
+                       bool keepdim, const Tensor out) {
+    return Supports(input, dim, keepdim, out, false);
+  }
+
   Operator(const Tensor input, const std::optional<int64_t> dim,
            const bool keepdim, Tensor out)
       : Argmax(input, dim, keepdim, out) {
@@ -27,10 +32,6 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
     const auto width = input.shape().back();
     if (width > nvidia_argmax_detail::kChunkWidth) {
       const auto chunks = (width - 1) / nvidia_argmax_detail::kChunkWidth + 1;
-      if (rows > std::numeric_limits<std::size_t>::max() / chunks /
-                     sizeof(nvidia_argmax_detail::Candidate)) {
-        throw std::invalid_argument("NVIDIA Argmax workspace size overflows");
-      }
       workspace_bytes_ =
           rows * chunks * sizeof(nvidia_argmax_detail::Candidate);
     }
@@ -102,8 +103,8 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
     }
   }
 
-  static void Validate(const Tensor input, const std::optional<int64_t> dim,
-                       bool keepdim, const Tensor out) {
+  static bool Supports(const Tensor input, const std::optional<int64_t> dim,
+                       bool keepdim, const Tensor out, bool invocation) {
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != out.device() ||
         (input.ndim() != 1 && input.ndim() != 2) || keepdim ||
@@ -113,23 +114,33 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
          input.dtype() != DataType::kBFloat16 &&
          input.dtype() != DataType::kFloat32) ||
         out.dtype() != DataType::kInt64) {
-      throw std::invalid_argument("unsupported NVIDIA Argmax metadata");
+      return false;
     }
     const auto rows = input.ndim() == 2 ? input.shape()[0] : 1;
     const auto width = input.shape().back();
     if (!rows || !width || rows > static_cast<std::size_t>(INT_MAX) ||
         width > static_cast<std::size_t>(INT_MAX) ||
         (input.ndim() == 1 ? out.ndim() != 0
-                           : out.ndim() != 1 || out.shape()[0] != rows) ||
-        !input.data() || !out.data()) {
-      throw std::invalid_argument("NVIDIA Argmax has empty or invalid storage");
+                           : out.ndim() != 1 || out.shape()[0] != rows)) {
+      return false;
     }
     if (rows > std::numeric_limits<std::size_t>::max() / width ||
         rows * width >
             std::numeric_limits<std::size_t>::max() / input.element_size() ||
         rows > std::numeric_limits<std::size_t>::max() / sizeof(std::int64_t)) {
-      throw std::invalid_argument("NVIDIA Argmax storage size overflows");
+      return false;
     }
+    if (width > nvidia_argmax_detail::kChunkWidth) {
+      const auto chunks = (width - 1) / nvidia_argmax_detail::kChunkWidth + 1;
+      if (rows > std::numeric_limits<std::size_t>::max() / chunks /
+                     sizeof(nvidia_argmax_detail::Candidate))
+        return false;
+    }
+    if (!invocation) return true;
+    if (!input.data() || !out.data() ||
+        reinterpret_cast<std::uintptr_t>(input.data()) % input.element_size() ||
+        reinterpret_cast<std::uintptr_t>(out.data()) % alignof(std::int64_t))
+      return false;
     const auto input_bytes = input.numel() * input.element_size();
     const auto output_bytes = out.numel() * out.element_size();
     const auto in_begin = reinterpret_cast<std::uintptr_t>(input.data());
@@ -138,17 +149,18 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
         output_bytes > std::numeric_limits<std::uintptr_t>::max() - out_begin ||
         (in_begin < out_begin + output_bytes &&
          out_begin < in_begin + input_bytes)) {
-      throw std::invalid_argument(
-          "NVIDIA Argmax input/output storage overlaps");
+      return false;
     }
     int current_device = -1;
     const auto status = cudaGetDevice(&current_device);
-    if (status != cudaSuccess)
-      throw std::runtime_error(cudaGetErrorString(status));
-    if (current_device != input.device().index()) {
+    return status == cudaSuccess && current_device == input.device().index();
+  }
+
+  static void Validate(const Tensor input, const std::optional<int64_t> dim,
+                       bool keepdim, const Tensor out) {
+    if (!Supports(input, dim, keepdim, out, true))
       throw std::invalid_argument(
-          "NVIDIA Argmax tensor device is not current device");
-    }
+          "unsupported NVIDIA Argmax metadata, storage or current device");
   }
 
   template <typename T>

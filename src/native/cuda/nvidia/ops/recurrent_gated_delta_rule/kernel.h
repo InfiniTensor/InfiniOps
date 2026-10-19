@@ -46,6 +46,9 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
                                 final_state, use_qk_l2norm) {
     if (device_.type() != Device::Type::kNvidia)
       throw std::invalid_argument("recurrent delta requires NVIDIA");
+    if (q.shape()[1] != 1 || v.shape()[3] != D_ || (D_ != 64 && D_ != 128))
+      throw std::invalid_argument(
+          "NVIDIA recurrent delta kernels require T1 and Dk=Dv64/128");
     CheckDevice();
     cudaDeviceProp property{};
     if (cudaGetDeviceProperties(&property, device_.index()) != cudaSuccess ||

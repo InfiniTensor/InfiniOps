@@ -102,7 +102,25 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
   Operator(const Tensor input, const Tensor weight,
            const std::optional<Tensor> bias, float eps, Tensor out)
       : LayerNorm(checked(input, weight, bias, eps, out), weight, bias, eps,
-                  out) {}
+                  out) {
+    using namespace nvidia_binary_view;
+    SpanBytes(input, &input_bytes_);
+    SpanBytes(weight, &weight_bytes_);
+    SpanBytes(out, &out_bytes_);
+    if (bias) SpanBytes(*bias, &bias_bytes_);
+    // An identical input layout inherits the validated output non-overlap.
+    exact_inplace_layout_ = input_strides_ == out_strides_;
+    layout_.rank = static_cast<unsigned>(input.ndim());
+    layout_.dim = input.size(-1);
+    layout_.weight_stride = static_cast<std::size_t>(weight.stride(0));
+    layout_.bias_stride = bias ? static_cast<std::size_t>(bias->stride(0)) : 0;
+    for (std::size_t i = 0; i < input.ndim(); ++i) {
+      layout_.shape[i] = input.shape()[i];
+      layout_.input_strides[i] = static_cast<std::size_t>(input.strides()[i]);
+      layout_.out_strides[i] = static_cast<std::size_t>(out.strides()[i]);
+      if (i + 1 < input.ndim()) rows_ *= input.shape()[i];
+    }
+  }
 
   // Replay submits a kernel with by-value layout and no device allocation.
   bool capture_safe() const override { return true; }
@@ -115,34 +133,47 @@ class Operator<LayerNorm, Device::Type::kNvidia, 0> : public LayerNorm {
         weight.strides() != weight_strides_ || out.shape() != out_shape_ ||
         out.strides() != out_strides_ || input.dtype() != dtype_ ||
         weight.dtype() != dtype_ || out.dtype() != dtype_ ||
-        input.device() != device_ || bias.has_value() != has_bias_ ||
+        input.device() != device_ || weight.device() != device_ ||
+        out.device() != device_ || bias.has_value() != has_bias_ ||
         (bias &&
          (bias->shape() != bias_shape_ || bias->strides() != bias_strides_ ||
-          bias->dtype() != dtype_)) ||
-        bits(eps) != bits(eps_) || !supports(input, weight, bias, eps, out))
+          bias->dtype() != dtype_ || bias->device() != device_)) ||
+        bits(eps) != bits(eps_))
       throw std::invalid_argument(
           "NVIDIA LayerNorm call metadata or alias changed after Make");
 
-    std::size_t rows = 1;
-    nvidia_layer_norm_detail::Layout layout{};
-    layout.rank = static_cast<unsigned>(input.ndim());
-    layout.dim = input.size(-1);
-    layout.weight_stride = static_cast<std::size_t>(weight.stride(0));
-    layout.bias_stride = bias ? static_cast<std::size_t>(bias->stride(0)) : 0;
-    for (std::size_t i = 0; i < input.ndim(); ++i) {
-      layout.shape[i] = input.shape()[i];
-      layout.input_strides[i] = static_cast<std::size_t>(input.strides()[i]);
-      layout.out_strides[i] = static_cast<std::size_t>(out.strides()[i]);
-      if (i + 1 < input.ndim()) rows *= input.shape()[i];
-    }
-    if (!rows) return;
+    using namespace nvidia_binary_view;
+    const auto bound = [](const Tensor tensor, std::size_t bytes) {
+      return !bytes ||
+             (tensor.data() && reinterpret_cast<std::uintptr_t>(tensor.data()) %
+                                       tensor.element_size() ==
+                                   0);
+    };
+    int current = -1;
+    if (cudaGetDevice(&current) != cudaSuccess || current != device_.index() ||
+        !bound(input, input_bytes_) || !bound(weight, weight_bytes_) ||
+        !bound(out, out_bytes_) || (bias && !bound(*bias, bias_bytes_)) ||
+        Overlaps(out, out_bytes_, weight, weight_bytes_) ||
+        (bias && Overlaps(out, out_bytes_, *bias, bias_bytes_)) ||
+        (Overlaps(out, out_bytes_, input, input_bytes_) &&
+         !(input.data() == out.data() && exact_inplace_layout_)))
+      throw std::invalid_argument(
+          "NVIDIA LayerNorm current device, pointer or alias changed after "
+          "Make");
+    if (!rows_) return;
     nvidia_layer_norm_detail::Launch(
         input.data(), weight.data(), bias ? bias->data() : nullptr, out.data(),
-        dtype_, layout, rows, eps,
+        dtype_, layout_, rows_, eps_,
         static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
  private:
+  nvidia_layer_norm_detail::Layout layout_{};
+  std::size_t rows_ = 1;
+  std::size_t input_bytes_ = 0, weight_bytes_ = 0, out_bytes_ = 0,
+              bias_bytes_ = 0;
+  bool exact_inplace_layout_ = false;
+
   static std::uint32_t bits(float value) {
     std::uint32_t result;
     std::memcpy(&result, &value, sizeof(result));

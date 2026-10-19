@@ -28,7 +28,6 @@ option(WITH_LINKED "Enable linked third-party operator backends" OFF)
 
 option(BUILD_NVIDIA_FLASH_INFERENCE "Build pinned Torch-free NVIDIA inference Attention" OFF)
 option(BUILD_NVIDIA_W4_MARLIN "Build NVIDIA AWQ/GPTQ Marlin providers (CUDA >= 12.3)" OFF)
-set(FLASH_ATTN_SOURCE_ARCHIVE "" CACHE FILEPATH "Exact flash_attn-2.8.3 source archive")
 if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
     message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
 endif()

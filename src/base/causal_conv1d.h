@@ -75,9 +75,9 @@ class CausalConv1d : public Operator<CausalConv1d> {
         out.shape() != q.shape())
       throw std::invalid_argument("causal conv rank/shape mismatch");
     const size_t channels = q.shape()[2];
-    if (w.shape() != Tensor::Shape{channels, 1, 4} ||
-        state.shape()[1] != channels || state.shape()[2] != 3)
-      throw std::invalid_argument("causal conv requires K4 and state_len3");
+    if (w.shape()[0] != channels || w.shape()[1] != 1 || w.shape()[2] == 0 ||
+        state.shape()[1] != channels || state.shape()[2] != w.shape()[2] - 1)
+      throw std::invalid_argument("causal conv weight/state shape mismatch");
     if (v[6].has_value() == v[8].has_value())
       throw std::invalid_argument(
           "causal conv requires exactly one final state destination mode");
@@ -90,7 +90,8 @@ class CausalConv1d : public Operator<CausalConv1d> {
     }
     if (!v[5] && !v[6] && state.shape()[0] != requests)
       throw std::invalid_argument("causal conv state batch mismatch");
-    if (v[8] && v[8]->shape() != Tensor::Shape{requests, channels, 3})
+    if (v[8] &&
+        v[8]->shape() != Tensor::Shape{requests, channels, state.shape()[2]})
       throw std::invalid_argument("causal conv final state shape mismatch");
     if (v[3] && v[3]->shape() != Tensor::Shape{channels})
       throw std::invalid_argument("causal conv bias shape mismatch");
@@ -117,7 +118,7 @@ class CausalConv1d : public Operator<CausalConv1d> {
                 "causal conv broadcast destination unsupported");
     }
     if (q.shape()[1] >
-            static_cast<size_t>(std::numeric_limits<int64_t>::max() - 3) ||
+            static_cast<size_t>(std::numeric_limits<int64_t>::max()) ||
         state.shape()[0] >
             static_cast<size_t>(std::numeric_limits<int64_t>::max()))
       throw std::overflow_error("causal conv index extent exceeds int64");

@@ -51,15 +51,6 @@ struct DeviceScope {
   ~DeviceScope() { cudaSetDevice(previous); }
 };
 
-// Candidate ordinary MHA-only extension. Keep true d/strides, use existing 96
-// specialization's Is_even_K=false masking. No physical padding or new
-// algorithm.
-int ordinary_head_dim_bin(int dimension) {
-  return dimension == 72 || dimension == 80
-             ? 96
-             : native_flash::head_dim_bin(dimension);
-}
-
 bool plain_layout(Tensor t, int dimensions) {
   if (dimensions < 1 || dimensions > 4 || t.ndim() != dimensions ||
       t.stride(-1) != 1)
@@ -121,13 +112,8 @@ bool Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>::supported_layout(
     const Tensor q, Tensor k, Tensor v, std::optional<Tensor> lengths,
     std::optional<Tensor> blocks, Tensor out) {
   if (!plain_layout(q, 4) || !plain_layout(k, 4) || !plain_layout(v, 4) ||
-      !plain_layout(out, 4) || !ordinary_head_dim_bin(q.size(3)) ||
+      !plain_layout(out, 4) || !native_flash::head_dim_bin(q.size(3)) ||
       q.device().type() != Device::Type::kNvidia)
-    return false;
-  // New dimensions are restricted to ordinary dense MHA, not decode/GQA,
-  // length-masked or paged cache domains that require separate qualification.
-  if ((q.size(3) == 72 || q.size(3) == 80) &&
-      (lengths || blocks || q.size(0) != k.size(0) || q.size(2) != k.size(2)))
     return false;
   // Upstream vectorized loads/stores require 16-byte-aligned rows and heads.
   // Metadata-only descriptor views may have null data until invocation.
@@ -142,7 +128,10 @@ bool Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>::supported_layout(
        (!plain_layout(*blocks, 2) ||
         blocks->size(1) > (std::numeric_limits<int>::max() - 127) / k.size(1))))
     return false;
-  return true;
+  int major = 0;
+  return cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor,
+                                q.device().index()) == cudaSuccess &&
+         major >= 8;
 }
 
 void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>::prepare(
@@ -169,7 +158,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>::prepare(
   p.h = q.size(2);
   p.h_k = cache.size(2);
   p.d = q.size(3);
-  p.d_rounded = ordinary_head_dim_bin(p.d);
+  p.d_rounded = native_flash::head_dim_bin(p.d);
   p.seqlen_q = q.size(1);
   p.seqlen_k = logical_bound > 0
                    ? logical_bound

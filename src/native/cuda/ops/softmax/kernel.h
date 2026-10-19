@@ -5,8 +5,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
-#include <exception>
-#include <new>
 #include <stdexcept>
 #include <vector>
 
@@ -14,6 +12,7 @@
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
+#include "native/cuda/device_buffer.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/softmax_infinilm/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
@@ -39,9 +38,6 @@ class CudaSoftmax : public Softmax {
     assert(!out.HasBroadcastDim() &&
            "`Softmax` output must not have broadcasted dimensions");
 
-    if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
-      throw std::runtime_error(
-          "CudaSoftmax cannot query metadata owner device");
     block_size_ = std::min(
         RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
     if (row_count_ == 0 || dim_size_ == 0) return;
@@ -54,51 +50,23 @@ class CudaSoftmax : public Softmax {
     }
 
     std::vector<std::byte> metadata(metadata_size);
-    void* allocation = nullptr;
-    const auto status = Backend::Malloc(&allocation, metadata_size);
-    if (status != Backend::kSuccess || !allocation) {
-      if (allocation && Backend::Free(allocation) != Backend::kSuccess)
-        std::terminate();
-      throw std::bad_alloc();
-    }
-    d_metadata_ = static_cast<std::byte*>(allocation);
+    auto* d_metadata_ = metadata_.Allocate(metadata_size);
 
-    try {
-      size_t offset = 0;
-      d_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
-      offset += shape_size;
+    size_t offset = 0;
+    d_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
+    offset += shape_size;
 
-      d_input_strides_ =
-          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_strides_.data(),
-                  strides_size);
-      offset += strides_size;
+    d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+    offset += strides_size;
 
-      d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
+    d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-      if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                          Backend::kMemcpyHostToDevice) != Backend::kSuccess)
-        throw std::runtime_error("CudaSoftmax metadata copy failed");
-    } catch (...) {
-      if (Backend::Free(d_metadata_) != Backend::kSuccess) std::terminate();
-      d_metadata_ = nullptr;
-      throw;
-    }
-  }
-
-  ~CudaSoftmax() {
-    if (!d_metadata_) return;
-    int previous = -1;
-    if (Backend::GetDevice(&previous) != Backend::kSuccess) std::terminate();
-    const bool switched = previous != owner_device_;
-    if (switched && Backend::SetDevice(owner_device_) != Backend::kSuccess)
-      std::terminate();
-    const auto freed = Backend::Free(d_metadata_);
-    if (switched && Backend::SetDevice(previous) != Backend::kSuccess)
-      std::terminate();
-    if (freed != Backend::kSuccess) std::terminate();
+    if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                        Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+      throw std::runtime_error("CudaSoftmax metadata copy failed");
   }
 
   void operator()(const Tensor input, const int64_t,
@@ -132,8 +100,7 @@ class CudaSoftmax : public Softmax {
   }
 
  private:
-  std::byte* d_metadata_{nullptr};
-  int owner_device_{-1};
+  CudaDeviceBuffer<Backend> metadata_;
   int block_size_{0};
 
   Tensor::Size* d_shape_{nullptr};

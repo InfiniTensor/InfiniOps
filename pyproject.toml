@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core", "pybind11", "libclang", "packaging", "pyyaml"]
+requires = ["scikit-build-core", "pybind11", "libclang", "packaging", "pyyaml", "jinja2"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -11,6 +11,23 @@ dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff==0.15.22", "torch", "pyyaml
 
 [tool.scikit-build.wheel]
 install-dir = "infini"
+
+[tool.scikit-build.sdist]
+exclude = ["third_party/flash-attention/**", "third_party/vllm/**"]
+include = [
+    "third_party/flash-attention/LICENSE",
+    "third_party/flash-attention/AUTHORS",
+    "third_party/flash-attention/csrc/flash_attn/src/*.h",
+    "third_party/flash-attention/csrc/flash_attn/src/*.cuh",
+    "third_party/flash-attention/csrc/flash_attn/flash_api.cpp",
+    "third_party/flash-attention/csrc/cutlass/include/**",
+    "third_party/flash-attention/csrc/cutlass/LICENSE.txt",
+    "third_party/vllm/LICENSE",
+    "third_party/vllm/csrc/libtorch_stable/quantization/marlin/*.h",
+    "third_party/vllm/csrc/libtorch_stable/quantization/marlin/*.cuh",
+    "third_party/vllm/csrc/libtorch_stable/quantization/marlin/*repack.cu",
+    "third_party/vllm/csrc/libtorch_stable/quantization/marlin/generate_kernels.py",
+]
 
 [tool.scikit-build.cmake.define]
 AUTO_DETECT_DEVICES = "ON"

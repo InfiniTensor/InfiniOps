@@ -51,22 +51,6 @@ class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
     if (cudaGetDevice(&current_device) != cudaSuccess ||
         current_device != input.device().index())
       return false;
-    if (input.dtype() == DataType::kBFloat16) {
-      // Device architecture is immutable, while supports() is on the Call hot
-      // path. Keep the metadata-only qualification local to each host thread.
-      static thread_local int cached_device = -1;
-      static thread_local bool cached_bf16 = false;
-      if (cached_device != current_device) {
-        int major = 0;
-        if (cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor,
-                                   current_device) != cudaSuccess)
-          return false;
-        cached_bf16 = major >= 8;
-        cached_device = current_device;
-      }
-      if (!cached_bf16) return false;
-    }
-
     const auto max_i64 =
         static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     std::size_t input_count = 1, output_count = 1;

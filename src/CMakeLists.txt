@@ -1692,8 +1692,33 @@ install(TARGETS infiniops
 
 install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY.txt"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/LICENSES/"
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/InfiniCore-MIT.txt"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+if(BUILD_NVIDIA_W4_MARLIN)
+    install(FILES
+        "${PROJECT_SOURCE_DIR}/LICENSES/FasterTransformer-BSD-3-Clause.txt"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+endif()
+if(WITH_NVIDIA)
+    install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/CUTLASS-BSD-3-Clause.txt"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+endif()
+if(WITH_LINKED)
+    # Keep the fixed recipe's secondary notices as a conservative fallback;
+    # additionally preserve the inventory of the distributions actually used.
+    install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/Apache-2.0-components.txt"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+    install(DIRECTORY
+        "${PROJECT_SOURCE_DIR}/LICENSES/FlashInfer-0.6.7"
+        "${PROJECT_SOURCE_DIR}/LICENSES/TVM-FFI-0.1.10"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+    foreach(_notice IN LISTS INFINI_OPS_LINKED_NOTICE_FILES)
+        get_filename_component(_notice_dir "${_notice}" DIRECTORY)
+        string(SHA256 _notice_group "${_notice_dir}")
+        install(FILES "${_notice}"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps/resolved/${_notice_group}")
+    endforeach()
+endif()
 
 set(INFINI_OPS_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps")
 

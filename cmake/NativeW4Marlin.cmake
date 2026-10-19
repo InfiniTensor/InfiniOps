@@ -2,22 +2,52 @@ if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 12.3)
     message(FATAL_ERROR "NVIDIA Marlin requires CUDA >=12.3 and C++20")
 endif()
 set(_w4_root "${PROJECT_SOURCE_DIR}/src/native/cuda/nvidia/ops/w4_marlin")
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_program(_w4_patch NAMES patch REQUIRED)
+set(_w4_upstream "${PROJECT_SOURCE_DIR}/third_party/vllm")
+set(_w4_upstream_marlin "${_w4_upstream}/csrc/libtorch_stable/quantization/marlin")
+set(_w4_prepared "${CMAKE_CURRENT_BINARY_DIR}/native-w4-marlin")
+set(_w4_inputs
+    "${PROJECT_SOURCE_DIR}/scripts/prepare_marlin.py"
+    "${PROJECT_SOURCE_DIR}/patches/marlin/w4a16.patch")
+foreach(_w4_input dequant.h kernel.h marlin.cuh marlin_dtypes.cuh
+        marlin_mma.h marlin_template.h awq_marlin_repack.cu
+        gptq_marlin_repack.cu generate_kernels.py)
+    list(APPEND _w4_inputs "${_w4_upstream_marlin}/${_w4_input}")
+endforeach()
+foreach(_w4_input IN LISTS _w4_inputs)
+    if(NOT EXISTS "${_w4_input}")
+        message(FATAL_ERROR
+            "Native Marlin is missing ${_w4_input}. Initialize third_party/vllm.")
+    endif()
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_w4_inputs})
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/prepare_marlin.py"
+        --source-dir "${_w4_upstream}" --output "${_w4_prepared}"
+        --patch-executable "${_w4_patch}"
+    RESULT_VARIABLE _w4_status ERROR_VARIABLE _w4_prepare_error)
+if(NOT _w4_status EQUAL 0)
+    message(FATAL_ERROR "Pinned Marlin preparation failed: ${_w4_prepare_error}")
+endif()
 add_library(infiniops_w4_marlin OBJECT
     "${_w4_root}/repack.cc"
     "${_w4_root}/repack_awq.cu"
     "${_w4_root}/repack_gptq.cu"
     "${_w4_root}/parameters.cu"
     "${_w4_root}/gemm.cu"
-    "${_w4_root}/vendor/gemm/nvidia/sm80_kernel_bfloat16_u4_bfloat16.cu"
-    "${_w4_root}/vendor/gemm/nvidia/sm80_kernel_bfloat16_u4b8_bfloat16.cu"
-    "${_w4_root}/vendor/gemm/nvidia/sm80_kernel_float16_u4_float16.cu"
-    "${_w4_root}/vendor/gemm/nvidia/sm80_kernel_float16_u4b8_float16.cu")
+    "${_w4_prepared}/vendor/gemm/nvidia/sm80_kernel_bfloat16_u4_bfloat16.cu"
+    "${_w4_prepared}/vendor/gemm/nvidia/sm80_kernel_bfloat16_u4b8_bfloat16.cu"
+    "${_w4_prepared}/vendor/gemm/nvidia/sm80_kernel_float16_u4_float16.cu"
+    "${_w4_prepared}/vendor/gemm/nvidia/sm80_kernel_float16_u4b8_float16.cu")
 set_target_properties(infiniops_w4_marlin PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
     CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON
     CUDA_ARCHITECTURES 80)
 target_include_directories(infiniops_w4_marlin PRIVATE
+    "${_w4_prepared}" "${_w4_prepared}/vendor/gemm"
+    "${_w4_prepared}/vendor/gemm/nvidia" "${_w4_root}/vendor/gemm"
     "${PROJECT_SOURCE_DIR}/src" "${PROJECT_SOURCE_DIR}/include"
     ${INFINI_RT_INCLUDE_DIRS})
 target_link_libraries(infiniops_w4_marlin PRIVATE infinirt CUDA::cudart)

@@ -39,6 +39,17 @@ class Operator<UpsampleBilinear2d, Device::Type::kNvidia, 0>
                        const bool align_corners,
                        const std::optional<double> scales_h,
                        const std::optional<double> scales_w, Tensor out) {
+    return Supports(input, output_size, align_corners, scales_h, scales_w, out,
+                    false);
+  }
+
+ private:
+  static bool Supports(const Tensor input,
+                       const std::vector<std::int64_t> output_size,
+                       const bool align_corners,
+                       const std::optional<double> scales_h,
+                       const std::optional<double> scales_w, Tensor out,
+                       bool invocation) {
     (void)align_corners;
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != out.device() || input.shape().size() != 4 ||
@@ -52,13 +63,10 @@ class Operator<UpsampleBilinear2d, Device::Type::kNvidia, 0>
         input.shape()[0] != out.shape()[0] ||
         input.shape()[1] != out.shape()[1])
       return false;
-    int current_device = -1;
-    if (cudaGetDevice(&current_device) != cudaSuccess ||
-        current_device != input.device().index())
-      return false;
     if (input.dtype() == DataType::kBFloat16) {
       cudaDeviceProp properties{};
-      if (cudaGetDeviceProperties(&properties, current_device) != cudaSuccess ||
+      if (cudaGetDeviceProperties(&properties, input.device().index()) !=
+              cudaSuccess ||
           properties.major < 8)
         return false;
     }
@@ -97,14 +105,20 @@ class Operator<UpsampleBilinear2d, Device::Type::kNvidia, 0>
     if (!width ||
         input_span > std::numeric_limits<std::size_t>::max() / width ||
         output_count > std::numeric_limits<std::size_t>::max() / width ||
-        !CheckedContiguous(out) || !input.data() || !out.data() ||
-        reinterpret_cast<std::uintptr_t>(input.data()) % width ||
+        !CheckedContiguous(out))
+      return false;
+    if (!invocation) return true;
+    int current_device = -1;
+    if (cudaGetDevice(&current_device) != cudaSuccess ||
+        current_device != input.device().index() || !input.data() ||
+        !out.data() || reinterpret_cast<std::uintptr_t>(input.data()) % width ||
         reinterpret_cast<std::uintptr_t>(out.data()) % width)
       return false;
     return !Overlaps(input.data(), input_span * width, out.data(),
                      output_count * width);
   }
 
+ public:
   Operator(const Tensor input, const std::vector<std::int64_t> output_size,
            const bool align_corners, const std::optional<double> scales_h,
            const std::optional<double> scales_w, Tensor out)
@@ -184,7 +198,8 @@ class Operator<UpsampleBilinear2d, Device::Type::kNvidia, 0>
                        const std::vector<std::int64_t>& output_size,
                        bool align_corners, std::optional<double> scales_h,
                        std::optional<double> scales_w, Tensor out) {
-    if (!supports(input, output_size, align_corners, scales_h, scales_w, out))
+    if (!Supports(input, output_size, align_corners, scales_h, scales_w, out,
+                  true))
       throw std::invalid_argument(
           "unsupported NVIDIA UpsampleBilinear2d metadata, device or alias");
   }

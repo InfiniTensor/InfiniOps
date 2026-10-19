@@ -29,10 +29,8 @@
 
 namespace infini::ops {
 
-// Native inference provider: qualified heads, read-only cache, global or finite
-// left-window/right-zero attention, no ALiBi/softcap.
-// Other existing configurations remain with their previous providers. The
-// explicit build option is not enabled in the accepted LM candidate yet.
+// Native inference provider: rounded kernel widths, read-only cache, global or
+// finite left-window/right-zero attention, no ALiBi/softcap.
 template <>
 class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>
     : public FlashAttnWithKvcache {
@@ -51,9 +49,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>
                window_size[1] == 0)) &&
              softcap == 0.0 && num_splits <= 128 && !return_softmax_lse &&
              supported_layout(q, k_cache, v_cache, cache_seqlens, block_table,
-                              out) &&
-             ((q.size(3) != 72 && q.size(3) != 80) ||
-              (!causal && window_size[0] == -1));
+                              out);
     }
   }
 
@@ -151,11 +147,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>
   }
 
   // Graph callers must supply stable external workspace for the graph lifetime.
-  // The qualified native domain is enforced by supports(), not the GPU type.
-  bool capture_safe() const override {
-    // New ordinary head dimensions are SOURCE_ONLY, never capture-qualified.
-    return q_shape_[3] != 72 && q_shape_[3] != 80;
-  }
+  bool capture_safe() const override { return true; }
   std::size_t workspace_size_in_bytes() const override;
 
  private:

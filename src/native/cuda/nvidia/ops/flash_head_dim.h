@@ -2,24 +2,12 @@
 
 namespace infini::ops::native_flash {
 
-// This intentionally names only the head dimensions qualified by this native
-// provider. The pinned FA 2.8.3 kernels round 160 and 224 to the next 64.
+// The pinned FA 2.8.3 launchers specialize these rounded widths. Kernels keep
+// the logical d and use Is_even_K=false masks for shorter vector-aligned rows.
 inline int head_dim_bin(int dimension) {
-  switch (dimension) {
-    case 32:
-    case 64:
-    case 96:
-    case 128:
-    case 192:
-    case 256:
-      return dimension;
-    case 160:
-      return 192;
-    case 224:
-      return 256;
-    default:
-      return 0;
-  }
+  if (dimension <= 0 || dimension > 256 || dimension % 8) return 0;
+  if (dimension <= 128) return ((dimension + 31) / 32) * 32;
+  return ((dimension + 63) / 64) * 64;
 }
 
 inline int split_block_n(int bin) {

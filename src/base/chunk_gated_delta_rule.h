@@ -88,7 +88,7 @@ class ChunkGatedDeltaRule : public Operator<ChunkGatedDeltaRule> {
         beta.shape() != g.shape())
       throw std::invalid_argument("chunk delta rank/shape mismatch");
     const auto physical_B = q.shape()[0], T = q.shape()[1], Hk = q.shape()[2],
-               Hv = v.shape()[2], D = q.shape()[3];
+               Hv = v.shape()[2], D = q.shape()[3], Dv = v.shape()[3];
     size_t B = physical_B;
     if (a[6]) {
       if (physical_B != 1 || a[6]->ndim() != 1 || a[6]->numel() < 2)
@@ -97,16 +97,15 @@ class ChunkGatedDeltaRule : public Operator<ChunkGatedDeltaRule> {
       B = a[6]->numel() - 1;
     }
     if (v.shape()[0] != physical_B || v.shape()[1] != T || !Hk || !Hv ||
-        Hv % Hk || v.shape()[3] != D || (D != 64 && D != 128) ||
-        g.shape() != Tensor::Shape{physical_B, T, Hv})
+        Hv % Hk || !D || !Dv || g.shape() != Tensor::Shape{physical_B, T, Hv})
       throw std::invalid_argument(
-          "chunk delta requires Dk=Dv64/128 and Hv multiple of Hk");
+          "chunk delta data/gate shape or head grouping mismatch");
     if (a[8].has_value() == a[10].has_value())
       throw std::invalid_argument(
           "chunk delta requires exactly one final destination mode");
-    if (state.shape()[1] != Hv || state.shape()[2] != D ||
+    if (state.shape()[1] != Hv || state.shape()[2] != Dv ||
         state.shape()[3] != D || (!a[7] && !a[8] && state.shape()[0] != B) ||
-        (a[10] && a[10]->shape() != Tensor::Shape{B, Hv, D, D}))
+        (a[10] && a[10]->shape() != Tensor::Shape{B, Hv, Dv, D}))
       throw std::invalid_argument(
           "chunk delta state layout must be pool/B,Hv,Dv,Dk");
     for (size_t i = 0; i < a.size(); ++i) {

@@ -7,7 +7,6 @@
 
 #include "operator.h"
 namespace infini::ops {
-// Candidate src/base/recurrent_gated_delta_rule.h. Decode-only T=1.
 class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
  public:
   RecurrentGatedDeltaRule(const Tensor q, const Tensor k, const Tensor v,
@@ -84,18 +83,17 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
         beta.shape() != g.shape())
       throw std::invalid_argument("recurrent delta rank/shape mismatch");
     const auto B = q.shape()[0], Hk = q.shape()[2], Hv = v.shape()[2],
-               D = q.shape()[3];
-    if (q.shape()[1] != 1 || v.shape()[0] != B || v.shape()[1] != 1 || !Hk ||
-        !Hv || Hv % Hk || v.shape()[3] != D || (D != 64 && D != 128) ||
-        g.shape() != Tensor::Shape{B, 1, Hv})
+               D = q.shape()[3], Dv = v.shape()[3], T = q.shape()[1];
+    if (v.shape()[0] != B || v.shape()[1] != T || !Hk || !Hv || Hv % Hk || !D ||
+        !Dv || g.shape() != Tensor::Shape{B, T, Hv})
       throw std::invalid_argument(
-          "recurrent delta requires T1, Dk=Dv64/128 and Hv multiple of Hk");
+          "recurrent delta data/gate shape or head grouping mismatch");
     if (a[7].has_value() == a[9].has_value())
       throw std::invalid_argument(
           "recurrent delta requires exactly one final destination mode");
-    if (state.shape()[1] != Hv || state.shape()[2] != D ||
+    if (state.shape()[1] != Hv || state.shape()[2] != Dv ||
         state.shape()[3] != D || (!a[6] && !a[7] && state.shape()[0] != B) ||
-        (a[9] && a[9]->shape() != Tensor::Shape{B, Hv, D, D}))
+        (a[9] && a[9]->shape() != Tensor::Shape{B, Hv, Dv, D}))
       throw std::invalid_argument(
           "recurrent delta state layout must be pool/B,Hv,Dv,Dk");
     for (size_t i = 0; i < a.size(); ++i) {

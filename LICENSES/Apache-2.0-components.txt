@@ -1,0 +1,82 @@
+Apache-2.0 components
+
+The complete common Apache License, Version 2.0, including sections 1-9 and
+the application appendix, is in the repository LICENSE, installed beside
+this file as share/licenses/InfiniOps/LICENSE. Distribute that file together
+with this component list and the accompanying notices.
+
+This list consolidates the common Apache terms from the fixed releases below.
+Their distinct copyrights, NOTICE files and secondary licenses remain
+applicable. It is not a license inventory for arbitrary resolved versions.
+
+FlashInfer 0.6.7
+https://github.com/flashinfer-ai/flashinfer/tree/v0.6.7
+Copyright 2025-2026 NVIDIA
+Copyright 2023-2026 FlashInfer community (https://flashinfer.ai/)
+License: Apache-2.0, complete terms in LICENSE.
+Original NOTICE retained in FlashInfer-0.6.7/NOTICE.txt.
+
+The following component list is retained from the release LICENSE:
+-------------------------------------------------------------------------------------------------
+Some of the code in this project are adapted from other open-source projects with different
+licenses. This product also bundles some third-party components under other open source licenses.
+This section summarizes those components and their licenses.
+See licenses/ for text of these licenses.
+
+BSD 3-Clause License
+--------------------
+
+include/flashinfer/attention/hopper/epilogue.cuh
+include/flashinfer/attention/hopper/mainloop.cuh
+include/flashinfer/attention/hopper/kernel_traits.cuh
+include/flashinfer/attention/hopper/named_barrier.cuh
+include/flashinfer/attention/hopper/tile_scheduler.cuh
+include/flashinfer/attention/hopper/utils.cuh
+
+BSD 3-Clause "New" License
+--------------------------
+
+3rdparty/cutlass
+include/flashinfer/attention/hopper/block_sparse_gather.cuh
+
+MIT License
+-----------
+
+3rdparty/spdlog
+3rdparty/spdlog/include/spdlog/fmt/bundled (fmt library)
+
+The release's licenses/ materials are retained here in FlashInfer-0.6.7/:
+LICENSE.flashattention3.txt, LICENSE.cutlass.txt, LICENSE.spdlog.txt,
+LICENSE.fmt.txt. These keep each original copyright and complete terms.
+
+Apache TVM FFI 0.1.10
+https://github.com/apache/tvm-ffi/tree/v0.1.10
+Copyright 2024-present The Apache Software Foundation
+License: Apache-2.0, complete terms in LICENSE.
+Original NOTICE retained in TVM-FFI-0.1.10/NOTICE.txt.
+
+The following component list is retained from the release LICENSE:
+------------------------------------------------------------------------------------
+This product bundles various third-party components under other open source licenses.
+This section summarizes those components and their licenses. See licenses/
+for text of these licenses.
+
+
+Apache Software Foundation License 2.0
+--------------------------------------
+
+3rdparty/dlpack
+
+BSD 3-Clause "New" or "Revised" License
+---------------------------------------
+
+3rdparty/libbacktrace
+
+DLPack: Copyright 2017 by Contributors
+License: Apache-2.0, complete terms in LICENSE.
+
+The release's other licenses/ materials are retained in TVM-FFI-0.1.10/:
+LICENSE.libbacktrace.txt, LICENSE.pytorch.txt, NOTICE.pytorch.txt.
+Their complete original terms and copyrights are retained, including the
+PyTorch secondary notices. This consolidation does not assert that every
+component in the full releases is compiled into sampling.so or libtvm_ffi.so.

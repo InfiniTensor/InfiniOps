@@ -21,7 +21,7 @@
 
 namespace infini::ops {
 
-// Inference-only qualified head dimensions are checked by supports().
+// Inference-only rounded widths and vector layouts are checked by supports().
 // Automatic selection leaves other configurations to an existing provider;
 // construction failures propagate.
 template <>

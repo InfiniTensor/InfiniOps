@@ -14,28 +14,34 @@ W = P/w4_marlin/vendor/
 
 W4 / Marlin
 Upstream projects: https://github.com/IST-DASLab/marlin and https://github.com/vllm-project/vllm
+Current kernel source: third_party/vllm, pinned gitlink
+ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab,
+csrc/libtorch_stable/quantization/marlin. Only its source kernels and generator
+are consumed; the vLLM/Torch runtime is not a dependency of this native target.
+The original Ops port came through the fixed Core donor above; this selected
+vLLM revision is not asserted to be the unique historical origin of that port.
+Preparation applies patches/marlin to build-directory copies, retaining the
+existing Torch-free includes, repack bindings and activation-order index behavior.
+CUDA template instances and their selector are generated together in the build
+directory. The four host/type adaptations below remain in Ops.
 Marlin notices retain Copyright 2024 Elias Frantar, modifications by Neural Magic, Apache-2.0.
 The original generator identifies Apache-2.0 / Copyright contributors to the vLLM project.
-Marlin original Apache headers remain in marlin_template.h and nvidia/kernel.cuh; Apache text: LICENSE.
-Target <- direct donor; COPY retains the donor implementation (apart from added attribution
-headers); ADAPTED/PORTED/GENERATED identify changes described below. Original notices remain.
-ADAPTED W/awq_repack/cuda/kernel.cuh <- C/awq_marlin_repack/cuda/kernel.cuh (include-path-only; kernel body unchanged)
+Marlin original Apache headers remain in the prepared source and nvidia/kernel.cuh;
+Apache text: LICENSE. Original source notices remain in prepared files.
+Remaining adaptations <- direct Core donor:
 COPY W/gemm/core/scalar_type.hpp <- C/awq_marlin_gemm/core/scalar_type.hpp
 COPY W/gemm/core/source_location.h <- C/awq_marlin_gemm/core/source_location.h
 ADAPTED W/gemm/core/utils.h <- C/awq_marlin_gemm/core/utils.h (unused pointer/range/dtype helpers removed; runtime checks unchanged)
-COPY W/gemm/marlin/dequant.h <- C/awq_marlin_gemm/marlin/dequant.h
-COPY W/gemm/marlin/kernel.h <- C/awq_marlin_gemm/marlin/kernel.h
-COPY W/gemm/marlin/marlin.cuh <- C/awq_marlin_gemm/marlin/marlin.cuh
-COPY W/gemm/marlin/marlin_dtypes.cuh <- C/awq_marlin_gemm/marlin/marlin_dtypes.cuh
-COPY W/gemm/marlin/marlin_mma.h <- C/awq_marlin_gemm/marlin/marlin_mma.h
-ADAPTED W/gemm/marlin/marlin_template.h <- C/awq_marlin_gemm/marlin/marlin_template.h
+The prepared marlin/dequant.h INT4/INT8 conversion portions also derive from NVIDIA FasterTransformer:
+https://github.com/NVIDIA/FasterTransformer/blob/release/v5.3_tag/src/fastertransformer/cutlass_extensions/include/cutlass_extensions/interleaved_numeric_conversion.h
+The dequant.h references map INT4 FP16/BF16 to upstream lines 215-287/327-385
+and INT8 FP16/BF16 to upstream lines 53-85/125-175; packing, bias and scalar
+specializations are adapted by the Marlin donor, not source-identical copies.
+Original Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES and the
+complete BSD-3-Clause terms are retained in the prepared dequant.h and
+LICENSES/FasterTransformer-BSD-3-Clause.txt. The separate CUTLASS dependency's
+2017-2026 notice does not replace this original copyright notice.
 COPY W/gemm/nvidia/kernel.cuh <- C/awq_marlin_gemm/nvidia/kernel.cuh
-GENERATED W/gemm/nvidia/kernel_selector.h <- C/awq_marlin_gemm/nvidia/generate_kernels.py
-GENERATED W/gemm/nvidia/sm80_kernel_bfloat16_u4_bfloat16.cu <- C/awq_marlin_gemm/nvidia/generate_kernels.py
-GENERATED W/gemm/nvidia/sm80_kernel_bfloat16_u4b8_bfloat16.cu <- C/awq_marlin_gemm/nvidia/generate_kernels.py
-GENERATED W/gemm/nvidia/sm80_kernel_float16_u4_float16.cu <- C/awq_marlin_gemm/nvidia/generate_kernels.py
-GENERATED W/gemm/nvidia/sm80_kernel_float16_u4b8_float16.cu <- C/awq_marlin_gemm/nvidia/generate_kernels.py
-ADAPTED W/gptq_repack/cuda/kernel.cuh <- C/gptq_marlin_repack/cuda/kernel.cuh (include-path-only; kernel body unchanged)
 ADAPTED P/w4_marlin/parameters.cu implements the scale/zero permutations from
 vLLM's vllm/model_executor/layers/quantization/utils/marlin_utils.py;
 the fixed reference revision and loading-only CUDA adaptation are noted in that file.
@@ -55,11 +61,15 @@ Namespace, layout/backend binding and resource adaptations are not described as 
 
 FlashAttention / CUTLASS
 Projects: https://github.com/Dao-AILab/flash-attention and https://github.com/NVIDIA/cutlass
-Direct archive: flash_attn-2.8.3, SHA256 1e71dd64a9e0280e0447b8a0c2541bad4bf6ac65bdeaa2f90e51a9e57de0370d.
-scripts/prepare_flash_attention_inference.py imports csrc/flash_attn/src forward headers and csrc/cutlass/include.
-It preserves upstream header notices and copies the archive LICENSE and AUTHORS verbatim to the prepared build directory.
+Source: third_party/flash-attention, pinned gitlink
+060c9188beec3a8b62b33a3bfa6d5d2d44975fab (v2.8.3).
+Its csrc/cutlass gitlink is dc4817921edda44a549197ff3a9dcf5df0636e7b.
+scripts/prepare_flash_attention_inference.py prepares csrc/flash_attn/src
+forward headers with patches/flash-attention, preserving source notices, and
+copies upstream LICENSE and AUTHORS. CUTLASS headers are included directly
+from the nested source dependency; its LICENSE.txt is copied for distribution.
 The adapted scheduling heuristic comes from csrc/flash_attn/flash_api.cpp and retains Copyright 2023 Tri Dao.
-The original archive/CUTLASS notices govern those portions; the Core MIT notice does not relicense them.
+The original FlashAttention/CUTLASS notices govern those portions; the Core MIT notice does not relicense them.
 Native launch templates, descriptors and workspace/lifetime integration are glue around the imported forward mathematics.
 
 Additional vLLM / TensorRT-LLM / Ascend adaptations
@@ -75,12 +85,20 @@ retain their Huawei/InfiniTensor notices and vLLM-Ascend source links.
 Distribution
 SDK installation includes LICENSE, this attribution list and LICENSES under
 share/licenses/InfiniOps. Native FlashAttention installation also includes the exact
-archive LICENSE and AUTHORS and the bundled CUTLASS header's complete license block.
+upstream LICENSE and AUTHORS and the nested CUTLASS LICENSE.txt.
 CUTLASS-BSD-3-Clause.txt records the separate CMake dependency at
 087c84df83d254b5fb295a7a408f1a1d554085cf. CUTLASS notices apply separately to its compiled headers.
 Linked libraries are not relicensed by Ops: distributions bundling sampling.so or
 libtvm_ffi.so must retain the resolved FlashInfer/TVM-FFI licenses, NOTICE files and
 applicable third-party notices. See docs/build-nvidia-inference.md for the pinned recipe.
-LICENSES/FlashInfer-0.6.7 and LICENSES/TVM-FFI-0.1.10 retain the corresponding
-upstream release LICENSE, NOTICE and licenses/ materials for that recipe verbatim.
+LICENSES/Apache-2.0-components.txt maps the corresponding release components
+and copyrights to the complete common Apache terms in LICENSE, and preserves
+their original secondary-component lists. LICENSES/FlashInfer-0.6.7 and
+LICENSES/TVM-FFI-0.1.10 retain the upstream NOTICE and secondary-license texts
+verbatim; the repeated common Apache terms are consolidated, not omitted.
 They are not a substitute for the notices of a different resolved binary version.
+These release bundles conservatively retain upstream secondary notices, including
+PyTorch-derived TVM-FFI code; not importing Torch does not remove source-derived
+obligations. The full Python wheels contain more components than sampling.so and
+libtvm_ffi.so alone. Do not infer a native-only notice subset from Python imports
+or from an absent wheel license directory; check the compiled source provenance.

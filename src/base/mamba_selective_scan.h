@@ -40,11 +40,9 @@ class MambaSelectiveScan : public Operator<MambaSelectiveScan> {
           "MambaSelectiveScan: expected F32/F16/BF16 inputs");
     const auto parameter_dtype = ts[5].dtype();
     if (ts[6].dtype() != parameter_dtype ||
-        (parameter_dtype != dtype && parameter_dtype != DataType::kFloat32) ||
-        (parameter_dtype != dtype &&
-         ts[1].device().type() != Device::Type::kNvidia))
+        (parameter_dtype != dtype && parameter_dtype != DataType::kFloat32))
       throw std::invalid_argument(
-          "MambaSelectiveScan: A_log/D must share input dtype or NVIDIA F32");
+          "MambaSelectiveScan: A_log/D must share input dtype or F32");
     constexpr int ranks[10] = {3, 3, 3, 3, 3, 2, 1, 3, 1, 3};
     for (int i = 0; i < 10; ++i) {
       if (ts[i].ndim() != static_cast<std::size_t>(ranks[i]) ||

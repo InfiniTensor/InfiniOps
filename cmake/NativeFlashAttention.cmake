@@ -3,19 +3,40 @@
 function(infiniops_add_native_flash target)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     find_package(CUDAToolkit REQUIRED)
-    if(NOT EXISTS "${FLASH_ATTN_SOURCE_ARCHIVE}")
-        message(FATAL_ERROR "Native FlashAttention requires the pinned source archive")
-    endif()
+    find_program(_flash_patch NAMES patch REQUIRED)
     set(_provider "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../src/native/cuda/nvidia/ops/flash_attn_with_kvcache")
     set(_varlen_provider "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../src/native/cuda/nvidia/ops/flash_attn_varlen_func")
     set(_source "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/..")
+    set(_upstream "${_source}/third_party/flash-attention")
+    set(_kernel_source "${_upstream}/csrc/flash_attn/src")
+    set(_cutlass_include "${_upstream}/csrc/cutlass/include")
     set(_prepared "${CMAKE_CURRENT_BINARY_DIR}/native-flash-inference")
+    set(_inputs "${_source}/scripts/prepare_flash_attention_inference.py"
+        "${_source}/patches/flash-attention/inference.patch"
+        "${_upstream}/csrc/flash_attn/flash_api.cpp"
+        "${_upstream}/LICENSE" "${_upstream}/AUTHORS"
+        "${_upstream}/csrc/cutlass/LICENSE.txt"
+        "${_cutlass_include}/cutlass/cutlass.h")
+    # Fixed forward closure: no recursive source scanning or copied CUTLASS tree.
+    foreach(_header block_info.h dropout.h flash.h flash_fwd_kernel.h
+            flash_fwd_launch_template.h hardware_info.h kernel_traits.h mask.h
+            namespace_config.h philox.cuh rotary.h softmax.h static_switch.h utils.h)
+        list(APPEND _inputs "${_kernel_source}/${_header}")
+    endforeach()
+    foreach(_input IN LISTS _inputs)
+        if(NOT EXISTS "${_input}")
+            message(FATAL_ERROR
+                "Native FlashAttention is missing ${_input}. Initialize third_party/flash-attention and its CUTLASS submodule.")
+        endif()
+    endforeach()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_inputs})
     execute_process(COMMAND "${Python3_EXECUTABLE}"
         "${_source}/scripts/prepare_flash_attention_inference.py"
-        --archive "${FLASH_ATTN_SOURCE_ARCHIVE}" --output "${_prepared}"
-        RESULT_VARIABLE _status)
+        --source-dir "${_upstream}" --output "${_prepared}"
+        --patch-executable "${_flash_patch}"
+        RESULT_VARIABLE _status ERROR_VARIABLE _prepare_error)
     if(NOT _status EQUAL 0)
-        message(FATAL_ERROR "Pinned FlashAttention preparation failed")
+        message(FATAL_ERROR "Pinned FlashAttention preparation failed: ${_prepare_error}")
     endif()
     set(_launches)
     foreach(_flash_kind fp16 bf16)
@@ -43,7 +64,7 @@ function(infiniops_add_native_flash target)
         FLASH_NAMESPACE=infini_flash FLASHATTENTION_DISABLE_DROPOUT)
     target_include_directories(${target} PRIVATE
         "${_source}/src" "${_source}/include" "${_prepared}"
-        "${_prepared}/cutlass" "${_provider}" "${_varlen_provider}"
+        "${_cutlass_include}" "${_provider}" "${_varlen_provider}"
         ${INFINI_RT_INCLUDE_DIRS})
     target_compile_options(${target} PRIVATE
         # Match the pinned upstream setup.py numerical compilation mode.

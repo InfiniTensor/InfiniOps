@@ -111,8 +111,12 @@ def test_operator_call_instantiations_externalize_default_implementation_lookup(
     )
     assert declarations.count(f"extern template {default_config_signature}") == 1
     assert definitions.count(f"template {default_config_signature}") == 1
-    assert not any("::CanMake<" in entry for entry in declarations)
-    assert not any("::CanMake<" in entry for entry in definitions)
+    eligibility = (
+        "bool Operator<::infini::ops::Abs>::CanMake<Tensor>"
+        "(const Config& config, const Tensor input, const Tensor& out);"
+    )
+    assert f"extern template {eligibility}" in declarations
+    assert f"template {eligibility}" in definitions
 
 
 def test_operator_call_instantiations_externalize_active_implementation_query():
@@ -441,6 +445,12 @@ class Cat {
     assert "converted_first_tensor.at(0).device().type()" in text
     assert "std::move(converted_first_tensor)" not in text
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
+    declarations, _ = module._generate_operator_call_instantiation_entries(operator)
+    assert any(
+        "::CanMake<Tensor>(const Config& config, "
+        "const std::vector<Tensor> inputs, const Tensor& out)" in declaration
+        for declaration in declarations
+    )
 
 
 def test_optional_tensor_vector_is_preserved_across_generated_wrappers(
@@ -807,7 +817,17 @@ def test_select_ops_from_config_preserves_path_and_backend_descriptors():
         },
     }
 
-    assert module._select_ops_from_config({}, config, "ops.json") == {
+    assert module._select_ops_from_config(
+        {
+            "add": [
+                module._Implementation(
+                    pathlib.Path("src/native/cpu/ops/add/add.h"), "native"
+                )
+            ]
+        },
+        config,
+        "ops.json",
+    ) == {
         "add": [
             module._Implementation(
                 pathlib.Path("src/native/cpu/ops/add/add.h"), "native"
@@ -1180,3 +1200,27 @@ def test_cmake_configures_cambricon_half_compatibility():
     assert "#include <bang_fp16.h>" in compatibility_header
     assert "#include <bang_bf16.h>" in compatibility_header
     assert "#define __mlu_host__ inline" in compatibility_header
+
+
+def test_builtin_header_requires_enabled_provider():
+    module = _load_generator_module()
+    config = {
+        "flash_attn_with_kvcache": {
+            "headers": ["src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h"],
+            "implementations": None,
+        }
+    }
+    with pytest.raises(ValueError, match="not enabled by this build"):
+        module._select_ops_from_config({}, config, "ops.json")
+
+
+def test_optional_provider_flags_with_absolute_source_root(monkeypatch):
+    module = _load_generator_module()
+    source = pathlib.Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setattr(module, "_SRC_DIR", source)
+    monkeypatch.setattr(module, "_BASE_DIR", source / "base")
+    off = module._get_all_ops(["nvidia"])
+    on = module._get_all_ops(["nvidia"], with_native_flash=True, with_native_w4=True)
+    for name in ("flash_attn_with_kvcache", "flash_attn_varlen_func", "w4_marlin_gemm"):
+        assert not off.get(name)
+        assert on[name]

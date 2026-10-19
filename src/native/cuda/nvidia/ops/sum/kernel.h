@@ -33,6 +33,14 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
                        const std::optional<std::vector<std::int64_t>> dim,
                        const bool keepdim, const std::optional<DataType> dtype,
                        Tensor out) {
+    return Supports(input, dim, keepdim, dtype, out, false);
+  }
+
+ private:
+  static bool Supports(const Tensor input,
+                       const std::optional<std::vector<std::int64_t>> dim,
+                       const bool keepdim, const std::optional<DataType> dtype,
+                       Tensor out, bool invocation) {
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != out.device() || input.dtype() != out.dtype() ||
         !dim || dim->size() != 1 || keepdim || dtype ||
@@ -43,13 +51,10 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
         input.dtype() != DataType::kBFloat16 &&
         input.dtype() != DataType::kFloat32)
       return false;
-    int current_device = -1;
-    if (cudaGetDevice(&current_device) != cudaSuccess ||
-        current_device != input.device().index())
-      return false;
     if (input.dtype() == DataType::kBFloat16) {
       cudaDeviceProp properties{};
-      if (cudaGetDeviceProperties(&properties, current_device) != cudaSuccess ||
+      if (cudaGetDeviceProperties(&properties, input.device().index()) !=
+              cudaSuccess ||
           properties.major < 8)
         return false;
     }
@@ -93,14 +98,20 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
         last_element + 1 > std::numeric_limits<std::size_t>::max() / width ||
         output_count > std::numeric_limits<std::int64_t>::max() ||
         output_count > std::numeric_limits<std::size_t>::max() / width ||
-        !CheckedContiguous(out) || !input.data() || !out.data() ||
-        reinterpret_cast<std::uintptr_t>(input.data()) % width ||
+        !CheckedContiguous(out))
+      return false;
+    if (!invocation) return true;
+    int current_device = -1;
+    if (cudaGetDevice(&current_device) != cudaSuccess ||
+        current_device != input.device().index() || !input.data() ||
+        !out.data() || reinterpret_cast<std::uintptr_t>(input.data()) % width ||
         reinterpret_cast<std::uintptr_t>(out.data()) % width)
       return false;
     return !Overlaps(input.data(), (last_element + 1) * width, out.data(),
                      output_count * width);
   }
 
+ public:
   Operator(const Tensor input,
            const std::optional<std::vector<std::int64_t>> dim,
            const bool keepdim, const std::optional<DataType> dtype, Tensor out)
@@ -164,7 +175,7 @@ class Operator<Sum, Device::Type::kNvidia, 0> : public Sum {
                        const std::optional<std::vector<std::int64_t>> dim,
                        const bool keepdim, const std::optional<DataType> dtype,
                        Tensor out) {
-    if (!supports(input, dim, keepdim, dtype, out)) {
+    if (!Supports(input, dim, keepdim, dtype, out, true)) {
       throw std::invalid_argument(
           "unsupported NVIDIA Sum metadata, device or alias");
     }

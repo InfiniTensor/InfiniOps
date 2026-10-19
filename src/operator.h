@@ -402,6 +402,15 @@ class Operator : public OperatorBase {
   }
 
   template <typename... Args>
+  static bool CanMake(const Config& config, const std::vector<Tensor> tensors,
+                      const Args&... args) {
+    return !tensors.empty() &&
+           SelectWithDevice(
+               config, tensors.front().device().type(), false,
+               [](auto, auto, auto, auto&...) {}, tensors, args...);
+  }
+
+  template <typename... Args>
   static void Call(const Handle& handle, const Config& config,
                    const Args&... args) {
     [[maybe_unused]] HostRangeScope host_range_operator_call{

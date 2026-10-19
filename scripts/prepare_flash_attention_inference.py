@@ -1,181 +1,116 @@
-"""Prepare pinned upstream forward kernels without a Torch runtime dependency.
+"""Prepare the pinned FlashAttention forward headers for native inference.
 
-This is a build-time, inference-only adaptation, not another Attention algorithm.
-Do not link these altered parameter layouts to the original Torch extension.
+Apply the reviewed adaptation only in build staging, never in the submodule.
+The prepared parameter layout must not be linked to the upstream Torch extension.
 """
 
 import argparse
-import hashlib
-import json
 import pathlib
-import re
-import tarfile
+import subprocess
+import tempfile
 
 
-ARCHIVE_SHA256 = "1e71dd64a9e0280e0447b8a0c2541bad4bf6ac65bdeaa2f90e51a9e57de0370d"
-ROOT = "flash_attn-2.8.3/"
-KERNEL_ROOT = ROOT + "csrc/flash_attn/src/"
-
-
-def replace_once(text, before, after):
-    if text.count(before) != 1:
-        raise ValueError(f"pinned FlashAttention source contract changed: {before!r}")
-    return text.replace(before, after, 1)
+# Explicit forward closure for the pinned source. num_splits.h is extracted
+# separately from flash_api.cpp; CUTLASS headers are included directly by CMake.
+HEADERS = (
+    "block_info.h",
+    "dropout.h",
+    "flash.h",
+    "flash_fwd_kernel.h",
+    "flash_fwd_launch_template.h",
+    "hardware_info.h",
+    "kernel_traits.h",
+    "mask.h",
+    "namespace_config.h",
+    "philox.cuh",
+    "rotary.h",
+    "softmax.h",
+    "static_switch.h",
+    "utils.h",
+)
+PATCH = pathlib.Path(__file__).resolve().parents[1] / "patches/flash-attention/inference.patch"
 
 
 def write_if_changed(path, content):
-    # CMake may prepare the same pinned closure again during an incremental
-    # build. Preserve timestamps so hundreds of CUDA kernels are not rebuilt
-    # merely because configure ran; changed content still invalidates them.
+    # Preserve timestamps across reconfiguration when prepared bytes agree.
     content = content.encode("utf-8") if isinstance(content, str) else content
     if not path.exists() or path.read_bytes() != content:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
 
 
-def adapt(name, text):
-    if name == "flash.h":
-        text = replace_once(
-            text,
-            "#include <ATen/cuda/CUDAGeneratorImpl.h> // For at::Generator and at::PhiloxCudaState",
-            "",
-        )
-        text = replace_once(
-            text,
-            "    at::PhiloxCudaState philox_args;",
-            "    // Inference-only build: dropout and its Torch RNG state are absent.",
-        )
-    elif name == "flash_fwd_kernel.h":
-        text = replace_once(
-            text, '#include "philox_unpack.cuh" // For at::cuda::philox::unpack', ""
-        )
-        text = replace_once(
-            text,
-            "    auto seed_offset = at::cuda::philox::unpack(params.philox_args);",
-            '    static_assert(!Is_dropout, "InfiniOps inference build does not support dropout");\n    const auto seed_offset = std::make_tuple(uint64_t{0}, uint64_t{0});',
-        )
-    elif name == "flash_fwd_launch_template.h":
-        text = replace_once(
-            text,
-            "#include <c10/cuda/CUDAException.h>  // For C10_CUDA_CHECK and C10_CUDA_KERNEL_LAUNCH_CHECK",
-            '#include "infini_flash_cuda.h"',
-        )
-        text = text.replace("C10_CUDA_KERNEL_LAUNCH_CHECK", "INFINI_FLASH_KERNEL_CHECK")
-        text = text.replace("C10_CUDA_CHECK", "INFINI_FLASH_CUDA_CHECK")
-    elif name == "hardware_info.h":
-        text = replace_once(
-            text, "#include <tuple>", '#include <tuple>\n#include "infini_flash_cuda.h"'
-        )
-        text = replace_once(
-            text, "      exit(1);", "      INFINI_FLASH_CUDA_CHECK(status_);"
-        )
-    if name in (
-        "flash.h",
-        "flash_fwd_kernel.h",
-        "flash_fwd_launch_template.h",
-        "hardware_info.h",
-    ):
-        text = (
-            "// Modified by InfiniOps from FlashAttention 2.8.3: inference-only native runtime integration.\n"
-            "// Upstream: https://github.com/Dao-AILab/flash-attention/tree/v2.8.3/csrc/flash_attn/src\n"
-            "// Original copyright and license notices below are retained.\n" + text
-        )
-    return text
-
-
-def prepare(archive, output):
-    archive, output = pathlib.Path(archive), pathlib.Path(output)
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    if digest != ARCHIVE_SHA256:
+def read_source(path):
+    if not path.is_file():
         raise ValueError(
-            f"expected pinned flash_attn-2.8.3 archive {ARCHIVE_SHA256}, got {digest}"
+            f"missing FlashAttention source dependency: {path}; "
+            "initialize third_party/flash-attention and its CUTLASS submodule"
         )
-    with tarfile.open(archive, "r:gz") as source:
-        members = {member.name: member for member in source.getmembers()}
+    return path.read_text(encoding="utf-8")
 
-        def read(name):
-            member = members.get(name)
-            if member is None or not member.isfile():
-                raise ValueError(f"missing regular pinned source file: {name}")
-            return source.extractfile(member).read()
 
-        # Only the transitive forward include closure is needed. No backward,
-        # ATen wrapper, Python extension or Torch allocator is compiled.
-        pending = ["flash_fwd_launch_template.h"]
-        headers = {}
-        while pending:
-            name = pending.pop()
-            if name in headers:
-                continue
-            if pathlib.PurePosixPath(name).name != name:
-                raise ValueError(f"unexpected upstream include: {name}")
-            text = adapt(name, read(KERNEL_ROOT + name).decode())
-            if re.search(
-                r"#\s*include\s*[<\"](?:ATen|c10|torch)/|\bat::|\bc10::", text
-            ):
-                raise ValueError(f"unremoved Torch dependency in {name}")
-            headers[name] = text
-            for include in re.findall(r'#\s*include\s*"([^"]+)"', text):
-                if KERNEL_ROOT + include in members:
-                    pending.append(include)
+def prepare(source, output, patch_executable="patch"):
+    source, output = pathlib.Path(source).resolve(), pathlib.Path(output).resolve()
+    if output == source or source in output.parents:
+        raise ValueError("FlashAttention preparation output must be outside its source tree")
+    kernel_source = source / "csrc/flash_attn/src"
+    headers = {name: read_source(kernel_source / name) for name in HEADERS}
+    api = read_source(source / "csrc/flash_attn/flash_api.cpp")
+    notices = {name: read_source(source / name) for name in ("LICENSE", "AUTHORS")}
+    notices["CUTLASS-LICENSE.txt"] = read_source(source / "csrc/cutlass/LICENSE.txt")
+    if not PATCH.is_file():
+        raise ValueError(f"missing FlashAttention inference adaptation: {PATCH}")
 
-        # Reuse the pinned host scheduling heuristic as well as the kernels;
-        # do not invent a second split-KV tuning policy in LM.
-        api = read(ROOT + "csrc/flash_attn/flash_api.cpp").decode()
-        begin = api.index("inline int num_splits_heuristic(")
-        end = api.index(
-            "\nstd::tuple<at::Tensor, at::Tensor> set_params_splitkv", begin
-        )
-        headers["num_splits.h"] = (
-            "// Copyright (c) 2023, Tri Dao. See accompanying LICENSE.\n"
-            "// Extracted from flash_attn-2.8.3/csrc/flash_attn/flash_api.cpp;\n"
-            "// modified by InfiniOps to remove Torch dependencies and use a private namespace.\n"
-            "#pragma once\n#include <algorithm>\n#include <cmath>\n#include <vector>\n"
-            "namespace infini_flash {\n" + api[begin:end] + "\n}\n"
-        )
-
-        output.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="flash-inference-", dir=output.parent) as temp:
+        staging = pathlib.Path(temp)
         for name, text in headers.items():
-            write_if_changed(output / name, text)
-        for member in source.getmembers():
-            prefix = ROOT + "csrc/cutlass/include/"
-            if member.name.startswith(prefix) and member.isfile():
-                relative = pathlib.PurePosixPath(member.name[len(prefix) :])
-                if relative.is_absolute() or ".." in relative.parts:
-                    raise ValueError("unsafe CUTLASS archive path")
-                path = output / "cutlass" / pathlib.Path(*relative.parts)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                write_if_changed(path, read(member.name))
-        for name in ("LICENSE", "AUTHORS"):
-            write_if_changed(output / name, read(ROOT + name))
-        # The sdist omits CUTLASS's root LICENSE.txt; preserve the full license
-        # block from its actual bundled header, rather than substituting main.
-        cutlass_header = read(ROOT + "csrc/cutlass/include/cutlass/cutlass.h").decode()
-        cutlass_notice = re.match(r"\s*(/\*.*?\*/)", cutlass_header, re.DOTALL)
-        if cutlass_notice is None or "Redistribution" not in cutlass_notice.group(1):
-            raise ValueError("missing pinned CUTLASS copyright/license block")
-        write_if_changed(output / "CUTLASS-LICENSE.txt", cutlass_notice.group(1) + "\n")
-        manifest = {
-            "upstream": "flash-attn",
-            "version": "2.8.3",
-            "archive_sha256": digest,
-            "namespace": "infini_flash",
-            "inference_only": True,
-            "dropout": False,
-            "headers_sha256": {
-                name: hashlib.sha256(text.encode()).hexdigest()
-                for name, text in sorted(headers.items())
-            },
-        }
-        write_if_changed(
-            output / "source-manifest.json", json.dumps(manifest, indent=2) + "\n"
-        )
-    return manifest
+            write_if_changed(staging / name, text)
+        try:
+            applied = subprocess.run(
+                [
+                    str(patch_executable), "--batch", "--forward", "--fuzz=0",
+                    "-p1", "--input", str(PATCH),
+                ],
+                cwd=staging,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError(
+                "native FlashAttention preparation requires the patch executable"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError("FlashAttention inference patch timed out") from exc
+        if applied.returncode:
+            raise ValueError(
+                "pinned FlashAttention inference patch failed:\n"
+                + applied.stdout + applied.stderr
+            )
+        headers = {name: (staging / name).read_text(encoding="utf-8") for name in HEADERS}
+
+    # Keep the upstream scheduling heuristic, without introducing another policy.
+    begin = api.index("inline int num_splits_heuristic(")
+    end = api.index("\nstd::tuple<at::Tensor, at::Tensor> set_params_splitkv", begin)
+    headers["num_splits.h"] = (
+        "// Copyright (c) 2023, Tri Dao. See accompanying LICENSE.\n"
+        "// Extracted from flash_attn-2.8.3/csrc/flash_attn/flash_api.cpp;\n"
+        "// modified by InfiniOps to remove Torch dependencies and use a private namespace.\n"
+        "#pragma once\n#include <algorithm>\n#include <cmath>\n#include <vector>\n"
+        "namespace infini_flash {\n" + api[begin:end] + "\n}\n"
+    )
+    for name, text in {**headers, **notices}.items():
+        write_if_changed(output / name, text)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--archive", required=True)
+    parser.add_argument("--source-dir", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--patch-executable", default="patch")
     args = parser.parse_args()
-    prepare(args.archive, args.output)
+    try:
+        prepare(args.source_dir, args.output, args.patch_executable)
+    except (ValueError, OSError) as exc:
+        parser.exit(1, f"FlashAttention preparation failed: {exc}\n")

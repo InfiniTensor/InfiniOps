@@ -21,6 +21,17 @@ _CALL_SIGNATURE_RE = re.compile(
 # even when that TU sees an `extern template` declaration.
 _PROVIDER_SIGNATURES = (
     (
+        "Operator::CanMake(vector<Tensor>)",
+        re.compile(
+            r"(?P<indent>^[ \t]*)template\s*<typename\.\.\.\s+Args>\s*\n"
+            r"(?P=indent)static\s+bool\s+CanMake\s*\(\s*"
+            r"const\s+Config\s*&\s*config\s*,\s*"
+            r"const\s+std::vector<Tensor>\s+tensors\s*,\s*"
+            r"const\s+Args\s*&\s*\.\.\.\s*args\s*\)\s*",
+            re.MULTILINE,
+        ),
+    ),
+    (
         "Operator::CanMake(Tensor)",
         re.compile(
             r"(?P<indent>^[ \t]*)template\s*<typename\.\.\.\s+Args>\s*\n"

@@ -1678,15 +1678,10 @@ def _generate_operator_call_instantiation_entries(operator):
             f"extern template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
             f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
         )
-        if operator.name in (
-            "flash_attn_with_kvcache",
-            "reshape_and_cache_flash",
-            "flash_attn_varlen_func",
-        ):
-            _append_unique(
-                f"extern template bool {can_make_instantiation};",
-                f"template bool {can_make_instantiation};",
-            )
+        _append_unique(
+            f"extern template bool {can_make_instantiation};",
+            f"template bool {can_make_instantiation};",
+        )
         _append_unique(
             f"extern template void {operator_instantiation};",
             f"template void {operator_instantiation};",
@@ -1904,9 +1899,20 @@ def _select_ops_from_config(ops, config, config_path):
         headers = selection["headers"]
 
         if headers is not None:
-            selected[op_name] = [
-                _implementation_from_json(header) for header in headers
-            ]
+            requested = [_implementation_from_json(header) for header in headers]
+            active = {impl.path.resolve() for impl in ops.get(op_name, [])}
+            for impl in requested:
+                # Built-in headers still require their compiled backend.
+                # Preserve explicit external-provider header support.
+                if (
+                    impl.path.resolve().is_relative_to(_SRC_DIR.resolve())
+                    and impl.path.resolve() not in active
+                ):
+                    raise ValueError(
+                        f"{config_path}: provider {impl.path} for {op_name!r} "
+                        "is not enabled by this build"
+                    )
+            selected[op_name] = requested
             continue
 
         if op_name not in ops:
@@ -1985,19 +1991,25 @@ def _get_all_ops(
     if not with_native_flash:
         excluded_headers.update(
             {
-                "src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
-                "src/native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
+                (
+                    _SRC_DIR / "native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h"
+                ).resolve(),
+                (
+                    _SRC_DIR / "native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h"
+                ).resolve(),
             }
         )
     if not with_native_w4:
-        excluded_headers.add("src/native/cuda/nvidia/ops/w4_marlin/kernel.h")
+        excluded_headers.add(
+            (_SRC_DIR / "native/cuda/nvidia/ops/w4_marlin/kernel.h").resolve()
+        )
     if excluded_headers:
         # Optional providers are emitted only with their compiled kernel target.
         for name, headers in impl_headers_by_operator.items():
             impl_headers_by_operator[name] = [
                 header
                 for header in headers
-                if header.path.as_posix() not in excluded_headers
+                if header.path.resolve() not in excluded_headers
             ]
 
     for base_dir in base_dirs:

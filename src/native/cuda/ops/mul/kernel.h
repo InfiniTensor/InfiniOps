@@ -4,13 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <exception>
-#include <new>
 #include <stdexcept>
 #include <vector>
 
 #include "base/mul.h"
 #include "common/generic_utils.h"
+#include "native/cuda/device_buffer.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/mul/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
@@ -25,73 +24,41 @@ class CudaMul : public Mul {
     size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 3 * (shape_size + strides_size);
-    if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
-      throw std::runtime_error("CudaMul cannot query metadata owner device");
     if (metadata_size == 0) {
       return;
     }
 
     std::vector<std::byte> metadata(metadata_size);
 
-    void* allocation = nullptr;
-    const auto allocation_status = Backend::Malloc(&allocation, metadata_size);
-    if (allocation_status != Backend::kSuccess || !allocation) {
-      if (allocation && Backend::Free(allocation) != Backend::kSuccess)
-        std::terminate();
-      throw std::bad_alloc();
-    }
-    d_metadata_ = static_cast<std::byte*>(allocation);
+    auto* d_metadata_ = metadata_.Allocate(metadata_size);
 
-    try {
-      size_t offset = 0;
-      d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_shape_.data(), shape_size);
-      offset += shape_size;
+    size_t offset = 0;
+    d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, input_shape_.data(), shape_size);
+    offset += shape_size;
 
-      d_other_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, other_shape_.data(), shape_size);
-      offset += shape_size;
+    d_other_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, other_shape_.data(), shape_size);
+    offset += shape_size;
 
-      d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
-      offset += shape_size;
+    d_out_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, out_shape_.data(), shape_size);
+    offset += shape_size;
 
-      d_input_strides_ =
-          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, input_strides_.data(),
-                  strides_size);
-      offset += strides_size;
+    d_input_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, input_strides_.data(), strides_size);
+    offset += strides_size;
 
-      d_other_strides_ =
-          reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, other_strides_.data(),
-                  strides_size);
-      offset += strides_size;
+    d_other_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, other_strides_.data(), strides_size);
+    offset += strides_size;
 
-      d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
-      std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
+    d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
+    std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-      if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                          Backend::kMemcpyHostToDevice) != Backend::kSuccess)
-        throw std::runtime_error("CudaMul metadata copy failed");
-    } catch (...) {
-      if (Backend::Free(d_metadata_) != Backend::kSuccess) std::terminate();
-      d_metadata_ = nullptr;
-      throw;
-    }
-  }
-
-  ~CudaMul() {
-    if (!d_metadata_) return;
-    int previous = -1;
-    if (Backend::GetDevice(&previous) != Backend::kSuccess) std::terminate();
-    const bool switched = previous != owner_device_;
-    if (switched && Backend::SetDevice(owner_device_) != Backend::kSuccess)
-      std::terminate();
-    const auto freed = Backend::Free(d_metadata_);
-    if (switched && Backend::SetDevice(previous) != Backend::kSuccess)
-      std::terminate();
-    if (freed != Backend::kSuccess) std::terminate();
+    if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                        Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+      throw std::runtime_error("CudaMul metadata copy failed");
   }
 
   void operator()(const Tensor input, const Tensor other,
@@ -100,9 +67,8 @@ class CudaMul : public Mul {
       return;
     }
 
-    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllTypes, AllCudaBlockSizes>(
-        {static_cast<int64_t>(out_type_), block_size},
+        {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
@@ -110,7 +76,7 @@ class CudaMul : public Mul {
           auto cuda_stream =
               static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
           dim3 block_dims(
-              std::min(static_cast<Tensor::Size>(block_size), output_size_));
+              std::min(static_cast<Tensor::Size>(block_size_), output_size_));
           dim3 grid_dims(utils::CeilDiv(output_size_, block_dims.x));
 
           T* d_out = reinterpret_cast<T*>(out.data());
@@ -128,8 +94,9 @@ class CudaMul : public Mul {
   }
 
  private:
-  std::byte* d_metadata_{nullptr};
-  int owner_device_{-1};
+  const int block_size_ =
+      RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
+  CudaDeviceBuffer<Backend> metadata_;
 
   Tensor::Size* d_input_shape_{nullptr};
 

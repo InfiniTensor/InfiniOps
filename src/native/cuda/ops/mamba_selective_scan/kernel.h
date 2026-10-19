@@ -78,18 +78,41 @@ class CudaMambaSelectiveScan : public MambaSelectiveScan {
                        Tensor state) {
     try {
       ValidateMetadata({out, x, dt, b, c, a_log, d, gate, dt_bias, state});
-      return true;
+      return a_log.dtype() == x.dtype() ||
+             Backend::kDeviceType == Device::Type::kNvidia;
     } catch (const std::invalid_argument&) {
       return false;
     } catch (const std::overflow_error&) {
       return false;
     }
   }
-  using MambaSelectiveScan::MambaSelectiveScan;
+  CudaMambaSelectiveScan(Tensor out, const Tensor x, const Tensor dt,
+                         const Tensor b, const Tensor c, const Tensor a_log,
+                         const Tensor d, const Tensor gate,
+                         const Tensor dt_bias, Tensor state)
+      : MambaSelectiveScan(out, x, dt, b, c, a_log, d, gate, dt_bias, state),
+        prepared_metadata_{out, x, dt, b, c, a_log, d, gate, dt_bias, state} {
+    if (a_log.dtype() != x.dtype() &&
+        Backend::kDeviceType != Device::Type::kNvidia)
+      throw std::invalid_argument(
+          "CUDA MambaSelectiveScan backend does not support mixed F32 "
+          "parameters");
+  }
   void operator()(Tensor out, const Tensor x, const Tensor dt, const Tensor b,
                   const Tensor c, const Tensor a_log, const Tensor d,
                   const Tensor gate, const Tensor dt_bias,
                   Tensor state) const override {
+    const std::array<Tensor, 10> tensors{out,   x, dt,   b,       c,
+                                         a_log, d, gate, dt_bias, state};
+    for (size_t i = 0; i < tensors.size(); ++i) {
+      const auto& t = tensors[i];
+      const auto& cached = prepared_metadata_[i];
+      if (t.shape() != cached.shape() || t.strides() != cached.strides() ||
+          t.dtype() != cached.dtype() || t.device() != cached.device() ||
+          (t.numel() && !t.data()))
+        throw std::invalid_argument(
+            "MambaSelectiveScan metadata changed or nonempty storage is null");
+    }
     if (!layout_.batch || !layout_.length || !layout_.channels) return;
     DispatchFunc<
         List<DataType::kFloat32, DataType::kFloat16, DataType::kBFloat16>>(
@@ -141,6 +164,10 @@ class CudaMambaSelectiveScan : public MambaSelectiveScan {
         },
         "CudaMambaSelectiveScan");
   }
+
+ private:
+  // TensorView owns metadata only; snapshots do not retain tensor allocations.
+  std::array<Tensor, 10> prepared_metadata_;
 };
 }  // namespace infini::ops
 #endif

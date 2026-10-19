@@ -387,6 +387,39 @@ def _load_distribution(config):
     return distribution
 
 
+def _locate_distribution_notices(config):
+    try:
+        distribution = importlib.metadata.distribution(
+            config.python_distribution_package
+        )
+    except importlib.metadata.PackageNotFoundError:
+        # A custom library locator can supply a DSO without package metadata.
+        # Retain the static conservative redistribution notices in that case.
+        return []
+    distribution_root = pathlib.Path(distribution.locate_file("")).resolve()
+    notices = set()
+    # Use only this resolved package's inventory. Sparse RECORDs and editable
+    # packages may omit notices; absence must not gate operator availability.
+    for entry in distribution.files or ():
+        relative = pathlib.PurePosixPath(str(entry).replace("\\", "/"))
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+        name = relative.name.upper()
+        in_license_directory = any(
+            part.lower() in {"license", "licenses"} for part in relative.parts[:-1]
+        )
+        is_notice = any(
+            name == prefix or name.startswith((prefix + ".", prefix + "-"))
+            for prefix in ("LICENSE", "NOTICE", "COPYING")
+        )
+        if not (in_license_directory or is_notice):
+            continue
+        candidate = pathlib.Path(distribution.locate_file(entry)).resolve()
+        if candidate.is_file() and candidate.is_relative_to(distribution_root):
+            notices.add(candidate)
+    return sorted(notices)
+
+
 def _locate_distribution_library(config):
     distribution = _load_distribution(config)
 
@@ -637,6 +670,11 @@ def _render_cmake_manifest(payload):
         "INFINI_OPS_LINKED_LIBRARIES": [
             library["path"] for library in payload["libraries"]
         ],
+        "INFINI_OPS_LINKED_NOTICE_FILES": [
+            path
+            for library in payload["libraries"]
+            for path in library.get("notice_files", ())
+        ],
         "INFINI_OPS_LINKED_FORCE_LOAD_LIBRARIES": [
             library["path"] for library in payload["libraries"] if library["force_load"]
         ],
@@ -819,6 +857,9 @@ def resolve_linked_ops(
                 "name": config.name,
                 "path": str(library_path),
                 "python_distribution_package": (config.python_distribution_package),
+                "notice_files": [
+                    str(path) for path in _locate_distribution_notices(config)
+                ],
                 "runtime_dir": str(library_path.parent),
                 "transport": config.transport,
             }

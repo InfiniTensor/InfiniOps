@@ -109,6 +109,12 @@ class Operator<CausalConv1d, Device::Type::kNvidia> : public CausalConv1d {
                      final_conv_state) {
     if (device_.type() != Device::Type::kNvidia)
       throw std::invalid_argument("causal conv requires NVIDIA");
+    if (weight.shape()[2] != 4 || conv_state.shape()[2] != 3)
+      throw std::invalid_argument(
+          "NVIDIA causal conv kernel requires K4 and state_len3");
+    if (tokens_ > static_cast<size_t>(std::numeric_limits<int64_t>::max() - 3))
+      throw std::overflow_error(
+          "NVIDIA causal conv history index exceeds int64");
     check_device();
     // Baseline uses int request/channel variables and CUDA's grid.y dimension.
     if (requests_ >= static_cast<size_t>(INT_MAX) || channels_ > 65535)
@@ -142,6 +148,16 @@ class Operator<CausalConv1d, Device::Type::kNvidia> : public CausalConv1d {
                       final_state_indices,
                       out,
                       final_conv_state};
+    for (size_t i = 0; i < views.size(); ++i) {
+      const auto& t = views[i];
+      if (t.has_value() != metadata_[i].present ||
+          (t &&
+           (t->device() != device_ || t->shape() != metadata_[i].shape ||
+            t->strides() != metadata_[i].strides ||
+            t->dtype() != metadata_[i].dtype || (t->numel() && !t->data()))))
+        throw std::invalid_argument(
+            "causal conv metadata changed or nonempty storage is null");
+    }
     check_device();
     if (!requests_ || !channels_) return;
     switch (dtype_) {

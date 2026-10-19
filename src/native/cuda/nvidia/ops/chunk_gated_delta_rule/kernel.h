@@ -48,6 +48,9 @@ class Operator<ChunkGatedDeltaRule, Device::Type::kNvidia>
                             final_state, use_qk_l2norm, chunk_size) {
     if (device_.type() != Device::Type::kNvidia)
       throw std::invalid_argument("chunk delta requires NVIDIA");
+    if (v.shape()[3] != D_ || (D_ != 64 && D_ != 128))
+      throw std::invalid_argument(
+          "NVIDIA chunk delta kernels require Dk=Dv64/128");
     CheckDevice();
     cudaDeviceProp property{};
     if (cudaGetDeviceProperties(&property, device_.index()) != cudaSuccess ||

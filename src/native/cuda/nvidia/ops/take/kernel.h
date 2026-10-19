@@ -22,6 +22,12 @@ template <>
 class Operator<Take, Device::Type::kNvidia, 0> : public Take {
  public:
   static bool supports(const Tensor input, const Tensor index, Tensor out) {
+    return Supports(input, index, out, false);
+  }
+
+ private:
+  static bool Supports(const Tensor input, const Tensor index, Tensor out,
+                       bool invocation) {
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != index.device() || input.device() != out.device() ||
         !CheckedContiguous(input) || !CheckedContiguous(index) ||
@@ -29,10 +35,6 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
         input.dtype() != out.dtype() || index.shape() != out.shape()) {
       return false;
     }
-    int current_device = -1;
-    if (cudaGetDevice(&current_device) != cudaSuccess ||
-        current_device != input.device().index())
-      return false;
     switch (input.dtype()) {
       case DataType::kInt8:
       case DataType::kUInt8:
@@ -66,6 +68,11 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
             std::numeric_limits<std::size_t>::max() / sizeof(std::int64_t)) {
       return false;
     }
+    if (!invocation) return true;
+    int current_device = -1;
+    if (cudaGetDevice(&current_device) != cudaSuccess ||
+        current_device != input.device().index())
+      return false;
     if ((input_count && !input.data()) ||
         (output_count && (!index.data() || !out.data())) ||
         (input_count &&
@@ -84,6 +91,7 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
                      out.data(), output_count * width);
   }
 
+ public:
   Operator(const Tensor input, const Tensor index, Tensor out)
       : Take(input, index, out) {
     Validate(input, index, out);
@@ -150,7 +158,7 @@ class Operator<Take, Device::Type::kNvidia, 0> : public Take {
   }
 
   static void Validate(const Tensor input, const Tensor index, Tensor out) {
-    if (!supports(input, index, out))
+    if (!Supports(input, index, out, true))
       throw std::invalid_argument(
           "unsupported NVIDIA Take metadata, device or alias");
   }
