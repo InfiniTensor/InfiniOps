@@ -1,89 +1,21 @@
 #include "kernel.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
 #include <limits>
 #include <stdexcept>
 
-#include "flash.h"
 #include "infini_flash_cuda.h"
+#include "native/cuda/nvidia/ops/flash_common.h"
 #include "native/cuda/nvidia/ops/flash_head_dim.h"
 #include "native/cuda/nvidia/ops/flash_workspace.h"
 #include "num_splits.h"
 
-namespace infini::ops::native_flash {
-void launch_32_fp16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_32_fp16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_32_bf16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_32_bf16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_64_fp16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_64_fp16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_64_bf16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_64_bf16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_96_fp16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_96_fp16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_96_bf16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_96_bf16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_128_fp16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_128_fp16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_128_bf16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_128_bf16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_192_fp16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_192_fp16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_192_bf16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_192_bf16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_256_fp16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_256_fp16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_256_bf16_false(infini_flash::Flash_fwd_params&, cudaStream_t);
-void launch_256_bf16_true(infini_flash::Flash_fwd_params&, cudaStream_t);
-}  // namespace infini::ops::native_flash
-
 namespace infini::ops {
 namespace {
-struct DeviceScope {
-  int previous;
-  explicit DeviceScope(int device) {
-    INFINI_FLASH_CUDA_CHECK(cudaGetDevice(&previous));
-    INFINI_FLASH_CUDA_CHECK(cudaSetDevice(device));
-  }
-  ~DeviceScope() { cudaSetDevice(previous); }
-};
-
-bool plain_layout(Tensor t, int dimensions) {
-  if (dimensions < 1 || dimensions > 4 || t.ndim() != dimensions ||
-      t.stride(-1) != 1)
-    return false;
-  std::array<int, 4> axes{};
-  int count = 0;
-  for (int axis = 0; axis < dimensions; ++axis) {
-    if (t.size(axis) <= 0 ||
-        t.size(axis) > std::numeric_limits<int>::max() - 127 ||
-        t.stride(axis) < 0)
-      return false;
-    // A singleton axis is never indexed away from zero. LM unsqueeze views
-    // legitimately use stride zero here; this is not a broadcasted data axis.
-    if (t.size(axis) == 1) continue;
-    axes[count++] = axis;
-  }
-  // Logical dimension order need not match storage order. Static KV is a
-  // head-major view; the upstream kernel already receives its row/head strides.
-  std::sort(axes.begin(), axes.begin() + count,
-            [&](int a, int b) { return t.stride(a) < t.stride(b); });
-  std::size_t extent = 1;
-  for (int index = 0; index < count; ++index) {
-    const int axis = axes[index];
-    const auto size = static_cast<std::size_t>(t.size(axis));
-    const auto stride = static_cast<std::size_t>(t.stride(axis));
-    if (stride < extent ||
-        (size - 1) >
-            (std::numeric_limits<std::size_t>::max() - extent) / stride)
-      return false;
-    extent += (size - 1) * stride;
-  }
-  return true;
-}
+using native_flash::DeviceScope;
+using native_flash::plain_layout;
+using native_flash::vector_aligned;
 
 std::size_t product(std::initializer_list<std::size_t> sizes) {
   std::size_t result = 1;
@@ -117,12 +49,8 @@ bool Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>::supported_layout(
     return false;
   // Upstream vectorized loads/stores require 16-byte-aligned rows and heads.
   // Metadata-only descriptor views may have null data until invocation.
-  for (auto tensor : {q, k, v, out}) {
-    if (tensor.data() && reinterpret_cast<std::uintptr_t>(tensor.data()) % 16)
-      return false;
-    for (int axis = 0; axis < 3; ++axis)
-      if (tensor.size(axis) > 1 && tensor.stride(axis) % 8 != 0) return false;
-  }
+  for (auto tensor : {q, k, v, out})
+    if (!vector_aligned(tensor)) return false;
   if ((lengths && !plain_layout(*lengths, 1)) ||
       (blocks &&
        (!plain_layout(*blocks, 2) ||
@@ -282,88 +210,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 0>::execute(
   p.o_ptr = out.data();
   p.cu_seqlens_k = lengths ? static_cast<int*>(lengths->data()) : nullptr;
   p.block_table = blocks ? static_cast<int*>(blocks->data()) : nullptr;
-  switch (p.d_rounded) {
-    case 32:
-      if (p.is_bf16) {
-        if (p.is_causal)
-          native_flash::launch_32_bf16_true(p, stream);
-        else
-          native_flash::launch_32_bf16_false(p, stream);
-      } else {
-        if (p.is_causal)
-          native_flash::launch_32_fp16_true(p, stream);
-        else
-          native_flash::launch_32_fp16_false(p, stream);
-      }
-      break;
-    case 64:
-      if (p.is_bf16) {
-        if (p.is_causal)
-          native_flash::launch_64_bf16_true(p, stream);
-        else
-          native_flash::launch_64_bf16_false(p, stream);
-      } else {
-        if (p.is_causal)
-          native_flash::launch_64_fp16_true(p, stream);
-        else
-          native_flash::launch_64_fp16_false(p, stream);
-      }
-      break;
-    case 96:
-      if (p.is_bf16) {
-        if (p.is_causal)
-          native_flash::launch_96_bf16_true(p, stream);
-        else
-          native_flash::launch_96_bf16_false(p, stream);
-      } else {
-        if (p.is_causal)
-          native_flash::launch_96_fp16_true(p, stream);
-        else
-          native_flash::launch_96_fp16_false(p, stream);
-      }
-      break;
-    case 128:
-      if (p.is_bf16) {
-        if (p.is_causal)
-          native_flash::launch_128_bf16_true(p, stream);
-        else
-          native_flash::launch_128_bf16_false(p, stream);
-      } else {
-        if (p.is_causal)
-          native_flash::launch_128_fp16_true(p, stream);
-        else
-          native_flash::launch_128_fp16_false(p, stream);
-      }
-      break;
-    case 192:
-      if (p.is_bf16) {
-        if (p.is_causal)
-          native_flash::launch_192_bf16_true(p, stream);
-        else
-          native_flash::launch_192_bf16_false(p, stream);
-      } else {
-        if (p.is_causal)
-          native_flash::launch_192_fp16_true(p, stream);
-        else
-          native_flash::launch_192_fp16_false(p, stream);
-      }
-      break;
-    case 256:
-      if (p.is_bf16) {
-        if (p.is_causal)
-          native_flash::launch_256_bf16_true(p, stream);
-        else
-          native_flash::launch_256_bf16_false(p, stream);
-      } else {
-        if (p.is_causal)
-          native_flash::launch_256_fp16_true(p, stream);
-        else
-          native_flash::launch_256_fp16_false(p, stream);
-      }
-      break;
-    default:
-      throw std::logic_error("unqualified native Flash head dimension");
-  }
+  native_flash::launch_splitkv(p, stream);
   scratch.finish();
 }
 }  // namespace infini::ops

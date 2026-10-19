@@ -6,7 +6,6 @@
 #include "operator.h"
 
 namespace infini::ops {
-// Candidate destination: src/base/fused_gated_delta_net_gating.h.
 class FusedGatedDeltaNetGating : public Operator<FusedGatedDeltaNetGating> {
  public:
   FusedGatedDeltaNetGating(Tensor A_log, Tensor a, Tensor b, Tensor dt_bias,

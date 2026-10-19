@@ -1,7 +1,7 @@
 # Reproducible NVIDIA inference SDK inputs
 
-This recipe describes the Linux x86-64, CPython 3.12, CUDA 12.8, SM80,
-`_GLIBCXX_USE_CXX11_ABI=0` combination used by the Torch-free inference SDK.
+This recipe uses Linux x86-64, CPython 3.12, CUDA 12.8 wheel inputs, an SM80
+target and `_GLIBCXX_USE_CXX11_ABI=0`. It is not a toolkit qualification report.
 Use the source revisions pinned by the consuming InfiniCore checkout, not
 floating branches. Other architectures/toolkits require separate validation.
 The Python packages below supply compiled libraries and metadata; LM does not
@@ -15,34 +15,35 @@ execute their Python inference APIs. No `flashinfer-python` or Torch is required
 | TVM FFI | `apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `73d478395a8625dd92fde7b7fd92b4719f18f480b78336e422cb66cc7985213d` |
 | CUTLASS | commit `087c84df83d254b5fb295a7a408f1a1d554085cf` archive | `99340f7a8c87f5295b91aecf8295df6693ad954807672c3869a7fb3d0084f709` |
 
-Native Attention uses the fixed submodule revisions below. W4 kernels use the
-fixed vLLM source archive through CMake FetchContent. They
-are source inputs only; neither the Torch extension nor the vLLM Python package
-is built or installed.
+Native Attention and W4 use official fixed source archives through CMake
+FetchContent. Only source files are consumed; upstream projects and Torch/vLLM
+runtimes are not built or installed. Attention's private CUTLASS is independent
+of the ordinary Ops CUTLASS above.
 
-| Source | Fixed commit |
-|---|---|
-| `third_party/flash-attention` | `060c9188beec3a8b62b33a3bfa6d5d2d44975fab` |
-| Its `csrc/cutlass` submodule | `dc4817921edda44a549197ff3a9dcf5df0636e7b` |
-| vLLM source archive (Marlin only) | `ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab` |
+| Source | Official fixed archive | SHA256 |
+|---|---|---|
+| FlashAttention | [060c9188](https://github.com/Dao-AILab/flash-attention/archive/060c9188beec3a8b62b33a3bfa6d5d2d44975fab.tar.gz) | `64391cfec73fc5a25932b2c0c2fb3b4d9f97af001164e5220af21049fc17e04e` |
+| FA-private CUTLASS | [dc481792](https://github.com/NVIDIA/cutlass/archive/dc4817921edda44a549197ff3a9dcf5df0636e7b.tar.gz) | `f2a3a9df5e6f010c8b02716aa2644a6f071827fafa606fac5f5241cab6a1ab56` |
+| Marlin/vLLM | [ffc4f08c](https://github.com/vllm-project/vllm/archive/ffc4f08c8ee130d4ea6347c1bf31ffd4f8af28ab.tar.gz) | `d8f3d663347dff35ea8123d3eb570f67d2dd6c4258ee8b8a8ec2996c42ada678` |
 
-The vLLM archive SHA256 is
-`d8f3d663347dff35ea8123d3eb570f67d2dd6c4258ee8b8a8ec2996c42ada678`.
-It is a build source input, not a Git submodule or an installed package.
-The upstream project is never configured. For an offline checkout build, pass
-`-DFETCHCONTENT_SOURCE_DIR_VLLM_MARLIN=/absolute/path/to/pinned/extracted/vllm`;
-the standard `FETCHCONTENT_FULLY_DISCONNECTED=ON` can then disable downloading.
-Complete sdists bundle LICENSE and the eleven original Marlin inputs under
-`third_party/marlin-source`, which CMake selects automatically without network.
-This includes the native `marlin.cu` host entry and `csrc/core/scalar_type.hpp`;
-Ops keeps only its private declaration and small error adaptation, not copies.
-Building an sdist uses the standard scikit-build `sdist.cmake` flow and
-`build/sdist` staging; an offline packager can pass the same source override.
-Keep that sdist build directory unless also overriding its force-include path.
-No generated Marlin CUDA files are stored in the source package.
+For an offline checkout build or source packager, supply the pinned extracted
+trees with standard CMake overrides, alongside the ordinary CUTLASS override
+shown in the build command below:
 
-The other CUTLASS input above remains the existing dependency of ordinary Ops
-providers. Its version is not substituted for FlashAttention's private headers.
+```text
+-DFETCHCONTENT_SOURCE_DIR_FLASH_ATTENTION=/absolute/path/to/flash-attention
+-DFETCHCONTENT_SOURCE_DIR_FLASH_ATTENTION_CUTLASS=/absolute/path/to/private-cutlass
+-DFETCHCONTENT_SOURCE_DIR_VLLM_MARLIN=/absolute/path/to/vllm
+-DFETCHCONTENT_FULLY_DISCONNECTED=ON
+```
+
+Complete sdists bundle the original FA forward closure, private CUTLASS headers
+and Marlin sources with their licenses under `third_party/*-source`; CMake uses
+them automatically without Git or source downloads. `sdist.cmake` stages these
+files in `build/sdist` without probing compilers, CUDA or installed SDKs. Keep
+that staging path unless also overriding the `force-include` mappings. Creating
+a complete sdist needs each source once, even if a later build disables it.
+Generated CUDA files and prepared source copies are not stored in the sdist.
 
 Installed library hashes for the two wheels above:
 
@@ -54,14 +55,6 @@ Installed library hashes for the two wheels above:
 The YAML version ranges describe the provider's accepted packages, not a lock
 for a release. A release using a different wheel must record its resolved
 version/hash and run the corresponding direct operator tests again.
-`LICENSES/Apache-2.0-components.txt` records the release component copyrights
-and maps their shared Apache terms to `LICENSE`.
-`LICENSES/FlashInfer-0.6.7` and `LICENSES/TVM-FFI-0.1.10` retain the original
-NOTICE files and native-runtime libbacktrace terms for these exact inputs.
-If replacing either wheel, update those redistribution materials from the
-actual release as well. SDK installation puts these materials, the native
-FlashAttention notices and the Ops attribution list in `share/licenses/InfiniOps`;
-downstream binary packages must retain that directory's contents.
 
 ## Acquire and install the fixed inputs
 
@@ -74,10 +67,6 @@ export CORE=/absolute/path/to/InfiniCore
 export INFINI_ROOT="$PWD/sdk"
 export CUDA_HOME=/usr/local/cuda
 export INFINI_RT_ROOT="$INFINI_ROOT"
-git -C "$CORE/submodules/InfiniOps" submodule update --init \
-  third_party/flash-attention
-git -C "$CORE/submodules/InfiniOps/third_party/flash-attention" \
-  submodule update --init csrc/cutlass
 mkdir artifacts
 cd artifacts
 curl -fL -o 'flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl' \
@@ -145,12 +134,12 @@ its explicit `public_api_only` entries preserve the three W4 API symbols without
 providers. Other consumers can omit those entries entirely. Disabled Marlin
 has no CUDA >=12.3/C++20 check or provider registration and cannot execute W4.
 Both native components require the standard `patch` command when enabled.
-Their preparation scripts patch build-directory copies, leaving submodules
+Their preparation scripts patch build-directory copies, leaving upstream sources
 unchanged. Jinja2 is used only to generate Marlin instances at build time.
 Source distributions include the consumed upstream files and can be built
-without Git metadata or network access. Component-disabled builds do not need
-these CUDA source submodules. An ordinary Git source archive does not include
-submodule contents; use the complete source distribution for offline builds.
+without Git metadata or source network access. A disabled native component does
+not fetch its source during normal configure. An ordinary Git source archive
+does not bundle external inputs; use the complete sdist or the overrides above.
 Build CCL separately using the Core instructions and the same ABI/prefix before
 building LM. Pin and record the installed NCCL version as part of that deployment.
 
@@ -162,21 +151,12 @@ FlashInfer 0.6.7 and TVM-FFI 0.1.10 inputs into
 SDK license directory when bundling the native libraries. No additional
 download or manual copy into the LM source tree is needed for these inputs.
 
-The fixed fallback is installed only for a linked TVM-FFI transport, not for
-every linked backend. `sampling.so` is one JIT-cache artifact, not the entire
-FlashInfer wheel; `libtvm_ffi.so` is the native runtime, not its Python package.
-The fixed source closures described in `THIRD_PARTY.txt` exclude FlashInfer's
-FA3/CUTLASS/fmt/spdlog components and TVM-FFI's separate PyTorch-derived Python
-addon. Their six secondary license/notice copies are therefore not part of the
-checked-in native fallback. Common Apache terms, original project NOTICEs,
-DLPack attribution and libbacktrace terms remain.
-
-The resolver also preserves real license inventories from the distributions
-actually selected. They can conservatively include full-package materials
-beyond these DSOs; the final installed SDK is not claimed to be reduced to the
-fixed fallback alone. For different binaries, validate source correspondence
-and preserve the actual applicable materials. Complete wheel/SDK distributions
-retain their own applicable notices independently of this native-only recipe.
+The TVM-FFI transport installs a native-only fallback: common Apache terms,
+component copyrights, original project NOTICEs, DLPack attribution and
+libbacktrace terms. See `THIRD_PARTY.txt` for its source scope. The resolver also
+preserves actual package license inventories, which may include broader wheel
+materials. Replacement binaries and complete wheel/SDK distributions require
+their own applicable notices; the fixed fallback is not a substitute.
 
 Preserve the separate FlashAttention/CUTLASS and Marlin notices described in
 `THIRD_PARTY.txt` when distributing those compiled providers. Do not treat this

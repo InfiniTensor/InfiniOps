@@ -14,17 +14,7 @@ install-dir = "infini"
 
 [tool.scikit-build.sdist]
 cmake = true
-exclude = ["third_party/flash-attention/**"]
-force-include = { "build/sdist/marlin-source" = "third_party/marlin-source" }
-include = [
-    "third_party/flash-attention/LICENSE",
-    "third_party/flash-attention/AUTHORS",
-    "third_party/flash-attention/csrc/flash_attn/src/*.h",
-    "third_party/flash-attention/csrc/flash_attn/src/*.cuh",
-    "third_party/flash-attention/csrc/flash_attn/flash_api.cpp",
-    "third_party/flash-attention/csrc/cutlass/include/**",
-    "third_party/flash-attention/csrc/cutlass/LICENSE.txt",
-]
+force-include = { "build/sdist/marlin-source" = "third_party/marlin-source", "build/sdist/flash-attention-source" = "third_party/flash-attention-source", "build/sdist/flash-attention-cutlass-source" = "third_party/flash-attention-cutlass-source" }
 
 [[tool.scikit-build.overrides]]
 if.state = "sdist"

@@ -8,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-// NVIDIA-only candidate: retain the original NVIDIA warp width.
+// Retain the original NVIDIA warp width.
 #define INFINIOP_RECURRENT_DELTA_RULE_WARP_SIZE 32
 #define INFINIOP_RECURRENT_DELTA_RULE_FULL_MASK 0xffffffffU
 
@@ -65,15 +65,6 @@ __device__ inline Tcompute blockReduceSum(Tcompute value, Tcompute* scratch) {
   const Tcompute result = scratch[0];
   __syncthreads();
   return result;
-}
-
-__device__ inline float sigmoid(float value) {
-  if (value >= 0.0f) {
-    const float exp_neg = expf(-value);
-    return 1.0f / (1.0f + exp_neg);
-  }
-  const float exp_pos = expf(value);
-  return exp_pos / (1.0f + exp_pos);
 }
 
 // GatePolicy prepares one decay value per key dimension and a scalar beta for

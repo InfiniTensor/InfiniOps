@@ -7,32 +7,28 @@ function(infiniops_add_native_flash target)
     set(_provider "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../src/native/cuda/nvidia/ops/flash_attn_with_kvcache")
     set(_varlen_provider "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../src/native/cuda/nvidia/ops/flash_attn_varlen_func")
     set(_source "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/..")
-    set(_upstream "${_source}/third_party/flash-attention")
-    set(_kernel_source "${_upstream}/csrc/flash_attn/src")
-    set(_cutlass_include "${_upstream}/csrc/cutlass/include")
+    include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/FlashAttentionSource.cmake")
+    set(_upstream "${flash_attention_SOURCE_DIR}")
+    set(_cutlass_include "${flash_attention_cutlass_SOURCE_DIR}/include")
     set(_prepared "${CMAKE_CURRENT_BINARY_DIR}/native-flash-inference")
     set(_inputs "${_source}/scripts/prepare_flash_attention_inference.py"
         "${_source}/patches/flash-attention/inference.patch"
-        "${_upstream}/csrc/flash_attn/flash_api.cpp"
-        "${_upstream}/LICENSE" "${_upstream}/AUTHORS"
-        "${_upstream}/csrc/cutlass/LICENSE.txt"
+        "${flash_attention_cutlass_SOURCE_DIR}/LICENSE.txt"
         "${_cutlass_include}/cutlass/cutlass.h")
-    # Fixed forward closure: no recursive source scanning or copied CUTLASS tree.
-    foreach(_header block_info.h dropout.h flash.h flash_fwd_kernel.h
-            flash_fwd_launch_template.h hardware_info.h kernel_traits.h mask.h
-            namespace_config.h philox.cuh rotary.h softmax.h static_switch.h utils.h)
-        list(APPEND _inputs "${_kernel_source}/${_header}")
+    foreach(_flash_file IN LISTS _flash_source_files)
+        list(APPEND _inputs "${_upstream}/${_flash_file}")
     endforeach()
     foreach(_input IN LISTS _inputs)
         if(NOT EXISTS "${_input}")
             message(FATAL_ERROR
-                "Native FlashAttention is missing ${_input}. Initialize third_party/flash-attention and its CUTLASS submodule.")
+                "Native FlashAttention is missing ${_input}. Check the fixed source archives or FetchContent SOURCE_DIR overrides.")
         endif()
     endforeach()
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_inputs})
     execute_process(COMMAND "${Python_EXECUTABLE}"
         "${_source}/scripts/prepare_flash_attention_inference.py"
         --source-dir "${_upstream}" --output "${_prepared}"
+        --cutlass-source-dir "${flash_attention_cutlass_SOURCE_DIR}"
         --patch-executable "${_flash_patch}"
         RESULT_VARIABLE _status ERROR_VARIABLE _prepare_error)
     if(NOT _status EQUAL 0)
@@ -57,6 +53,7 @@ function(infiniops_add_native_flash target)
         endforeach()
     endforeach()
     add_library(${target} OBJECT "${_provider}/kernel.cc"
+        "${_source}/src/native/cuda/nvidia/ops/flash_common.cc"
         "${_varlen_provider}/kernel.cc" ${_launches})
     set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON CUDA_STANDARD 17)
     target_compile_features(${target} PRIVATE cxx_std_17)

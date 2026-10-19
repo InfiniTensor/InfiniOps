@@ -7,6 +7,15 @@ if(SKBUILD_STATE STREQUAL "sdist")
         configure_file("${vllm_marlin_SOURCE_DIR}/${_marlin_file}"
             "${CMAKE_BINARY_DIR}/marlin-source/${_marlin_file}" COPYONLY)
     endforeach()
+    include(cmake/FlashAttentionSource.cmake)
+    foreach(_flash_file IN LISTS _flash_source_files)
+        configure_file("${flash_attention_SOURCE_DIR}/${_flash_file}"
+            "${CMAKE_BINARY_DIR}/flash-attention-source/${_flash_file}" COPYONLY)
+    endforeach()
+    configure_file("${flash_attention_cutlass_SOURCE_DIR}/LICENSE.txt"
+        "${CMAKE_BINARY_DIR}/flash-attention-cutlass-source/LICENSE.txt" COPYONLY)
+    file(COPY "${flash_attention_cutlass_SOURCE_DIR}/include"
+        DESTINATION "${CMAKE_BINARY_DIR}/flash-attention-cutlass-source")
     return()
 endif()
 project(InfiniOps LANGUAGES CXX)

@@ -27,10 +27,8 @@ vLLM revision is not asserted to be the unique historical origin of that port.
 Preparation applies patches/marlin to build-directory copies, retaining the
 existing Torch-free includes, repack bindings and activation-order index behavior.
 CUDA template instances and their selector are generated together in the build
-directory. The upstream marlin.cu native pointer entry and scalar_type.hpp are
-prepared alongside the kernels; no copied host/type/helper subtree is retained
-in Ops. A private declaration and small local check helper adapt the native
-entry without Torch types, while existing CUDA error propagation is retained.
+directory. The native marlin.cu host entry and scalar_type.hpp use a private
+declaration/check adapter, retaining CUDA error propagation without Torch types.
 Marlin notices retain Copyright 2024 Elias Frantar, modifications by Neural Magic, Apache-2.0.
 The original generator identifies Apache-2.0 / Copyright contributors to the vLLM project.
 Marlin original Apache headers remain in the prepared source, including marlin.cu;
@@ -63,13 +61,17 @@ Namespace, layout/backend binding and resource adaptations are not described as 
 
 FlashAttention / CUTLASS
 Projects: https://github.com/Dao-AILab/flash-attention and https://github.com/NVIDIA/cutlass
-Source: third_party/flash-attention, pinned gitlink
-060c9188beec3a8b62b33a3bfa6d5d2d44975fab (v2.8.3).
-Its csrc/cutlass gitlink is dc4817921edda44a549197ff3a9dcf5df0636e7b.
+Official fixed source archives, acquired source-only by cmake/FlashAttentionSource.cmake:
+FlashAttention 060c9188beec3a8b62b33a3bfa6d5d2d44975fab (v2.8.3),
+SHA256 64391cfec73fc5a25932b2c0c2fb3b4d9f97af001164e5220af21049fc17e04e.
+Its private CUTLASS dc4817921edda44a549197ff3a9dcf5df0636e7b,
+SHA256 f2a3a9df5e6f010c8b02716aa2644a6f071827fafa606fac5f5241cab6a1ab56.
 scripts/prepare_flash_attention_inference.py prepares csrc/flash_attn/src
 forward headers with patches/flash-attention, preserving source notices, and
 copies upstream LICENSE and AUTHORS. CUTLASS headers are included directly
-from the nested source dependency; its LICENSE.txt is copied for distribution.
+from that separate private source; its LICENSE.txt is copied for distribution.
+Complete sdists bundle the 17 original FA inputs and private CUTLASS include/
+plus LICENSE.txt under third_party/flash-attention{,-cutlass}-source.
 The adapted scheduling heuristic comes from csrc/flash_attn/flash_api.cpp and retains Copyright 2023 Tri Dao.
 The original FlashAttention/CUTLASS notices govern those portions; the Core MIT notice does not relicense them.
 Native launch templates, descriptors and workspace/lifetime integration are glue around the imported forward mathematics.
@@ -87,7 +89,7 @@ retain their Huawei/InfiniTensor notices and vLLM-Ascend source links.
 Distribution
 SDK installation includes LICENSE, this attribution list and LICENSES under
 share/licenses/InfiniOps. Native FlashAttention installation also includes the exact
-upstream LICENSE and AUTHORS and the nested CUTLASS LICENSE.txt.
+upstream LICENSE and AUTHORS and the private CUTLASS LICENSE.txt.
 CUTLASS-BSD-3-Clause.txt records the separate CMake dependency at
 087c84df83d254b5fb295a7a408f1a1d554085cf. CUTLASS notices apply separately to its compiled headers.
 Linked libraries are not relicensed by Ops: distributions bundling sampling.so or

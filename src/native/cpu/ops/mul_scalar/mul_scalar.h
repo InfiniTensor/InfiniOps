@@ -10,6 +10,7 @@
 
 #include "base/mul_scalar.h"
 #include "native/cpu/caster_.h"
+#include "native/cpu/dense_view.h"
 
 namespace infini::ops {
 
@@ -22,23 +23,14 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
         input.device() != out.device() || input.dtype() != out.dtype() ||
         input.shape() != out.shape() || !SupportedDtype(input.dtype()))
       return false;
-    std::size_t input_bytes = 0, out_bytes = 0;
-    if (!ContiguousBytes(input, &input_bytes) ||
-        !ContiguousBytes(out, &out_bytes) ||
-        !ValidAddress(input, input_bytes) || !ValidAddress(out, out_bytes))
-      return false;
-    const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
-    const auto op = reinterpret_cast<std::uintptr_t>(out.data());
-    const bool overlap = input_bytes && out_bytes && ip < op + out_bytes &&
-                         op < ip + input_bytes;
-    return !overlap || (ip == op && input.strides() == out.strides());
+    return cpu_dense_view::DisjointOrSameContiguous(input, out);
   }
 
   Operator(const Tensor input, const double alpha, Tensor out)
       : MulScalar{Checked(input, alpha, out), alpha, out} {
     std::size_t bytes = 0;
-    ContiguousBytes(input, &bytes);
-    count_ = bytes / Width(dtype_);
+    cpu_dense_view::ContiguousBytes(input, &bytes);
+    count_ = bytes / input.element_size();
   }
 
   void operator()(const Tensor input, const double alpha,
@@ -84,44 +76,6 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
   static bool SupportedDtype(DataType type) {
     return type == DataType::kFloat32 || type == DataType::kFloat16 ||
            type == DataType::kBFloat16;
-  }
-
-  static std::size_t Width(DataType type) {
-    return type == DataType::kFloat32 ? 4u : 2u;
-  }
-
-  static bool ContiguousBytes(const Tensor t, std::size_t* bytes) {
-    if (t.shape().size() != t.strides().size()) return false;
-    const auto limit =
-        static_cast<std::size_t>(std::numeric_limits<std::ptrdiff_t>::max()) /
-        Width(t.dtype());
-    bool empty = false;
-    for (std::size_t axis = 0; axis < t.ndim(); ++axis) {
-      if (t.stride(axis) < 0 || t.size(axis) > limit) return false;
-      empty = empty || t.size(axis) == 0;
-    }
-    if (empty) {
-      *bytes = 0;
-      return true;
-    }
-    std::size_t count = 1;
-    for (std::size_t axis = t.ndim(); axis > 0; --axis) {
-      const auto size = t.size(axis - 1);
-      if ((size > 1 &&
-           t.stride(axis - 1) != static_cast<std::ptrdiff_t>(count)) ||
-          size > limit / count)
-        return false;
-      count *= size;
-    }
-    *bytes = count * Width(t.dtype());
-    return true;
-  }
-
-  static bool ValidAddress(const Tensor t, std::size_t bytes) {
-    if (bytes == 0) return true;
-    const auto start = reinterpret_cast<std::uintptr_t>(t.data());
-    return start && start % Width(t.dtype()) == 0 &&
-           start <= std::numeric_limits<std::uintptr_t>::max() - bytes;
   }
 
   static float FloatAlpha(double alpha) {

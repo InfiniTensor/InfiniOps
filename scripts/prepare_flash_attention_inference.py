@@ -1,6 +1,6 @@
 """Prepare the pinned FlashAttention forward headers for native inference.
 
-Apply the reviewed adaptation only in build staging, never in the submodule.
+Apply the reviewed adaptation only in build staging, never in upstream sources.
 The prepared parameter layout must not be linked to the upstream Torch extension.
 """
 
@@ -46,22 +46,23 @@ def read_source(path):
     if not path.is_file():
         raise ValueError(
             f"missing FlashAttention source dependency: {path}; "
-            "initialize third_party/flash-attention and its CUTLASS submodule"
+            "check the fixed source archives or FetchContent SOURCE_DIR overrides"
         )
     return path.read_text(encoding="utf-8")
 
 
-def prepare(source, output, patch_executable="patch"):
+def prepare(source, cutlass_source, output, patch_executable="patch"):
     source, output = pathlib.Path(source).resolve(), pathlib.Path(output).resolve()
-    if output == source or source in output.parents:
+    cutlass_source = pathlib.Path(cutlass_source).resolve()
+    if output.is_relative_to(source) or output.is_relative_to(cutlass_source):
         raise ValueError(
-            "FlashAttention preparation output must be outside its source tree"
+            "FlashAttention preparation output must be outside upstream source trees"
         )
     kernel_source = source / "csrc/flash_attn/src"
     headers = {name: read_source(kernel_source / name) for name in HEADERS}
     api = read_source(source / "csrc/flash_attn/flash_api.cpp")
     notices = {name: read_source(source / name) for name in ("LICENSE", "AUTHORS")}
-    notices["CUTLASS-LICENSE.txt"] = read_source(source / "csrc/cutlass/LICENSE.txt")
+    notices["CUTLASS-LICENSE.txt"] = read_source(cutlass_source / "LICENSE.txt")
     if not PATCH.is_file():
         raise ValueError(f"missing FlashAttention inference adaptation: {PATCH}")
 
@@ -122,10 +123,13 @@ def prepare(source, output, patch_executable="patch"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-dir", required=True)
+    parser.add_argument("--cutlass-source-dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--patch-executable", default="patch")
     args = parser.parse_args()
     try:
-        prepare(args.source_dir, args.output, args.patch_executable)
+        prepare(
+            args.source_dir, args.cutlass_source_dir, args.output, args.patch_executable
+        )
     except (ValueError, OSError) as exc:
         parser.exit(1, f"FlashAttention preparation failed: {exc}\n")

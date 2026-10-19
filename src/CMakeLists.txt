@@ -161,6 +161,7 @@ if(WITH_NVIDIA)
     # Optional pinned kernels have their own include closure and CUDA TUs.
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_common\\.cc$")
 
     # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
     # the extra code objects to this provider source so other CUDA operators

@@ -13,21 +13,12 @@ Copyright 2025-2026 NVIDIA
 Copyright 2023-2026 FlashInfer community (https://flashinfer.ai/)
 Native source headers also retain Copyright (c) 2023, 2024, 2025 and 2026 by
 FlashInfer team. Shared terms: LICENSE. Original NOTICE: FlashInfer-0.6.7/NOTICE.txt.
-Sampling's three TUs are csrc/sampling.cu, csrc/renorm.cu and
-csrc/flashinfer_sampling_binding.cu (flashinfer/jit/sampling.py).
-The fixed source include closure does not use the release's separate
-FA3/CUTLASS/fmt/spdlog components. Complete FlashInfer distributions retain their
-own additional applicable materials, which this native-only list does not replace.
 
 Apache TVM FFI 0.1.10
 https://github.com/apache/tvm-ffi/tree/v0.1.10
 Commit: 1fed0ae0421e614d45662e8ee6bcae353d3ab2ea
 Copyright 2024-present The Apache Software Foundation
 Shared terms: LICENSE. Original NOTICE: TVM-FFI-0.1.10/NOTICE.txt.
-Native object source lists: CMakeLists.txt (_tvm_ffi_objs_sources and extras).
-The separate python/tvm_ffi/_optional_torch_c_dlpack.py contains PyTorch-derived
-code, but is not in the native runtime source list. Its notices still apply to
-distributions including that addon; this list does not describe those distributions.
 
 DLPack: Copyright 2017 by Contributors
 Shared Apache-2.0 terms: LICENSE. Its interfaces are used by the native runtime.
@@ -36,5 +27,4 @@ TVM-FFI-0.1.10/LICENSE.libbacktrace.txt; retain them for the optional compiled s
 CUDA toolkit supplied headers/libraries remain subject to their own applicable
 redistribution terms; this list does not replace those materials.
 
-Actual resolved-package license inventories are collected separately and can
-include conservative full-package materials outside the two native DSOs.
+Source scope and resolved-package redistribution: repository THIRD_PARTY.txt.
