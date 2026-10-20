@@ -9,8 +9,8 @@ class Mrope : public Operator<Mrope> {
   Mrope(const Tensor q, const Tensor k, const Tensor cos, const Tensor sin,
         const Tensor p, int head, int rot, int st, int sh, int sw,
         bool interleaved, Tensor qo, Tensor ko) {
-    assert(head > 0 && rot > 0 && rot <= head && rot % 2 == 0 && st > 0 &&
-           sh > 0 && sw > 0 && int64_t(st) + sh + sw == rot / 2 &&
+    assert(head > 0 && rot >= 0 && rot <= head && rot % 2 == 0 && st >= 0 &&
+           sh >= 0 && sw >= 0 && int64_t(st) + sh + sw == rot / 2 &&
            "Mrope invalid sections");
     for (const auto& t : {k, cos, sin, p, qo, ko})
       assert(t.device() == q.device() && "Mrope devices differ");

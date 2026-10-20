@@ -76,7 +76,7 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
     assert(a[7].has_value() != a[9].has_value() &&
            "recurrent delta requires exactly one final destination mode");
     assert((state.shape()[1] == Hv && state.shape()[2] == Dv &&
-            state.shape()[3] == D && (a[6] || a[7] || state.shape()[0] == B) &&
+            state.shape()[3] == D && (a[6] || state.shape()[0] >= B) &&
             (!a[9] || a[9]->shape() == Tensor::Shape{B, Hv, Dv, D})) &&
            "recurrent delta state layout must be pool/B,Hv,Dv,Dk");
     for (size_t i = 0; i < a.size(); ++i) {
@@ -95,7 +95,8 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
       }
       assert((!(i <= 2 || i == 8) || a[i]->strides()[3] == 1) &&
              "recurrent delta innermost data dimension must be contiguous");
-      assert((!(i == 5 || i == 8 || i == 9) || !a[i]->HasBroadcastDim()) &&
+      assert((!((i == 5 && a[7]) || i == 8 || i == 9) ||
+              !a[i]->HasBroadcastDim()) &&
              "recurrent delta broadcast destination unsupported");
     }
     if (state.shape()[0] >

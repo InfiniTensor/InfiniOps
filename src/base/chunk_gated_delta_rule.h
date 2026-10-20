@@ -88,7 +88,7 @@ class ChunkGatedDeltaRule : public Operator<ChunkGatedDeltaRule> {
     assert(a[8].has_value() != a[10].has_value() &&
            "chunk delta requires exactly one final destination mode");
     assert((state.shape()[1] == Hv && state.shape()[2] == Dv &&
-            state.shape()[3] == D && (a[7] || a[8] || state.shape()[0] == B) &&
+            state.shape()[3] == D && (a[7] || state.shape()[0] >= B) &&
             (!a[10] || a[10]->shape() == Tensor::Shape{B, Hv, Dv, D})) &&
            "chunk delta state layout must be pool/B,Hv,Dv,Dk");
     for (size_t i = 0; i < a.size(); ++i) {
@@ -107,7 +107,8 @@ class ChunkGatedDeltaRule : public Operator<ChunkGatedDeltaRule> {
       }
       assert((!(i <= 2 || i == 9) || a[i]->strides()[3] == 1) &&
              "chunk delta innermost data dimension must be contiguous");
-      assert((!(i == 5 || i == 9 || i == 10) || !a[i]->HasBroadcastDim()) &&
+      assert((!((i == 5 && a[8]) || i == 9 || i == 10) ||
+              !a[i]->HasBroadcastDim()) &&
              "chunk delta broadcast destination unsupported");
     }
     if (T > static_cast<size_t>(std::numeric_limits<int64_t>::max()) ||

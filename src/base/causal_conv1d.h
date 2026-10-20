@@ -74,7 +74,7 @@ class CausalConv1d : public Operator<CausalConv1d> {
              "causal conv packed sequence shape mismatch");
       requests = v[4]->numel() - 1;
     }
-    assert((v[5] || v[6] || state.shape()[0] == requests) &&
+    assert((v[5] || state.shape()[0] >= requests) &&
            "causal conv state batch mismatch");
     assert((!v[8] || v[8]->shape() ==
                          Tensor::Shape{requests, channels, state.shape()[2]}) &&
@@ -93,9 +93,7 @@ class CausalConv1d : public Operator<CausalConv1d> {
       } else {
         assert(v[i]->dtype() == dtype && "causal conv data dtype mismatch");
       }
-      // Preserve ordinary positive strided data and reject broadcast
-      // destinations.
-      if (i == 2 || i == 7 || i == 8)
+      if ((i == 2 && v[6]) || i == 7 || i == 8)
         for (size_t axis = 0; axis < v[i]->ndim(); ++axis)
           assert((v[i]->shape()[axis] == 1 || v[i]->strides()[axis] != 0) &&
                  "causal conv broadcast destination unsupported");

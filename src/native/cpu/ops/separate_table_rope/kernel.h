@@ -15,10 +15,7 @@ class Operator<SeparateTableRope, Device::Type::kCpu>
   }
   Operator(const Tensor x, const Tensor p, const Tensor s, const Tensor c,
            bool neox, Tensor y)
-      : SeparateTableRope(x, p, s, c, neox, y) {
-    if (!supports(x, p, s, c, neox, y))
-      throw std::invalid_argument("SeparateTableRope: CPU only");
-  }
+      : SeparateTableRope(x, p, s, c, neox, y) {}
   void operator()(const Tensor x, const Tensor p, const Tensor s,
                   const Tensor c, bool neox, Tensor y) const override {
     if (x.numel() == 0) return;
