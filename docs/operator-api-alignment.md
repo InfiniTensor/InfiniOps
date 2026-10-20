@@ -225,3 +225,32 @@ unless callers need it.
 When applying these rules, record the selected upstream interface and any
 intentional C++ adaptations in the pull request. Follow `CONTRIBUTING.md` for
 compatibility, testing, and validation requirements.
+
+
+## ONNX Gather
+
+`OnnxGather(input, indices, axis, out)` targets the
+[ONNX Gather-13 schema](https://onnx.ai/onnx/operators/onnx__Gather.html#gather-13).
+It inserts the complete `indices` shape at `axis`, permits negative axes and
+negative indices, and accepts Int32 or Int64 indices. The output tensor is a
+trailing caller-provided buffer, an accepted C++ adaptation. An explicit `axis`
+is required. The `Onnx` prefix distinguishes this contract from the existing
+PyTorch-aligned `Gather`, which requires equal-rank input and index tensors.
+PyTorch has no public operation with this complete contract; `index_select`
+requires a one-dimensional index and is only an implementation building block.
+The public parameter name `index` follows the existing InfiniOps indexing APIs.
+
+The ATen provider implements numeric tensor types supported by its device's
+`index_select` and rejects input/output overlap. Tensor bounding intervals are
+used conservatively; interleaved views with overlapping bounding intervals are
+also rejected. String tensors are outside InfiniRT's data type set. Providers
+are not advertised as capture-safe. Index values are not copied to CPU for
+validation: out-of-range indices are reported by the device implementation and
+may leave an accelerator context unusable, as with the underlying framework.
+
+The existing `Cast(input, out)` interface is unchanged. Its new ATen provider
+uses the destination buffer's dtype and preserves caller storage, supporting
+integer/boolean conversions and noncontiguous outputs that the native NVIDIA
+floating-point provider does not cover. Partial overlap is rejected; an identical
+view is a no-op. Provider metadata checks also run on cached invocation because
+storage addresses are not part of the operator cache key.
