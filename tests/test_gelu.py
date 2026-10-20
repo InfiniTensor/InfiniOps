@@ -87,7 +87,7 @@ def test_encoder_gelu_out_preserves_storage_and_matches_native(
 ):
     if device == "npu":
         assert torch._C._dispatch_has_kernel_for_dispatch_key(
-            "aten::gelu", "PrivateUse1"
+            "aten::gelu.out", "PrivateUse1"
         )
     x = torch.randn(shape, device=device, dtype=torch.float32)
     storage = torch.full((*shape, 2), -123.0, device=device)
