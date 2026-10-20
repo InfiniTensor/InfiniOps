@@ -25,6 +25,20 @@ def test_other_unary_out_dispatch_remains_unchanged():
     assert "at::gelu" not in source
 
 
+def test_default_allowlist_exposes_all_layer_norm_outputs():
+    module = _load_generator_module()
+    default_ops = module.yaml.safe_load(module._OPS_YAML_PATH.read_text())
+    assert "native_layer_norm" in module._select_op_names(None, default_ops, None)
+    op = module._parse_func(
+        "native_layer_norm.out(Tensor input, SymInt[] normalized_shape, "
+        "Tensor? weight, Tensor? bias, float eps, *, Tensor(a!) out0, "
+        "Tensor(b!) out1, Tensor(c!) out2) -> (Tensor(a!), Tensor(b!), Tensor(c!))"
+    )
+    assert len(op.out_params) == 3
+    source = module._generate_torch_method_source("native_layer_norm", op)
+    assert "at::native_layer_norm_out" in source
+
+
 def _load_generator_module():
     path = (
         pathlib.Path(__file__).resolve().parents[1]

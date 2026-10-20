@@ -254,3 +254,9 @@ integer/boolean conversions and noncontiguous outputs that the native NVIDIA
 floating-point provider does not cover. Partial overlap is rejected; an identical
 view is a no-op. Provider metadata checks also run on cached invocation because
 storage addresses are not part of the operator cache key.
+
+`NativeLayerNorm` is generated from ATen's `native_layer_norm.out` schema,
+including all three outputs (`out`, `mean`, `rstd`). It is ATen-schema aligned,
+not a reduced-return replacement for the public `layer_norm` function. The
+default allowlist enables it so consumers need not supply an override merely
+to obtain its generated header and provider.
