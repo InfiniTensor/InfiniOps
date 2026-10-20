@@ -85,13 +85,19 @@ __mlu_global__ void MulKernel(const T* input, const T* other, T* out,
 
 }  // namespace
 
-template <typename T>
+template <typename StorageT>
 void MulUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
-              int cluster_count, const T* input, const T* other, T* out,
+              int cluster_count, const StorageT* storage_input,
+              const StorageT* storage_other, StorageT* storage_out,
               const std::size_t* out_shape, const ptrdiff_t* input_strides,
               const ptrdiff_t* other_strides, const ptrdiff_t* out_strides,
               std::size_t output_size, int ndim, bool fast_path,
               bool out_contiguous) {
+  using T = cambricon::NativeScalarType<StorageT>;
+  auto input = reinterpret_cast<const T*>(storage_input);
+  auto other = reinterpret_cast<const T*>(storage_other);
+  auto out = reinterpret_cast<T*>(storage_out);
+
   auto* bytes = static_cast<char*>(workspace);
   auto* device_shape = reinterpret_cast<std::size_t*>(bytes);
   auto* device_input_strides =
@@ -129,8 +135,8 @@ void MulUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
                             const ptrdiff_t*, const ptrdiff_t*, std::size_t,  \
                             int, bool, bool)
 
-INSTANTIATE_MUL(__half);
-INSTANTIATE_MUL(__bang_bfloat16);
+INSTANTIATE_MUL(Float16);
+INSTANTIATE_MUL(BFloat16);
 INSTANTIATE_MUL(float);
 INSTANTIATE_MUL(int16_t);
 INSTANTIATE_MUL(int32_t);

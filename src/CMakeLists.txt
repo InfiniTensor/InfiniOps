@@ -95,6 +95,16 @@ if(WITH_CPU)
 
     find_package(OpenMP REQUIRED COMPONENTS CXX)
     target_link_libraries(infiniops PRIVATE OpenMP::OpenMP_CXX)
+    # Generated Call/dispatch translation units use CUDA when NVIDIA is
+    # enabled, but also instantiate CPU kernels. OpenMP::OpenMP_CXX only adds
+    # compile flags to CXX sources; forward them to NVCC's host compiler too.
+    if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+        separate_arguments(_cpu_openmp_flags NATIVE_COMMAND "${OpenMP_CXX_FLAGS}")
+        foreach(_flag IN LISTS _cpu_openmp_flags)
+            target_compile_options(infiniops PRIVATE
+                "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_flag}>")
+        endforeach()
+    endif()
 
     list(APPEND DEVICE_LIST "cpu")
 endif()
@@ -148,6 +158,10 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    # Optional pinned kernels have their own include closure and CUDA TUs.
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_common\\.cc$")
 
     # The CUTLASS INT8 Tensor Core kernel needs SM75 device compilation. Scope
     # the extra code objects to this provider source so other CUDA operators
@@ -158,7 +172,17 @@ if(WITH_NVIDIA)
         COMPILE_OPTIONS
             "--generate-code=arch=compute_75,code=sm_75;--generate-code=arch=compute_75,code=compute_75")
 
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/w4_marlin/")
     enable_language(CUDA)
+    if(BUILD_NVIDIA_W4_MARLIN)
+        include("${PROJECT_SOURCE_DIR}/cmake/NativeW4Marlin.cmake")
+    endif()
+
+    if(BUILD_NVIDIA_FLASH_INFERENCE)
+        include("${PROJECT_SOURCE_DIR}/cmake/NativeFlashAttention.cmake")
+        infiniops_add_native_flash(infiniops_native_flash)
+        target_link_libraries(infiniops PRIVATE infiniops_native_flash)
+    endif()
 
     target_compile_definitions(infiniops PUBLIC WITH_NVIDIA=1)
     target_sources(infiniops PRIVATE ${NVIDIA_SOURCES})
@@ -245,6 +269,8 @@ if(WITH_ILUVATAR)
     )
 
     file(GLOB_RECURSE ILUVATAR_SOURCES CONFIGURE_DEPENDS ${ILUVATAR_PATTERNS})
+    list(FILTER ILUVATAR_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|mars|metax|moore|nvidia|thead)/.*")
 
     target_compile_definitions(infiniops PUBLIC WITH_ILUVATAR=1)
     target_sources(infiniops PRIVATE ${ILUVATAR_SOURCES})
@@ -324,6 +350,8 @@ if(WITH_METAX)
     )
 
     file(GLOB_RECURSE METAX_SOURCES CONFIGURE_DEPENDS ${METAX_PATTERNS})
+    list(FILTER METAX_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|mars|moore|nvidia|thead)/.*")
 
     set_source_files_properties(${METAX_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -350,6 +378,8 @@ if(WITH_MARS)
     )
 
     file(GLOB_RECURSE MARS_SOURCES CONFIGURE_DEPENDS ${MARS_PATTERNS})
+    list(FILTER MARS_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|metax|moore|nvidia|thead)/.*")
 
     set_source_files_properties(${MARS_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -383,6 +413,8 @@ if(WITH_MOORE)
     )
 
     file(GLOB_RECURSE MOORE_SOURCES CONFIGURE_DEPENDS ${MOORE_PATTERNS})
+    list(FILTER MOORE_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|mars|metax|nvidia|thead)/.*")
 
     set_source_files_properties(${MOORE_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -401,10 +433,12 @@ if(WITH_CAMBRICON)
     find_program(CNCC_COMPILER cncc HINTS "${NEUWARE_HOME}/bin" "$ENV{NEUWARE_HOME}/bin" /usr/local/neuware/bin)
     if(CNCC_COMPILER)
         message(STATUS "Found cncc: ${CNCC_COMPILER}")
+        separate_arguments(INFINI_MLU_HOST_ABI_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS}")
         set(MLU_COMPILE_OPTS
             -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
             -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
             ${INFINI_RT_INCLUDE_FLAGS}
+            ${INFINI_MLU_HOST_ABI_FLAGS}
             -idirafter /usr/local/neuware/lib/clang/11.1.0/include
         )
         function(compile_mlu_file src_file)
@@ -670,6 +704,12 @@ set(_infini_ops_linked_uses_torch FALSE)
 set(_infini_ops_linked_uses_tvm_ffi FALSE)
 
 if(WITH_LINKED)
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    if(_TORCH_PYTHON)
+        set(_linked_python "${_TORCH_PYTHON}")
+    else()
+        set(_linked_python "${Python_EXECUTABLE}")
+    endif()
     if(NOT DEVICE_LIST)
         message(FATAL_ERROR
             "`WITH_LINKED=ON` requires an enabled device backend.")
@@ -716,7 +756,7 @@ if(WITH_LINKED)
     endif()
 
     execute_process(
-        COMMAND "${_TORCH_PYTHON}" ${_linked_resolver_args}
+        COMMAND "${_linked_python}" ${_linked_resolver_args}
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
         RESULT_VARIABLE _linked_resolution_result
     )
@@ -738,6 +778,10 @@ if(WITH_LINKED)
                 "Unsupported linked operator transport `${_linked_transport}`.")
         endif()
     endforeach()
+
+    if(_infini_ops_linked_uses_torch AND NOT WITH_TORCH)
+        infiniops_find_torch()
+    endif()
 
     list(REMOVE_DUPLICATES INFINI_OPS_LINKED_LIBRARIES)
     set(_linked_library_basenames)
@@ -1259,6 +1303,12 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     if(WITH_LINKED)
         list(APPEND GENERATOR_ARGS --with-linked)
     endif()
+    if(BUILD_NVIDIA_FLASH_INFERENCE)
+        list(APPEND GENERATOR_ARGS --with-native-flash)
+    endif()
+    if(BUILD_NVIDIA_W4_MARLIN)
+        list(APPEND GENERATOR_ARGS --with-native-w4)
+    endif()
     if(WITH_NINETOOTHED)
         list(APPEND GENERATOR_ARGS --with-ninetoothed)
     endif()
@@ -1687,6 +1737,39 @@ install(TARGETS infiniops
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/InfiniCore-MIT.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+if(BUILD_NVIDIA_W4_MARLIN)
+    install(FILES
+        "${PROJECT_SOURCE_DIR}/LICENSES/FasterTransformer-BSD-3-Clause.txt"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+endif()
+if(WITH_NVIDIA)
+    install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/CUTLASS-BSD-3-Clause.txt"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+endif()
+if(WITH_LINKED)
+    if(_infini_ops_linked_uses_tvm_ffi)
+        # Fixed native sampling/runtime recipe; not the complete Python wheels.
+        install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/Apache-2.0-components.txt"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps")
+        install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/FlashInfer-0.6.7/NOTICE.txt"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps/FlashInfer-0.6.7")
+        install(FILES "${PROJECT_SOURCE_DIR}/LICENSES/TVM-FFI-0.1.10/NOTICE.txt"
+            "${PROJECT_SOURCE_DIR}/LICENSES/TVM-FFI-0.1.10/LICENSE.libbacktrace.txt"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps/TVM-FFI-0.1.10")
+    endif()
+    # Keep the real inventory for resolved packages, including unknown versions.
+    foreach(_notice IN LISTS INFINI_OPS_LINKED_NOTICE_FILES)
+        get_filename_component(_notice_dir "${_notice}" DIRECTORY)
+        string(SHA256 _notice_group "${_notice_dir}")
+        install(FILES "${_notice}"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/InfiniOps/resolved/${_notice_group}")
+    endforeach()
+endif()
 
 set(INFINI_OPS_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/InfiniOps")
 

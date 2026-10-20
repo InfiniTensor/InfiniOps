@@ -5,12 +5,14 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include "base/softmax.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
+#include "native/cuda/device_buffer.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/softmax_infinilm/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
@@ -36,6 +38,10 @@ class CudaSoftmax : public Softmax {
     assert(!out.HasBroadcastDim() &&
            "`Softmax` output must not have broadcasted dimensions");
 
+    block_size_ = std::min(
+        RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
+    if (row_count_ == 0 || dim_size_ == 0) return;
+
     const size_t shape_size = ndim_ * sizeof(*d_shape_);
     const size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = shape_size + 2 * strides_size;
@@ -44,7 +50,7 @@ class CudaSoftmax : public Softmax {
     }
 
     std::vector<std::byte> metadata(metadata_size);
-    Backend::Malloc(reinterpret_cast<void**>(&d_metadata_), metadata_size);
+    auto* d_metadata_ = metadata_.Allocate(metadata_size);
 
     size_t offset = 0;
     d_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -58,14 +64,9 @@ class CudaSoftmax : public Softmax {
     d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
     std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
-  }
-
-  ~CudaSoftmax() {
-    if (d_metadata_ != nullptr) {
-      Backend::Free(d_metadata_);
-    }
+    if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                        Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+      throw std::runtime_error("CudaSoftmax metadata copy failed");
   }
 
   void operator()(const Tensor input, const int64_t,
@@ -76,11 +77,9 @@ class CudaSoftmax : public Softmax {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
-    int block_size = std::min(
-        RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
 
     DispatchFunc<AllFloatTypes, List<128, 256, 512, 1024>>(
-        {static_cast<int64_t>(out_type_), block_size},
+        {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
@@ -101,7 +100,8 @@ class CudaSoftmax : public Softmax {
   }
 
  private:
-  std::byte* d_metadata_{nullptr};
+  CudaDeviceBuffer<Backend> metadata_;
+  int block_size_{0};
 
   Tensor::Size* d_shape_{nullptr};
 

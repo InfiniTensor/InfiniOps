@@ -1,6 +1,10 @@
 #ifndef INFINI_OPS_BASE_MUL_H_
 #define INFINI_OPS_BASE_MUL_H_
 
+#include <cstdint>
+#include <cstring>
+#include <stdexcept>
+
 #include "operator.h"
 
 namespace infini::ops {
@@ -32,8 +36,20 @@ class Mul : public Operator<Mul> {
     ValidateBroadcast(input, other, out);
   }
 
+  Mul(const Tensor input, const double other, Tensor out)
+      : output_size_(out.numel()),
+        input_type_(input.dtype()),
+        other_type_(input.dtype()),
+        out_type_(out.dtype()),
+        scalar_mode_(true) {}
+
   virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;
+  // Backends implementing only tensor multiplication remain concrete.
+  virtual void operator()(const Tensor input, const double other,
+                          Tensor out) const {
+    throw std::invalid_argument("scalar Mul is unsupported by this provider");
+  }
 
  protected:
   static Tensor::Strides BroadcastStrides(const Tensor input,
@@ -98,6 +114,24 @@ class Mul : public Operator<Mul> {
   bool is_other_contiguous_{false};
 
   bool is_out_contiguous_{false};
+  bool scalar_mode_{false};
+};
+
+template <>
+struct CacheKeyBuilder<Mul> {
+  detail::CacheKey operator()(const Config& config, const Tensor input,
+                              const Tensor other, Tensor out) const {
+    return detail::CacheKey::Build(config.implementation_index(), input, other,
+                                   out);
+  }
+  detail::CacheKey operator()(const Config& config, const Tensor input,
+                              const double alpha, Tensor out) const {
+    std::uint64_t bits;
+    static_assert(sizeof(bits) == sizeof(alpha));
+    std::memcpy(&bits, &alpha, sizeof(bits));
+    return detail::CacheKey::Build(config.implementation_index(), input, bits,
+                                   out);
+  }
 };
 
 }  // namespace infini::ops

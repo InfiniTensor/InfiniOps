@@ -106,6 +106,18 @@ def test_operator_call_instantiations_externalize_default_implementation_lookup(
     assert f"extern template {signature}" in declarations
     assert f"template {signature}" in definitions
 
+    default_config_signature = (
+        "Config Operator<::infini::ops::Abs>::DefaultConfig(Device::Type);"
+    )
+    assert declarations.count(f"extern template {default_config_signature}") == 1
+    assert definitions.count(f"template {default_config_signature}") == 1
+    eligibility = (
+        "bool Operator<::infini::ops::Abs>::CanMake<Tensor>"
+        "(const Config& config, const Tensor input, const Tensor& out);"
+    )
+    assert f"extern template {eligibility}" in declarations
+    assert f"template {eligibility}" in definitions
+
 
 def test_operator_call_instantiations_externalize_active_implementation_query():
     module = _load_generator_module()
@@ -121,6 +133,33 @@ def test_operator_call_instantiations_externalize_active_implementation_query():
     )
     assert f"extern template {signature}" in declarations
     assert f"template {signature}" in definitions
+
+
+def test_public_factory_normalizes_formal_scalar_and_tensor_list_arguments():
+    module = _load_generator_module()
+    signature = module._ParsedFunction(
+        [
+            module._ParsedArgument("const std::vector<Tensor>", "inputs"),
+            module._ParsedArgument("const double", "alpha"),
+            module._ParsedArgument("Tensor", "out"),
+        ]
+    )
+    operator = module._Operator("cat", constructors=[signature], calls=[signature])
+    declarations, definitions = module._generate_operator_call_instantiation_entries(
+        operator
+    )
+    header = "\n".join(declarations)
+    source = "\n".join(definitions)
+    assert "struct detail::OperatorFactory<::infini::ops::Cat>" in header
+    assert (
+        "Make(const Config& config, const std::vector<Tensor>& inputs, const double& alpha, const Tensor& out)"
+        in header
+    )
+    assert "Operator<::infini::ops::Cat>::Make(config, inputs, alpha, out)" in source
+    assert (
+        "Operator<::infini::ops::Cat>::Call(handle, config, inputs, alpha, out)"
+        in source
+    )
 
 
 def test_operator_call_instantiations_keep_scalar_and_optional_tensor_overloads_distinct(
@@ -372,6 +411,12 @@ class Mul {
     assert '#include "tuning.h"' in text
     assert "std::size_t DefaultImplementationIndexForMul" in text
     assert (
+        "return ::infini::ops::Mul::DefaultConfig(dev_type).implementation_index();"
+    ) in text
+    assert "detail::AutomaticDefault<::infini::ops::Mul>::value" not in text
+    assert "return Config::kAutomaticImplementation;" not in text
+    assert "return indices.front();" not in text
+    assert (
         "config.set_implementation_index("
         "DefaultImplementationIndexForMul(DeviceFromPybind11Handle(input).type()))"
     ) in text
@@ -427,6 +472,12 @@ class Cat {
     assert "converted_first_tensor.at(0).device().type()" in text
     assert "std::move(converted_first_tensor)" not in text
     assert "DeviceFromPybind11Handle(inputs.at(0))" not in text
+    declarations, _ = module._generate_operator_call_instantiation_entries(operator)
+    assert any(
+        "::CanMake<Tensor>(const Config& config, "
+        "const std::vector<Tensor> inputs, const Tensor& out)" in declaration
+        for declaration in declarations
+    )
 
 
 def test_optional_tensor_vector_is_preserved_across_generated_wrappers(
@@ -657,6 +708,7 @@ def test_generated_dispatch_calls_start_with_dispatch_profile_scope(
         "      HostRangeLayer::kDispatchCall};"
     )
     assert '#include "host_range_profiler.h"' in text
+    assert '#include "infini/operator_call_instantiations.h"' in text
     dispatch_call_bodies = re.findall(
         r"void CallProfileOp\([^)]*\) \{\n(.*?)\n\}",
         text,
@@ -793,7 +845,17 @@ def test_select_ops_from_config_preserves_path_and_backend_descriptors():
         },
     }
 
-    assert module._select_ops_from_config({}, config, "ops.json") == {
+    assert module._select_ops_from_config(
+        {
+            "add": [
+                module._Implementation(
+                    pathlib.Path("src/native/cpu/ops/add/add.h"), "native"
+                )
+            ]
+        },
+        config,
+        "ops.json",
+    ) == {
         "add": [
             module._Implementation(
                 pathlib.Path("src/native/cpu/ops/add/add.h"), "native"
@@ -1166,3 +1228,53 @@ def test_cmake_configures_cambricon_half_compatibility():
     assert "#include <bang_fp16.h>" in compatibility_header
     assert "#include <bang_bf16.h>" in compatibility_header
     assert "#define __mlu_host__ inline" in compatibility_header
+
+
+def test_builtin_header_requires_enabled_provider():
+    module = _load_generator_module()
+    config = {
+        "flash_attn_with_kvcache": {
+            "headers": ["src/native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h"],
+            "implementations": None,
+        }
+    }
+    with pytest.raises(ValueError, match="not enabled by this build"):
+        module._select_ops_from_config({}, config, "ops.json")
+
+
+def test_optional_provider_flags_with_absolute_source_root(monkeypatch):
+    module = _load_generator_module()
+    source = pathlib.Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setattr(module, "_SRC_DIR", source)
+    monkeypatch.setattr(module, "_BASE_DIR", source / "base")
+    off = module._get_all_ops(["nvidia"])
+    on = module._get_all_ops(["nvidia"], with_native_flash=True, with_native_w4=True)
+    for name in (
+        "flash_attn_with_kvcache",
+        "flash_attn_varlen_func",
+        "w4_marlin_gemm",
+        "w4_marlin_repack",
+        "w4_marlin_parameters",
+    ):
+        assert name not in off
+        assert on[name]
+
+
+def test_w4_public_api_selection_is_explicit(tmp_path):
+    module = _load_generator_module()
+    name = "w4_marlin_gemm"
+    external = module._Implementation(tmp_path / "w4.h", "custom")
+    config = {
+        name: {
+            "headers": [{"path": str(external.path), "backend": "custom"}],
+            "implementations": None,
+        }
+    }
+    assert module._select_ops_from_config({}, config, "ops.json") == {name: [external]}
+    assert module._select_ops_from_config(
+        {}, {name: {"public_api_only": True}}, "ops.json"
+    ) == {name: []}
+    with pytest.raises(ValueError, match="not available"):
+        module._select_ops_from_config(
+            {}, {name: {"headers": None, "implementations": (0,)}}, "ops.json"
+        )

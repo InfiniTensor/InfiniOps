@@ -14,6 +14,8 @@ class Operator<Copy, Device::Type::kNvidia>
     : public CudaCopy<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaCopy<Runtime<Device::Type::kNvidia>>::CudaCopy;
+  // All dispatched types use kernels and constructor-owned metadata on replay.
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

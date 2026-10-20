@@ -136,7 +136,7 @@ __mlu_global__ void AddKernel(
   }
 }
 
-template <typename T>
+template <typename StorageT>
 void AddUnion(void* workspace, int core_per_cluster, int cluster_count,
               cnrtQueue_t queue, const void* input, const void* other,
               void* out, const size_t* out_shape, const ptrdiff_t* out_strides,
@@ -144,6 +144,8 @@ void AddUnion(void* workspace, int core_per_cluster, int cluster_count,
               const size_t* other_shape, const ptrdiff_t* other_strides,
               size_t output_size, int ndim, bool fast_path, bool out_contiguous,
               double alpha) {
+  using T = cambricon::NativeScalarType<StorageT>;
+
   cnrtDim3_t kernel_dim;
   cnrtFunctionType_t kernel_type;
 
@@ -190,19 +192,19 @@ void AddUnion(void* workspace, int core_per_cluster, int cluster_count,
       fast_path, out_contiguous, static_cast<AddAlpha<T>>(alpha));
 }
 
-template void AddUnion<__half>(void*, int, int, cnrtQueue_t, const void*,
-                               const void*, void*, const size_t*,
-                               const ptrdiff_t*, const size_t*,
-                               const ptrdiff_t*, const size_t*,
-                               const ptrdiff_t*, size_t, int, bool, bool,
-                               double);
+template void AddUnion<Float16>(void*, int, int, cnrtQueue_t, const void*,
+                                const void*, void*, const size_t*,
+                                const ptrdiff_t*, const size_t*,
+                                const ptrdiff_t*, const size_t*,
+                                const ptrdiff_t*, size_t, int, bool, bool,
+                                double);
 
-template void AddUnion<__bang_bfloat16>(void*, int, int, cnrtQueue_t,
-                                        const void*, const void*, void*,
-                                        const size_t*, const ptrdiff_t*,
-                                        const size_t*, const ptrdiff_t*,
-                                        const size_t*, const ptrdiff_t*, size_t,
-                                        int, bool, bool, double);
+template void AddUnion<BFloat16>(void*, int, int, cnrtQueue_t, const void*,
+                                 const void*, void*, const size_t*,
+                                 const ptrdiff_t*, const size_t*,
+                                 const ptrdiff_t*, const size_t*,
+                                 const ptrdiff_t*, size_t, int, bool, bool,
+                                 double);
 
 template void AddUnion<float>(void*, int, int, cnrtQueue_t, const void*,
                               const void*, void*, const size_t*,

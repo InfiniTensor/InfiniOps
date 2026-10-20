@@ -9,6 +9,8 @@ namespace infini::ops {
 
 class Argmax : public Operator<Argmax> {
  public:
+  static constexpr bool kAutomaticDefault = true;
+
   Argmax(const Tensor input, const std::optional<int64_t> dim,
          const bool keepdim, Tensor out)
       : input_shape_{input.shape()},

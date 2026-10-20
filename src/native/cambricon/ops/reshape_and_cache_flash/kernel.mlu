@@ -47,7 +47,7 @@ __mlu_global__ void ReshapeAndCacheFlashKernel(
 
 }  // namespace reshape_and_cache_flash_detail
 
-template <typename T>
+template <typename StorageT>
 void ReshapeAndCacheFlashUnion(
     int core_per_cluster, int cluster_count, cnrtQueue_t queue, const void* key,
     const void* value, const void* slot_mapping, void* key_cache,
@@ -61,6 +61,8 @@ void ReshapeAndCacheFlashUnion(
     std::ptrdiff_t value_cache_page_stride,
     std::ptrdiff_t key_cache_head_stride,
     std::ptrdiff_t value_cache_head_stride) {
+  using T = cambricon::NativeScalarType<StorageT>;
+
   cnrtDim3_t kernel_dim;
   kernel_dim.x = core_per_cluster;
   kernel_dim.y = cluster_count;
@@ -88,8 +90,8 @@ void ReshapeAndCacheFlashUnion(
       std::ptrdiff_t, std::ptrdiff_t, std::ptrdiff_t, std::ptrdiff_t,      \
       std::ptrdiff_t, std::ptrdiff_t)
 
-INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(__half);
-INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(__bang_bfloat16);
+INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(Float16);
+INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(BFloat16);
 INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH(float);
 
 #undef INFINI_INSTANTIATE_RESHAPE_AND_CACHE_FLASH

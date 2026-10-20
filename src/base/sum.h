@@ -10,6 +10,8 @@ namespace infini::ops {
 
 class Sum : public Operator<Sum> {
  public:
+  static constexpr bool kAutomaticDefault = true;
+
   Sum(const Tensor input, const std::optional<std::vector<int64_t>> dim,
       const bool keepdim, const std::optional<DataType> dtype, Tensor out)
       : input_shape_{input.shape()},

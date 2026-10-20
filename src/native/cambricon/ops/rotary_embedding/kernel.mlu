@@ -150,15 +150,19 @@ void LaunchRotaryEmbeddingCambricon(
     size_t rope_dim_offset, ptrdiff_t batch_stride, ptrdiff_t token_stride,
     ptrdiff_t head_stride, ptrdiff_t cache_token_stride, bool is_neox,
     bool inverse) {
+  using NativeT = cambricon::NativeScalarType<T>;
+  using NativeCache = cambricon::NativeScalarType<TCache>;
+
   cnrtDim3_t kernel_dim;
   kernel_dim.x = core_per_cluster;
   kernel_dim.y = cluster_count;
   kernel_dim.z = 1;
-  RotaryEmbeddingCambriconKernel<T, TCache>
+  RotaryEmbeddingCambriconKernel<NativeT, NativeCache>
       <<<kernel_dim, cnrtFuncTypeUnion1, queue>>>(
-          positions, data, cos_sin_cache, num_tokens, sequence_length,
-          num_heads, rot_dim, rope_dim_offset, batch_stride, token_stride,
-          head_stride, cache_token_stride, is_neox, inverse);
+          positions, reinterpret_cast<NativeT*>(data),
+          reinterpret_cast<const NativeCache*>(cos_sin_cache), num_tokens,
+          sequence_length, num_heads, rot_dim, rope_dim_offset, batch_stride,
+          token_stride, head_stride, cache_token_stride, is_neox, inverse);
 }
 
 #define INSTANTIATE_ROTARY_EMBEDDING(T, TCACHE)                         \
@@ -167,14 +171,14 @@ void LaunchRotaryEmbeddingCambricon(
       size_t, size_t, size_t, size_t, ptrdiff_t, ptrdiff_t, ptrdiff_t,  \
       ptrdiff_t, bool, bool)
 
-INSTANTIATE_ROTARY_EMBEDDING(__half, __half);
-INSTANTIATE_ROTARY_EMBEDDING(__half, __bang_bfloat16);
-INSTANTIATE_ROTARY_EMBEDDING(__half, float);
-INSTANTIATE_ROTARY_EMBEDDING(__bang_bfloat16, __half);
-INSTANTIATE_ROTARY_EMBEDDING(__bang_bfloat16, __bang_bfloat16);
-INSTANTIATE_ROTARY_EMBEDDING(__bang_bfloat16, float);
-INSTANTIATE_ROTARY_EMBEDDING(float, __half);
-INSTANTIATE_ROTARY_EMBEDDING(float, __bang_bfloat16);
+INSTANTIATE_ROTARY_EMBEDDING(Float16, Float16);
+INSTANTIATE_ROTARY_EMBEDDING(Float16, BFloat16);
+INSTANTIATE_ROTARY_EMBEDDING(Float16, float);
+INSTANTIATE_ROTARY_EMBEDDING(BFloat16, Float16);
+INSTANTIATE_ROTARY_EMBEDDING(BFloat16, BFloat16);
+INSTANTIATE_ROTARY_EMBEDDING(BFloat16, float);
+INSTANTIATE_ROTARY_EMBEDDING(float, Float16);
+INSTANTIATE_ROTARY_EMBEDDING(float, BFloat16);
 INSTANTIATE_ROTARY_EMBEDDING(float, float);
 
 #undef INSTANTIATE_ROTARY_EMBEDDING

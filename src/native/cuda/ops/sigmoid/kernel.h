@@ -5,12 +5,14 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include "base/sigmoid.h"
 #include "common/generic_utils.h"
 #include "data_type.h"
 #include "dispatcher.h"
+#include "native/cuda/device_buffer.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/sigmoid_infinilm/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
@@ -30,6 +32,9 @@ class CudaSigmoid : public Sigmoid {
     assert(!out.HasBroadcastDim() &&
            "`Sigmoid` output must not have broadcasted dimensions");
 
+    if (output_size_ == 0 || (is_input_contiguous_ && is_out_contiguous_))
+      return;
+
     const size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     const size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 2 * (shape_size + strides_size);
@@ -38,7 +43,7 @@ class CudaSigmoid : public Sigmoid {
     }
 
     std::vector<std::byte> metadata(metadata_size);
-    Backend::Malloc(reinterpret_cast<void**>(&d_metadata_), metadata_size);
+    auto* d_metadata_ = metadata_.Allocate(metadata_size);
 
     size_t offset = 0;
     d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -56,14 +61,9 @@ class CudaSigmoid : public Sigmoid {
     d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
     std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
-  }
-
-  ~CudaSigmoid() {
-    if (d_metadata_ != nullptr) {
-      Backend::Free(d_metadata_);
-    }
+    if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                        Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+      throw std::runtime_error("CudaSigmoid metadata copy failed");
   }
 
   void operator()(const Tensor input, Tensor out) const override {
@@ -73,13 +73,11 @@ class CudaSigmoid : public Sigmoid {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
-    int block_size = std::min(
-        RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
-    dim3 block(std::min(static_cast<Tensor::Size>(block_size), output_size_));
+    dim3 block(std::min(static_cast<Tensor::Size>(block_size_), output_size_));
     dim3 grid(utils::CeilDiv(output_size_, block.x));
 
     DispatchFunc<AllFloatTypes, List<128, 256, 512, 1024>>(
-        {static_cast<int64_t>(out_type_), block_size},
+        {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
@@ -96,7 +94,9 @@ class CudaSigmoid : public Sigmoid {
   }
 
  private:
-  std::byte* d_metadata_{nullptr};
+  const int block_size_ =
+      std::min(RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
+  CudaDeviceBuffer<Backend> metadata_;
 
   Tensor::Size* d_input_shape_{nullptr};
 

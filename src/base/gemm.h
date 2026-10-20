@@ -4,13 +4,66 @@
 #include <algorithm>
 #include <cassert>
 #include <optional>
+#include <stdexcept>
+#include <tuple>
+#include <utility>
 
 #include "operator.h"
 
 namespace infini::ops {
 
+class GemmConfig : public Config {
+ public:
+  enum class Fp32Precision { DefaultFast, FullFp32 };
+
+  explicit GemmConfig(Fp32Precision precision = Fp32Precision::DefaultFast)
+      : fp32_precision_{precision} {
+    if (!IsValid(precision)) {
+      throw std::invalid_argument("invalid GEMM FP32 precision mode");
+    }
+  }
+
+  std::unique_ptr<Config> Clone() const override {
+    return std::make_unique<GemmConfig>(*this);
+  }
+
+  Fp32Precision fp32_precision() const { return fp32_precision_; }
+
+  static Fp32Precision PrecisionFrom(const Config& config) {
+    const auto* gemm_config = dynamic_cast<const GemmConfig*>(&config);
+    const auto precision = gemm_config ? gemm_config->fp32_precision()
+                                       : Fp32Precision::DefaultFast;
+    if (!IsValid(precision)) {
+      throw std::invalid_argument("invalid GEMM FP32 precision mode");
+    }
+    return precision;
+  }
+
+  bool requires_config_aware_provider() const override {
+    return fp32_precision_ == Fp32Precision::FullFp32;
+  }
+
+  static bool SupportsMetadata(const Config& config, const Tensor& a,
+                               const Tensor& b, const Tensor& y) {
+    const auto precision = PrecisionFrom(config);
+    if (precision == Fp32Precision::DefaultFast) return true;
+    return a.dtype() == DataType::kFloat32 && b.dtype() == DataType::kFloat32 &&
+           y.dtype() == DataType::kFloat32;
+  }
+
+ private:
+  static bool IsValid(Fp32Precision precision) {
+    return precision == Fp32Precision::DefaultFast ||
+           precision == Fp32Precision::FullFp32;
+  }
+
+  Fp32Precision fp32_precision_;
+};
+
 class Gemm : public Operator<Gemm> {
  public:
+  using Operator<Gemm>::Make;
+
   Gemm(const Tensor a, const Tensor b, const std::optional<Tensor> c,
        std::optional<float> alpha, std::optional<float> beta,
        std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
@@ -66,6 +119,19 @@ class Gemm : public Operator<Gemm> {
   }
 
  protected:
+  GemmConfig::Fp32Precision fp32_precision(const Tensor& a, const Tensor& b,
+                                           const Tensor& y) const {
+    const auto precision = config_ptr_ ? GemmConfig::PrecisionFrom(*config_ptr_)
+                                       : GemmConfig::Fp32Precision::DefaultFast;
+    if (precision == GemmConfig::Fp32Precision::FullFp32 &&
+        (a.dtype() != DataType::kFloat32 || b.dtype() != DataType::kFloat32 ||
+         y.dtype() != DataType::kFloat32)) {
+      throw std::invalid_argument(
+          "FullFp32 GEMM requires float32 A, B, and output");
+    }
+    return precision;
+  }
+
   static float EffectiveBeta(const std::optional<Tensor>& c,
                              std::optional<float> beta) {
     static_cast<void>(beta);
@@ -112,6 +178,17 @@ class Gemm : public Operator<Gemm> {
   Tensor::Stride batch_stride_b_{0};
 
   Tensor::Stride batch_stride_y_{0};
+};
+
+template <>
+struct CacheKeyBuilder<Gemm> {
+  template <typename... Tail>
+  detail::CacheKey operator()(const Config& config, const Tensor a,
+                              const Tensor b, const Tail&... tail) const {
+    return detail::CacheKey::Build(
+        config.implementation_index(),
+        static_cast<int>(GemmConfig::PrecisionFrom(config)), a, b, tail...);
+  }
 };
 
 }  // namespace infini::ops

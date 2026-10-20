@@ -14,6 +14,7 @@ class Operator<SiluAndMul, Device::Type::kNvidia>
     : public CudaSiluAndMul<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaSiluAndMul<Runtime<Device::Type::kNvidia>>::CudaSiluAndMul;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

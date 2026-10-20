@@ -5,6 +5,7 @@
 #include "cublas_v2.h"
 // clang-format on
 
+#include "base/gemm.h"
 #include "data_type.h"
 #include "native/cuda/blas_utils.h"
 
@@ -22,6 +23,13 @@ struct BlasUtils<Device::Type::kNvidia> {
     if (dtype == DataType::kFloat16 || dtype == DataType::kBFloat16)
       return CUBLAS_COMPUTE_32F;
     return CUBLAS_COMPUTE_32F_FAST_TF32;
+  }
+
+  static auto GetComputeType(DataType dtype,
+                             GemmConfig::Fp32Precision precision) {
+    if (precision == GemmConfig::Fp32Precision::FullFp32)
+      return CUBLAS_COMPUTE_32F;
+    return GetComputeType(dtype);
   }
 };
 

@@ -18,6 +18,14 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
  public:
+  template <typename... Tail>
+  static bool supports(const Config& config, const Tensor a, const Tensor b,
+                       const Tail&... tail) {
+    static_assert(sizeof...(Tail) == 1 || sizeof...(Tail) == 6);
+    const auto& y = std::get<sizeof...(Tail) - 1>(std::tie(tail...));
+    return GemmConfig::SupportsMetadata(config, a, b, y);
+  }
+
   Operator(const Tensor a, const Tensor b, const std::optional<Tensor> c,
            std::optional<float> alpha, std::optional<float> beta,
            std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
@@ -80,7 +88,9 @@ class Operator<Gemm, Device::Type::kNvidia, 1> : public Gemm {
 
     cublasLtMatmulDesc_t op_desc{};
     auto status = cublasLtMatmulDescCreate(
-        &op_desc, BlasUtils<Device::Type::kNvidia>::GetComputeType(y.dtype()),
+        &op_desc,
+        BlasUtils<Device::Type::kNvidia>::GetComputeType(
+            y.dtype(), fp32_precision(a, b, y)),
         CUDA_R_32F);
     assert(status == CUBLAS_STATUS_SUCCESS &&
            "failed to create cuBLASLt matmul descriptor");

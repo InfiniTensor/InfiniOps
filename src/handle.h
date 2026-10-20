@@ -10,11 +10,24 @@ namespace infini::ops {
 
 class Handle {
  public:
+  // The shared pointer owns the storage and points at its device-visible
+  // address. Its deleter must defer reuse until work already enqueued on this
+  // Handle's stream has finished (or use a stream-ordered allocator).
+  struct WorkspaceLease {
+    std::shared_ptr<void> data;
+    std::size_t size_in_bytes{0};
+  };
+
   virtual ~Handle() = default;
 
   virtual std::unique_ptr<Handle> Clone() const {
     return std::make_unique<Handle>(*this);
   }
+
+  // Called by Operator::Call only after the selected/cached instance reports
+  // its required size. Make and direct instance invocation do not acquire a
+  // transient lease: graph owners must retain their own stable workspace.
+  virtual WorkspaceLease acquire_workspace(std::size_t) const { return {}; }
 
   void* stream() const { return stream_; }
 

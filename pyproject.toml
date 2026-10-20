@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core", "pybind11", "libclang", "packaging", "pyyaml"]
+requires = ["scikit-build-core>=1.1.1", "pybind11", "libclang", "packaging", "pyyaml", "jinja2"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -11,6 +11,14 @@ dev = ["pytest", "pytest-cov", "pytest-xdist", "ruff==0.15.22", "torch", "pyyaml
 
 [tool.scikit-build.wheel]
 install-dir = "infini"
+
+[tool.scikit-build.sdist]
+cmake = true
+force-include = { "build/sdist/marlin-source" = "third_party/marlin-source", "build/sdist/flash-attention-source" = "third_party/flash-attention-source", "build/sdist/flash-attention-cutlass-source" = "third_party/flash-attention-cutlass-source" }
+
+[[tool.scikit-build.overrides]]
+if.state = "sdist"
+build-dir = "build/sdist"
 
 [tool.scikit-build.cmake.define]
 AUTO_DETECT_DEVICES = "ON"

@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include "base/mul.h"
 #include "common/generic_utils.h"
+#include "native/cuda/device_buffer.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/mul/kernel.cuh"
 #include "native/cuda/runtime_utils.h"
@@ -28,7 +30,7 @@ class CudaMul : public Mul {
 
     std::vector<std::byte> metadata(metadata_size);
 
-    Backend::Malloc((void**)&d_metadata_, metadata_size);
+    auto* d_metadata_ = metadata_.Allocate(metadata_size);
 
     size_t offset = 0;
     d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -54,25 +56,21 @@ class CudaMul : public Mul {
     d_out_strides_ = reinterpret_cast<Tensor::Stride*>(d_metadata_ + offset);
     std::memcpy(metadata.data() + offset, out_strides_.data(), strides_size);
 
-    Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
-  }
-
-  ~CudaMul() {
-    if (d_metadata_ != nullptr) {
-      Backend::Free(d_metadata_);
-    }
+    if (Backend::Memcpy(d_metadata_, metadata.data(), metadata_size,
+                        Backend::kMemcpyHostToDevice) != Backend::kSuccess)
+      throw std::runtime_error("CudaMul metadata copy failed");
   }
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
+    if (scalar_mode_)
+      throw std::invalid_argument("Mul prepared for a scalar operand");
     if (output_size_ == 0) {
       return;
     }
 
-    int block_size = RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
     DispatchFunc<AllTypes, AllCudaBlockSizes>(
-        {static_cast<int64_t>(out_type_), block_size},
+        {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           constexpr int kBlockSize = ListGet<1>(list_tag);
@@ -80,7 +78,7 @@ class CudaMul : public Mul {
           auto cuda_stream =
               static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
           dim3 block_dims(
-              std::min(static_cast<Tensor::Size>(block_size), output_size_));
+              std::min(static_cast<Tensor::Size>(block_size_), output_size_));
           dim3 grid_dims(utils::CeilDiv(output_size_, block_dims.x));
 
           T* d_out = reinterpret_cast<T*>(out.data());
@@ -97,8 +95,14 @@ class CudaMul : public Mul {
         "CudaMul::operator()");
   }
 
+ protected:
+  CudaMul(const Tensor input, const double alpha, Tensor out)
+      : Mul{input, alpha, out}, block_size_(0) {}
+
  private:
-  std::byte* d_metadata_{nullptr};
+  const int block_size_ =
+      RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
+  CudaDeviceBuffer<Backend> metadata_;
 
   Tensor::Size* d_input_shape_{nullptr};
 

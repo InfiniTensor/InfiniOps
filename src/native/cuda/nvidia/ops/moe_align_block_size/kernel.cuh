@@ -9,8 +9,9 @@ namespace moe_align_block_size_detail {
 
 __device__ __forceinline__ int32_t MapExpertId(int32_t expert_id,
                                                const int32_t* expert_map,
-                                               int32_t num_experts) {
-  if (expert_id < 0 || expert_id >= num_experts) {
+                                               int32_t num_experts,
+                                               int32_t map_size) {
+  if (expert_id < 0 || expert_id >= (expert_map ? map_size : num_experts)) {
     return -1;
   }
   if (expert_map != nullptr) {
@@ -26,7 +27,7 @@ __global__ void MoeAlignBlockSizeKernel(
     int32_t* __restrict__ sorted_token_ids, int32_t* __restrict__ experts_ids,
     int32_t* __restrict__ num_tokens_post_pad, size_t numel,
     int32_t num_experts, int32_t block_size, size_t sorted_token_ids_size,
-    size_t experts_ids_size) {
+    size_t experts_ids_size, int32_t map_size) {
   extern __shared__ int32_t expert_offsets[];
 
   for (size_t i = threadIdx.x; i < sorted_token_ids_size; i += blockDim.x) {
@@ -44,7 +45,8 @@ __global__ void MoeAlignBlockSizeKernel(
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < numel; i += blockDim.x) {
-    const auto expert_id = MapExpertId(topk_ids[i], expert_map, num_experts);
+    const auto expert_id =
+        MapExpertId(topk_ids[i], expert_map, num_experts, map_size);
     if (expert_id >= 0) {
       atomicAdd(&expert_offsets[expert_id], 1);
     }
@@ -69,7 +71,8 @@ __global__ void MoeAlignBlockSizeKernel(
 
   if (threadIdx.x == 0) {
     for (size_t i = 0; i < numel; ++i) {
-      const auto expert_id = MapExpertId(topk_ids[i], expert_map, num_experts);
+      const auto expert_id =
+          MapExpertId(topk_ids[i], expert_map, num_experts, map_size);
       if (expert_id >= 0) {
         sorted_token_ids[expert_offsets[expert_id]++] = static_cast<int32_t>(i);
       }

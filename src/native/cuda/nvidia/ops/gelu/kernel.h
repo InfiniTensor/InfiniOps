@@ -14,6 +14,7 @@ class Operator<Gelu, Device::Type::kNvidia>
     : public CudaGelu<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaGelu<Runtime<Device::Type::kNvidia>>::CudaGelu;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

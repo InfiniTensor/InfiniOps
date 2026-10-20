@@ -6,6 +6,7 @@
 #include "base/mul.h"
 #include "common/generic_utils.h"
 #include "native/cpu/caster_.h"
+#include "native/cpu/ops/mul/scalar.h"
 
 namespace infini::ops {
 
@@ -15,9 +16,23 @@ class Operator<Mul, Device::Type::kCpu> : public Mul,
  public:
   Operator(const Tensor input, const Tensor other, Tensor out)
       : Mul{input, other, out} {}
+  Operator(const Tensor input, const double alpha, Tensor out)
+      : Mul{input, alpha, out}, scalar_(std::in_place, input, alpha, out) {}
+
+  static bool supports(const Tensor input, const double alpha, Tensor out) {
+    return CpuScalarMul::supports(input, alpha, out);
+  }
+  void operator()(const Tensor input, const double alpha,
+                  Tensor out) const override {
+    if (!scalar_)
+      throw std::invalid_argument("Mul prepared for tensor operands");
+    scalar_->Run(input, alpha, out);
+  }
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
+    if (scalar_mode_)
+      throw std::invalid_argument("Mul prepared for a scalar operand");
     DispatchFunc<Device::Type::kCpu, AllTypes>(
         out_type_,
         [&](auto tag) {
@@ -28,6 +43,7 @@ class Operator<Mul, Device::Type::kCpu> : public Mul,
   }
 
  private:
+  std::optional<CpuScalarMul> scalar_;
   template <typename T>
   void Compute(const Tensor input, const Tensor other, Tensor out) const {
     using ComputeType = std::conditional_t<IsBFloat16<Device::Type::kCpu, T> ||

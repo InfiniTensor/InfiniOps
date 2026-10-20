@@ -18,6 +18,9 @@ def _load_resolver_module():
     assert spec.loader is not None
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    # Resolver tests replace package discovery with fixture DSO paths; notices
+    # need the same explicit fixture boundary instead of installed metadata.
+    module._locate_distribution_notices = lambda config: []
     return module
 
 

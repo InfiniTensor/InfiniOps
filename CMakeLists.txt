@@ -1,4 +1,23 @@
 cmake_minimum_required(VERSION 3.18)
+if(SKBUILD_STATE STREQUAL "sdist")
+    # Source packaging must not probe compilers, GPUs or installed SDKs.
+    project(InfiniOps LANGUAGES NONE)
+    include(cmake/MarlinSource.cmake)
+    foreach(_marlin_file IN LISTS _marlin_source_files)
+        configure_file("${vllm_marlin_SOURCE_DIR}/${_marlin_file}"
+            "${CMAKE_BINARY_DIR}/marlin-source/${_marlin_file}" COPYONLY)
+    endforeach()
+    include(cmake/FlashAttentionSource.cmake)
+    foreach(_flash_file IN LISTS _flash_source_files)
+        configure_file("${flash_attention_SOURCE_DIR}/${_flash_file}"
+            "${CMAKE_BINARY_DIR}/flash-attention-source/${_flash_file}" COPYONLY)
+    endforeach()
+    configure_file("${flash_attention_cutlass_SOURCE_DIR}/LICENSE.txt"
+        "${CMAKE_BINARY_DIR}/flash-attention-cutlass-source/LICENSE.txt" COPYONLY)
+    file(COPY "${flash_attention_cutlass_SOURCE_DIR}/include"
+        DESTINATION "${CMAKE_BINARY_DIR}/flash-attention-cutlass-source")
+    return()
+endif()
 project(InfiniOps LANGUAGES CXX)
 
 if(POLICY CMP0116)
@@ -25,6 +44,9 @@ option(WITH_ASCEND "Enable Ascend backend" OFF)
 
 option(WITH_TORCH "Enable PyTorch C++ backend" OFF)
 option(WITH_LINKED "Enable linked third-party operator backends" OFF)
+
+option(BUILD_NVIDIA_FLASH_INFERENCE "Build pinned Torch-free NVIDIA inference Attention" OFF)
+option(BUILD_NVIDIA_W4_MARLIN "Build NVIDIA AWQ/GPTQ Marlin providers (CUDA >= 12.3)" OFF)
 
 option(WITH_NINETOOTHED "Enable NineToothed-generated kernels" OFF)
 
@@ -188,6 +210,13 @@ if(AUTO_DETECT_DEVICES)
     endif()
 endif()
 
+if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
+endif()
+if(BUILD_NVIDIA_W4_MARLIN AND NOT WITH_NVIDIA)
+    message(FATAL_ERROR "Marlin requires WITH_NVIDIA")
+endif()
+
 if(AUTO_DETECT_BACKENDS)
     message(STATUS "Auto-detecting available backends...")
 
@@ -239,7 +268,10 @@ if(AUTO_DETECT_BACKENDS)
     endif()
 endif()
 
-if(WITH_TORCH OR WITH_LINKED)
+ # A linked backend is not necessarily a Torch backend: TVM-FFI transports
+ # consume DLPack views and their own runtime. Discover Torch lazily only when
+ # native Torch wrappers or a selected linked Torch transport need it.
+macro(infiniops_find_torch)
     if(WITH_MARS AND WITH_TORCH AND WITH_LINKED)
         find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
     else()
@@ -267,7 +299,7 @@ if(WITH_TORCH OR WITH_LINKED)
 
     if(NOT _torch_result EQUAL 0)
         message(FATAL_ERROR
-            "`WITH_TORCH=ON` or `WITH_LINKED=ON` requires an installed `torch` package.")
+            "The selected Torch backend/transport requires an installed `torch` package.")
     endif()
 
     execute_process(
@@ -360,6 +392,10 @@ if(WITH_TORCH OR WITH_LINKED)
     endif()
 
     message(STATUS "Found PyTorch: ${TORCH_INCLUDE_DIRS}")
+endmacro()
+
+if(WITH_TORCH)
+    infiniops_find_torch()
 endif()
 
 # Only one CUDA-like GPU backend can be enabled at a time.

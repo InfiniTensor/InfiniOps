@@ -14,6 +14,7 @@ class Operator<Fill, Device::Type::kNvidia>
     : public CudaFill<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaFill<Runtime<Device::Type::kNvidia>>::CudaFill;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

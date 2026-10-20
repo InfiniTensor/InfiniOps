@@ -82,7 +82,7 @@ void Operator<TopkSoftmax, Device::Type::kNvidia, 0>::operator()(
                 reinterpret_cast<int32_t*>(token_expert_indices.data()),
                 static_cast<int32_t>(num_tokens_),
                 static_cast<int32_t>(num_experts_), static_cast<int32_t>(topk_),
-                renormalize_);
+                renormalize_, softcap_, min_sum_);
       },
       "Operator<TopkSoftmax, Device::Type::kNvidia>::operator()");
 

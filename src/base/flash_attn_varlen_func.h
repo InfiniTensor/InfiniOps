@@ -14,6 +14,86 @@ namespace infini::ops {
 // `flash_attn_varlen_func` public interface.
 class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
  public:
+  static constexpr bool kAutomaticDefault = true;
+
+  // Common metadata, not native layout/capacity or capture qualification.
+  // Planning may use null data; invocation checks actual nonempty storage.
+  static bool supports(
+      const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q,
+      const Tensor cu_seqlens_k, const std::optional<Tensor> alibi_slopes,
+      const std::optional<Tensor> block_table, const int64_t max_seqlen_q,
+      const int64_t max_seqlen_k, const double dropout_p,
+      const std::optional<double> softmax_scale, const bool causal,
+      const std::vector<int64_t> window_size, const double softcap,
+      const bool deterministic, const bool return_attn_probs, Tensor out,
+      std::optional<Tensor> softmax_lse, std::optional<Tensor> s_dmask) {
+    if (q.ndim() != 3 || k.ndim() != (block_table ? 4 : 3) ||
+        v.ndim() != k.ndim() || k.shape() != v.shape() ||
+        out.shape() != q.shape() ||
+        (q.dtype() != DataType::kFloat16 && q.dtype() != DataType::kBFloat16) ||
+        k.dtype() != q.dtype() || v.dtype() != q.dtype() ||
+        out.dtype() != q.dtype() || cu_seqlens_q.ndim() != 1 ||
+        cu_seqlens_k.ndim() != 1 ||
+        cu_seqlens_q.shape() != cu_seqlens_k.shape() ||
+        cu_seqlens_q.size(0) < 2 || cu_seqlens_q.dtype() != DataType::kInt32 ||
+        cu_seqlens_k.dtype() != DataType::kInt32 ||
+        (alibi_slopes &&
+         ((alibi_slopes->ndim() != 1 && alibi_slopes->ndim() != 2) ||
+          alibi_slopes->dtype() != DataType::kFloat32)) ||
+        (block_table && (block_table->ndim() != 2 ||
+                         block_table->dtype() != DataType::kInt32)) ||
+        softmax_lse.has_value() != s_dmask.has_value() ||
+        return_attn_probs != softmax_lse.has_value() ||
+        (softmax_lse && (softmax_lse->dtype() != DataType::kFloat32 ||
+                         s_dmask->dtype() != q.dtype())) ||
+        max_seqlen_q <= 0 || max_seqlen_k <= 0 || window_size.size() != 2 ||
+        window_size[0] < -1 || window_size[1] < -1 || dropout_p != 0.0 ||
+        softcap != 0.0 || deterministic)
+      return false;
+    const auto metadata = [&](const Tensor& tensor) {
+      return tensor.device().type() == q.device().type() &&
+             tensor.device().index() == q.device().index();
+    };
+    for (const auto& tensor : {q, k, v, cu_seqlens_q, cu_seqlens_k, out})
+      if (!metadata(tensor)) return false;
+    for (const auto& tensor : {alibi_slopes, block_table, softmax_lse, s_dmask})
+      if (tensor && !metadata(*tensor)) return false;
+    // Span validation above establishes stride cardinality before axis access.
+    if (q.size(1) == 0 || k.size(-2) == 0 || q.size(1) % k.size(-2) != 0 ||
+        q.size(2) == 0 || q.size(2) > 256 || q.size(2) % 8 != 0 ||
+        q.size(2) != k.size(-1) || q.stride(-1) != 1 || k.stride(-1) != 1 ||
+        v.stride(-1) != 1 || out.stride(-1) != 1 ||
+        !cu_seqlens_q.IsContiguous() || !cu_seqlens_k.IsContiguous())
+      return false;
+    if (softmax_lse &&
+        (softmax_lse->shape() != Tensor::Shape{q.size(1), q.size(0)} ||
+         s_dmask->shape() != Tensor::Shape{0}))
+      return false;
+    if (block_table && (block_table->size(0) != cu_seqlens_q.size(0) - 1 ||
+                        !block_table->IsContiguous() || k.size(1) % 256 != 0))
+      return false;
+    if (alibi_slopes &&
+        (!alibi_slopes->IsContiguous() ||
+         !((alibi_slopes->ndim() == 1 && alibi_slopes->size(0) == q.size(1)) ||
+           (alibi_slopes->ndim() == 2 &&
+            alibi_slopes->size(0) == cu_seqlens_q.size(0) - 1 &&
+            alibi_slopes->size(1) == q.size(1)))))
+      return false;
+    (void)softmax_scale;
+    (void)causal;
+    return true;
+  }
+
+  static bool supports(const Tensor q, const Tensor k, const Tensor v,
+                       const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
+                       const int64_t max_seqlen_q, const int64_t max_seqlen_k,
+                       Tensor out) {
+    return supports(q, k, v, cu_seqlens_q, cu_seqlens_k, std::nullopt,
+                    std::nullopt, max_seqlen_q, max_seqlen_k, 0.0, std::nullopt,
+                    false, {-1, -1}, 0.0, false, false, out, std::nullopt,
+                    std::nullopt);
+  }
+
   FlashAttnVarlenFunc(const Tensor q, const Tensor k, const Tensor v,
                       const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
                       const int64_t max_seqlen_q, const int64_t max_seqlen_k,

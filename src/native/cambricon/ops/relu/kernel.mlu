@@ -101,13 +101,15 @@ __mlu_global__ void ReluKernel(const T* input, T* output, const size_t* shape,
 
 }  // namespace
 
-template <typename T>
+template <typename StorageT>
 void ReluUnion(void* workspace, int core_per_cluster, int cluster_count,
                cnrtQueue_t queue, const void* input, void* out,
                const size_t* shape, const ptrdiff_t* input_strides,
                const ptrdiff_t* out_strides, size_t output_size, int ndim,
                bool input_contiguous, bool out_contiguous,
                bool needs_input_copy) {
+  using T = cambricon::NativeScalarType<StorageT>;
+
   auto* workspace_bytes = static_cast<char*>(workspace);
   auto* device_shape = reinterpret_cast<size_t*>(workspace_bytes);
   auto* device_input_strides =
@@ -162,8 +164,8 @@ void ReluUnion(void* workspace, int core_per_cluster, int cluster_count,
                              const ptrdiff_t*, size_t, int, bool, bool, bool)
 
 INSTANTIATE_RELU(float);
-INSTANTIATE_RELU(__half);
-INSTANTIATE_RELU(__bang_bfloat16);
+INSTANTIATE_RELU(Float16);
+INSTANTIATE_RELU(BFloat16);
 INSTANTIATE_RELU(int64_t);
 INSTANTIATE_RELU(int32_t);
 INSTANTIATE_RELU(int16_t);

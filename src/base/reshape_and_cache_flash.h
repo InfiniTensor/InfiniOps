@@ -14,6 +14,33 @@ namespace infini::ops {
 // Aligned with vLLM `_custom_ops.reshape_and_cache_flash`.
 class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
  public:
+  static bool supports(const Tensor& key, const Tensor& value,
+                       const Tensor& slots, const Tensor& k_scale,
+                       const Tensor& v_scale, const std::string& mode,
+                       const Tensor& key_cache, const Tensor& value_cache) {
+    if (key.ndim() != 3 || value.ndim() != 3 || slots.ndim() != 1 ||
+        key_cache.ndim() != 4 || value_cache.ndim() != 4)
+      return false;
+    return key.shape() == value.shape() && key.dtype() == value.dtype() &&
+           (key.dtype() == DataType::kFloat16 ||
+            key.dtype() == DataType::kBFloat16 ||
+            key.dtype() == DataType::kFloat32) &&
+           slots.dtype() == DataType::kInt64 && slots.stride(0) == 1 &&
+           slots.size(0) <= key.size(0) && key.size(1) > 0 && key.size(2) > 0 &&
+           key_cache.shape() == value_cache.shape() && key_cache.size(1) > 0 &&
+           key_cache.size(2) == key.size(1) &&
+           key_cache.size(3) == key.size(2) && key.stride(2) == 1 &&
+           value.stride(2) == 1 && key_cache.stride(3) == 1 &&
+           value_cache.stride(3) == 1 && mode == "auto" &&
+           key_cache.dtype() == key.dtype() &&
+           value_cache.dtype() == key.dtype() && !key_cache.HasBroadcastDim() &&
+           !value_cache.HasBroadcastDim() &&
+           k_scale.shape() == v_scale.shape() &&
+           (k_scale.numel() == 1 || k_scale.numel() == key.size(1)) &&
+           k_scale.dtype() == DataType::kFloat32 &&
+           v_scale.dtype() == DataType::kFloat32;
+  }
+
   ReshapeAndCacheFlash(const Tensor key, const Tensor value,
                        const Tensor slot_mapping, const Tensor k_scale,
                        const Tensor v_scale, const std::string kv_cache_dtype,

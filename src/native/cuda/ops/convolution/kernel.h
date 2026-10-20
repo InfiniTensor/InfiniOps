@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstring>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 #include "base/conv1d.h"
@@ -122,7 +123,14 @@ class CudaConv : public Op {
                                  bias_strides_size + 3 * attrs_size;
     std::vector<std::byte> host_metadata(metadata_size);
 
-    Backend::Malloc((void**)&d_metadata_, metadata_size);
+    if (Backend::Malloc((void**)&d_metadata_, metadata_size) != 0 ||
+        d_metadata_ == nullptr) {
+      if (d_metadata_ != nullptr) {
+        Backend::Free(d_metadata_);
+        d_metadata_ = nullptr;
+      }
+      throw std::runtime_error("CudaConv failed to allocate device metadata");
+    }
 
     size_t offset = 0;
     d_input_shape_ = reinterpret_cast<Tensor::Size*>(d_metadata_ + offset);
@@ -175,8 +183,12 @@ class CudaConv : public Op {
     std::memcpy(host_metadata.data() + offset, metadata.dilation.data(),
                 attrs_size);
 
-    Backend::Memcpy(d_metadata_, host_metadata.data(), metadata_size,
-                    Backend::kMemcpyHostToDevice);
+    if (Backend::Memcpy(d_metadata_, host_metadata.data(), metadata_size,
+                        Backend::kMemcpyHostToDevice) != 0) {
+      Backend::Free(d_metadata_);
+      d_metadata_ = nullptr;
+      throw std::runtime_error("CudaConv failed to upload device metadata");
+    }
   }
 
   std::byte* d_metadata_{nullptr};

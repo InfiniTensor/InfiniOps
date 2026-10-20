@@ -14,6 +14,8 @@ class Operator<Add, Device::Type::kNvidia>
     : public CudaAdd<Runtime<Device::Type::kNvidia>> {
  public:
   using CudaAdd<Runtime<Device::Type::kNvidia>>::CudaAdd;
+  // All dispatched types use kernels and constructor-owned metadata on replay.
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

@@ -10,6 +10,8 @@ namespace infini::ops {
 
 class UpsampleBilinear2d : public Operator<UpsampleBilinear2d> {
  public:
+  static constexpr bool kAutomaticDefault = true;
+
   UpsampleBilinear2d(const Tensor input, const std::vector<int64_t> output_size,
                      const bool align_corners,
                      const std::optional<double> scales_h,

@@ -18,6 +18,8 @@ class Operator<MoeAlignBlockSize, Device::Type::kNvidia, 0>
 
   using MoeAlignBlockSize::operator();
 
+  bool capture_safe() const override { return true; }
+
  protected:
   void Run(const Tensor topk_ids, const std::optional<Tensor> maybe_expert_map,
            const int64_t num_experts, const int64_t block_size,

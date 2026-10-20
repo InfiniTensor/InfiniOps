@@ -7,6 +7,8 @@ namespace infini::ops {
 
 class Take : public Operator<Take> {
  public:
+  static constexpr bool kAutomaticDefault = true;
+
   Take(const Tensor input, const Tensor index, Tensor out)
       : input_shape_{input.shape()},
         input_strides_{input.strides()},

@@ -969,12 +969,7 @@ namespace py = pybind11;
 namespace infini::ops {{
 
 std::size_t DefaultImplementationIndexFor{symbol_name}(Device::Type dev_type) {{
-  auto indices = generated_dispatch::ActiveImplementationIndicesFor{symbol_name}(dev_type);
-  if (indices.empty()) {{
-    throw py::value_error("No active implementation for {symbol_name} on device " +
-                          std::string{{Device::StringFromType(dev_type)}});
-  }}
-  return indices.front();
+  return {op_type}::DefaultConfig(dev_type).implementation_index();
 }}
 
 void Bind{symbol_name}(py::module& m) {{
@@ -1331,7 +1326,17 @@ void ClearCacheFor{symbol_name}() {{
 
     for node in operator.constructors:
         params = _generate_params(node)
-        args = _generate_arguments(node)
+        constructor_args = [
+            arg.spelling for arg in node.get_arguments() if arg.spelling != "stream"
+        ]
+        # Operator::Make forwards its trailing arguments. Named by-value
+        # dispatch parameters are mutable lvalues, while the generated public
+        # instantiations use const T& for every trailing argument. Canonicalize
+        # this call so Python bindings request the exported specialization.
+        args = ", ".join(
+            [constructor_args[0]]
+            + [f"std::as_const({name})" for name in constructor_args[1:]]
+        )
         make_params = _append_optional_params("const Config& config", params)
 
         if make_params in emitted_make_params:
@@ -1421,7 +1426,10 @@ def _generate_generated_dispatch_source(impl_paths, definitions):
     impl_includes = "\n".join(f'#include "{impl_path}"' for impl_path in impl_paths)
 
     return f"""#include "generated_dispatch.h"
+#include "infini/operator_call_instantiations.h"
 #include "host_range_profiler.h"
+
+#include <utility>
 
 // clang-format off
 {impl_includes}
@@ -1597,6 +1605,8 @@ def _generate_operator_call_instantiation_entries(operator):
     op_type = _op_cpp_type(operator.name)
     declarations = []
     definitions = []
+    factory_declarations = []
+    factory_definitions = []
 
     seen_entries = set()
 
@@ -1613,6 +1623,11 @@ def _generate_operator_call_instantiation_entries(operator):
         f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
         f"template std::vector<std::size_t> "
         f"Operator<{op_type}>::active_implementation_indices(Device::Type);",
+    )
+
+    _append_unique(
+        f"extern template Config Operator<{op_type}>::DefaultConfig(Device::Type);",
+        f"template Config Operator<{op_type}>::DefaultConfig(Device::Type);",
     )
 
     _append_unique(
@@ -1646,6 +1661,13 @@ def _generate_operator_call_instantiation_entries(operator):
             make_params,
         )
         make_instantiation = f"Operator<{op_type}>::Make<{make_template_arguments}>({make_function_params})"
+        can_make_template_arguments = ", ".join(
+            _normalized_type(arg) for arg in rest_args
+        )
+        can_make_instantiation = (
+            f"Operator<{op_type}>::CanMake<{can_make_template_arguments}>"
+            f"({make_function_params})"
+        )
 
         operator_instantiation = (
             f"Operator<{op_type}>::operator()<{template_arguments}>({params}) const"
@@ -1660,9 +1682,49 @@ def _generate_operator_call_instantiation_entries(operator):
             f"template std::unique_ptr<Operator<{op_type}>> {make_instantiation};",
         )
         _append_unique(
+            f"extern template bool {can_make_instantiation};",
+            f"template bool {can_make_instantiation};",
+        )
+        _append_unique(
             f"extern template void {operator_instantiation};",
             f"template void {operator_instantiation};",
         )
+
+        factory_declarations.append(f"  static void Call({function_params});")
+        factory_definitions.append(
+            f"void detail::OperatorFactory<{op_type}>::Call({function_params}) {{\n"
+            f"  return Operator<{op_type}>::Call(handle, config, "
+            f"{', '.join(arg.spelling for arg in args)});\n}}"
+        )
+
+    for constructor in operator.constructors or operator.calls:
+        args = [arg for arg in constructor.get_arguments() if arg.spelling != "stream"]
+        params = ", ".join(
+            f"const {_normalized_type(arg)}& {arg.spelling}" for arg in args
+        )
+        formal_params = _append_optional_params("const Config& config", params)
+        arguments = ", ".join(arg.spelling for arg in args)
+        factory_declarations.extend(
+            [
+                f"  static std::unique_ptr<Operator<{op_type}>> Make({formal_params});",
+                f"  static bool CanMake({formal_params});",
+            ]
+        )
+        factory_definitions.extend(
+            [
+                f"std::unique_ptr<Operator<{op_type}>> detail::OperatorFactory<{op_type}>::Make({formal_params}) {{\n"
+                f"  return Operator<{op_type}>::Make(config, {arguments});\n}}",
+                f"bool detail::OperatorFactory<{op_type}>::CanMake({formal_params}) {{\n"
+                f"  return Operator<{op_type}>::CanMake(config, {arguments});\n}}",
+            ]
+        )
+
+    declarations.append(
+        f"template <>\nstruct detail::OperatorFactory<{op_type}> {{\n"
+        + "\n".join(dict.fromkeys(factory_declarations))
+        + "\n};"
+    )
+    definitions.extend(dict.fromkeys(factory_definitions))
 
     return declarations, definitions
 
@@ -1861,12 +1923,35 @@ def _select_ops_from_config(ops, config, config_path):
     selected = {}
 
     for op_name, selection in config.items():
+        if selection.get("public_api_only") is True:
+            base_header = _BASE_DIR / f"{op_name}.h"
+            if (
+                base_header.resolve().parent != _BASE_DIR.resolve()
+                or not base_header.is_file()
+            ):
+                raise ValueError(
+                    f"{config_path}: public API-only operator {op_name!r} "
+                    "has no hand-written base header"
+                )
+            selected[op_name] = []
+            continue
         headers = selection["headers"]
 
         if headers is not None:
-            selected[op_name] = [
-                _implementation_from_json(header) for header in headers
-            ]
+            requested = [_implementation_from_json(header) for header in headers]
+            active = {impl.path.resolve() for impl in ops.get(op_name, [])}
+            for impl in requested:
+                # Built-in headers still require their compiled backend.
+                # Preserve explicit external-provider header support.
+                if (
+                    impl.path.resolve().is_relative_to(_SRC_DIR.resolve())
+                    and impl.path.resolve() not in active
+                ):
+                    raise ValueError(
+                        f"{config_path}: provider {impl.path} for {op_name!r} "
+                        "is not enabled by this build"
+                    )
+            selected[op_name] = requested
             continue
 
         if op_name not in ops:
@@ -1909,6 +1994,8 @@ def _get_all_ops(
     with_ninetoothed=False,
     with_linked=False,
     with_triton=False,
+    with_native_flash=False,
+    with_native_w4=False,
 ):
     scan_dirs = set(devices)
 
@@ -1939,6 +2026,30 @@ def _get_all_ops(
         impl_roots.append(_GENERATION_DIR)
 
     impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
+    excluded_headers = set()
+    if not with_native_flash:
+        excluded_headers.update(
+            {
+                (
+                    _SRC_DIR / "native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h"
+                ).resolve(),
+                (
+                    _SRC_DIR / "native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h"
+                ).resolve(),
+            }
+        )
+    if not with_native_w4:
+        excluded_headers.add(
+            (_SRC_DIR / "native/cuda/nvidia/ops/w4_marlin/kernel.h").resolve()
+        )
+    if excluded_headers:
+        # Optional providers are emitted only with their compiled kernel target.
+        for name, headers in impl_headers_by_operator.items():
+            impl_headers_by_operator[name] = [
+                header
+                for header in headers
+                if header.path.resolve() not in excluded_headers
+            ]
 
     for base_dir in base_dirs:
         for file_path in base_dir.iterdir():
@@ -2135,6 +2246,16 @@ if __name__ == "__main__":
         help="Include linked third-party backend implementations.",
     )
     parser.add_argument(
+        "--with-native-flash",
+        action="store_true",
+        help="Include the pinned native inference Attention provider.",
+    )
+    parser.add_argument(
+        "--with-native-w4",
+        action="store_true",
+        help="Include the compiled NVIDIA Marlin providers.",
+    )
+    parser.add_argument(
         "--ops",
         nargs="+",
         default=[],
@@ -2170,6 +2291,8 @@ if __name__ == "__main__":
         with_ninetoothed=args.with_ninetoothed,
         with_linked=args.with_linked,
         with_triton=args.with_triton,
+        with_native_flash=args.with_native_flash,
+        with_native_w4=args.with_native_w4,
     )
 
     if config_path is not None:
