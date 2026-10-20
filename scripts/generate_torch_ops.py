@@ -1435,10 +1435,10 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         return api_param.api_name
 
     if op.aten_name == "gelu":
-        # torch_npu does not implement aten::gelu.out and silently falls back
-        # to CPU, while its regular aten::gelu kernel is device-native.  Copy
-        # the returned tensor into InfiniOps-owned storage so every provider
-        # keeps the normal out-parameter contract without a hidden fallback.
+        # Use a functional result and explicit copy for Ascend external output
+        # storage compatibility. Some torch_npu versions implement functional
+        # GELU through a composite that delegates to the device out kernel;
+        # do not infer missing kernels from the functional dispatch key alone.
         out_param = next(p for p in op.params if p.is_out)
         input_param = next(p for p in op.params if p.is_tensor and not p.is_out)
         extra_args = [
