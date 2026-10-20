@@ -61,7 +61,7 @@ function(infiniops_add_native_flash target)
         FLASH_NAMESPACE=infini_flash FLASHATTENTION_DISABLE_DROPOUT)
     target_include_directories(${target} PRIVATE
         "${_source}/src" "${_source}/include" "${_prepared}"
-        "${_cutlass_include}" "${_provider}" "${_varlen_provider}"
+        "${_cutlass_include}" "${_provider}/.."
         ${INFINI_RT_INCLUDE_DIRS})
     target_compile_options(${target} PRIVATE
         # Match the pinned upstream setup.py numerical compilation mode.

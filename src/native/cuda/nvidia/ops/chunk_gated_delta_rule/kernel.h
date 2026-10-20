@@ -12,6 +12,9 @@
 namespace infini::ops {
 namespace chunk_native_detail {
 struct Layout {
+  // Rows follow Views: q, k, v, g, beta, initial_state, cu_seqlens,
+  // initial_state_indices, final_state_indices, out, final_state (0..10).
+  // Each row stores that tensor's axis strides, up to the four state axes.
   ptrdiff_t s[11][4]{};
   bool cu_i64, initial_i64, final_i64, norm, indexed, packed;
   size_t T, pool, Hk, ratio;
@@ -22,6 +25,8 @@ __global__ void kernel(float* workspace, const Data* q, const Data* k,
                        Data* state, const void* cu, const void* initial_indices,
                        const void* final_indices, Data* out, Data* final_state,
                        Layout p) {
+  // q/k/v/out have a contiguous last axis, so only their first three strides
+  // are passed. Initial/final state uses all axes of [pool,Hv,Dv,Dk].
   chunkGatedDeltaRuleRecurrentKernel<Data, Gate, float, D, D, D>(
       workspace, out, state, final_state, q, k, v, g, beta, cu, initial_indices,
       final_indices, p.cu_i64, p.initial_i64, p.final_i64, p.norm, p.packed,

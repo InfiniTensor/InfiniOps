@@ -2,9 +2,9 @@
 #define INFINI_OPS_BASE_SEPARATE_TABLE_ROPE_H_
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 
 #include "data_type.h"
 #include "operator.h"
@@ -79,9 +79,8 @@ class SeparateTableRope : public Operator<SeparateTableRope> {
   SeparateTableRope(const Tensor input, const Tensor positions,
                     const Tensor sin_table, const Tensor cos_table,
                     bool is_neox, Tensor out) {
-    if (!supports(input, positions, sin_table, cos_table, is_neox, out))
-      throw std::invalid_argument(
-          "SeparateTableRope: unsupported metadata/alias");
+    assert(supports(input, positions, sin_table, cos_table, is_neox, out) &&
+           "SeparateTableRope: unsupported metadata/alias");
   }
   virtual void operator()(const Tensor input, const Tensor positions,
                           const Tensor sin_table, const Tensor cos_table,

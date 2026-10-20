@@ -63,6 +63,8 @@ class CudaMul : public Mul {
 
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
+    if (scalar_mode_)
+      throw std::invalid_argument("Mul prepared for a scalar operand");
     if (output_size_ == 0) {
       return;
     }
@@ -92,6 +94,10 @@ class CudaMul : public Mul {
         },
         "CudaMul::operator()");
   }
+
+ protected:
+  CudaMul(const Tensor input, const double alpha, Tensor out)
+      : Mul{input, alpha, out}, block_size_(0) {}
 
  private:
   const int block_size_ =

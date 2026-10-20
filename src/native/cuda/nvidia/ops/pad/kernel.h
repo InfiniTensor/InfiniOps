@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_NVIDIA_PAD_CONSTANT_KERNEL_H_
-#define INFINI_OPS_NVIDIA_PAD_CONSTANT_KERNEL_H_
+#ifndef INFINI_OPS_NVIDIA_PAD_KERNEL_H_
+#define INFINI_OPS_NVIDIA_PAD_KERNEL_H_
 
 #include <cuda_runtime_api.h>
 
@@ -9,11 +9,11 @@
 #include <stdexcept>
 #include <vector>
 
-#include "base/pad_constant.h"
+#include "base/pad.h"
 #include "native/cuda/nvidia/ops/binary_view_capture.h"
 #include "native/cuda/nvidia/runtime_.h"
 
-namespace infini::ops::nvidia_pad_constant_detail {
+namespace infini::ops::nvidia_pad_detail {
 struct Layout {
   std::int64_t ndim = 0;
   std::int64_t input_shape[16]{};
@@ -25,16 +25,18 @@ struct Layout {
 
 void Launch(const void* input, void* out, DataType dtype, double value,
             Layout layout, std::size_t output_count, cudaStream_t stream);
-}  // namespace infini::ops::nvidia_pad_constant_detail
+}  // namespace infini::ops::nvidia_pad_detail
 
 namespace infini::ops {
 template <>
-class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
+class Operator<Pad, Device::Type::kNvidia, 0> : public Pad {
  public:
-  static bool supports(const Tensor input,
-                       const std::vector<std::int64_t> padding, const double,
+  static bool supports(const Tensor input, const std::vector<int64_t> pad,
+                       const std::string mode, const std::optional<double>,
                        Tensor out) {
     using namespace nvidia_binary_view;
+    if (mode != "constant") return false;
+    const auto& padding = pad;
     const auto ndim = input.shape().size();
     if (input.device().type() != Device::Type::kNvidia ||
         input.device() != out.device() || input.dtype() != out.dtype() ||
@@ -90,10 +92,11 @@ class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
     return !Overlaps(input, input_bytes, out, output_bytes) || exact_inplace;
   }
 
-  Operator(const Tensor input, const std::vector<std::int64_t> padding,
-           const double value, Tensor out)
-      : PadConstant(Checked(input, padding, value, out), padding, value, out) {
-    BuildLayout(input, padding, out);
+  Operator(const Tensor input, const std::vector<int64_t> pad,
+           const std::string mode, const std::optional<double> value,
+           Tensor out)
+      : Pad(Checked(input, pad, mode, value, out), pad, mode, value, out) {
+    BuildLayout(input, pad, out);
     nvidia_binary_view::SpanBytes(input, &input_bytes_);
     nvidia_binary_view::SpanBytes(out, &out_bytes_);
     exact_inplace_layout_ =
@@ -102,36 +105,38 @@ class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
 
   bool capture_safe() const override { return true; }
 
-  void operator()(const Tensor input, const std::vector<std::int64_t> padding,
-                  const double value, Tensor out) const override {
+  void operator()(const Tensor input, const std::vector<int64_t> pad,
+                  const std::string mode, const std::optional<double> value,
+                  Tensor out) const override {
+    const double fill = value.value_or(0.0);
     if (!std::equal_to<Tensor>{}(input, input_meta_) ||
-        !std::equal_to<Tensor>{}(out, out_meta_) || padding != padding_ ||
-        std::memcmp(&value, &value_, sizeof(value)))
+        !std::equal_to<Tensor>{}(out, out_meta_) || pad != padding_ ||
+        mode != mode_ || std::memcmp(&fill, &value_, sizeof(fill)))
       throw std::invalid_argument(
-          "NVIDIA PadConstant metadata or alias changed after Make");
+          "NVIDIA Pad metadata or alias changed after Make");
     int current = -1;
     if (cudaGetDevice(&current) != cudaSuccess || current != device_.index() ||
         (input_bytes_ && !input.data()) || (out_bytes_ && !out.data()) ||
         (nvidia_binary_view::Overlaps(input, input_bytes_, out, out_bytes_) &&
          !(input.data() == out.data() && exact_inplace_layout_)))
       throw std::invalid_argument(
-          "NVIDIA PadConstant current device, pointer or alias changed after "
+          "NVIDIA Pad current device, pointer or alias changed after "
           "Make");
     if (out.numel() == 0 ||
         (input.data() == out.data() && exact_inplace_layout_))
       return;
-    nvidia_pad_constant_detail::Launch(
-        input.data(), out.data(), input_meta_.dtype(), value_, layout_,
-        out.numel(), static_cast<cudaStream_t>(stream_ ? stream_ : 0));
+    nvidia_pad_detail::Launch(input.data(), out.data(), input_meta_.dtype(),
+                              value_, layout_, out.numel(),
+                              static_cast<cudaStream_t>(stream_ ? stream_ : 0));
   }
 
  private:
-  static Tensor Checked(const Tensor input,
-                        const std::vector<std::int64_t>& padding, double value,
+  static Tensor Checked(const Tensor input, const std::vector<int64_t>& pad,
+                        const std::string& mode, std::optional<double> value,
                         Tensor out) {
-    if (!supports(input, padding, value, out))
+    if (!supports(input, pad, mode, value, out))
       throw std::invalid_argument(
-          "unsupported NVIDIA PadConstant metadata, device or alias");
+          "unsupported NVIDIA Pad metadata, mode, device or alias");
     return input;
   }
   void BuildLayout(const Tensor input, const std::vector<std::int64_t>& padding,
@@ -147,10 +152,10 @@ class Operator<PadConstant, Device::Type::kNvidia, 0> : public PadConstant {
           pair < padding.size() / 2 ? padding[2 * pair] : 0;
     }
   }
-  nvidia_pad_constant_detail::Layout layout_{};
+  nvidia_pad_detail::Layout layout_{};
   std::size_t input_bytes_ = 0, out_bytes_ = 0;
   bool exact_inplace_layout_ = false;
 };
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_NVIDIA_PAD_CONSTANT_KERNEL_H_
+#endif  // INFINI_OPS_NVIDIA_PAD_KERNEL_H_

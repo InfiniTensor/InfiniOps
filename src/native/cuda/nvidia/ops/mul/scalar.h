@@ -1,14 +1,15 @@
-#ifndef INFINI_OPS_NVIDIA_MUL_SCALAR_KERNEL_H_
-#define INFINI_OPS_NVIDIA_MUL_SCALAR_KERNEL_H_
+#ifndef INFINI_OPS_NVIDIA_MUL_SCALAR_H_
+#define INFINI_OPS_NVIDIA_MUL_SCALAR_H_
 
 #include <cuda_runtime_api.h>
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
-#include "base/mul_scalar.h"
+#include "base/mul.h"
 #include "native/cuda/nvidia/ops/binary_view_capture.h"
 #include "native/cuda/nvidia/runtime_.h"
 
@@ -26,8 +27,7 @@ void Launch(const void* input, void* out, DataType dtype, double alpha,
 }  // namespace infini::ops::nvidia_mul_scalar_detail
 
 namespace infini::ops {
-template <>
-class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
+class NvidiaScalarMul {
  public:
   static bool supports(const Tensor input, const double, Tensor out) {
     using namespace nvidia_binary_view;
@@ -88,8 +88,11 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
     return !Overlaps(input, input_bytes, out, out_bytes) || exact_inplace;
   }
 
-  Operator(const Tensor input, const double alpha, Tensor out)
-      : MulScalar(Checked(input, alpha, out), alpha, out) {
+  NvidiaScalarMul(const Tensor input, const double alpha, Tensor out)
+      : input_meta_(Checked(input, alpha, out)),
+        out_meta_(out),
+        device_(input.device()),
+        alpha_(alpha) {
     nvidia_binary_view::SpanBytes(input, &input_span_bytes_);
     nvidia_binary_view::SpanBytes(out, &out_span_bytes_);
     count_ = out.numel();
@@ -102,15 +105,13 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
     }
   }
 
-  bool capture_safe() const override { return true; }
-
-  void operator()(const Tensor input, const double alpha,
-                  Tensor out) const override {
+  void Run(const Tensor input, const double alpha, Tensor out,
+           cudaStream_t stream) const {
     if (!std::equal_to<Tensor>{}(input, input_meta_) ||
         !std::equal_to<Tensor>{}(out, out_meta_) ||
         std::memcmp(&alpha, &alpha_, sizeof(alpha)))
       throw std::invalid_argument(
-          "NVIDIA MulScalar metadata or alpha changed after Make");
+          "NVIDIA scalar Mul metadata or alpha changed after Make");
     if (count_ == 0) return;
     int current_device = -1;
     if (cudaGetDevice(&current_device) != cudaSuccess ||
@@ -122,22 +123,24 @@ class Operator<MulScalar, Device::Type::kNvidia, 0> : public MulScalar {
          !(input.data() == out.data() &&
            input_meta_.strides() == out_meta_.strides())))
       throw std::invalid_argument(
-          "NVIDIA MulScalar current device, pointer or alias changed after "
+          "NVIDIA scalar Mul current device, pointer or alias changed after "
           "Make");
     nvidia_mul_scalar_detail::Launch(
         input.data(), out.data(), input_meta_.dtype(), alpha_,
-        layout_.contiguous ? nullptr : &layout_, count_,
-        static_cast<cudaStream_t>(stream_ ? stream_ : 0));
+        layout_.contiguous ? nullptr : &layout_, count_, stream);
   }
 
  private:
   static Tensor Checked(const Tensor input, const double alpha, Tensor out) {
     if (!supports(input, alpha, out))
       throw std::invalid_argument(
-          "unsupported NVIDIA MulScalar metadata, device or alias");
+          "unsupported NVIDIA scalar Mul metadata, device or alias");
     return input;
   }
   nvidia_mul_scalar_detail::Layout layout_{};
+  const Tensor input_meta_, out_meta_;
+  Device device_;
+  double alpha_;
   std::size_t input_span_bytes_ = 0, out_span_bytes_ = 0, count_ = 0;
 };
 }  // namespace infini::ops

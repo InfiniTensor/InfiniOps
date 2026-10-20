@@ -6,10 +6,10 @@
 #include <limits>
 #include <stdexcept>
 
-#include "native/cuda/nvidia/ops/flash_attn_with_kvcache/infini_flash_cuda.h"
 #include "native/cuda/nvidia/ops/flash_common.h"
 #include "native/cuda/nvidia/ops/flash_head_dim.h"
 #include "native/cuda/nvidia/ops/flash_workspace.h"
+#include "native/cuda/nvidia/ops/infini_flash_cuda.h"
 
 namespace infini::ops {
 namespace {

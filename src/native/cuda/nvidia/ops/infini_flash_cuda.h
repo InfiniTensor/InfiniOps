@@ -1,5 +1,8 @@
 #pragma once
 
+// Private CUDA checks shared by both native FlashAttention providers and the
+// pinned forward kernels; this header does not depend on either provider.
+
 #include <cuda_runtime.h>
 
 #include <stdexcept>

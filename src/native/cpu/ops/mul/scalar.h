@@ -1,22 +1,21 @@
-#ifndef INFINI_OPS_CPU_MUL_SCALAR_MUL_SCALAR_H_
-#define INFINI_OPS_CPU_MUL_SCALAR_MUL_SCALAR_H_
+#ifndef INFINI_OPS_CPU_MUL_SCALAR_H_
+#define INFINI_OPS_CPU_MUL_SCALAR_H_
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
-#include "base/mul_scalar.h"
+#include "base/mul.h"
 #include "native/cpu/caster_.h"
 #include "native/cpu/dense_view.h"
 
 namespace infini::ops {
 
-template <>
-class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
-                                                   Caster<Device::Type::kCpu> {
+class CpuScalarMul : Caster<Device::Type::kCpu> {
  public:
   static bool supports(const Tensor input, const double, Tensor out) {
     if (input.device().type() != Device::Type::kCpu ||
@@ -26,20 +25,19 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
     return cpu_dense_view::DisjointOrSameContiguous(input, out);
   }
 
-  Operator(const Tensor input, const double alpha, Tensor out)
-      : MulScalar{Checked(input, alpha, out), alpha, out} {
+  CpuScalarMul(const Tensor input, const double alpha, Tensor out)
+      : input_meta_(Checked(input, alpha, out)), out_meta_(out), alpha_(alpha) {
     std::size_t bytes = 0;
     cpu_dense_view::ContiguousBytes(input, &bytes);
     count_ = bytes / input.element_size();
   }
 
-  void operator()(const Tensor input, const double alpha,
-                  Tensor out) const override {
+  void Run(const Tensor input, const double alpha, Tensor out) const {
     if (!std::equal_to<Tensor>{}(input, input_meta_) ||
         !std::equal_to<Tensor>{}(out, out_meta_) ||
         std::memcmp(&alpha, &alpha_, sizeof(alpha)))
       throw std::invalid_argument(
-          "CPU MulScalar: call metadata or alpha changed after Make");
+          "CPU scalar Mul: call metadata or alpha changed after Make");
     const auto bytes = count_ * input_meta_.element_size();
     const auto ip = reinterpret_cast<std::uintptr_t>(input.data());
     const auto op = reinterpret_cast<std::uintptr_t>(out.data());
@@ -48,7 +46,7 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
         (bytes && ip < op + bytes && op < ip + bytes &&
          !(ip == op && input_meta_.strides() == out_meta_.strides())))
       throw std::invalid_argument(
-          "CPU MulScalar: call pointer or alias changed after Make");
+          "CPU scalar Mul: call pointer or alias changed after Make");
     if (count_ == 0) return;
     // CPU scalar arithmetic retains float opmath precision even for half/BF16.
     const float multiplier = FloatAlpha(alpha_);
@@ -73,7 +71,7 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
             }
           }
         },
-        "CPU MulScalar");
+        "CPU scalar Mul");
   }
 
  private:
@@ -92,12 +90,14 @@ class Operator<MulScalar, Device::Type::kCpu, 0> : public MulScalar,
   static Tensor Checked(const Tensor input, const double alpha, Tensor out) {
     if (!supports(input, alpha, out))
       throw std::invalid_argument(
-          "CPU MulScalar: unsupported dtype/device/layout or alias");
+          "CPU scalar Mul: unsupported dtype/device/layout or alias");
     return input;
   }
 
   std::size_t count_ = 0;
+  const Tensor input_meta_, out_meta_;
+  double alpha_;
 };
 
 }  // namespace infini::ops
-#endif  // INFINI_OPS_CPU_MUL_SCALAR_MUL_SCALAR_H_
+#endif  // INFINI_OPS_CPU_MUL_SCALAR_H_
