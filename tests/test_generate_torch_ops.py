@@ -6,6 +6,25 @@ import types
 import pytest
 
 
+def test_gelu_ascend_uses_native_return_value_without_changing_out_contract():
+    module = _load_generator_module()
+    op = module._parse_func(
+        'gelu.out(Tensor self, *, str approximate="none", Tensor(a!) out) -> Tensor(a!)'
+    )
+    source = module._generate_torch_method_source("gelu", op)
+    assert "kDev == Device::Type::kAscend" in source
+    assert "at_out.copy_(at::gelu(at_self, approximate))" in source
+    assert "at::gelu_out(at_out, at_self, approximate)" in source
+
+
+def test_other_unary_out_dispatch_remains_unchanged():
+    module = _load_generator_module()
+    op = module._parse_func("exp.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+    source = module._generate_torch_method_source("exp", op)
+    assert "at::exp_out(at_out, at_self)" in source
+    assert "at::gelu" not in source
+
+
 def _load_generator_module():
     path = (
         pathlib.Path(__file__).resolve().parents[1]

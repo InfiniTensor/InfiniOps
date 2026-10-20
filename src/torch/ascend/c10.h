@@ -2,8 +2,12 @@
 #define INFINI_OPS_TORCH_ASCEND_C10_H_
 
 #include <acl/acl_rt.h>
+#include <torch_npu/csrc/core/npu/NPUFunctions.h>
 #include <torch_npu/csrc/core/npu/NPUGuard.h>
 #include <torch_npu/csrc/core/npu/NPUStream.h>
+
+#include <cstdlib>
+#include <cstring>
 
 #include "torch/c10.h"
 
@@ -12,21 +16,35 @@ namespace infini::ops {
 template <>
 struct C10<Device::Type::kAscend> {
   static constexpr Device::Type kDeviceType = Device::Type::kAscend;
-
   using StreamGuard = c10_npu::NPUStreamGuard;
 
   static c10_npu::NPUStream GetStreamFromExternal(void* stream,
                                                   int device_index) {
+    const auto device = static_cast<c10::DeviceIndex>(device_index);
+    // InfiniRT activates ACL directly; torch_npu also caches the current
+    // device in TLS. Synchronize that cache before NPUStreamGuard saves it,
+    // otherwise its destructor can restore device 0 after an external runtime
+    // selected device 1, invalidating subsequent native stream operations.
+    const auto status = c10_npu::SetDevice(device);
+    TORCH_CHECK(
+        status == ACL_ERROR_NONE,
+        "torch_npu SetDevice for external runtime stream failed: ", status);
     if (stream == nullptr) {
-      // `torch_npu` rejects null external streams, while InfiniOps uses null
-      // to select the default device stream.
-      return c10_npu::getDefaultNPUStream(
-          static_cast<c10::DeviceIndex>(device_index));
+      // InfiniRT uses a null stream for the native default stream, even if
+      // PyTorch currently has a non-default stream selected.
+      return c10_npu::getDefaultNPUStream(device);
     }
-
-    return c10_npu::getStreamFromExternal(
-        reinterpret_cast<aclrtStream>(stream),
-        static_cast<c10::DeviceIndex>(device_index));
+    // A host-queued ATen launch can be overtaken by a native ACL copy or
+    // EndCapture on this external stream, even after querying stream().
+    // OptionsManager's getter is not exported by torch_npu wheels. Require
+    // the documented startup setting rather than linking to that private API.
+    const char* task_queue = std::getenv("TASK_QUEUE_ENABLE");
+    TORCH_CHECK(task_queue != nullptr && std::strcmp(task_queue, "0") == 0,
+                "Ascend ATen external streams require TASK_QUEUE_ENABLE=0 "
+                "before importing torch_npu. Its asynchronous host task queue "
+                "does not preserve ordering with external runtime copies "
+                "and graph capture.");
+    return c10_npu::getStreamFromExternal(stream, device);
   }
 };
 

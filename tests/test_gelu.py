@@ -78,3 +78,36 @@ def _torch_gelu(input, approximate, out):
     out.copy_(torch.nn.functional.gelu(input, approximate=approximate))
 
     return out
+
+
+@pytest.mark.parametrize("approximate", ["none", "tanh"])
+@pytest.mark.parametrize("shape", [(), (0,), (3, 7), (2, 17, 32)])
+def test_encoder_gelu_out_preserves_storage_and_matches_native(
+    device, shape, approximate
+):
+    if device == "npu":
+        assert torch._C._dispatch_has_kernel_for_dispatch_key(
+            "aten::gelu", "PrivateUse1"
+        )
+    x = torch.randn(shape, device=device, dtype=torch.float32)
+    storage = torch.full((*shape, 2), -123.0, device=device)
+    out = storage[..., 0]
+    address = out.data_ptr()
+    infini.ops.gelu(
+        x, approximate, out, implementation_index=8, stream=get_stream(x.device)
+    )
+    expected = torch.nn.functional.gelu(x, approximate=approximate)
+    torch.testing.assert_close(out, expected, atol=1e-5, rtol=1e-5)
+    assert out.data_ptr() == address
+    assert torch.all(storage[..., 1] == -123.0)
+
+
+def test_external_stream_operations_are_visible_to_following_copies(device):
+    x = torch.linspace(-2.0, 2.0, 119, device=device).reshape(7, 17)
+    out = torch.empty_like(x)
+    for _ in range(12):
+        x.add_(0.01)
+        infini.ops.exp(x, out, implementation_index=8, stream=get_stream(x.device))
+        # A following device copy must see the just-submitted operation.
+        copied = out.clone()
+        torch.testing.assert_close(copied, x.exp(), atol=1e-5, rtol=1e-5)
