@@ -100,7 +100,8 @@ bool supports_metadata(VARLEN_ARGS) {
 bool Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 0>::supports(
     VARLEN_ARGS) {
   if (!supports_metadata(VARLEN_VALUES)) return false;
-  // These native kernels require SM80+. The attribute query allocates no scratch.
+  // These native kernels require SM80+. The attribute query allocates no
+  // scratch.
   int major = 0;
   return cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor,
                                 q.device().index()) == cudaSuccess &&

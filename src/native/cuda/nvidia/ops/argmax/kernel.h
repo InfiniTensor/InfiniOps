@@ -43,7 +43,6 @@ class Operator<Argmax, Device::Type::kNvidia> : public Argmax {
     return workspace_bytes_;
   }
 
-
   void operator()(const Tensor input, const std::optional<int64_t> dim,
                   const bool keepdim, Tensor out) const override {
     if (input.shape() != input_shape_ || input.strides() != input_strides_ ||
