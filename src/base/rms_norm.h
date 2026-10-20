@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_RMS_NORM_H_
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 #include "operator.h"
@@ -11,7 +12,8 @@ namespace infini::ops {
 
 class RmsNorm : public Operator<RmsNorm> {
  public:
-  RmsNorm(const Tensor input, const Tensor weight, float eps, Tensor out)
+  RmsNorm(const Tensor input, const std::optional<Tensor> weight, float eps,
+          Tensor out)
       : input_shape_{input.shape()},
         out_shape_{out.shape()},
         input_strides_{input.strides()},
@@ -24,14 +26,16 @@ class RmsNorm : public Operator<RmsNorm> {
     assert(input.dtype() == out.dtype());
   }
 
-  RmsNorm(const Tensor input, const Tensor weight, Tensor out)
+  RmsNorm(const Tensor input, const std::optional<Tensor> weight, Tensor out)
       : RmsNorm{input, weight, 1e-6f, out} {}
 
   // TODO: Type of `eps` should be `std::optional<float>` instead of `float`.
-  virtual void operator()(const Tensor input, const Tensor weight, float eps,
+  virtual void operator()(const Tensor input,
+                          const std::optional<Tensor> weight, float eps,
                           Tensor out) const = 0;
 
-  virtual void operator()(const Tensor input, const Tensor weight,
+  virtual void operator()(const Tensor input,
+                          const std::optional<Tensor> weight,
                           Tensor out) const {
     return operator()(input, weight, eps_, out);
   }

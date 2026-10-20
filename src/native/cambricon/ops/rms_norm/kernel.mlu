@@ -134,7 +134,9 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
     if (vector_size <= max_batch_size) {
       __memcpy(input_cache, input + input_offset, vector_size * sizeof(T),
                GDRAM2NRAM);
-      __memcpy(weight_cache, weight, vector_size * sizeof(TW), GDRAM2NRAM);
+      if (weight != nullptr) {
+        __memcpy(weight_cache, weight, vector_size * sizeof(TW), GDRAM2NRAM);
+      }
 
       if constexpr (std::is_same<T, __half>::value) {
         __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
@@ -146,18 +148,20 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                  NRAM2NRAM);
       }
 
-      if constexpr (std::is_same<TW, __half>::value) {
-        __bang_half2float(weight_float_buffer,
-                          reinterpret_cast<half*>(weight_cache), vector_size);
-      } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
-        __bang_bfloat162float(weight_float_buffer, weight_cache, vector_size);
-      } else {
-        __memcpy(weight_float_buffer, weight_cache, vector_size * sizeof(float),
-                 NRAM2NRAM);
+      if (weight != nullptr) {
+        if constexpr (std::is_same<TW, __half>::value) {
+          __bang_half2float(weight_float_buffer,
+                            reinterpret_cast<half*>(weight_cache), vector_size);
+        } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
+          __bang_bfloat162float(weight_float_buffer, weight_cache, vector_size);
+        } else {
+          __memcpy(weight_float_buffer, weight_cache,
+                   vector_size * sizeof(float), NRAM2NRAM);
+        }
+        __bang_mul(float_buffer, float_buffer, weight_float_buffer,
+                   vector_size);
       }
 
-      // Multiply by weight and apply normalization.
-      __bang_mul(float_buffer, float_buffer, weight_float_buffer, vector_size);
       __bang_mul_scalar(float_buffer, float_buffer, inv_rms, vector_size);
 
       if constexpr (std::is_same<T, __half>::value) {
@@ -179,13 +183,15 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
         size_t current_batch =
             std::min((size_t)max_batch_size, vector_size - processed_elements);
 
-        // Load input and weight data.
+        // Load input and optional weight data.
         __memcpy(input_cache,
                  input + input_offset +
                      processed_elements * input_strides[num_dims - 1],
                  current_batch * sizeof(T), GDRAM2NRAM);
-        __memcpy(weight_cache, weight + processed_elements,
-                 current_batch * sizeof(TW), GDRAM2NRAM);
+        if (weight != nullptr) {
+          __memcpy(weight_cache, weight + processed_elements,
+                   current_batch * sizeof(TW), GDRAM2NRAM);
+        }
 
         if constexpr (std::is_same<T, __half>::value) {
           __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
@@ -197,20 +203,22 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                    NRAM2NRAM);
         }
 
-        if constexpr (std::is_same<TW, __half>::value) {
-          __bang_half2float(weight_float_buffer,
-                            reinterpret_cast<half*>(weight_cache),
-                            current_batch);
-        } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
-          __bang_bfloat162float(weight_float_buffer, weight_cache,
-                                current_batch);
-        } else {
-          __memcpy(weight_float_buffer, weight_cache,
-                   current_batch * sizeof(float), NRAM2NRAM);
+        if (weight != nullptr) {
+          if constexpr (std::is_same<TW, __half>::value) {
+            __bang_half2float(weight_float_buffer,
+                              reinterpret_cast<half*>(weight_cache),
+                              current_batch);
+          } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
+            __bang_bfloat162float(weight_float_buffer, weight_cache,
+                                  current_batch);
+          } else {
+            __memcpy(weight_float_buffer, weight_cache,
+                     current_batch * sizeof(float), NRAM2NRAM);
+          }
+          __bang_mul(float_buffer, float_buffer, weight_float_buffer,
+                     current_batch);
         }
 
-        __bang_mul(float_buffer, float_buffer, weight_float_buffer,
-                   current_batch);
         __bang_mul_scalar(float_buffer, float_buffer, inv_rms, current_batch);
 
         if constexpr (std::is_same<T, __half>::value) {
