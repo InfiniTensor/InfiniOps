@@ -7,9 +7,12 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnn_copy.h"
+#include "aclnnop/aclnn_mul.h"
+#include "aclnnop/aclnn_silu.h"
 #include "aclnnop/aclnn_swi_glu.h"
 #include "base/silu_and_mul.h"
 #include "native/ascend/common.h"
+#include "native/ascend/error_.h"
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
@@ -60,34 +63,92 @@ class Operator<SiluAndMul, Device::Type::kAscend> : public SiluAndMul {
     }
 
     if (!swiglu_exec_) {
-      aclnnSwiGluGetWorkspaceSize(t_input, -1, t_swiglu_out, &swiglu_ws_,
-                                  &swiglu_exec_);
-      aclSetAclOpExecutorRepeatable(swiglu_exec_);
-    } else {
-      aclSetInputTensorAddr(swiglu_exec_, 0, t_input,
-                            const_cast<void*>(input.data()));
-      aclSetOutputTensorAddr(swiglu_exec_, 0, t_swiglu_out, swiglu_out_data);
+      if (!use_fallback_) {
+        const auto status = aclnnSwiGluGetWorkspaceSize(
+            t_input, -1, t_swiglu_out, &swiglu_ws_, &swiglu_exec_);
+        // CANN rejects some small SwiGlu shapes on 310P at tiling time.
+        if (status == 561002 && ascend::IsAscend310P()) {
+          use_fallback_ = true;
+          swiglu_exec_ = nullptr;
+        } else {
+          ascend::CheckAcl(status, "SiluAndMul SwiGlu workspace query");
+          ascend::CheckAcl(aclSetAclOpExecutorRepeatable(swiglu_exec_),
+                           "SiluAndMul repeatable executor");
+        }
+      }
+    } else if (!use_fallback_) {
+      ascend::CheckAcl(aclSetInputTensorAddr(swiglu_exec_, 0, t_input,
+                                             const_cast<void*>(input.data())),
+                       "SiluAndMul input address");
+      ascend::CheckAcl(aclSetOutputTensorAddr(swiglu_exec_, 0, t_swiglu_out,
+                                              swiglu_out_data),
+                       "SiluAndMul output address");
     }
 
-    auto& arena = ascend::GetWorkspacePool().Ensure(stream, swiglu_ws_);
-    aclnnSwiGlu(arena.buf, swiglu_ws_, swiglu_exec_, stream);
+    if (use_fallback_) {
+      RunFallback(input, t_swiglu_out, stream);
+    } else {
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, swiglu_ws_);
+      ascend::CheckAcl(aclnnSwiGlu(arena.buf, swiglu_ws_, swiglu_exec_, stream),
+                       "SiluAndMul SwiGlu execution");
+    }
 
     if (needs_copy_) {
       if (!copy_exec_) {
-        aclnnInplaceCopyGetWorkspaceSize(t_out, t_swiglu_out, &copy_ws_,
-                                         &copy_exec_);
-        aclSetAclOpExecutorRepeatable(copy_exec_);
+        ascend::CheckAcl(aclnnInplaceCopyGetWorkspaceSize(
+                             t_out, t_swiglu_out, &copy_ws_, &copy_exec_),
+                         "SiluAndMul output copy workspace query");
+        ascend::CheckAcl(aclSetAclOpExecutorRepeatable(copy_exec_),
+                         "SiluAndMul repeatable copy executor");
       } else {
-        aclSetInputTensorAddr(copy_exec_, 0, t_out, out.data());
-        aclSetInputTensorAddr(copy_exec_, 1, t_swiglu_out, swiglu_out_data);
+        ascend::CheckAcl(
+            aclSetInputTensorAddr(copy_exec_, 0, t_out, out.data()),
+            "SiluAndMul copy destination address");
+        ascend::CheckAcl(
+            aclSetInputTensorAddr(copy_exec_, 1, t_swiglu_out, swiglu_out_data),
+            "SiluAndMul copy source address");
       }
 
       auto& copy_arena = ascend::GetWorkspacePool().Ensure(stream, copy_ws_);
-      aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream);
+      ascend::CheckAcl(
+          aclnnInplaceCopy(copy_arena.buf, copy_ws_, copy_exec_, stream),
+          "SiluAndMul output copy execution");
     }
   }
 
  private:
+  void RunFallback(const Tensor input, aclTensor* out,
+                   aclrtStream stream) const {
+    const auto element_size = kDataTypeToSize.at(input_type_);
+    Tensor gate{const_cast<void*>(input.data()), out_shape_, input_type_,
+                input.device(), input_strides_};
+    Tensor up{static_cast<uint8_t*>(const_cast<void*>(input.data())) +
+                  hidden_size_ * element_size,
+              out_shape_, input_type_, input.device(), input_strides_};
+    auto& staging = ascend::GetWorkspacePool().Ensure(
+        stream, output_size_ * element_size, "silu_and_mul_activation");
+    Tensor activated{staging.buf, out_shape_, out_type_, input.device()};
+    auto t_gate = ascend::OwnAclTensor(ascend::BuildAclTensor(gate));
+    auto t_up = ascend::OwnAclTensor(ascend::BuildAclTensor(up));
+    auto t_activated = ascend::OwnAclTensor(ascend::BuildAclTensor(activated));
+    uint64_t workspace_size = 0;
+    aclOpExecutor* executor = nullptr;
+    ascend::CheckAcl(aclnnSiluGetWorkspaceSize(t_gate.get(), t_activated.get(),
+                                               &workspace_size, &executor),
+                     "SiluAndMul fallback SiLU workspace query");
+    auto& silu_arena =
+        ascend::GetWorkspacePool().Ensure(stream, workspace_size);
+    ascend::CheckAcl(
+        aclnnSilu(silu_arena.buf, workspace_size, executor, stream),
+        "SiluAndMul fallback SiLU execution");
+    ascend::CheckAcl(aclnnMulGetWorkspaceSize(t_activated.get(), t_up.get(),
+                                              out, &workspace_size, &executor),
+                     "SiluAndMul fallback Mul workspace query");
+    auto& mul_arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
+    ascend::CheckAcl(aclnnMul(mul_arena.buf, workspace_size, executor, stream),
+                     "SiluAndMul fallback Mul execution");
+  }
+
   mutable ascend::AclTensorCache input_cache_;
 
   mutable ascend::AclTensorCache out_cache_;
@@ -105,6 +166,8 @@ class Operator<SiluAndMul, Device::Type::kAscend> : public SiluAndMul {
   mutable aclOpExecutor* copy_exec_{nullptr};
 
   mutable uint64_t copy_ws_{0};
+
+  mutable bool use_fallback_{false};
 };
 
 }  // namespace infini::ops
