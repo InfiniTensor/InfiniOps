@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -238,6 +239,121 @@ void TraceOperatorCall(const CacheKey& key, const Config& config) {
                config.implementation_index());
 }
 
+inline bool TraceOperatorCallsDetailedEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("INFINI_OPS_TRACE_CALLS_DETAILED");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+  }();
+  return enabled;
+}
+
+// Avoid aborting on unknown dtype/device values while tracing.
+inline std::string_view TraceDataTypeDesc(infini::rt::DataType dt) {
+  using D = infini::rt::DataType;
+  switch (dt) {
+    case D::kInt8:
+      return "int8";
+    case D::kInt16:
+      return "int16";
+    case D::kInt32:
+      return "int32";
+    case D::kInt64:
+      return "int64";
+    case D::kUInt8:
+      return "uint8";
+    case D::kUInt16:
+      return "uint16";
+    case D::kUInt32:
+      return "uint32";
+    case D::kUInt64:
+      return "uint64";
+    case D::kFloat16:
+      return "float16";
+    case D::kBFloat16:
+      return "bfloat16";
+    case D::kFloat32:
+      return "float32";
+    case D::kFloat64:
+      return "float64";
+    case D::kBool:
+      return "bool";
+  }
+  return "unknown";
+}
+
+inline std::string_view TraceDeviceDesc(infini::rt::Device::Type dt) {
+  using T = infini::rt::Device::Type;
+  switch (dt) {
+    case T::kCpu:
+      return "cpu";
+    case T::kNvidia:
+      return "nvidia";
+    case T::kCambricon:
+      return "cambricon";
+    case T::kAscend:
+      return "ascend";
+    case T::kMetax:
+      return "metax";
+    case T::kMoore:
+      return "moore";
+    case T::kIluvatar:
+      return "iluvatar";
+    case T::kHygon:
+      return "hygon";
+    case T::kThead:
+      return "thead";
+    case T::kMars:
+      return "mars";
+  }
+  return "unknown";
+}
+
+// Emits a best-effort detailed trace event at operator call entry.
+template <typename Key>
+void TraceOperatorCallDetailed(const CacheKey& key, const Config& config) {
+  if (!TraceOperatorCallsDetailedEnabled()) return;
+  try {
+    constexpr auto operator_name = OperatorName<Key>();
+    const std::size_t n = key.tensors.size();
+
+    std::string line;
+    line += "[INFINI_OPS_TRACE_CALLS_DETAILED] {\"operator_name\": \"";
+    line.append(operator_name.data(), operator_name.size());
+    line += "\", \"implementation\": ";
+    line += std::to_string(config.implementation_index());
+    line += ", \"tensors\": [";
+
+    for (std::size_t i = 0; i < n; ++i) {
+      const auto& t = key.tensors[i];
+      if (i > 0) line += ", ";
+      line += "{\"index\": ";
+      line += std::to_string(i);
+      line += ", \"device\": \"";
+      const auto dev = TraceDeviceDesc(t.device().type());
+      line.append(dev.data(), dev.size());
+      line += "\", \"dtype\": \"";
+      const auto dt = TraceDataTypeDesc(t.dtype());
+      line.append(dt.data(), dt.size());
+      line += "\", \"shape\": [";
+      const std::size_t nd = t.ndim();
+      for (std::size_t d = 0; d < nd; ++d) {
+        if (d > 0) line += ",";
+        line += std::to_string(static_cast<unsigned long long>(t.size(d)));
+      }
+      line += "], \"strides\": [";
+      for (std::size_t d = 0; d < nd; ++d) {
+        if (d > 0) line += ",";
+        line += std::to_string(static_cast<long long>(t.stride(d)));
+      }
+      line += "]}";
+    }
+    line += "]}\n";
+    std::fprintf(stderr, "%s", line.c_str());
+  } catch (...) {
+    // Ignore serialization failures so tracing does not alter operator behavior.
+  }
+}
+
 }  // namespace infini::ops::detail
 
 template <>
@@ -450,6 +566,7 @@ class Operator : public OperatorBase {
       return CacheKeyBuilder<Key>{}(*effective_config, args...);
     }();
     detail::TraceOperatorCall<Key>(key, *effective_config);
+    detail::TraceOperatorCallDetailed<Key>(key, *effective_config);
 
     auto it = [&]() {
       HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
@@ -465,6 +582,7 @@ class Operator : public OperatorBase {
 #else
     auto key = CacheKeyBuilder<Key>{}(*effective_config, args...);
     detail::TraceOperatorCall<Key>(key, *effective_config);
+    detail::TraceOperatorCallDetailed<Key>(key, *effective_config);
 
     auto it{cache.find(key)};
 
