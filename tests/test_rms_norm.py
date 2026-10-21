@@ -96,6 +96,93 @@ def test_rms_norm_non_default_stream(device, implementation_index):
         accelerator.synchronize()
 
 
+@pytest.mark.parametrize("seq_len", (1, 36, 333))
+@pytest.mark.parametrize("heads, offset", ((16, 0), (8, 2048)))
+@pytest.mark.parametrize("strided_out", (False, True))
+@pytest.mark.parametrize("transpose_rows", (False, True))
+def test_rms_norm_qkv_slice(
+    seq_len, heads, offset, strided_out, transpose_rows, device, implementation_index
+):
+    if device != "npu":
+        pytest.skip("regression for Ascend RMSNorm staging")
+
+    width = heads * 128
+    weight_cpu = torch.randn(128, dtype=torch.float16)
+    weight = weight_cpu.to(device)
+
+    # Reuse cached operators with different allocations and values.
+    for _ in range(3):
+        source_cpu = torch.randn(seq_len, 4096, dtype=torch.float16)
+        source = source_cpu.to(device)
+        input = source[:, offset : offset + width].view(seq_len, heads, 128)
+        expected = _torch_rms_norm(
+            source_cpu[:, offset : offset + width].reshape(seq_len, heads, 128),
+            weight_cpu,
+        )
+
+        if strided_out:
+            backing = torch.full(
+                (seq_len, width + 256), -123.0, dtype=torch.float16, device=device
+            )
+            out = backing[:, 128 : 128 + width].view(seq_len, heads, 128)
+        else:
+            out = torch.empty(
+                (seq_len, heads, 128), dtype=torch.float16, device=device
+            )
+
+        if transpose_rows:
+            input = input.transpose(0, 1)
+            out = out.transpose(0, 1)
+            expected = expected.transpose(0, 1)
+
+        _rms_norm(input, weight, out=out, implementation_index=implementation_index)
+        torch.testing.assert_close(out.cpu(), expected, rtol=1e-2, atol=1e-2)
+        torch.testing.assert_close(source.cpu(), source_cpu, rtol=0, atol=0)
+
+        if strided_out:
+            actual_backing = backing.cpu()
+            expected_backing = torch.full(
+                (seq_len, width + 256), -123.0, dtype=torch.float16
+            )
+
+            if transpose_rows:
+                expected = expected.transpose(0, 1)
+
+            expected_backing[:, 128 : 128 + width] = expected.reshape(seq_len, width)
+            torch.testing.assert_close(
+                actual_backing, expected_backing, rtol=1e-2, atol=1e-2
+            )
+            torch.testing.assert_close(
+                actual_backing[:, :128], expected_backing[:, :128], rtol=0, atol=0
+            )
+            torch.testing.assert_close(
+                actual_backing[:, -128:], expected_backing[:, -128:], rtol=0, atol=0
+            )
+
+
+def test_rms_norm_strided_npu_stream(device, implementation_index):
+    if device != "npu":
+        pytest.skip("regression for Ascend RMSNorm staging streams")
+
+    source_cpu = torch.randn(36, 4096, dtype=torch.float16)
+    weight_cpu = torch.randn(128, dtype=torch.float16)
+    expected = _torch_rms_norm(
+        source_cpu[:, 2048:3072].reshape(36, 8, 128), weight_cpu
+    )
+    stream = torch.npu.Stream()
+
+    with torch.npu.stream(stream):
+        source = source_cpu.to(device)
+        weight = weight_cpu.to(device)
+        backing = torch.full((36, 1280), -123.0, dtype=torch.float16, device=device)
+        input = source[:, 2048:3072].view(36, 8, 128)
+        out = backing[:, 128:1152].view(36, 8, 128)
+        _rms_norm(input, weight, out=out, implementation_index=implementation_index)
+
+    stream.synchronize()
+    torch.testing.assert_close(out.cpu(), expected, rtol=1e-2, atol=1e-2)
+
+
 def _rms_norm(input, weight, *, eps=1e-6, out=None, implementation_index=0):
     infini.ops.rms_norm(
         input,

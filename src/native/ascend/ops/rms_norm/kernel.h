@@ -6,6 +6,7 @@
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
+#include "aclnn_copy.h"
 #include "aclnn_rms_norm.h"
 #include "aclnnop/aclnn_cast.h"
 #include "base/rms_norm.h"
@@ -27,20 +28,20 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     needs_input_staging_ = !input.IsContiguous();
     needs_out_staging_ = !out.IsContiguous();
     logical_rows_ = input.numel() / dim_;
-    element_size_ = kDataTypeToSize.at(input.dtype());
-    row_bytes_ = dim_ * element_size_;
-    tensor_bytes_ = logical_rows_ * row_bytes_;
+    tensor_bytes_ = input.numel() * kDataTypeToSize.at(input.dtype());
 
     std::vector<int64_t> input_shape(input.shape().begin(),
                                      input.shape().end());
     std::vector<int64_t> out_shape(out.shape().begin(), out.shape().end());
     if (needs_input_staging_) {
+      strided_in_cache_ = ascend::AclTensorCache(input);
       norm_in_cache_ = ascend::AclTensorCache(
           input_shape, ascend::ToAclDtype(input.dtype()), nullptr);
     } else {
       norm_in_cache_ = ascend::AclTensorCache(input);
     }
     if (needs_out_staging_) {
+      strided_out_cache_ = ascend::AclTensorCache(out);
       norm_out_cache_ = ascend::AclTensorCache(
           out_shape, ascend::ToAclDtype(out.dtype()), nullptr);
     } else {
@@ -115,7 +116,9 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     if (needs_input_staging_) {
       auto& staging = ascend::GetWorkspacePool().Ensure(stream, tensor_bytes_,
                                                         "rms_norm_input");
-      PackRows(staging.buf, input.data(), input_shape_, input_strides_, stream);
+      CopyTensor(norm_in_cache_.get(staging.buf),
+                 strided_in_cache_.get(const_cast<void*>(input.data())),
+                 stream);
       input_data = staging.buf;
     }
     if (needs_out_staging_) {
@@ -156,47 +159,29 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     aclnnRmsNorm(arena.buf, ws_size_, executor_, stream);
 
     if (needs_out_staging_) {
-      UnpackRows(out.data(), out_data, out_shape_, out_strides_, stream);
+      CopyTensor(strided_out_cache_.get(out.data()), t_out, stream);
     }
   }
 
  private:
-  int64_t RowOffset(int64_t row, const Tensor::Shape& shape,
-                    const Tensor::Strides& strides) const {
-    int64_t remaining = row;
-    int64_t offset = 0;
-    for (int64_t axis = static_cast<int64_t>(shape.size()) - 2; axis >= 0;
-         --axis) {
-      auto coordinate = remaining % static_cast<int64_t>(shape[axis]);
-      remaining /= static_cast<int64_t>(shape[axis]);
-      offset += coordinate * static_cast<int64_t>(strides[axis]);
-    }
-    return offset;
+  void CopyTensor(aclTensor* dst, const aclTensor* src,
+                  aclrtStream stream) const {
+    // CANN consumes copy executors even when marked repeatable.
+    aclOpExecutor* executor = nullptr;
+    uint64_t workspace_size = 0;
+    auto status =
+        aclnnInplaceCopyGetWorkspaceSize(dst, src, &workspace_size, &executor);
+    assert(status == ACL_SUCCESS && "`RmsNorm` copy workspace query failed.");
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size,
+                                                    "rms_norm_copy");
+    status = aclnnInplaceCopy(arena.buf, workspace_size, executor, stream);
+    assert(status == ACL_SUCCESS && "`RmsNorm` staging copy failed.");
+    (void)status;
   }
 
-  void PackRows(void* dst, const void* src, const Tensor::Shape& shape,
-                const Tensor::Strides& strides, aclrtStream stream) const {
-    for (int64_t row = 0; row < logical_rows_; ++row) {
-      auto offset = RowOffset(row, shape, strides);
-      auto ret = aclrtMemcpyAsync(
-          static_cast<uint8_t*>(dst) + row * row_bytes_, row_bytes_,
-          static_cast<const uint8_t*>(src) + offset * element_size_, row_bytes_,
-          ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
-      assert(ret == ACL_SUCCESS && "`RmsNorm` input pack failed");
-    }
-  }
+  mutable ascend::AclTensorCache strided_in_cache_;
 
-  void UnpackRows(void* dst, const void* src, const Tensor::Shape& shape,
-                  const Tensor::Strides& strides, aclrtStream stream) const {
-    for (int64_t row = 0; row < logical_rows_; ++row) {
-      auto offset = RowOffset(row, shape, strides);
-      auto ret = aclrtMemcpyAsync(
-          static_cast<uint8_t*>(dst) + offset * element_size_, row_bytes_,
-          static_cast<const uint8_t*>(src) + row * row_bytes_, row_bytes_,
-          ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
-      assert(ret == ACL_SUCCESS && "`RmsNorm` output unpack failed");
-    }
-  }
+  mutable ascend::AclTensorCache strided_out_cache_;
 
   mutable ascend::AclTensorCache norm_in_cache_;
   mutable ascend::AclTensorCache weight_cache_;
@@ -206,8 +191,6 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
   bool needs_out_staging_{false};
   bool needs_weight_cast_{false};
   int64_t logical_rows_{0};
-  uint64_t element_size_{0};
-  uint64_t row_bytes_{0};
   uint64_t tensor_bytes_{0};
   void* weight_fp32_data_{nullptr};
   mutable aclOpExecutor* cast_exec_{nullptr};
