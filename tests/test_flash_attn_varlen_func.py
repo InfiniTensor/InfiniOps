@@ -749,6 +749,39 @@ def _cumulative_lengths(lengths, device):
     return torch.tensor(values, dtype=torch.int32, device=device)
 
 
+@pytest.mark.parametrize("sequence_length", (36, 128, 256, 333, 512))
+@pytest.mark.parametrize("seed", (0, 1))
+def test_ascend_310p_dense_prefill_padding(
+    device, implementation_index, sequence_length, seed
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("310P native prefill regression")
+    if not torch.npu.get_device_name(0).startswith("Ascend310P"):
+        pytest.skip("310P-specific prompt kernel")
+
+    generator = torch.Generator().manual_seed(seed)
+    q_cpu = torch.randn((sequence_length, 16, 128), generator=generator).half()
+    k_cpu = torch.randn((sequence_length, 8, 128), generator=generator).half()
+    v_cpu = torch.randn((sequence_length, 8, 128), generator=generator).half()
+    q, k, v = (tensor.to(device) for tensor in (q_cpu, k_cpu, v_cpu))
+    lengths = torch.tensor([0, sequence_length], dtype=torch.int32, device=device)
+    out = torch.empty_like(q)
+    expected = _reference_varlen_attention(
+        q_cpu, k_cpu, v_cpu, (sequence_length,), (sequence_length,),
+        128 ** -0.5, True, (-1, -1)
+    )
+    for _ in range(2):
+        infini.ops.flash_attn_varlen_func(
+            q, k, v, lengths, lengths, None, None,
+            sequence_length, sequence_length, 0.0, 128 ** -0.5,
+            True, (-1, -1), 0.0, False, False, out, None, None,
+            stream=get_stream(q.device), implementation_index=0,
+        )
+        actual = out.cpu()
+        assert torch.isfinite(actual).all()
+        torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+
 def _pack_varlen_softmax_lse(softmax_lse, q_lens):
     if softmax_lse.ndim == 2:
         return softmax_lse
