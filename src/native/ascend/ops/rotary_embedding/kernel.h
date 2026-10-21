@@ -53,12 +53,10 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
         static_cast<size_t>(max_seq_len_ * head_dim) * element_size_;
     auto ret =
         aclrtMalloc(&cos_table_data_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to allocate cosine table");
+    ascend::CheckAcl(ret, "RoPE cosine table allocation");
     ret =
         aclrtMalloc(&sin_table_data_, table_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to allocate sine table");
+    ascend::CheckAcl(ret, "RoPE sine table allocation");
 
     UploadCosSinCache(cos_sin_cache);
     cos_sin_cache_data_ = cos_sin_cache.data();
@@ -66,11 +64,9 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     const auto gathered_bytes =
         static_cast<size_t>(num_tokens * head_dim) * element_size_;
     ret = aclrtMalloc(&cos_data_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to allocate gathered cosine");
+    ascend::CheckAcl(ret, "RoPE gathered cosine allocation");
     ret = aclrtMalloc(&sin_data_, gathered_bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to allocate gathered sine");
+    ascend::CheckAcl(ret, "RoPE gathered sine allocation");
 
     cos_table_cache_ = ascend::AclTensorCache({max_seq_len_, head_dim},
                                               acl_dtype, cos_table_data_);
@@ -89,16 +85,14 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     query_bytes_ = static_cast<size_t>(query.numel()) * element_size_;
     ret =
         aclrtMalloc(&query_out_data_, query_bytes_, ACL_MEM_MALLOC_NORMAL_ONLY);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to allocate query output");
+    ascend::CheckAcl(ret, "RoPE query output allocation");
     MakeChunks(query, num_heads_, query_token_stride_, query_head_stride_,
                query_out_data_, query_chunks_);
 
     if (key.has_value()) {
       key_bytes_ = static_cast<size_t>(key->numel()) * element_size_;
       ret = aclrtMalloc(&key_out_data_, key_bytes_, ACL_MEM_MALLOC_NORMAL_ONLY);
-      assert(ret == ACL_SUCCESS &&
-             "Ascend `RotaryEmbedding` failed to allocate key output");
+      ascend::CheckAcl(ret, "RoPE key output allocation");
       MakeChunks(*key, num_kv_heads_, key_token_stride_, key_head_stride_,
                  key_out_data_, key_chunks_);
     }
@@ -120,12 +114,18 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
         chunk.output.release();
       }
     }
-    if (cos_table_data_) aclrtFree(cos_table_data_);
-    if (sin_table_data_) aclrtFree(sin_table_data_);
-    if (cos_data_) aclrtFree(cos_data_);
-    if (sin_data_) aclrtFree(sin_data_);
-    if (query_out_data_) aclrtFree(query_out_data_);
-    if (key_out_data_) aclrtFree(key_out_data_);
+    if (cos_table_data_)
+      ascend::CheckAcl(aclrtFree(cos_table_data_), "RoPE cosine table release");
+    if (sin_table_data_)
+      ascend::CheckAcl(aclrtFree(sin_table_data_), "RoPE sine table release");
+    if (cos_data_)
+      ascend::CheckAcl(aclrtFree(cos_data_), "RoPE gathered cosine release");
+    if (sin_data_)
+      ascend::CheckAcl(aclrtFree(sin_data_), "RoPE gathered sine release");
+    if (query_out_data_)
+      ascend::CheckAcl(aclrtFree(query_out_data_), "RoPE query output release");
+    if (key_out_data_)
+      ascend::CheckAcl(aclrtFree(key_out_data_), "RoPE key output release");
   }
 
   void operator()(const Tensor positions, Tensor query,
@@ -149,32 +149,42 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
     auto t_sin_out = sin_out_cache_.get(sin_data_);
 
     if (!cos_index_executor_) {
-      aclnnIndexSelectGetWorkspaceSize(t_cos_table, 0, t_positions, t_cos_out,
-                                       &cos_index_ws_size_,
-                                       &cos_index_executor_);
-      aclSetAclOpExecutorRepeatable(cos_index_executor_);
+      ascend::CheckAcl(aclnnIndexSelectGetWorkspaceSize(
+                           t_cos_table, 0, t_positions, t_cos_out,
+                           &cos_index_ws_size_, &cos_index_executor_),
+                       "RoPE cosine gather workspace query");
+      ascend::CheckAcl(aclSetAclOpExecutorRepeatable(cos_index_executor_),
+                       "RoPE repeatable cosine gather executor");
     } else {
-      aclSetInputTensorAddr(cos_index_executor_, 1, t_positions,
-                            const_cast<void*>(positions.data()));
+      ascend::CheckAcl(
+          aclSetInputTensorAddr(cos_index_executor_, 1, t_positions,
+                                const_cast<void*>(positions.data())),
+          "RoPE cosine positions address");
     }
 
     if (!sin_index_executor_) {
-      aclnnIndexSelectGetWorkspaceSize(t_sin_table, 0, t_positions, t_sin_out,
-                                       &sin_index_ws_size_,
-                                       &sin_index_executor_);
-      aclSetAclOpExecutorRepeatable(sin_index_executor_);
+      ascend::CheckAcl(aclnnIndexSelectGetWorkspaceSize(
+                           t_sin_table, 0, t_positions, t_sin_out,
+                           &sin_index_ws_size_, &sin_index_executor_),
+                       "RoPE sine gather workspace query");
+      ascend::CheckAcl(aclSetAclOpExecutorRepeatable(sin_index_executor_),
+                       "RoPE repeatable sine gather executor");
     } else {
-      aclSetInputTensorAddr(sin_index_executor_, 1, t_positions,
-                            const_cast<void*>(positions.data()));
+      ascend::CheckAcl(
+          aclSetInputTensorAddr(sin_index_executor_, 1, t_positions,
+                                const_cast<void*>(positions.data())),
+          "RoPE sine positions address");
     }
 
     auto index_ws_size = std::max(cos_index_ws_size_, sin_index_ws_size_);
     auto& index_arena =
         ascend::GetWorkspacePool().Ensure(stream, index_ws_size);
-    aclnnIndexSelect(index_arena.buf, cos_index_ws_size_, cos_index_executor_,
-                     stream);
-    aclnnIndexSelect(index_arena.buf, sin_index_ws_size_, sin_index_executor_,
-                     stream);
+    ascend::CheckAcl(aclnnIndexSelect(index_arena.buf, cos_index_ws_size_,
+                                      cos_index_executor_, stream),
+                     "RoPE cosine gather execution");
+    ascend::CheckAcl(aclnnIndexSelect(index_arena.buf, sin_index_ws_size_,
+                                      sin_index_executor_, stream),
+                     "RoPE sine gather execution");
 
     auto t_cos = cos_rotary_cache_.get(cos_data_);
     auto t_sin = sin_rotary_cache_.get(sin_data_);
@@ -249,10 +259,14 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
       ascend::CheckAcl(aclSetAclOpExecutorRepeatable(executor),
                        "aclSetAclOpExecutorRepeatable RoPE");
     } else {
-      aclSetInputTensorAddr(executor, 0, input, input_data);
-      aclSetInputTensorAddr(executor, 1, cos, cos_data_);
-      aclSetInputTensorAddr(executor, 2, sin, sin_data_);
-      aclSetOutputTensorAddr(executor, 0, output, output_data);
+      ascend::CheckAcl(aclSetInputTensorAddr(executor, 0, input, input_data),
+                       "RoPE input address");
+      ascend::CheckAcl(aclSetInputTensorAddr(executor, 1, cos, cos_data_),
+                       "RoPE cosine address");
+      ascend::CheckAcl(aclSetInputTensorAddr(executor, 2, sin, sin_data_),
+                       "RoPE sine address");
+      ascend::CheckAcl(aclSetOutputTensorAddr(executor, 0, output, output_data),
+                       "RoPE output address");
     }
 
     auto& rotary_arena =
@@ -287,8 +301,7 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
 
     auto ret = aclrtMemcpy(packed.data(), packed_bytes, cos_sin_cache.data(),
                            packed_bytes, ACL_MEMCPY_DEVICE_TO_HOST);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to read cos/sin cache");
+    ascend::CheckAcl(ret, "RoPE cos/sin cache download");
     for (int64_t position = 0; position < max_seq_len_; ++position) {
       for (int64_t index = 0; index < head_size_; ++index) {
         const auto destination_index = position * head_size_ + index;
@@ -312,12 +325,10 @@ class Operator<RotaryEmbedding, Device::Type::kAscend>
 
     ret = aclrtMemcpy(cos_table_data_, table_bytes, cosine.data(), table_bytes,
                       ACL_MEMCPY_HOST_TO_DEVICE);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to upload cosine table");
+    ascend::CheckAcl(ret, "RoPE cosine table upload");
     ret = aclrtMemcpy(sin_table_data_, table_bytes, sine.data(), table_bytes,
                       ACL_MEMCPY_HOST_TO_DEVICE);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `RotaryEmbedding` failed to upload sine table");
+    ascend::CheckAcl(ret, "RoPE sine table upload");
   }
 
   void WriteOne(uint8_t* destination) const {
