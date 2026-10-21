@@ -245,12 +245,13 @@ def test_ascend_paged_prefill_follows_nontrivial_block_table(
     if device != "npu" or implementation_index != 0:
         pytest.skip("coverage requires the native Ascend provider")
 
-    q_lens = (128, 256)
+    q_lens = (256, 512)
     k_lens = q_lens
     num_heads = 8
     num_kv_heads = 2
     head_dim = 64
-    page_size = 128
+    # Preserve cross-page coverage within the public page size contract.
+    page_size = 256
     block_rows = ((2, 0), (1, 3))
     num_blocks = 4
 
