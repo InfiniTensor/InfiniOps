@@ -2075,6 +2075,17 @@ def _get_all_ops(
     return ops
 
 
+def _get_unavailable_native_ops(ops):
+    # Public native APIs must not disappear when their providers are disabled.
+    # Keep these entries separate from bindings and provider/config selection.
+    native_headers = _index_impl_headers([_SRC_DIR / "native"], {"native"})
+    return {
+        path.stem: ()
+        for path in sorted(_BASE_DIR.glob("*.h"))
+        if path.stem not in ops and _op_relative_type(path.stem) in native_headers
+    }
+
+
 def _generate_op_artifacts(item):
     op_name, implementations = item
     implementations = tuple(implementations)
@@ -2316,6 +2327,11 @@ if __name__ == "__main__":
             artifacts = list(executor.map(_generate_op_artifacts, ops.items()))
 
     op_names = [artifact["op_name"] for artifact in artifacts]
+    unavailable_artifacts = [
+        _generate_op_artifacts(item)
+        for item in _get_unavailable_native_ops(ops).items()
+    ]
+    call_artifacts = artifacts + unavailable_artifacts
     expected_binding_files: set[pathlib.Path] = set()
     expected_generated_src_files: set[pathlib.Path] = set()
     expected_include_files: set[pathlib.Path] = set()
@@ -2326,7 +2342,7 @@ if __name__ == "__main__":
     ]
     call_instantiation_declarations = [
         declaration
-        for artifact in artifacts
+        for artifact in call_artifacts
         for declaration in artifact["call_instantiation_declarations"]
     ]
     use_monolithic_bindings = _use_monolithic_bindings()
@@ -2368,7 +2384,8 @@ if __name__ == "__main__":
     expected_binding_files.add(dispatch_header_path)
 
     call_instantiation_header = _generate_operator_call_instantiation_header(
-        op_names, call_instantiation_declarations
+        [artifact["op_name"] for artifact in call_artifacts],
+        call_instantiation_declarations,
     )
     (_INCLUDE_DIR / "infini").mkdir(exist_ok=True)
     call_instantiation_header_path = (
@@ -2407,6 +2424,15 @@ if __name__ == "__main__":
         _write_text_if_changed(dispatch_source_path, dispatch_source)
         expected_binding_files.add(dispatch_source_path)
 
+    for dispatch_batch_index, start in enumerate(
+        range(0, len(call_artifacts), dispatch_batch_size)
+    ):
+        batch = call_artifacts[start : start + dispatch_batch_size]
+        impl_paths = list(
+            dict.fromkeys(
+                impl_path for artifact in batch for impl_path in artifact["impl_paths"]
+            )
+        )
         call_instantiation_definitions = [
             definition
             for artifact in batch

@@ -890,6 +890,47 @@ def test_linked_implementations_require_explicit_scan_flag(monkeypatch, tmp_path
     }
 
 
+def test_native_public_api_survives_without_an_active_provider(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    src_dir = tmp_path / "src"
+    base_dir = src_dir / "base"
+    provider_dir = src_dir / "native" / "cuda" / "nvidia" / "ops" / "pad"
+    base_dir.mkdir(parents=True)
+    provider_dir.mkdir(parents=True)
+    (base_dir / "pad.h").write_text("class Pad {};\n")
+    (base_dir / "no_provider.h").write_text("class NoProvider {};\n")
+    (provider_dir / "kernel.h").write_text(
+        "class Operator<Pad, Device::Type::kNvidia, 0> {};\n"
+    )
+    monkeypatch.setattr(module, "_SRC_DIR", src_dir)
+    monkeypatch.setattr(module, "_BASE_DIR", base_dir)
+    monkeypatch.setattr(module, "_GENERATION_DIR", tmp_path / "generated")
+
+    active = module._get_all_ops(["cpu", "hygon"])
+    assert "pad" not in active
+    assert module._get_unavailable_native_ops(active) == {"pad": ()}
+    assert module._get_unavailable_native_ops({"pad": []}) == {}
+    with pytest.raises(ValueError):
+        module._filter_ops(active, ["pad"], strict=True)
+
+
+def test_unavailable_native_api_does_not_include_a_provider():
+    module = _load_generator_module()
+    artifact = module._generate_op_artifacts(("pad", ()))
+    header = module._generate_operator_call_instantiation_header(
+        ["pad"], artifact["call_instantiation_declarations"]
+    )
+    source = module._generate_operator_call_instantiation_source(
+        ["cpu", "hygon"], [], artifact["call_instantiation_definitions"]
+    )
+    assert '#include "base/pad.h"' in header
+    assert "OperatorFactory<::infini::ops::Pad>" in header
+    assert "Operator<::infini::ops::Pad>::DefaultConfig" in source
+    assert "Operator<::infini::ops::Pad>::Make" in source
+    assert "native/cuda/nvidia" not in source
+    assert artifact["impl_paths"] == []
+
+
 def test_write_text_if_changed_preserves_unchanged_mtime(tmp_path):
     module = _load_generator_module()
     path = tmp_path / "bindings.cc"
