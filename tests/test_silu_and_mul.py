@@ -101,12 +101,16 @@ def test_silu_and_mul_repeated_small_shape(device, implementation_index, padded)
 
     for value in (0.25, 0.75):
         input = torch.empty_strided(
-            (13, 8), (12, 1) if padded else (8, 1),
-            dtype=torch.float16, device=device,
+            (13, 8),
+            (12, 1) if padded else (8, 1),
+            dtype=torch.float16,
+            device=device,
         ).fill_(value)
         out = torch.empty_strided(
-            (13, 4), (6, 1) if padded else (4, 1),
-            dtype=torch.float16, device=device,
+            (13, 4),
+            (6, 1) if padded else (4, 1),
+            dtype=torch.float16,
+            device=device,
         ).fill_(-9)
         expected = _torch_silu_and_mul(input, torch.empty_like(out)).cpu()
         actual = _silu_and_mul(input, out, implementation_index).cpu()

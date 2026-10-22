@@ -263,8 +263,7 @@ def test_rotary_embedding_ascend_strided_fused_qkv_view(
 @pytest.mark.parametrize("num_tokens", (1, 2, 24))
 @pytest.mark.parametrize(
     "head_size, num_heads",
-    ((64, 8), (64, 9), (64, 36), (64, 40),
-     (128, 8), (128, 9), (128, 16), (128, 32)),
+    ((64, 8), (64, 9), (64, 36), (64, 40), (128, 8), (128, 9), (128, 16), (128, 32)),
 )
 @pytest.mark.parametrize("has_key", (False, True))
 @pytest.mark.parametrize("strided", (False, True))
@@ -276,9 +275,10 @@ def test_rotary_embedding_ascend_neox_decode(
 
     num_kv_heads = num_heads // 2 if num_heads % 2 == 0 else 1
     half_dim = head_size // 2
-    frequencies = torch.arange(256).float()[:, None] * (
-        1000000 ** (-torch.arange(half_dim).float() / half_dim)
-    )[None, :]
+    frequencies = (
+        torch.arange(256).float()[:, None]
+        * (1000000 ** (-torch.arange(half_dim).float() / half_dim))[None, :]
+    )
     cache_cpu = torch.cat((frequencies.cos(), frequencies.sin()), -1).half()
     cache = cache_cpu.to(device)
     # Reuse the cached operator with new positions and Q/K allocations.
@@ -296,8 +296,10 @@ def test_rotary_embedding_ascend_neox_decode(
             if not strided:
                 return value.to(device)
             parent = torch.full(
-                (num_tokens, heads, 2 * head_size), -17,
-                dtype=torch.float16, device=device,
+                (num_tokens, heads, 2 * head_size),
+                -17,
+                dtype=torch.float16,
+                device=device,
             )
             view = parent[..., :head_size]
             view.copy_(value.view(num_tokens, heads, head_size))
@@ -307,11 +309,22 @@ def test_rotary_embedding_ascend_neox_decode(
         query = to_device(query_cpu, num_heads)
         key = to_device(key_cpu, num_kv_heads) if has_key else None
         _torch_rotary_embedding(
-            positions_cpu, query_cpu, key_cpu, cache_cpu,
-            head_size, True, 0, False,
+            positions_cpu,
+            query_cpu,
+            key_cpu,
+            cache_cpu,
+            head_size,
+            True,
+            0,
+            False,
         )
         infini.ops.rotary_embedding(
-            positions_cpu.to(device), query, key, cache, head_size, True,
+            positions_cpu.to(device),
+            query,
+            key,
+            cache,
+            head_size,
+            True,
             implementation_index=implementation_index,
             stream=get_stream(query.device),
         )

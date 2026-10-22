@@ -768,15 +768,38 @@ def test_ascend_310p_dense_prefill_padding(
     lengths = torch.tensor([0, sequence_length], dtype=torch.int32, device=device)
     out = torch.empty_like(q)
     expected = _reference_varlen_attention(
-        q_cpu, k_cpu, v_cpu, (sequence_length,), (sequence_length,),
-        128 ** -0.5, True, (-1, -1)
+        q_cpu,
+        k_cpu,
+        v_cpu,
+        (sequence_length,),
+        (sequence_length,),
+        128**-0.5,
+        True,
+        (-1, -1),
     )
     for _ in range(2):
         infini.ops.flash_attn_varlen_func(
-            q, k, v, lengths, lengths, None, None,
-            sequence_length, sequence_length, 0.0, 128 ** -0.5,
-            True, (-1, -1), 0.0, False, False, out, None, None,
-            stream=get_stream(q.device), implementation_index=0,
+            q,
+            k,
+            v,
+            lengths,
+            lengths,
+            None,
+            None,
+            sequence_length,
+            sequence_length,
+            0.0,
+            128**-0.5,
+            True,
+            (-1, -1),
+            0.0,
+            False,
+            False,
+            out,
+            None,
+            None,
+            stream=get_stream(q.device),
+            implementation_index=0,
         )
         actual = out.cpu()
         assert torch.isfinite(actual).all()
@@ -803,9 +826,7 @@ def test_ascend_variable_prompt_reuses_updated_lengths(
     kv_shape = (3, 256, 2, head_dim) if paged else (9, 2, head_dim)
     k_cpu = torch.randn(kv_shape, generator=generator).half()
     v_cpu = torch.randn(kv_shape, generator=generator).half()
-    blocks_cpu = (
-        torch.tensor(((2, -1), (1, -1)), dtype=torch.int32) if paged else None
-    )
+    blocks_cpu = torch.tensor(((2, -1), (1, -1)), dtype=torch.int32) if paged else None
     q, k, v = (tensor.to(device) for tensor in (q_cpu, k_cpu, v_cpu))
     block_table = blocks_cpu.to(device) if paged else None
     cu_q = _cumulative_lengths(q_lens, device)
@@ -821,8 +842,15 @@ def test_ascend_variable_prompt_reuses_updated_lengths(
             blocks_cpu[0, 0] = 0
 
         expected = _reference_varlen_attention(
-            q_cpu, k_cpu, v_cpu, q_lens, k_lens, None, causal,
-            window_size, blocks_cpu,
+            q_cpu,
+            k_cpu,
+            v_cpu,
+            q_lens,
+            k_lens,
+            None,
+            causal,
+            window_size,
+            blocks_cpu,
         )
 
         with torch.npu.stream(stream):
@@ -832,9 +860,26 @@ def test_ascend_variable_prompt_reuses_updated_lengths(
 
             out.fill_(math.nan)
             infini.ops.flash_attn_varlen_func(
-                q, k, v, cu_q, cu_k, None, block_table, max(q_lens),
-                7, 0.0, None, causal, window_size, 0.0, False, False,
-                out, None, None, stream=get_stream(q.device),
+                q,
+                k,
+                v,
+                cu_q,
+                cu_k,
+                None,
+                block_table,
+                max(q_lens),
+                7,
+                0.0,
+                None,
+                causal,
+                window_size,
+                0.0,
+                False,
+                False,
+                out,
+                None,
+                None,
+                stream=get_stream(q.device),
                 implementation_index=0,
             )
             actual = out.cpu()
@@ -869,9 +914,8 @@ def _reference_varlen_attention(
     alibi_slopes=None,
 ):
     output_device = q.device
-    if (
-        q.device.type == "npu"
-        and torch.npu.get_device_name(q.device.index).startswith("Ascend310P")
+    if q.device.type == "npu" and torch.npu.get_device_name(q.device.index).startswith(
+        "Ascend310P"
     ):
         # The 310P runtime does not provide `NanToNum` for the reference path.
         q, k, v = (tensor.cpu() for tensor in (q, k, v))

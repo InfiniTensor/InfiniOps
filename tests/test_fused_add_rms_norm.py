@@ -73,7 +73,10 @@ def test_fused_add_rms_norm(
 @pytest.mark.parametrize("width", (4, 8, 16, 128))
 @pytest.mark.parametrize("has_weight", (False, True))
 def test_fused_add_rms_norm_repeated_shape(
-    device, implementation_index, width, has_weight,
+    device,
+    implementation_index,
+    width,
+    has_weight,
 ):
     if device != "npu" or implementation_index != 0:
         pytest.skip("Ascend native repeated-call regression")
@@ -81,16 +84,28 @@ def test_fused_add_rms_norm_repeated_shape(
     for value in (0.25, 0.75):
         input = torch.full((2, 2, width), value, dtype=torch.float16, device=device)
         residual = torch.full_like(input, 0.5)
-        weight = torch.full((width,), 0.75, dtype=torch.float16, device=device) if has_weight else None
+        weight = (
+            torch.full((width,), 0.75, dtype=torch.float16, device=device)
+            if has_weight
+            else None
+        )
         expected_input = input.clone()
         expected_residual = residual.clone()
         _torch_fused_add_rms_norm(expected_input, expected_residual, weight, 1e-6)
         infini.ops.fused_add_rms_norm(
-            input, residual, weight, 1e-6, implementation_index=implementation_index,
+            input,
+            residual,
+            weight,
+            1e-6,
+            implementation_index=implementation_index,
             stream=get_stream(input.device),
         )
-        torch.testing.assert_close(input.cpu(), expected_input.cpu(), rtol=1e-2, atol=1e-2)
-        torch.testing.assert_close(residual.cpu(), expected_residual.cpu(), rtol=0, atol=0)
+        torch.testing.assert_close(
+            input.cpu(), expected_input.cpu(), rtol=1e-2, atol=1e-2
+        )
+        torch.testing.assert_close(
+            residual.cpu(), expected_residual.cpu(), rtol=0, atol=0
+        )
 
 
 def _torch_fused_add_rms_norm(input, residual, weight, epsilon):

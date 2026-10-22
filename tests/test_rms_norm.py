@@ -126,9 +126,7 @@ def test_rms_norm_qkv_slice(
             )
             out = backing[:, 128 : 128 + width].view(seq_len, heads, 128)
         else:
-            out = torch.empty(
-                (seq_len, heads, 128), dtype=torch.float16, device=device
-            )
+            out = torch.empty((seq_len, heads, 128), dtype=torch.float16, device=device)
 
         if transpose_rows:
             input = input.transpose(0, 1)
@@ -166,9 +164,7 @@ def test_rms_norm_strided_npu_stream(device, implementation_index):
 
     source_cpu = torch.randn(36, 4096, dtype=torch.float16)
     weight_cpu = torch.randn(128, dtype=torch.float16)
-    expected = _torch_rms_norm(
-        source_cpu[:, 2048:3072].reshape(36, 8, 128), weight_cpu
-    )
+    expected = _torch_rms_norm(source_cpu[:, 2048:3072].reshape(36, 8, 128), weight_cpu)
     stream = torch.npu.Stream()
 
     with torch.npu.stream(stream):

@@ -155,12 +155,16 @@ def test_reshape_and_cache_flash_npu_graph_replay_uses_updated_slots(
 
 
 @pytest.mark.parametrize("cache_layout", ("NHD", "HND"))
-def test_reshape_and_cache_flash_repeated_slots(device, implementation_index, cache_layout):
+def test_reshape_and_cache_flash_repeated_slots(
+    device, implementation_index, cache_layout
+):
     if device != "npu" or implementation_index != 0:
         pytest.skip("Ascend native cache update regression")
 
     key_cache = _make_cache(3, 4, 2, 16, cache_layout, torch.float16, device).fill_(-8)
-    value_cache = _make_cache(3, 4, 2, 16, cache_layout, torch.float16, device).fill_(-9)
+    value_cache = _make_cache(3, 4, 2, 16, cache_layout, torch.float16, device).fill_(
+        -9
+    )
     expected_key = key_cache.cpu().clone()
     expected_value = value_cache.cpu().clone()
     scale = torch.ones((), dtype=torch.float32, device=device)
@@ -175,8 +179,16 @@ def test_reshape_and_cache_flash_repeated_slots(device, implementation_index, ca
                 expected_key[block, page] = key_cpu[token]
                 expected_value[block, page] = value_cpu[token]
         infini.ops.reshape_and_cache_flash(
-            key, value, mapping, scale, scale, "auto", key_cache, value_cache,
-            implementation_index=implementation_index, stream=get_stream(key.device),
+            key,
+            value,
+            mapping,
+            scale,
+            scale,
+            "auto",
+            key_cache,
+            value_cache,
+            implementation_index=implementation_index,
+            stream=get_stream(key.device),
         )
         torch.testing.assert_close(key_cache.cpu(), expected_key, rtol=0, atol=0)
         torch.testing.assert_close(value_cache.cpu(), expected_value, rtol=0, atol=0)
