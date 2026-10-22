@@ -2,6 +2,7 @@
 #define INFINI_OPS_ASCEND_PAD_KERNEL_H_
 
 #include <limits>
+
 #include "base/pad.h"
 #include "native/ascend/ops/copy/kernel.h"
 #include "native/ascend/ops/fill/kernel.h"
@@ -17,9 +18,13 @@ class Operator<Pad, Device::Type::kAscend> : public Pad {
     if (mode != "constant" || input.device().type() != Device::Type::kAscend ||
         input.device() != out.device() || input.dtype() != out.dtype() ||
         input.ndim() != out.ndim() || input.ndim() > 8 || pad.size() % 2 ||
-        pad.size() / 2 > input.ndim() || out.HasBroadcastDim() || out.numel() == 0) return false;
-    if (input.dtype() != DataType::kFloat32 && input.dtype() != DataType::kFloat16 &&
-        input.dtype() != DataType::kBFloat16) return false;
+        pad.size() / 2 > input.ndim() || out.HasBroadcastDim() ||
+        out.numel() == 0)
+      return false;
+    if (input.dtype() != DataType::kFloat32 &&
+        input.dtype() != DataType::kFloat16 &&
+        input.dtype() != DataType::kBFloat16)
+      return false;
     std::size_t input_span = 0, output_span = 0;
     if (!cuda_binary_view::SpanBytes(input, &input_span) ||
         !cuda_binary_view::SpanBytes(out, &output_span) ||
@@ -28,8 +33,9 @@ class Operator<Pad, Device::Type::kAscend> : public Pad {
       return false;
     constexpr auto max = std::numeric_limits<int64_t>::max();
     for (size_t d = 0; d < input.ndim(); ++d) {
-      if (input.shape()[d] > static_cast<size_t>(max) || input.strides()[d] < 0 ||
-          out.strides()[d] <= 0) return false;
+      if (input.shape()[d] > static_cast<size_t>(max) ||
+          input.strides()[d] < 0 || out.strides()[d] <= 0)
+        return false;
       auto size = static_cast<int64_t>(input.shape()[d]);
       const auto pair = input.ndim() - 1 - d;
       const auto left = pair < pad.size() / 2 ? pad[2 * pair] : 0;
@@ -44,7 +50,8 @@ class Operator<Pad, Device::Type::kAscend> : public Pad {
   }
 
   Operator(const Tensor input, const std::vector<int64_t> pad,
-           const std::string mode, const std::optional<double> value, Tensor out)
+           const std::string mode, const std::optional<double> value,
+           Tensor out)
       : Pad(input, pad, mode, value, out),
         fill_(out, value.value_or(0.0), out),
         copy_(input, false, Interior(input, pad, out)) {}
