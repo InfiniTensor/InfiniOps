@@ -16,6 +16,10 @@ struct C10<Device::Type::kCambricon> {
   using StreamGuard = c10::StreamGuard;
 
   static auto GetStreamFromExternal(void* stream, int device_index) {
+    if (stream == nullptr) {
+      return torch_mlu::getDefaultMLUStream(
+          static_cast<c10::DeviceIndex>(device_index));
+    }
     return torch_mlu::getStreamFromExternal(
         reinterpret_cast<cnrtQueue_t>(stream),
         static_cast<c10::DeviceIndex>(device_index));

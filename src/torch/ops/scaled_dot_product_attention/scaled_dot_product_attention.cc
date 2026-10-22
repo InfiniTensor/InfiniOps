@@ -26,34 +26,35 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
     const Tensor query, const Tensor key, const Tensor value,
     const std::optional<Tensor> attn_mask, double dropout_p, bool is_causal,
     const std::optional<double> scale, bool enable_gqa, Tensor out) const {
-  auto at_query =
-      ToAtenTensor<kDev>(const_cast<void*>(query.data()), query_shape_,
-                         query_strides_, query_type_, device_index_);
-  auto at_key = ToAtenTensor<kDev>(const_cast<void*>(key.data()), key_shape_,
-                                   key_strides_, query_type_, device_index_);
-  auto at_value =
-      ToAtenTensor<kDev>(const_cast<void*>(value.data()), value_shape_,
-                         value_strides_, query_type_, device_index_);
-  auto at_out = ToAtenTensor<kDev>(out.data(), out_shape_, out_strides_,
-                                   query_type_, device_index_);
+  WithTorchExecutionContext<kDev>(stream_, device_index_, [&] {
+    auto at_query =
+        ToAtenTensor<kDev>(const_cast<void*>(query.data()), query_shape_,
+                           query_strides_, query_type_, device_index_);
+    auto at_key = ToAtenTensor<kDev>(const_cast<void*>(key.data()), key_shape_,
+                                     key_strides_, query_type_, device_index_);
+    auto at_value =
+        ToAtenTensor<kDev>(const_cast<void*>(value.data()), value_shape_,
+                           value_strides_, query_type_, device_index_);
+    auto at_out = ToAtenTensor<kDev>(out.data(), out_shape_, out_strides_,
+                                     query_type_, device_index_);
 
-  c10::optional<at::Tensor> at_attn_mask;
-  if (attn_mask.has_value()) {
-    at_attn_mask.emplace(ToAtenTensor<kDev>(
-        const_cast<void*>(attn_mask->data()), attn_mask_shape_,
-        attn_mask_strides_, attn_mask_type_, device_index_));
-  }
+    c10::optional<at::Tensor> at_attn_mask;
+    if (attn_mask.has_value()) {
+      at_attn_mask.emplace(ToAtenTensor<kDev>(
+          const_cast<void*>(attn_mask->data()), attn_mask_shape_,
+          attn_mask_strides_, attn_mask_type_, device_index_));
+    }
 
-  c10::optional<double> at_scale;
-  if (scale.has_value()) {
-    at_scale = *scale;
-  }
+    c10::optional<double> at_scale;
+    if (scale.has_value()) {
+      at_scale = *scale;
+    }
 
 #if TORCH_VERSION_MAJOR > 2 || \
     (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 5)
-  auto result = at::scaled_dot_product_attention(
-      at_query, at_key, at_value, at_attn_mask, dropout_p, is_causal, at_scale,
-      enable_gqa);
+    auto result = at::scaled_dot_product_attention(
+        at_query, at_key, at_value, at_attn_mask, dropout_p, is_causal,
+        at_scale, enable_gqa);
 #else
   if (enable_gqa) {
     at_key = at_key.repeat_interleave(at_query.size(-3) / at_key.size(-3), -3);
@@ -64,17 +65,36 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
   auto result = at::scaled_dot_product_attention(
       at_query, at_key, at_value, at_attn_mask, dropout_p, is_causal, at_scale);
 #endif
-  at_out.copy_(result);
+    at_out.copy_(result);
+  });
 }
 
+#ifdef WITH_CPU
 template class Operator<ScaledDotProductAttention, Device::Type::kCpu, 1>;
+#endif
+#ifdef WITH_NVIDIA
 template class Operator<ScaledDotProductAttention, Device::Type::kNvidia, 1>;
+#endif
+#ifdef WITH_CAMBRICON
 template class Operator<ScaledDotProductAttention, Device::Type::kCambricon, 1>;
+#endif
+#ifdef WITH_ASCEND
 template class Operator<ScaledDotProductAttention, Device::Type::kAscend, 1>;
+#endif
+#ifdef WITH_METAX
 template class Operator<ScaledDotProductAttention, Device::Type::kMetax, 1>;
+#endif
+#ifdef WITH_MOORE
 template class Operator<ScaledDotProductAttention, Device::Type::kMoore, 1>;
+#endif
+#ifdef WITH_ILUVATAR
 template class Operator<ScaledDotProductAttention, Device::Type::kIluvatar, 1>;
+#endif
+#ifdef WITH_HYGON
 template class Operator<ScaledDotProductAttention, Device::Type::kHygon, 1>;
+#endif
+#ifdef WITH_MARS
 template class Operator<ScaledDotProductAttention, Device::Type::kMars, 1>;
+#endif
 
 }  // namespace infini::ops

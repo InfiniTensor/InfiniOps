@@ -1658,6 +1658,22 @@ if(GENERATE_PYTHON_BINDINGS)
 
     target_link_libraries(ops PRIVATE infiniops)
 
+    if(INFINI_OPS_BUILD_INTEROP_TESTS)
+        find_library(_interop_torch_python torch_python
+            HINTS ${TORCH_RUNTIME_DIRS} REQUIRED)
+        pybind11_add_module(_infini_ops_interop_probe MODULE NO_EXTRAS
+            "${PROJECT_SOURCE_DIR}/tests/torch_interop_probe.cc")
+        target_include_directories(_infini_ops_interop_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR} ${INFINI_RT_INCLUDE_DIRS}
+            ${TORCH_INCLUDE_DIRS})
+        target_compile_definitions(_infini_ops_interop_probe PRIVATE
+            $<TARGET_PROPERTY:infiniops,COMPILE_DEFINITIONS>)
+        target_compile_options(_infini_ops_interop_probe PRIVATE
+            $<TARGET_PROPERTY:infiniops,COMPILE_OPTIONS> -O0)
+        target_link_libraries(_infini_ops_interop_probe PRIVATE
+            infiniops ${_interop_torch_python})
+    endif()
+
     # Cambricon generated dispatch is compiled into the Python extension and
     # directly references host launch stubs emitted from `.mlu` sources. Link
     # those objects into `ops` too so import does not depend on re-exporting

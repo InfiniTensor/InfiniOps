@@ -106,11 +106,9 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 8>::operator()(
       1.0 / std::sqrt(static_cast<double>(q_shape_[2]))));
   params.stream = stream_;
 
-  using Backend = C10<Device::Type::kMoore>;
-  const typename Backend::StreamGuard stream_guard{
-      Backend::GetStreamFromExternal(stream_, device_index_)};
-
-  LaunchMoorePagedFlashAttnVarlenFunc(params);
+  WithTorchExecutionContext<Device::Type::kMoore>(stream_, device_index_, [&] {
+    LaunchMoorePagedFlashAttnVarlenFunc(params);
+  });
 }
 
 }  // namespace infini::ops

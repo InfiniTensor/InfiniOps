@@ -50,39 +50,59 @@ template <Device::Type kDev>
 void Operator<RotaryEmbedding, kDev, 1>::operator()(
     const Tensor positions, Tensor query, std::optional<Tensor> key,
     const Tensor cos_sin_cache, int64_t, bool, int64_t, bool) const {
-  if (num_tokens_ == 0) {
-    return;
-  }
+  WithTorchExecutionContext<kDev>(stream_, device_index_, [&] {
+    if (num_tokens_ == 0) {
+      return;
+    }
 
-  auto at_positions =
-      ToAtenTensor<kDev>(const_cast<void*>(positions.data()), positions_shape_,
-                         positions_strides_, positions_type_, device_index_);
-  auto at_query = ToAtenTensor<kDev>(query.data(), query_shape_, query_strides_,
-                                     query_type_, device_index_);
-  auto at_cache = ToAtenTensor<kDev>(
-      const_cast<void*>(cos_sin_cache.data()), cos_sin_cache_shape_,
-      cos_sin_cache_strides_, cos_sin_cache_type_, device_index_);
+    auto at_positions = ToAtenTensor<kDev>(const_cast<void*>(positions.data()),
+                                           positions_shape_, positions_strides_,
+                                           positions_type_, device_index_);
+    auto at_query = ToAtenTensor<kDev>(
+        query.data(), query_shape_, query_strides_, query_type_, device_index_);
+    auto at_cache = ToAtenTensor<kDev>(
+        const_cast<void*>(cos_sin_cache.data()), cos_sin_cache_shape_,
+        cos_sin_cache_strides_, cos_sin_cache_type_, device_index_);
 
-  ApplyRotaryEmbedding(at_query, at_positions, at_cache, query_token_stride_,
-                       query_head_stride_, num_heads_, head_size_, rot_dim_,
-                       rope_dim_offset_, is_neox_, inverse_);
-  if (key.has_value()) {
-    auto at_key = ToAtenTensor<kDev>(key->data(), key_shape_, key_strides_,
-                                     query_type_, device_index_);
-    ApplyRotaryEmbedding(at_key, at_positions, at_cache, key_token_stride_,
-                         key_head_stride_, num_kv_heads_, head_size_, rot_dim_,
+    ApplyRotaryEmbedding(at_query, at_positions, at_cache, query_token_stride_,
+                         query_head_stride_, num_heads_, head_size_, rot_dim_,
                          rope_dim_offset_, is_neox_, inverse_);
-  }
+    if (key.has_value()) {
+      auto at_key = ToAtenTensor<kDev>(key->data(), key_shape_, key_strides_,
+                                       query_type_, device_index_);
+      ApplyRotaryEmbedding(at_key, at_positions, at_cache, key_token_stride_,
+                           key_head_stride_, num_kv_heads_, head_size_,
+                           rot_dim_, rope_dim_offset_, is_neox_, inverse_);
+    }
+  });
 }
 
+#ifdef WITH_CPU
 template class Operator<RotaryEmbedding, Device::Type::kCpu, 1>;
+#endif
+#ifdef WITH_NVIDIA
 template class Operator<RotaryEmbedding, Device::Type::kNvidia, 1>;
+#endif
+#ifdef WITH_CAMBRICON
 template class Operator<RotaryEmbedding, Device::Type::kCambricon, 1>;
+#endif
+#ifdef WITH_ASCEND
 template class Operator<RotaryEmbedding, Device::Type::kAscend, 1>;
+#endif
+#ifdef WITH_METAX
 template class Operator<RotaryEmbedding, Device::Type::kMetax, 1>;
+#endif
+#ifdef WITH_MOORE
 template class Operator<RotaryEmbedding, Device::Type::kMoore, 1>;
+#endif
+#ifdef WITH_ILUVATAR
 template class Operator<RotaryEmbedding, Device::Type::kIluvatar, 1>;
+#endif
+#ifdef WITH_HYGON
 template class Operator<RotaryEmbedding, Device::Type::kHygon, 1>;
+#endif
+#ifdef WITH_MARS
 template class Operator<RotaryEmbedding, Device::Type::kMars, 1>;
+#endif
 
 }  // namespace infini::ops

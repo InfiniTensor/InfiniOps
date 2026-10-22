@@ -72,6 +72,13 @@ option(AUTO_DETECT_BACKENDS "Automatically detect available backends" OFF)
 option(GENERATE_OPERATOR_CALL_INSTANTIATIONS
     "Generate explicit operator call instantiations" ON)
 option(GENERATE_PYTHON_BINDINGS "Generate Python bindings" OFF)
+option(INFINI_OPS_BUILD_INTEROP_TESTS
+    "Build the private ATen/InfiniRT contract test module" OFF)
+if(INFINI_OPS_BUILD_INTEROP_TESTS AND
+   (NOT WITH_TORCH OR NOT GENERATE_PYTHON_BINDINGS))
+    message(FATAL_ERROR
+        "Interop tests require WITH_TORCH and GENERATE_PYTHON_BINDINGS.")
+endif()
 option(INFINI_OPS_BUILD_DOCS "Build InfiniOps documentation" OFF)
 option(INFINI_OPS_ENABLE_HOST_RANGE_PROFILING
     "Enable host-side range profiling" OFF)

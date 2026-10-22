@@ -79,17 +79,6 @@ _DEVICE_TYPES = (
     "kMars",
 )
 
-_C10_DEVICE_TYPES = (
-    "kNvidia",
-    "kCambricon",
-    "kAscend",
-    "kMetax",
-    "kMoore",
-    "kIluvatar",
-    "kThead",
-    "kMars",
-)
-
 # YAML scalar-type tokens → C++ types. Reference types (e.g. `const Scalar&`)
 # are not used so the generated signatures match the existing hand-written
 # ones, which pass by value to keep pybind11 binding generation simple.
@@ -1462,9 +1451,6 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         op_call_signature=_format_signature(op),
         tensor_conversions="\n".join(conversion_lines),
         out_device_index=out_device_index,
-        c10_condition=" ||\n      ".join(
-            f"kDev == Device::Type::{dev}" for dev in _C10_DEVICE_TYPES
-        ),
         # The generated call expression resolves the right kernel via C++
         # overload resolution from the argument types we pass.
         aten_call=aten_call,
@@ -1475,12 +1461,6 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     op_type = _op_cpp_type(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
-    c10_includes = "\n".join(
-        f"#ifdef WITH_{dev.removeprefix('k').upper()}\n"
-        f'#include "torch/{dev.removeprefix("k").lower()}/c10.h"\n'
-        f"#endif"
-        for dev in _C10_DEVICE_TYPES
-    )
     # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
     # so a build that only enables a subset of devices does not pay the
     # ATen template-instantiation cost (and memory pressure) for the
@@ -1496,7 +1476,6 @@ def _generate_torch_source(name: str, ops: list[Op]) -> str:
     return _TORCH_SOURCE_TEMPLATE.format(
         name=name,
         methods=methods,
-        c10_includes=c10_includes,
         instantiations=instantiations,
     )
 
@@ -1557,14 +1536,7 @@ void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
     {aten_call};
   }};
 
-  if constexpr ({c10_condition}) {{
-    const typename C10<kDev>::StreamGuard stream_guard{{
-        C10<kDev>::GetStreamFromExternal(stream_, device_index)}};
-    run();
-    return;
-  }}
-
-  run();
+  WithTorchExecutionContext<kDev>(stream_, device_index, run);
 }}
 """
 
@@ -1572,8 +1544,7 @@ void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
 _TORCH_SOURCE_TEMPLATE = """\
 #include "torch/{name}/{name}.h"
 
-#include "torch/c10.h"
-{c10_includes}
+#include "torch/interop.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {{

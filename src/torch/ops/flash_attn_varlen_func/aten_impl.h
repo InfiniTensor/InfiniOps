@@ -110,10 +110,7 @@ void AtenFlashAttnVarlenFunc<kDev>::operator()(
     }
   };
 
-  using Backend = C10<kDev>;
-  const typename Backend::StreamGuard stream_guard{
-      Backend::GetStreamFromExternal(stream_, device_index_)};
-  run();
+  WithTorchExecutionContext<kDev>(stream_, device_index_, run);
 }
 
 }  // namespace infini::ops

@@ -17,6 +17,10 @@ struct C10<Device::Type::kNvidia> {
 
   static c10::cuda::CUDAStream GetStreamFromExternal(void* stream,
                                                      int device_index) {
+    if (stream == nullptr) {
+      return c10::cuda::getDefaultCUDAStream(
+          static_cast<c10::DeviceIndex>(device_index));
+    }
     return c10::cuda::getStreamFromExternal(
         reinterpret_cast<cudaStream_t>(stream),
         static_cast<c10::DeviceIndex>(device_index));
