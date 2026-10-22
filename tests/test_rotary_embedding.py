@@ -260,6 +260,85 @@ def test_rotary_embedding_ascend_strided_fused_qkv_view(
         torch.testing.assert_close(key, expected_key, rtol=rtol, atol=atol)
 
 
+@pytest.mark.parametrize("num_tokens", (1, 2, 24))
+@pytest.mark.parametrize(
+    "head_size, num_heads",
+    ((64, 8), (64, 9), (64, 36), (64, 40), (128, 8), (128, 9), (128, 16), (128, 32)),
+)
+@pytest.mark.parametrize("has_key", (False, True))
+@pytest.mark.parametrize("strided", (False, True))
+def test_rotary_embedding_ascend_neox_decode(
+    num_tokens, head_size, num_heads, has_key, strided, implementation_index, device
+):
+    if torch.device(device).type != "npu" or implementation_index != 0:
+        pytest.skip("The decode regression targets native Ascend RoPE")
+
+    num_kv_heads = num_heads // 2 if num_heads % 2 == 0 else 1
+    half_dim = head_size // 2
+    frequencies = (
+        torch.arange(256).float()[:, None]
+        * (1000000 ** (-torch.arange(half_dim).float() / half_dim))[None, :]
+    )
+    cache_cpu = torch.cat((frequencies.cos(), frequencies.sin()), -1).half()
+    cache = cache_cpu.to(device)
+    # Reuse the cached operator with new positions and Q/K allocations.
+    for position in (35, 36):
+        positions_cpu = torch.arange(position, position + num_tokens)
+        query_cpu = torch.randn(num_tokens, num_heads * head_size).half()
+        key_cpu = (
+            torch.randn(num_tokens, num_kv_heads * head_size).half()
+            if has_key
+            else None
+        )
+        padding = []
+
+        def to_device(value, heads):
+            if not strided:
+                return value.to(device)
+            parent = torch.full(
+                (num_tokens, heads, 2 * head_size),
+                -17,
+                dtype=torch.float16,
+                device=device,
+            )
+            view = parent[..., :head_size]
+            view.copy_(value.view(num_tokens, heads, head_size))
+            padding.append(parent[..., head_size:])
+            return view
+
+        query = to_device(query_cpu, num_heads)
+        key = to_device(key_cpu, num_kv_heads) if has_key else None
+        _torch_rotary_embedding(
+            positions_cpu,
+            query_cpu,
+            key_cpu,
+            cache_cpu,
+            head_size,
+            True,
+            0,
+            False,
+        )
+        infini.ops.rotary_embedding(
+            positions_cpu.to(device),
+            query,
+            key,
+            cache,
+            head_size,
+            True,
+            implementation_index=implementation_index,
+            stream=get_stream(query.device),
+        )
+        torch.testing.assert_close(
+            query.cpu().reshape(query_cpu.shape), query_cpu, rtol=1e-3, atol=1e-3
+        )
+        if has_key:
+            torch.testing.assert_close(
+                key.cpu().reshape(key_cpu.shape), key_cpu, rtol=1e-3, atol=1e-3
+            )
+        for untouched in padding:
+            assert torch.all(untouched.cpu() == -17)
+
+
 def _torch_rotary_embedding(
     positions,
     query,

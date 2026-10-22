@@ -245,12 +245,13 @@ def test_ascend_paged_prefill_follows_nontrivial_block_table(
     if device != "npu" or implementation_index != 0:
         pytest.skip("coverage requires the native Ascend provider")
 
-    q_lens = (128, 256)
+    q_lens = (256, 512)
     k_lens = q_lens
     num_heads = 8
     num_kv_heads = 2
     head_dim = 64
-    page_size = 128
+    # Preserve cross-page coverage within the public page size contract.
+    page_size = 256
     block_rows = ((2, 0), (1, 3))
     num_blocks = 4
 
@@ -749,6 +750,145 @@ def _cumulative_lengths(lengths, device):
     return torch.tensor(values, dtype=torch.int32, device=device)
 
 
+@pytest.mark.parametrize("sequence_length", (36, 128, 256, 333, 512))
+@pytest.mark.parametrize("seed", (0, 1))
+def test_ascend_310p_dense_prefill_padding(
+    device, implementation_index, sequence_length, seed
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("310P native prefill regression")
+    if not torch.npu.get_device_name(0).startswith("Ascend310P"):
+        pytest.skip("310P-specific prompt kernel")
+
+    generator = torch.Generator().manual_seed(seed)
+    q_cpu = torch.randn((sequence_length, 16, 128), generator=generator).half()
+    k_cpu = torch.randn((sequence_length, 8, 128), generator=generator).half()
+    v_cpu = torch.randn((sequence_length, 8, 128), generator=generator).half()
+    q, k, v = (tensor.to(device) for tensor in (q_cpu, k_cpu, v_cpu))
+    lengths = torch.tensor([0, sequence_length], dtype=torch.int32, device=device)
+    out = torch.empty_like(q)
+    expected = _reference_varlen_attention(
+        q_cpu,
+        k_cpu,
+        v_cpu,
+        (sequence_length,),
+        (sequence_length,),
+        128**-0.5,
+        True,
+        (-1, -1),
+    )
+    for _ in range(2):
+        infini.ops.flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            lengths,
+            lengths,
+            None,
+            None,
+            sequence_length,
+            sequence_length,
+            0.0,
+            128**-0.5,
+            True,
+            (-1, -1),
+            0.0,
+            False,
+            False,
+            out,
+            None,
+            None,
+            stream=get_stream(q.device),
+            implementation_index=0,
+        )
+        actual = out.cpu()
+        assert torch.isfinite(actual).all()
+        torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+
+@pytest.mark.parametrize("paged", (False, True))
+@pytest.mark.parametrize(
+    "causal, window_size",
+    ((False, (-1, -1)), (True, (-1, -1)), (True, (2, 1))),
+)
+@pytest.mark.parametrize("head_dim", (64, 128))
+def test_ascend_variable_prompt_reuses_updated_lengths(
+    device, implementation_index, paged, causal, window_size, head_dim
+):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("coverage requires the native Ascend provider")
+
+    generator = torch.Generator().manual_seed(42)
+    q_lens = (5, 2)
+    initial_k_lens = (3, 6)
+    updated_k_lens = (7, 2)
+    q_cpu = torch.randn((7, 4, head_dim), generator=generator).half()
+    kv_shape = (3, 256, 2, head_dim) if paged else (9, 2, head_dim)
+    k_cpu = torch.randn(kv_shape, generator=generator).half()
+    v_cpu = torch.randn(kv_shape, generator=generator).half()
+    blocks_cpu = torch.tensor(((2, -1), (1, -1)), dtype=torch.int32) if paged else None
+    q, k, v = (tensor.to(device) for tensor in (q_cpu, k_cpu, v_cpu))
+    block_table = blocks_cpu.to(device) if paged else None
+    cu_q = _cumulative_lengths(q_lens, device)
+    cu_k = _cumulative_lengths(initial_k_lens, device)
+    out = torch.empty_like(q)
+    stream = torch.npu.Stream()
+    stream.wait_stream(torch.npu.current_stream())
+
+    for iteration, k_lens in enumerate(
+        (initial_k_lens, updated_k_lens, initial_k_lens)
+    ):
+        if paged and iteration == 1:
+            blocks_cpu[0, 0] = 0
+
+        expected = _reference_varlen_attention(
+            q_cpu,
+            k_cpu,
+            v_cpu,
+            q_lens,
+            k_lens,
+            None,
+            causal,
+            window_size,
+            blocks_cpu,
+        )
+
+        with torch.npu.stream(stream):
+            cu_k.copy_(_cumulative_lengths(k_lens, device))
+            if paged:
+                block_table.copy_(blocks_cpu)
+
+            out.fill_(math.nan)
+            infini.ops.flash_attn_varlen_func(
+                q,
+                k,
+                v,
+                cu_q,
+                cu_k,
+                None,
+                block_table,
+                max(q_lens),
+                7,
+                0.0,
+                None,
+                causal,
+                window_size,
+                0.0,
+                False,
+                False,
+                out,
+                None,
+                None,
+                stream=get_stream(q.device),
+                implementation_index=0,
+            )
+            actual = out.cpu()
+
+        stream.synchronize()
+        assert torch.isfinite(actual).all()
+        torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+
 def _pack_varlen_softmax_lse(softmax_lse, q_lens):
     if softmax_lse.ndim == 2:
         return softmax_lse
@@ -773,6 +913,15 @@ def _reference_varlen_attention(
     block_table=None,
     alibi_slopes=None,
 ):
+    output_device = q.device
+    if q.device.type == "npu" and torch.npu.get_device_name(q.device.index).startswith(
+        "Ascend310P"
+    ):
+        # The 310P runtime does not provide `NanToNum` for the reference path.
+        q, k, v = (tensor.cpu() for tensor in (q, k, v))
+        block_table = block_table.cpu() if block_table is not None else None
+        alibi_slopes = alibi_slopes.cpu() if alibi_slopes is not None else None
+
     outputs = []
     q_offset = 0
     k_offset = 0
@@ -822,7 +971,7 @@ def _reference_varlen_attention(
         q_offset += q_len
         k_offset += k_len
 
-    return torch.cat(outputs)
+    return torch.cat(outputs).to(output_device)
 
 
 def _reference_varlen_softmax_lse(
