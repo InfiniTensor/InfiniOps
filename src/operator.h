@@ -247,67 +247,6 @@ inline bool TraceOperatorCallsDetailedEnabled() {
   return enabled;
 }
 
-// Avoid aborting on unknown dtype/device values while tracing.
-inline std::string_view TraceDataTypeDesc(infini::rt::DataType dt) {
-  using D = infini::rt::DataType;
-  switch (dt) {
-    case D::kInt8:
-      return "int8";
-    case D::kInt16:
-      return "int16";
-    case D::kInt32:
-      return "int32";
-    case D::kInt64:
-      return "int64";
-    case D::kUInt8:
-      return "uint8";
-    case D::kUInt16:
-      return "uint16";
-    case D::kUInt32:
-      return "uint32";
-    case D::kUInt64:
-      return "uint64";
-    case D::kFloat16:
-      return "float16";
-    case D::kBFloat16:
-      return "bfloat16";
-    case D::kFloat32:
-      return "float32";
-    case D::kFloat64:
-      return "float64";
-    case D::kBool:
-      return "bool";
-  }
-  return "unknown";
-}
-
-inline std::string_view TraceDeviceDesc(infini::rt::Device::Type dt) {
-  using T = infini::rt::Device::Type;
-  switch (dt) {
-    case T::kCpu:
-      return "cpu";
-    case T::kNvidia:
-      return "nvidia";
-    case T::kCambricon:
-      return "cambricon";
-    case T::kAscend:
-      return "ascend";
-    case T::kMetax:
-      return "metax";
-    case T::kMoore:
-      return "moore";
-    case T::kIluvatar:
-      return "iluvatar";
-    case T::kHygon:
-      return "hygon";
-    case T::kThead:
-      return "thead";
-    case T::kMars:
-      return "mars";
-  }
-  return "unknown";
-}
-
 // Emits a best-effort detailed trace event at operator call entry.
 template <typename Key>
 void TraceOperatorCallDetailed(const CacheKey& key, const Config& config) {
@@ -329,10 +268,10 @@ void TraceOperatorCallDetailed(const CacheKey& key, const Config& config) {
       line += "{\"index\": ";
       line += std::to_string(i);
       line += ", \"device\": \"";
-      const auto dev = TraceDeviceDesc(t.device().type());
+      const auto dev = Device::StringFromType(t.device().type());
       line.append(dev.data(), dev.size());
       line += "\", \"dtype\": \"";
-      const auto dt = TraceDataTypeDesc(t.dtype());
+      const auto dt = infini::rt::kDataTypeToDesc.at(t.dtype());
       line.append(dt.data(), dt.size());
       line += "\", \"shape\": [";
       const std::size_t nd = t.ndim();
@@ -350,7 +289,7 @@ void TraceOperatorCallDetailed(const CacheKey& key, const Config& config) {
     line += "]}\n";
     std::fprintf(stderr, "%s", line.c_str());
   } catch (...) {
-    // Ignore serialization failures so tracing does not alter operator behavior.
+    // Ignore allocation and serialization exceptions from tracing.
   }
 }
 
