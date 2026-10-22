@@ -1549,7 +1549,9 @@ if(GENERATE_PYTHON_BINDINGS)
         set(_iluvatar_dispatch_include_flags
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}/include"
             "-I${PROJECT_SOURCE_DIR}/generated"
+            "-I${PROJECT_SOURCE_DIR}/generated/include"
             ${INFINI_RT_INCLUDE_FLAGS})
         foreach(_dir IN LISTS TORCH_INCLUDE_DIRS CUDAToolkit_INCLUDE_DIRS)
             list(APPEND _iluvatar_dispatch_include_flags "-I${_dir}")
