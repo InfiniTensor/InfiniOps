@@ -24,6 +24,11 @@ _TEST_CASES = tuple(
         ((2, 4), (32, 8), None, None, None, torch.int64),
         ((2, 4), (32, 8), (8, 1), None, (32, 8, 1), torch.int32),
         ((2, 4), (32, 8), None, (1, 32), None, torch.int64),
+        ((64,), (32, 4096), None, None, None, torch.int64),
+        ((2, 4), (32, 4096), None, (4104, 1), None, torch.int32),
+        ((2, 4), (32, 4096), (8, 1), None, None, torch.int64),
+        ((2, 4), (32, 4096), None, (8192, 2), None, torch.int32),
+        ((2, 4), (32, 4096), None, None, (65536, 8192, 1), torch.int64),
     )
 ) + tuple(
     ((2, 3), (8, 4), None, None, None, torch.int64, options)
@@ -40,6 +45,11 @@ _TEST_CASES = tuple(
         (None, 1.0, 1.0, False, False, False),
         (None, 1.0, 3.0, False, False, False),
     )
+) + (
+    (
+        (2, 3), (32, 4096), None, None, None, torch.int64,
+        (None, 1.0, 2.0, False, False, False),
+    ),
 )
 
 
