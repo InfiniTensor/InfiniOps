@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -238,6 +239,60 @@ void TraceOperatorCall(const CacheKey& key, const Config& config) {
                config.implementation_index());
 }
 
+inline bool TraceOperatorCallsDetailedEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("INFINI_OPS_TRACE_CALLS_DETAILED");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+  }();
+  return enabled;
+}
+
+// Emits a best-effort detailed trace event at operator call entry.
+template <typename Key>
+void TraceOperatorCallDetailed(const CacheKey& key, const Config& config) {
+  if (!TraceOperatorCallsDetailedEnabled()) return;
+  try {
+    constexpr auto operator_name = OperatorName<Key>();
+    const std::size_t n = key.tensors.size();
+
+    std::string line;
+    line += "[INFINI_OPS_TRACE_CALLS_DETAILED] {\"operator_name\": \"";
+    line.append(operator_name.data(), operator_name.size());
+    line += "\", \"implementation\": ";
+    line += std::to_string(config.implementation_index());
+    line += ", \"tensors\": [";
+
+    for (std::size_t i = 0; i < n; ++i) {
+      const auto& t = key.tensors[i];
+      if (i > 0) line += ", ";
+      line += "{\"index\": ";
+      line += std::to_string(i);
+      line += ", \"device\": \"";
+      const auto dev = Device::StringFromType(t.device().type());
+      line.append(dev.data(), dev.size());
+      line += "\", \"dtype\": \"";
+      const auto dt = infini::rt::kDataTypeToDesc.at(t.dtype());
+      line.append(dt.data(), dt.size());
+      line += "\", \"shape\": [";
+      const std::size_t nd = t.ndim();
+      for (std::size_t d = 0; d < nd; ++d) {
+        if (d > 0) line += ",";
+        line += std::to_string(static_cast<unsigned long long>(t.size(d)));
+      }
+      line += "], \"strides\": [";
+      for (std::size_t d = 0; d < nd; ++d) {
+        if (d > 0) line += ",";
+        line += std::to_string(static_cast<long long>(t.stride(d)));
+      }
+      line += "]}";
+    }
+    line += "]}\n";
+    std::fprintf(stderr, "%s", line.c_str());
+  } catch (...) {
+    // Ignore allocation and serialization exceptions from tracing.
+  }
+}
+
 }  // namespace infini::ops::detail
 
 template <>
@@ -450,6 +505,7 @@ class Operator : public OperatorBase {
       return CacheKeyBuilder<Key>{}(*effective_config, args...);
     }();
     detail::TraceOperatorCall<Key>(key, *effective_config);
+    detail::TraceOperatorCallDetailed<Key>(key, *effective_config);
 
     auto it = [&]() {
       HostRangeScope host_range_cache_lookup{HostRangeLayer::kCacheLookup};
@@ -465,6 +521,7 @@ class Operator : public OperatorBase {
 #else
     auto key = CacheKeyBuilder<Key>{}(*effective_config, args...);
     detail::TraceOperatorCall<Key>(key, *effective_config);
+    detail::TraceOperatorCallDetailed<Key>(key, *effective_config);
 
     auto it{cache.find(key)};
 
