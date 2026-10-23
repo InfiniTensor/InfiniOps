@@ -341,6 +341,36 @@ if(WITH_THEAD)
     list(APPEND DEVICE_LIST "thead")
 endif()
 
+if(WITH_QY)
+    set(QY_PATTERNS
+        "native/cuda/qy/*.cc"
+        "native/cuda/qy/*.cpp"
+        "native/cuda/qy/*.cu"
+    )
+
+    file(GLOB_RECURSE QY_SOURCES CONFIGURE_DEPENDS ${QY_PATTERNS})
+
+    enable_language(CUDA)
+
+    target_compile_definitions(infiniops PUBLIC WITH_QY=1)
+    target_sources(infiniops PRIVATE ${QY_SOURCES})
+    target_include_directories(infiniops PUBLIC "${QY_SDK}/include")
+    target_link_libraries(infiniops PUBLIC
+        ${QY_CURT_LIB}
+        ${QY_CUBLAS_LIB}
+        ${QY_CUBLASLT_LIB}
+        ${QY_CUDNN_LIB})
+
+    set_target_properties(infiniops PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_RUNTIME_LIBRARY None
+        CUDA_SEPARABLE_COMPILATION OFF
+    )
+
+    list(APPEND DEVICE_LIST "qy")
+endif()
+
 if(WITH_METAX)
     set(METAX_PATTERNS
         "native/cuda/*.cc"
@@ -1359,7 +1389,7 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
     file(GLOB_RECURSE OPERATOR_CALL_INSTANTIATION_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/generated/src/operator_call_instantiations_*.cc")
 
-    if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD)
+    if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD OR WITH_QY)
         set_source_files_properties(${OPERATOR_CALL_INSTANTIATION_SOURCES}
             PROPERTIES LANGUAGE CUDA)
         target_sources(infiniops PRIVATE ${OPERATOR_CALL_INSTANTIATION_SOURCES})
@@ -1435,7 +1465,7 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
 
     if(OPERATOR_DISPATCH_SOURCES)
         target_include_directories(infiniops PRIVATE "${PROJECT_SOURCE_DIR}")
-        if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD)
+        if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD OR WITH_QY)
             set_source_files_properties(${OPERATOR_DISPATCH_SOURCES}
                 PROPERTIES LANGUAGE CUDA)
             target_sources(infiniops PRIVATE ${OPERATOR_DISPATCH_SOURCES})
@@ -1543,7 +1573,7 @@ if(GENERATE_PYTHON_BINDINGS)
     endif()
     list(APPEND PYBIND11_COMPILE_SOURCES ${PYBIND11_DISPATCH_SOURCES})
 
-    if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD)
+    if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD OR WITH_QY)
         set_source_files_properties(${PYBIND11_COMPILE_SOURCES} PROPERTIES LANGUAGE CUDA)
     elseif(WITH_ILUVATAR)
         set(_iluvatar_dispatch_include_flags
