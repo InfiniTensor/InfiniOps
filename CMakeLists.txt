@@ -410,12 +410,13 @@ if(_gpu_backend_count GREATER 1)
     message(FATAL_ERROR "`WITH_NVIDIA`, `WITH_ILUVATAR`, `WITH_HYGON`, `WITH_THEAD`, `WITH_METAX`, `WITH_MARS`, `WITH_MOORE`, and `WITH_ASCEND` are mutually exclusive. Build one GPU backend at a time.")
 endif()
 
-if(WITH_NINETOOTHED AND NOT WITH_NVIDIA)
-    message(FATAL_ERROR "`WITH_NINETOOTHED` currently requires `WITH_NVIDIA=ON` because NineToothed AOT uses `caller=\"cuda\"`.")
+if(WITH_NINETOOTHED AND NOT WITH_NVIDIA AND NOT WITH_ASCEND)
+    message(FATAL_ERROR "`WITH_NINETOOTHED` requires either `WITH_NVIDIA=ON` or `WITH_ASCEND=ON`.")
 endif()
 
 if(WITH_NINETOOTHED)
     set(NINETOOTHED_PYTHON_EXECUTABLE "" CACHE FILEPATH "Python executable used to run NineToothed code generation")
+    set(NINETOOTHED_PLATFORM "ascend-910b4" CACHE STRING "NineToothed platform used when WITH_ASCEND is enabled.")
 endif()
 
 if(WITH_TRITON)
