@@ -10,7 +10,8 @@ class CudaSeparateTableRope : public SeparateTableRope {
  public:
   static bool supports(const Tensor x, const Tensor p, const Tensor s,
                        const Tensor c, bool neox, const Tensor y) {
-    if (Backend::kDeviceType != Device::Type::kNvidia ||
+    if ((Backend::kDeviceType != Device::Type::kNvidia &&
+         Backend::kDeviceType != Device::Type::kHygon) ||
         !SeparateTableRope::supports(x, p, s, c, neox, y))
       return false;
     return separate_rope_nvidia::layout_supported(x, p, s, c, neox, y);

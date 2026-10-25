@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "native/cuda/nvidia/ops/pad/kernel.h"
+#include "native/cuda/ops/pad/kernel.h"
 
 namespace infini::ops::nvidia_pad_detail {
 namespace {

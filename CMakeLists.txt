@@ -272,7 +272,7 @@ endif()
  # consume DLPack views and their own runtime. Discover Torch lazily only when
  # native Torch wrappers or a selected linked Torch transport need it.
 macro(infiniops_find_torch)
-    if(WITH_MARS AND WITH_TORCH AND WITH_LINKED)
+    if((WITH_MARS OR WITH_HYGON) AND WITH_TORCH AND WITH_LINKED)
         find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
     else()
         find_package(Python COMPONENTS Interpreter REQUIRED)
@@ -340,10 +340,11 @@ macro(infiniops_find_torch)
             -Wl,--no-as-needed ${TORCH_HIP_LIB} ${C10_HIP_LIB} -Wl,--as-needed)
     endif()
 
-    if(WITH_MARS AND WITH_TORCH AND WITH_LINKED)
-        # The Mars FlashAttention wheel loads libtorch_python without declaring
+    if((WITH_MARS OR WITH_HYGON) AND WITH_TORCH AND WITH_LINKED)
+        # These FlashAttention wheels load libtorch_python without declaring
         # its libpython dependency, so keep the embedding library in our chain.
-        list(APPEND TORCH_LIBRARIES Python::Python)
+        list(APPEND TORCH_LIBRARIES
+            -Wl,--no-as-needed Python::Python -Wl,--as-needed)
     endif()
 
     if(WITH_METAX)

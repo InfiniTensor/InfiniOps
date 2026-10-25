@@ -27,16 +27,16 @@ struct VecTypeHelper<half> {
 };
 
 template <>
-struct VecTypeHelper<cuda_bfloat16> {
-  using type2 = cuda_bfloat162;
-  static __device__ __forceinline__ cuda_bfloat162 make_half2(float x,
+struct VecTypeHelper<__nv_bfloat16> {
+  using type2 = __nv_bfloat162;
+  static __device__ __forceinline__ __nv_bfloat162 make_half2(float x,
                                                               float y) {
     return __floats2bfloat162_rn(x, y);
   }
-  static __device__ __forceinline__ float low(cuda_bfloat162 v) {
+  static __device__ __forceinline__ float low(__nv_bfloat162 v) {
     return __low2float(v);
   }
-  static __device__ __forceinline__ float high(cuda_bfloat162 v) {
+  static __device__ __forceinline__ float high(__nv_bfloat162 v) {
     return __high2float(v);
   }
 };
@@ -81,7 +81,7 @@ __global__ void RopeKernel(
 
     if constexpr (IsNeox) {
       if constexpr (std::is_same<TData, half>::value ||
-                    std::is_same<TData, cuda_bfloat16>::value) {
+                    std::is_same<TData, __nv_bfloat16>::value) {
         auto& y = reinterpret_cast<typename VecHelper::type2&>(
             out_ptr[out_offset + 2 * i]);
         auto& x = reinterpret_cast<const typename VecHelper::type2&>(

@@ -11,7 +11,17 @@ template <>
 class Operator<RmsNorm, Device::Type::kHygon>
     : public CudaRmsNorm<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaRmsNorm<Runtime<Device::Type::kHygon>>::CudaRmsNorm;
+  using Base = CudaRmsNorm<Runtime<Device::Type::kHygon>>;
+  using Base::Base;
+
+  // Mixed weight types dispatch to kernels too; replay allocates no metadata.
+  bool capture_safe() const override { return true; }
+
+  void operator()(const Tensor input, const Tensor weight, float eps,
+                  Tensor out) const override {
+    if (out.numel() == 0) return;
+    Base::operator()(input, weight, eps, out);
+  }
 };
 
 }  // namespace infini::ops

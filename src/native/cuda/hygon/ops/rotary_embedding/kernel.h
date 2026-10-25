@@ -12,6 +12,7 @@ class Operator<RotaryEmbedding, Device::Type::kHygon>
     : public CudaRotaryEmbedding<Runtime<Device::Type::kHygon>> {
  public:
   using CudaRotaryEmbedding<Runtime<Device::Type::kHygon>>::CudaRotaryEmbedding;
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

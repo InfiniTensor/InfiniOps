@@ -79,7 +79,8 @@ class CudaMambaSelectiveScan : public MambaSelectiveScan {
     try {
       ValidateMetadata({out, x, dt, b, c, a_log, d, gate, dt_bias, state});
       return a_log.dtype() == x.dtype() ||
-             Backend::kDeviceType == Device::Type::kNvidia;
+             Backend::kDeviceType == Device::Type::kNvidia ||
+             Backend::kDeviceType == Device::Type::kHygon;
     } catch (const std::invalid_argument&) {
       return false;
     } catch (const std::overflow_error&) {
@@ -93,7 +94,8 @@ class CudaMambaSelectiveScan : public MambaSelectiveScan {
       : MambaSelectiveScan(out, x, dt, b, c, a_log, d, gate, dt_bias, state),
         prepared_metadata_{out, x, dt, b, c, a_log, d, gate, dt_bias, state} {
     if (a_log.dtype() != x.dtype() &&
-        Backend::kDeviceType != Device::Type::kNvidia)
+        Backend::kDeviceType != Device::Type::kNvidia &&
+        Backend::kDeviceType != Device::Type::kHygon)
       throw std::invalid_argument(
           "CUDA MambaSelectiveScan backend does not support mixed F32 "
           "parameters");

@@ -15,6 +15,7 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <typeinfo>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -574,7 +575,8 @@ class Operator : public OperatorBase {
 
   static std::size_t FirstActiveImplementationIndex(List<>) {
     throw std::invalid_argument(
-        "operator has no active implementation for this device");
+        std::string("operator has no active implementation for this device: ") +
+        typeid(Key).name());
   }
 
   static std::size_t DefaultImplementationIndex(Device::Type dev_type) {
@@ -632,7 +634,9 @@ class Operator : public OperatorBase {
 
     if (!op_ptr) {
       throw std::invalid_argument(
-          "no active operator implementation supports these parameters");
+          std::string(
+              "no active operator implementation supports these parameters: ") +
+          typeid(Key).name());
     }
 
     return op_ptr;

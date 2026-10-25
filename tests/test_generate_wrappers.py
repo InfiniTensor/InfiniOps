@@ -601,7 +601,7 @@ def test_generated_free_calls_start_with_binding_body_profile_scope(
     for body in free_call_bodies:
         assert body.lstrip().startswith(scope)
         assert body.count(scope) == 1
-        assert body.index(scope) < body.index("Handle handle;")
+        assert body.index(scope) < body.index("PybindWorkspaceHandle handle;")
         assert body.index(scope) < body.index("Config config;")
 
 

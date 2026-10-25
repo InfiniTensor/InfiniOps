@@ -11,7 +11,7 @@
 
 namespace infini::ops {
 // Separate tables, full head rotation, distinct output: NOT packed
-// RotaryEmbedding. bool is_neox=false is GPT-J, true is GPT-NeoX. No implicit
+// RotaryEmbedding. False selects GPT-J; true selects GPT-NeoX. No implicit
 // algorithm fallback.
 class SeparateTableRope : public Operator<SeparateTableRope> {
  public:
@@ -20,23 +20,24 @@ class SeparateTableRope : public Operator<SeparateTableRope> {
                        const Tensor sin_table, const Tensor cos_table,
                        bool /*is_neox*/, const Tensor out) {
     const auto rank = input.ndim();
-    // Preserve the CPU table dtype domain. NVIDIA additionally retains LM's
-    // independently typed tables and padded per-batch position rows.
-    const bool nvidia = input.device().type() == Device::Type::kNvidia;
+    // Preserve the CPU table dtype domain. CUDA backends additionally retain
+    // LM's independently typed tables and padded per-batch position rows.
+    const bool cuda_backend = input.device().type() == Device::Type::kNvidia ||
+                              input.device().type() == Device::Type::kHygon;
     if ((rank != 3 && rank != 4) || out.shape() != input.shape() ||
         out.dtype() != input.dtype() ||
         cos_table.dtype() != sin_table.dtype() ||
-        (!nvidia && sin_table.dtype() != input.dtype()))
+        (!cuda_backend && sin_table.dtype() != input.dtype()))
       return false;
     if (input.dtype() != DataType::kFloat16 &&
         input.dtype() != DataType::kBFloat16 &&
         input.dtype() != DataType::kFloat32 &&
         input.dtype() != DataType::kFloat64)
       return false;
-    if (nvidia && (input.dtype() == DataType::kFloat64 ||
-                   (sin_table.dtype() != DataType::kFloat16 &&
-                    sin_table.dtype() != DataType::kBFloat16 &&
-                    sin_table.dtype() != DataType::kFloat32)))
+    if (cuda_backend && (input.dtype() == DataType::kFloat64 ||
+                         (sin_table.dtype() != DataType::kFloat16 &&
+                          sin_table.dtype() != DataType::kBFloat16 &&
+                          sin_table.dtype() != DataType::kFloat32)))
       return false;
     if (positions.dtype() != DataType::kInt8 &&
         positions.dtype() != DataType::kInt16 &&
@@ -47,7 +48,7 @@ class SeparateTableRope : public Operator<SeparateTableRope> {
         positions.dtype() != DataType::kUInt32 &&
         positions.dtype() != DataType::kUInt64)
       return false;
-    if (nvidia && positions.dtype() != DataType::kInt32 &&
+    if (cuda_backend && positions.dtype() != DataType::kInt32 &&
         positions.dtype() != DataType::kInt64)
       return false;
     if (input.device() != out.device() ||
@@ -62,7 +63,8 @@ class SeparateTableRope : public Operator<SeparateTableRope> {
     } else if (positions.ndim() == 2) {
       if (positions.size(0) != batch || positions.size(1) != seq ||
           positions.stride(1) != 1 ||
-          (!nvidia && positions.stride(0) != static_cast<Tensor::Stride>(seq)))
+          (!cuda_backend &&
+           positions.stride(0) != static_cast<Tensor::Stride>(seq)))
         return false;
     } else
       return false;

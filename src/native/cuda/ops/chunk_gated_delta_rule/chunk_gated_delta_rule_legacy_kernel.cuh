@@ -28,7 +28,7 @@ __device__ inline float loadAsFloat<half>(const half* ptr, ptrdiff_t offset) {
 }
 
 template <>
-__device__ inline float loadAsFloat<cuda_bfloat16>(const cuda_bfloat16* ptr,
+__device__ inline float loadAsFloat<__nv_bfloat16>(const __nv_bfloat16* ptr,
                                                    ptrdiff_t offset) {
   return __bfloat162float(ptr[offset]);
 }

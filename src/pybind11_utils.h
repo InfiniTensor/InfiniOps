@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_PYBIND11_UTILS_H_
 #define INFINI_OPS_PYBIND11_UTILS_H_
 
+#include <infini/rt/device_guard.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -10,6 +11,7 @@
 #include <type_traits>
 
 #include "data_type.h"
+#include "handle.h"
 #include "host_range_profiler.h"
 #include "tensor.h"
 #include "torch/device_.h"
@@ -17,6 +19,53 @@
 namespace py = pybind11;
 
 namespace infini::ops {
+
+// Free-function bindings need the same stream-ordered workspace contract as
+// C++ Runtime callers. A plain Handle cannot run workspace-using operators.
+class PybindWorkspaceHandle final : public Handle {
+ public:
+  void set_device(Device device) { device_ = device; }
+  void set_device(const Tensor& tensor) { device_ = tensor.device(); }
+  void set_device(const std::vector<Tensor>& tensors) {
+    if (tensors.empty())
+      throw std::invalid_argument("operator tensor list is empty");
+    device_ = tensors.front().device();
+  }
+  std::unique_ptr<Handle> Clone() const override {
+    return std::make_unique<PybindWorkspaceHandle>(*this);
+  }
+  WorkspaceLease acquire_workspace(std::size_t bytes) const override {
+    if (!bytes) return {};
+    const auto device = device_;
+    const auto owner_stream =
+        static_cast<infini::rt::runtime::Stream>(stream());
+    infini::rt::DeviceGuard guard{device.type(), device.index(), true};
+    void* data = nullptr;
+    if (infini::rt::runtime::MallocAsync(&data, bytes, owner_stream) !=
+        infini::rt::runtime::kSuccess)
+      throw std::runtime_error("Python operator workspace allocation failed");
+    return {
+        std::shared_ptr<void>{
+            data,
+            [device, owner_stream](void* ptr) noexcept {
+              try {
+                infini::rt::DeviceGuard guard{device.type(), device.index(),
+                                              true};
+                if (infini::rt::runtime::FreeAsync(ptr, owner_stream) !=
+                    infini::rt::runtime::kSuccess)
+                  std::fprintf(stderr,
+                               "InfiniOps Python workspace release failed\n");
+              } catch (...) {
+                std::fprintf(stderr,
+                             "InfiniOps Python workspace owner unavailable\n");
+              }
+            }},
+        bytes};
+  }
+
+ private:
+  Device device_{Device::Type::kCpu, 0};
+};
 
 namespace detail {
 

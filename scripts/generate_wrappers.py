@@ -866,12 +866,17 @@ def _generate_pybind11(operator):
                 f'  m.def("{op_name}", []({params}) {{\n'
                 f"    [[maybe_unused]] HostRangeScope host_range_binding_body{{\n"
                 f"        HostRangeLayer::kBindingBody}};\n"
-                f"    Handle handle;\n"
+                f"    PybindWorkspaceHandle handle;\n"
                 f"    if (stream) {{\n"
                 f"      handle.set_stream(reinterpret_cast<void*>(stream));\n"
                 f"    }}\n"
                 f"{first_tensor_conversion}"
-                f"    Config config;\n"
+                + (
+                    f"    handle.set_device({converted_first_tensor_name});\n"
+                    if converted_first_tensor_name
+                    else ""
+                )
+                + f"    Config config;\n"
                 f"    if (implementation_index.has_value()) {{\n"
                 f"      config.set_implementation_index(*implementation_index);\n"
                 f"    }} else if (!TuningManager::Instance().IsEnabled()) {{\n"

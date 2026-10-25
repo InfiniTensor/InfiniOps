@@ -158,6 +158,8 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|mars|metax|moore|thead)/.*")
     # Optional pinned kernels have their own include closure and CUDA TUs.
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
@@ -295,12 +297,23 @@ if(WITH_HYGON)
 
     file(GLOB_RECURSE HYGON_SOURCES CONFIGURE_DEPENDS ${HYGON_PATTERNS})
     list(FILTER HYGON_SOURCES EXCLUDE REGEX
-        ".*/native/cuda/(iluvatar|metax|moore|nvidia)/.*")
+        ".*/native/cuda/(iluvatar|mars|metax|moore|nvidia|thead)/.*")
 
     enable_language(CUDA)
 
     target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
     target_sources(infiniops PRIVATE ${HYGON_SOURCES})
+    if(WITH_TORCH)
+        # Native Hygon fallbacks include ATen's HIP stream bridge too.
+        set_source_files_properties(
+            native/cuda/hygon/ops/deepseek_moe/torch.cc
+            native/cuda/hygon/ops/top_k_top_p_sampling_from_logits/torch.cc
+            native/cuda/hygon/ops/moe_fused_dense/torch.cc
+            native/cuda/hygon/ops/row_l2_normalize/torch.cc
+            PROPERTIES
+            COMPILE_DEFINITIONS "__HIP_PLATFORM_AMD__;__CUDA_HIP_PLATFORM_AMD__"
+            COMPILE_OPTIONS "-include;hip/hip_runtime.h")
+    endif()
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
@@ -1081,6 +1094,14 @@ if(TORCH_SOURCES)
     endif()
     target_link_libraries(infiniops PUBLIC
         "$<BUILD_INTERFACE:${TORCH_LIBRARIES}>")
+    if(TORCH_BUNDLED_LIBS_DIR AND UNIX AND NOT APPLE)
+        # GNU ld also resolves indirect NEEDED entries when linking SDK users.
+        # The library's RUNPATH only covers its direct dependencies; repaired
+        # Torch wheels keep their indirect, hashed libraries in torch.libs.
+        # Export the link-time search path along with the installed target.
+        target_link_options(infiniops INTERFACE
+            "LINKER:-rpath-link,${TORCH_BUNDLED_LIBS_DIR}")
+    endif()
     target_include_directories(infiniops PUBLIC
         "$<BUILD_INTERFACE:${TORCH_INCLUDE_DIRS}>"
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/generated>

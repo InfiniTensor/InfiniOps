@@ -1,4 +1,4 @@
-#include "native/cuda/nvidia/ops/quick_gelu/kernel.h"
+#include "native/cuda/ops/quick_gelu/kernel.h"
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
