@@ -7,8 +7,10 @@
 #include <optional>
 #include <vector>
 
+#include "data_type.h"
 #include "tensor.h"
 #include "torch/device_.h"
+#include "torch/interop.h"
 
 namespace infini::ops {
 
@@ -108,7 +110,8 @@ inline at::Tensor ToAtenTensor(
     if (dim == 0) return at::empty_strided(at_shape, at_strides, options);
   }
 
-  return at::from_blob(data, at_shape, at_strides, options);
+  return TorchInterop<kDev>::WrapExternalTensor(data, at_shape, at_strides,
+                                                options);
 }
 
 }  // namespace infini::ops
