@@ -639,7 +639,8 @@ set(_infini_ops_smoke_ops
 set(_infini_ops_smoke_torch_ops abs clamp exp relu)
 
 if(WITH_NVIDIA)
-    list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
+    # NVIDIA `Cat` requires `Copy` for inner-axis or strided concatenation.
+    list(APPEND _infini_ops_smoke_ops copy cutlass_scaled_mm moe_sum)
 endif()
 
 if(((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH) OR WITH_ILUVATAR)
