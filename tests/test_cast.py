@@ -64,6 +64,13 @@ def _torch_cast(input, out):
     return out
 
 
+@pytest.fixture
+def require_aten_cast(device):
+    if 8 not in infini.ops.Cast.active_implementation_indices(device):
+        pytest.skip(f"Cast slot 8 is not active on `{device}`")
+
+
+@pytest.mark.usefixtures("require_aten_cast")
 @pytest.mark.parametrize(
     "input_dtype, out_dtype",
     [
@@ -97,6 +104,7 @@ def test_encoder_cast_preserves_output(input_dtype, out_dtype, strided, device):
         assert torch.all(backing[..., 1] == -123)
 
 
+@pytest.mark.usefixtures("require_aten_cast")
 def test_encoder_cast_scalar_empty_and_same_view(device):
     for shape in [(), (0, 3), (2, 3)]:
         x = torch.ones(shape, device=device, dtype=torch.int64)
@@ -107,14 +115,16 @@ def test_encoder_cast_scalar_empty_and_same_view(device):
         torch.testing.assert_close(out, x.float())
 
 
+@pytest.mark.usefixtures("require_aten_cast")
 def test_encoder_cast_rejects_shape_change(device):
     x = torch.ones((2, 3), device=device, dtype=torch.int64)
     out = torch.empty((3, 2), device=device)
 
-    with pytest.raises((ValueError, RuntimeError)):
+    with pytest.raises(ValueError, match="does not support these parameters"):
         infini.ops.cast(x, out, implementation_index=8, stream=get_stream(device))
 
 
+@pytest.mark.usefixtures("require_aten_cast")
 def test_encoder_cast_rejects_partial_overlap(device):
     storage = torch.arange(9, device=device, dtype=torch.float32)
     infini.ops.cast(
@@ -130,6 +140,7 @@ def test_encoder_cast_rejects_partial_overlap(device):
         )
 
 
+@pytest.mark.usefixtures("require_aten_cast")
 def test_encoder_cast_rejects_internally_overlapping_output(device):
     x = torch.arange(6, device=device, dtype=torch.int64).reshape(2, 3)
     out = torch.empty(4, device=device).as_strided((2, 3), (1, 1))
@@ -145,6 +156,7 @@ def test_encoder_cast_default_float_conversion(device):
     torch.testing.assert_close(out, x.half())
 
 
+@pytest.mark.usefixtures("require_aten_cast")
 def test_encoder_cast_nondefault_stream(device):
     stream = torch.cuda.Stream() if device == "cuda" else None
 

@@ -54,7 +54,26 @@ def test_onnx_gather(shape, values, axis, index_dtype, strided, device):
         assert torch.all(backing[..., 1] == -123.0)
 
 
-@pytest.mark.parametrize("bad", ["axis", "shape", "index_dtype", "out_dtype"])
+@pytest.mark.parametrize("strides", [(0, 4, 1), (0, 0, 0)])
+def test_onnx_gather_empty_output_with_zero_strides(strides, device):
+    x = torch.arange(12, device=device, dtype=torch.float32).reshape(3, 4)
+    index = torch.empty((2, 0), device=device, dtype=torch.int64)
+    out = torch.empty_strided((2, 0, 4), strides, device=device)
+    address = out.data_ptr()
+
+    infini.ops.onnx_gather(
+        x, index, 0, out, implementation_index=8, stream=get_stream(device)
+    )
+
+    assert out.numel() == 0
+    assert tuple(out.shape) == (2, 0, 4)
+    assert out.stride() == strides
+    assert out.data_ptr() == address
+
+
+@pytest.mark.parametrize(
+    "bad", ["axis", "shape", "index_dtype", "out_dtype", "broadcast"]
+)
 def test_onnx_gather_rejects_invalid_metadata(bad, device):
     x = torch.arange(12, device=device, dtype=torch.float32).reshape(3, 4)
     index = torch.tensor([0, 2], device=device, dtype=torch.int64)
@@ -67,6 +86,8 @@ def test_onnx_gather_rejects_invalid_metadata(bad, device):
         index = index.float()
     elif bad == "out_dtype":
         out = out.to(torch.int64)
+    elif bad == "broadcast":
+        out = torch.empty_strided((2, 4), (0, 1), device=device)
 
     with pytest.raises((ValueError, RuntimeError)):
         infini.ops.onnx_gather(

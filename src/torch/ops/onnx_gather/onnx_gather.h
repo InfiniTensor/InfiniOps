@@ -14,7 +14,7 @@ class AtenOnnxGather : public OnnxGather {
                        const int64_t axis, const Tensor out) {
     return input.device().type() == kDev &&
            OnnxGather::Valid(input, indices, axis, out) &&
-           !out.HasBroadcastDim();
+           (out.numel() == 0 || !out.HasBroadcastDim());
   }
 
   void operator()(const Tensor input, const Tensor indices, const int64_t axis,
