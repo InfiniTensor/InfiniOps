@@ -296,6 +296,7 @@
 - nansum
 - narrow_copy
 - native_batch_norm
+- native_layer_norm
 - ne
 - neg
 - negative

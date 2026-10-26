@@ -1,5 +1,18 @@
 # Operator API Alignment
 
+Encoder additions use the following targets: `OnnxGather` follows
+[ONNX Gather-13](https://onnx.ai/onnx/operators/onnx__Gather.html#gather-13),
+with an explicit axis and trailing caller-provided output as C++ adaptations.
+It preserves the complete indices shape, including scalar and negative indices;
+the existing PyTorch-aligned `Gather` is unchanged. ATen `Cast` fills in integer
+and boolean conversions through the existing Cast interface, with same-shaped
+inputs and outputs. Generated `NativeLayerNorm` is ATen-schema aligned and
+preserves all three results (output, mean, reciprocal standard deviation).
+The new hand-written ATen providers occupy slot 8 on CPU and NVIDIA. Existing
+Cast defaults remain unchanged; select slot 8 explicitly for encoder integer
+and boolean conversions. Overlapping external storage and output layouts are
+rejected conservatively, including interleaved views with overlapping spans.
+
 This guide defines how InfiniOps operator APIs should be compared with and
 aligned to established open-source frameworks. It applies when adding a new
 operator and when auditing an existing operator under `src/base/`.
