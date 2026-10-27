@@ -13,6 +13,44 @@ _TEST_CASES = (
 )
 
 
+@pytest.mark.parametrize("tokens", (1, 17, 2048))
+@pytest.mark.parametrize("packed", (False, True))
+@pytest.mark.parametrize("is_neox", (False, True))
+@pytest.mark.parametrize("inverse", (False, True))
+def test_rotary_embedding_paired_mha(
+    tokens, packed, is_neox, inverse, implementation_index, device
+):
+    if torch.device(device).type != "cuda":
+        pytest.skip("the head-parallel regression targets CUDA-compatible providers")
+
+    dtype = torch.bfloat16
+    storage = torch.randn((tokens, 3, 28, 128), dtype=dtype, device=device)
+    query = storage[:, 0] if packed else storage[:, 0].contiguous()
+    key = storage[:, 1] if packed else storage[:, 1].contiguous()
+    original_value = storage[:, 2].clone()
+    positions = torch.arange(tokens, dtype=torch.int64, device=device)
+    cache = torch.randn(tokens, 128, dtype=dtype, device=device)
+    expected_query, expected_key = query.clone(), key.clone()
+    _torch_rotary_embedding(
+        positions, expected_query, expected_key, cache, 128, is_neox, 0, inverse
+    )
+    infini.ops.rotary_embedding(
+        positions,
+        query,
+        key,
+        cache,
+        128,
+        is_neox,
+        0,
+        inverse,
+        implementation_index=implementation_index,
+        stream=get_stream(query.device),
+    )
+    torch.testing.assert_close(query, expected_query, rtol=2e-2, atol=1e-2)
+    torch.testing.assert_close(key, expected_key, rtol=2e-2, atol=1e-2)
+    torch.testing.assert_close(storage[:, 2], original_value, rtol=0, atol=0)
+
+
 @pytest.mark.parametrize(
     "positions_shape, structured, is_neox, rope_dim_offset, inverse",
     _TEST_CASES,

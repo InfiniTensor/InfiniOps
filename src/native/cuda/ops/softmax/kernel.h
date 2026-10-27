@@ -42,6 +42,19 @@ class CudaSoftmax : public Softmax {
         RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize(), 1024);
     if (row_count_ == 0 || dim_size_ == 0) return;
 
+    if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
+      contiguous_rows_ = input_type_ == DataType::kBFloat16 &&
+                         dim_ == static_cast<int64_t>(ndim_) - 1 &&
+                         input.IsContiguous() && out.IsContiguous();
+      if (contiguous_rows_) {
+        block_size_ = dim_size_ <= 128   ? 128
+                      : dim_size_ <= 256 ? 256
+                      : dim_size_ <= 512 ? 512
+                                         : 1024;
+        return;
+      }
+    }
+
     const size_t shape_size = ndim_ * sizeof(*d_shape_);
     const size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = shape_size + 2 * strides_size;
@@ -89,12 +102,20 @@ class CudaSoftmax : public Softmax {
           const unsigned grid_y = static_cast<unsigned>(
               utils::CeilDiv(row_count_, static_cast<Tensor::Size>(grid_x)));
 
-          SoftmaxInfinilmKernel<kBlockSize, Backend::kDeviceType, T>
-              <<<dim3(grid_x, grid_y), kBlockSize, 0, cuda_stream>>>(
-                  reinterpret_cast<T*>(out.data()),
-                  reinterpret_cast<const T*>(input.data()), d_shape_,
-                  d_out_strides_, d_input_strides_, row_count_, dim_size_,
-                  ndim_, dim_);
+          if (contiguous_rows_) {
+            SoftmaxInfinilmKernel<kBlockSize, Backend::kDeviceType, T, true>
+                <<<dim3(grid_x, grid_y), kBlockSize, 0, cuda_stream>>>(
+                    reinterpret_cast<T*>(out.data()),
+                    reinterpret_cast<const T*>(input.data()), nullptr, nullptr,
+                    nullptr, row_count_, dim_size_, ndim_, dim_);
+          } else {
+            SoftmaxInfinilmKernel<kBlockSize, Backend::kDeviceType, T>
+                <<<dim3(grid_x, grid_y), kBlockSize, 0, cuda_stream>>>(
+                    reinterpret_cast<T*>(out.data()),
+                    reinterpret_cast<const T*>(input.data()), d_shape_,
+                    d_out_strides_, d_input_strides_, row_count_, dim_size_,
+                    ndim_, dim_);
+          }
         },
         "CudaSoftmax::operator()");
   }
@@ -102,6 +123,8 @@ class CudaSoftmax : public Softmax {
  private:
   CudaDeviceBuffer<Backend> metadata_;
   int block_size_{0};
+
+  bool contiguous_rows_{false};
 
   Tensor::Size* d_shape_{nullptr};
 

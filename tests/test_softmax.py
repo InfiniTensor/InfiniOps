@@ -11,6 +11,12 @@ _CASES = (
     ((4, 4), None, None, -1, True),
     ((3, 4, 5), (30, 6, 1), (30, 6, 1), 1, False),
     ((2, 3, 7), None, None, -2, False),
+    *(
+        (((2, 17, width), None, None, -1, inplace))
+        for width in (127, 128, 129, 255, 256, 257, 511, 512, 513, 2048)
+        for inplace in (False, True)
+    ),
+    ((2, 17, 65), (2176, 128, 1), (2176, 128, 1), -1, False),
 )
 
 _FLOAT_DTYPE_CASES = (
