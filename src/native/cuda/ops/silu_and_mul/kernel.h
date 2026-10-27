@@ -56,6 +56,31 @@ class CudaSiluAndMul : public SiluAndMul {
       return;
     }
 
+    if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
+      if (out_type_ == DataType::kBFloat16 && is_input_contiguous_ &&
+          is_out_contiguous_ && hidden_size_ > 0 && hidden_size_ <= 1048576 &&
+          output_size_ / hidden_size_ <= 65535) {
+        const auto output_address = reinterpret_cast<uintptr_t>(out.data());
+        const auto input_address = reinterpret_cast<uintptr_t>(input.data());
+        const bool separate =
+            output_address >= input_address
+                ? output_address - input_address >= input.numel() * 2
+                : input_address - output_address >= output_size_ * 2;
+        if (separate) {
+          using T = TypeMapType<Backend::kDeviceType, DataType::kBFloat16>;
+          auto cuda_stream =
+              static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
+          SiluAndMulRowsKernel<Backend::kDeviceType, T>
+              <<<dim3((hidden_size_ + 1023) / 1024,
+                      output_size_ / hidden_size_),
+                 256, 0, cuda_stream>>>(
+                  reinterpret_cast<T*>(out.data()),
+                  reinterpret_cast<const T*>(input.data()), hidden_size_);
+          return;
+        }
+      }
+    }
+
     DispatchFunc<AllFloatTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
