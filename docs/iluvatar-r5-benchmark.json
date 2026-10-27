@@ -1,0 +1,469 @@
+{
+  "operator_results": {
+    "control": [
+      {
+        "operation": "softmax",
+        "shape": [
+          16,
+          128
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "681624206132510127",
+        "max_abs_error": 7.81771e-05,
+        "median_wall_us": 16.2993,
+        "wall_us": [
+          16.3346,
+          16.3089,
+          16.2375,
+          16.1395,
+          16.2993
+        ],
+        "device_interval_us": [
+          15.7146,
+          15.8035,
+          15.6631,
+          15.7146,
+          15.6708
+        ]
+      },
+      {
+        "operation": "softmax",
+        "shape": [
+          512,
+          512
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "2594111674774702076",
+        "max_abs_error": 1.53526e-05,
+        "median_wall_us": 40.8071,
+        "wall_us": [
+          41.0913,
+          41.0288,
+          40.8071,
+          40.4776,
+          40.7985
+        ],
+        "device_interval_us": [
+          40.5879,
+          40.4573,
+          40.3596,
+          39.9619,
+          40.364
+        ]
+      },
+      {
+        "operation": "softmax",
+        "shape": [
+          2048,
+          2048
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "5516887063035709667",
+        "max_abs_error": 3.85538e-06,
+        "median_wall_us": 121.963,
+        "wall_us": [
+          121.951,
+          121.744,
+          122.731,
+          121.963,
+          121.975
+        ],
+        "device_interval_us": [
+          121.51,
+          121.193,
+          122.157,
+          121.545,
+          121.468
+        ]
+      },
+      {
+        "operation": "swiglu",
+        "shape": [
+          4,
+          18944
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "17612471585474259765",
+        "max_abs_error": 0.000841588,
+        "median_wall_us": 18.8981,
+        "wall_us": [
+          18.7026,
+          18.8981,
+          18.5466,
+          19.242,
+          19.2732
+        ],
+        "device_interval_us": [
+          18.1512,
+          18.2785,
+          17.9442,
+          18.6408,
+          18.6462
+        ]
+      },
+      {
+        "operation": "swiglu",
+        "shape": [
+          512,
+          18944
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "15810992308443899118",
+        "max_abs_error": 0.000841588,
+        "median_wall_us": 206.588,
+        "wall_us": [
+          206.588,
+          206.441,
+          206.415,
+          207.329,
+          206.967
+        ],
+        "device_interval_us": [
+          189.359,
+          188.527,
+          189.072,
+          188.787,
+          189.304
+        ]
+      },
+      {
+        "operation": "swiglu",
+        "shape": [
+          2048,
+          18944
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "11156061859305110328",
+        "max_abs_error": 0.000841588,
+        "median_wall_us": 738.977,
+        "wall_us": [
+          733.184,
+          734.091,
+          738.977,
+          743.496,
+          746.586
+        ],
+        "device_interval_us": [
+          705.072,
+          704.516,
+          705.476,
+          706.652,
+          705.814
+        ]
+      },
+      {
+        "operation": "add",
+        "shape": [
+          16,
+          3584
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "10702747392533877265",
+        "max_abs_error": 0,
+        "median_wall_us": 18.6488,
+        "wall_us": [
+          18.8683,
+          18.4069,
+          18.6218,
+          18.7543,
+          18.6488
+        ],
+        "device_interval_us": [
+          17.9688,
+          17.925,
+          17.911,
+          18.0846,
+          18.2423
+        ]
+      },
+      {
+        "operation": "add",
+        "shape": [
+          2048,
+          3584
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "16765159219437380453",
+        "max_abs_error": 0,
+        "median_wall_us": 99.8297,
+        "wall_us": [
+          100.494,
+          99.8297,
+          99.7981,
+          100.391,
+          99.2416
+        ],
+        "device_interval_us": [
+          99.8775,
+          99.3408,
+          99.2198,
+          99.8529,
+          98.7794
+        ]
+      }
+    ],
+    "kernels": [
+      {
+        "operation": "softmax",
+        "shape": [
+          16,
+          128
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "681624206132510127",
+        "max_abs_error": 7.81771e-05,
+        "median_wall_us": 11.3811,
+        "wall_us": [
+          11.3648,
+          11.3811,
+          11.4403,
+          11.2134,
+          11.4884
+        ],
+        "device_interval_us": [
+          10.8588,
+          10.7958,
+          10.8492,
+          10.8621,
+          10.8138
+        ]
+      },
+      {
+        "operation": "softmax",
+        "shape": [
+          512,
+          512
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "2594111674774702076",
+        "max_abs_error": 1.53526e-05,
+        "median_wall_us": 20.9183,
+        "wall_us": [
+          21.0562,
+          20.5861,
+          20.97,
+          20.9183,
+          20.8943
+        ],
+        "device_interval_us": [
+          20.4623,
+          20.2338,
+          20.3604,
+          20.386,
+          20.3208
+        ]
+      },
+      {
+        "operation": "softmax",
+        "shape": [
+          2048,
+          2048
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "5516887063035709667",
+        "max_abs_error": 3.85538e-06,
+        "median_wall_us": 84.0387,
+        "wall_us": [
+          84.0387,
+          84.0787,
+          83.956,
+          84.1654,
+          83.9898
+        ],
+        "device_interval_us": [
+          83.5544,
+          83.4277,
+          83.5448,
+          83.6765,
+          83.5523
+        ]
+      },
+      {
+        "operation": "swiglu",
+        "shape": [
+          4,
+          18944
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "17612471585474259765",
+        "max_abs_error": 0.000841588,
+        "median_wall_us": 14.561,
+        "wall_us": [
+          14.561,
+          14.4643,
+          14.6639,
+          14.4644,
+          14.5904
+        ],
+        "device_interval_us": [
+          14.1054,
+          14.1333,
+          14.039,
+          13.9544,
+          13.9994
+        ]
+      },
+      {
+        "operation": "swiglu",
+        "shape": [
+          512,
+          18944
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "15810992308443899118",
+        "max_abs_error": 0.000841588,
+        "median_wall_us": 80.0907,
+        "wall_us": [
+          80.1975,
+          80.0907,
+          79.8407,
+          79.9335,
+          80.2105
+        ],
+        "device_interval_us": [
+          79.8052,
+          79.53,
+          79.4152,
+          79.5033,
+          79.8588
+        ]
+      },
+      {
+        "operation": "swiglu",
+        "shape": [
+          2048,
+          18944
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "11156061859305110328",
+        "max_abs_error": 0.000841588,
+        "median_wall_us": 311.916,
+        "wall_us": [
+          311.562,
+          311.187,
+          311.936,
+          311.916,
+          313.313
+        ],
+        "device_interval_us": [
+          276.497,
+          276.72,
+          277.073,
+          276.93,
+          276.578
+        ]
+      },
+      {
+        "operation": "add",
+        "shape": [
+          16,
+          3584
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "10702747392533877265",
+        "max_abs_error": 0,
+        "median_wall_us": 16.4466,
+        "wall_us": [
+          16.3138,
+          16.527,
+          16.4466,
+          16.4281,
+          16.6595
+        ],
+        "device_interval_us": [
+          15.8119,
+          15.9471,
+          15.855,
+          15.826,
+          16.0177
+        ]
+      },
+      {
+        "operation": "add",
+        "shape": [
+          2048,
+          3584
+        ],
+        "dtype": "bfloat16",
+        "warmup": 3,
+        "iterations": 20,
+        "repeat": 5,
+        "output_checksum_fnv1a64": "16765159219437380453",
+        "max_abs_error": 0,
+        "median_wall_us": 97.0643,
+        "wall_us": [
+          97.0643,
+          97.1065,
+          97.5329,
+          96.9675,
+          96.7518
+        ],
+        "device_interval_us": [
+          96.6675,
+          96.586,
+          96.9183,
+          96.4608,
+          96.1533
+        ]
+      }
+    ]
+  },
+  "libraries": {
+    "control": "91236d0ace184af392cfccf5c5fa5c4fe415e86650eaf431f928864b896a5b7e",
+    "kernels": "2b3cf58e4004ea159fcefb6b04ae7c1067c0e6e3c0520a5a628f0ce2cd7cacd3"
+  },
+  "control_ops": "4038a8ee1e432e8056c06e40d68edf228c9c8f1a",
+  "candidate_ops": "6489ac72cd99c487c11c4f0d582c2c12a4f3150a",
+  "benchmark_source_sha256": "da4f0106a11a1096c13af0c7428785737eae8828f4b4fb433103070e375b8558",
+  "all_output_checksums_equal": true,
+  "date": "2026-10-27",
+  "device": "Iluvatar TG-V200",
+  "corex": "4.3",
+  "numerical_tolerance": "absolute_error <= 1e-6 + 0.01 * abs(reference)",
+  "timing": "Public C++ operator calls. Wall time includes dispatch and final synchronization; device event intervals may include host submission gaps."
+}

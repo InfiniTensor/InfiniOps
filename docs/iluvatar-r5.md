@@ -91,3 +91,58 @@ Use the ABI and Python headers of the selected SDK. Repeat with the baseline
 SDK and compare the ordered `sha256` fields. The ordinary pytest cases added
 to the operator test modules are intended for the repository's platform CI;
 they do not substitute for running this SDK probe against the built library.
+
+## Current-master performance comparison
+
+`tests/standalone/benchmark_iluvatar_r5.cc` measures eight synthetic BF16
+workloads for Softmax, SwiGLU and Add through the public operator API. It uses
+the COREX runtime directly, without a Python/Torch allocation or stream setup.
+The binary checks its loaded InfiniOps library against `INFINI_ROOT`, compares
+results with a CPU float reference, and reports output checksums and five
+timing samples of twenty calls after three warmups.
+
+```sh
+c++ -std=c++17 -O2 -D_GLIBCXX_USE_CXX11_ABI=0 \
+  -I"$INFINI_ROOT/include" -I"$CUDA_HOME/include" \
+  tests/standalone/benchmark_iluvatar_r5.cc \
+  -L"$INFINI_ROOT/lib" -L"$CUDA_HOME/lib64" \
+  -Wl,-rpath,"$INFINI_ROOT/lib" -linfiniops -linfinirt -lcudart \
+  -o /tmp/benchmark-iluvatar-r5
+LD_LIBRARY_PATH="$INFINI_ROOT/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH" \
+  /tmp/benchmark-iluvatar-r5 > operator-timing.jsonl
+```
+
+Run each SDK in a separate process on the same idle device. Select one device
+using `CUDA_VISIBLE_DEVICES` and `IX_VISIBLE_DEVICES` before execution. The
+qualified build uses C++ ABI 0; match the actual SDK ABI when rebuilding.
+The control is current master `640475a` plus only the capability-query fix,
+commit `4038a8e`; the candidate adds the R5 kernels at `6489ac7`. Thus this
+comparison holds the underlying Ops version constant.
+
+Wall time includes operator dispatch and the final synchronization. Device
+event intervals may include host submission gaps, so neither number is
+described as an isolated kernel duration. The FNV-1a output checksum is a
+regression aid for these synthetic inputs, not a cryptographic proof or a
+claim of exactness for every shape. Numerical acceptance uses
+`absolute_error <= 1e-6 + 0.01 * abs(reference)` for finite outputs.
+
+Measured on one idle TG-V200 with COREX 4.3 on 2026-10-27. All eight cases
+passed the numerical reference check and had matching output checksums.
+
+| Operator | Shape | Control (µs/call) | R5 (µs/call) | Speedup |
+| --- | --- | ---: | ---: | ---: |
+| softmax | 16 × 128 | 16.299 | 11.381 | 1.43× |
+| softmax | 512 × 512 | 40.807 | 20.918 | 1.95× |
+| softmax | 2048 × 2048 | 121.963 | 84.039 | 1.45× |
+| swiglu | 4 × 18944 | 18.898 | 14.561 | 1.30× |
+| swiglu | 512 × 18944 | 206.588 | 80.091 | 2.58× |
+| swiglu | 2048 × 18944 | 738.977 | 311.916 | 2.37× |
+| add | 16 × 3584 | 18.649 | 16.447 | 1.13× |
+| add | 2048 × 3584 | 99.830 | 97.064 | 1.03× |
+
+Softmax and SwiGLU retain useful gains in these shapes. Add's measured gain is
+smaller and does not establish a consistent large-shape improvement. These
+are bounded synthetic operator results, not whole-model or universal gains.
+Individual samples, SDK hashes and the benchmark source hash are recorded in
+[`iluvatar-r5-benchmark.json`](iluvatar-r5-benchmark.json). Whole-model
+measurements and output checks are in [InfiniLM PR #601](https://github.com/InfiniTensor/InfiniLM/pull/601).
