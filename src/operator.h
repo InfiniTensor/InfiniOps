@@ -653,13 +653,14 @@ class Operator : public OperatorBase {
 
     DispatchFunc<ActiveDevices<Key>>(
         dispatch_device_type,
-        [&](auto device_tag) {
+        [&](auto device_tag, auto&... device_args) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
           using Implementations =
               typename ActiveImplementations<Key, kDev>::type;
           const bool automatic =
               config.implementation_index() == Config::kAutomaticImplementation;
-          const auto construct = [&](auto implementation_tag) {
+          const auto construct = [&](auto implementation_tag,
+                                     auto&... provider_args) {
             constexpr std::size_t kImplementationIndex =
                 decltype(implementation_tag)::value;
             using Provider = Operator<Key, kDev, kImplementationIndex>;
@@ -671,10 +672,11 @@ class Operator : public OperatorBase {
                           std::is_constructible_v<Provider, Args...>) {
               bool supported = false;
               if constexpr (kConfigAware) {
-                supported = Provider::supports(config, std::as_const(args)...);
+                supported =
+                    Provider::supports(config, std::as_const(provider_args)...);
               } else if (!config.requires_config_aware_provider()) {
                 supported = detail::ProviderSupports<Provider>(
-                    0, std::as_const(args)...);
+                    0, std::as_const(provider_args)...);
               }
               if (!supported) {
                 if (automatic) return;
@@ -687,7 +689,8 @@ class Operator : public OperatorBase {
               }
               matched = true;
               selected(device_tag, implementation_tag,
-                       std::bool_constant<kConfigConstructor>{}, args...);
+                       std::bool_constant<kConfigConstructor>{},
+                       provider_args...);
             } else {
               if (!automatic && strict) {
                 throw std::invalid_argument(
@@ -701,7 +704,7 @@ class Operator : public OperatorBase {
             for (const auto index : detail::ListToVector(Implementations{})) {
               detail::DispatchImplementation(index, construct,
                                              "Operator::Make(automatic)",
-                                             Implementations{});
+                                             Implementations{}, device_args...);
               if (matched) break;
             }
           } else {
@@ -712,10 +715,11 @@ class Operator : public OperatorBase {
             }
             detail::DispatchImplementation(
                 config.implementation_index(), construct,
-                "Operator::Make(implementation_index)", Implementations{});
+                "Operator::Make(implementation_index)", Implementations{},
+                device_args...);
           }
         },
-        "Operator::Make");
+        "Operator::Make", args...);
 
     return matched;
   }
