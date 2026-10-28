@@ -4,6 +4,9 @@
 // Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #pragma once
 #include <cstdint>
+
+#include "native/cuda/nvidia/data_type_.h"
+
 // Exact baseline helpers and active state-workspace kernel. The baseline
 // chunked-matrix branch is hard-disabled and is not copied as a second path.
 namespace infini::ops::chunk_native_detail {
