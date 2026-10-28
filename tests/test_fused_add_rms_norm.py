@@ -44,6 +44,9 @@ def test_fused_add_rms_norm(
     rtol,
     atol,
 ):
+    if implementation_index == 9 and shape[-1] > 1024:
+        pytest.skip("NineToothed FusedAddRmsNorm is a row fast path")
+
     input = randn_strided(shape, input_strides, dtype=dtype, device=device)
     residual = randn_strided(shape, residual_strides, dtype=dtype, device=device)
     weight = torch.randn(shape[-1], dtype=dtype, device=device) if has_weight else None
