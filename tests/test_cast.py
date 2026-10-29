@@ -158,9 +158,10 @@ def test_encoder_cast_default_float_conversion(device):
 
 @pytest.mark.usefixtures("require_aten_cast")
 def test_encoder_cast_nondefault_stream(device):
-    stream = torch.cuda.Stream() if device == "cuda" else None
+    accelerator = getattr(torch, torch.device(device).type) if device != "cpu" else None
+    stream = accelerator.Stream() if accelerator is not None else None
 
-    with torch.cuda.stream(stream) if stream is not None else nullcontext():
+    with accelerator.stream(stream) if stream is not None else nullcontext():
         x = torch.arange(12, device=device, dtype=torch.int64).reshape(3, 4)
         out = torch.empty((3, 4), device=device)
 
@@ -169,7 +170,9 @@ def test_encoder_cast_nondefault_stream(device):
         x,
         out,
         implementation_index=8,
-        stream=stream.cuda_stream if stream is not None else original,
+        stream=getattr(stream, f"{torch.device(device).type}_stream")
+        if stream is not None
+        else original,
     )
     assert get_stream(device) == original
     if stream is not None:

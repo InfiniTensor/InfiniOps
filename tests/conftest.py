@@ -159,11 +159,33 @@ def skip_op_without_platform_impl(request):
     if "implementation_index" in params:
         return
 
+    operator_set = request.node.get_closest_marker("operator_set")
+    if operator_set is not None:
+        available = get_available_devices()
+        for requested in request.config.getoption("--devices") or ():
+            assert _resolve_device(requested) in available, (
+                f"Required retrieval test device {requested} is unavailable; "
+                f"available devices: {available}"
+            )
+
     device_selectors = _active_device_selectors_for_torch_device(
         request.config, params.get("device")
     )
 
     if not device_selectors:
+        return
+
+    if operator_set is not None:
+        from infini import ops
+
+        for name, index in operator_set.args[0].items():
+            op = getattr(ops, name, None)
+            assert op is not None, f"Required retrieval operator {name} is missing"
+            assert any(
+                index in op.active_implementation_indices(d) for d in device_selectors
+            ), (
+                f"Required retrieval operator {name} slot {index} is missing on {params['device']}"
+            )
         return
 
     op_cls = _op_class_from_module(request.node.module)

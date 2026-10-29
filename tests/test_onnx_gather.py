@@ -173,9 +173,10 @@ def test_onnx_gather_rejects_internally_overlapping_output(device):
 
 
 def test_onnx_gather_nondefault_stream(device):
-    stream = torch.cuda.Stream() if device == "cuda" else None
+    accelerator = getattr(torch, torch.device(device).type) if device != "cpu" else None
+    stream = accelerator.Stream() if accelerator is not None else None
 
-    with torch.cuda.stream(stream) if stream is not None else nullcontext():
+    with accelerator.stream(stream) if stream is not None else nullcontext():
         x = torch.arange(20, device=device, dtype=torch.float32).reshape(5, 4)
         index = torch.tensor([4, 0], device=device, dtype=torch.int64)
         out = torch.empty((2, 4), device=device)
@@ -187,7 +188,9 @@ def test_onnx_gather_nondefault_stream(device):
         0,
         out,
         implementation_index=8,
-        stream=stream.cuda_stream if stream is not None else original,
+        stream=getattr(stream, f"{torch.device(device).type}_stream")
+        if stream is not None
+        else original,
     )
     assert get_stream(device) == original
     if stream is not None:
