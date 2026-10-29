@@ -166,6 +166,46 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(delta["declaration_inputs"]["changed"], sorted(paths[:3]))
         self.assertEqual(delta["build_and_dependency_recipes"]["changed"], [paths[3]])
 
+    def test_selection_configuration_add_change_and_remove(self):
+        self.check_recipe_lifecycle(
+            "dispatch_and_generation",
+            ("ops.json", "scripts/configs/selection.json"),
+        )
+
+    def test_nested_build_dependency_and_compiler_inputs(self):
+        self.check_recipe_lifecycle(
+            "build_and_dependency_recipes",
+            (
+                "scripts/mcc_wrapper.sh",
+                "scripts/mxcc_wrapper.sh",
+                "scripts/htcc_wrapper.sh",
+                "scripts/dev/build.sh",
+                "scripts/prepare_marlin.py",
+                "src/native/ascend/custom/CMakeLists.txt",
+                "src/native/ascend/custom/build.sh",
+                "src/native/ascend/custom/cmake/detect_soc.cmake",
+                "src/linked/torch/nvidia/vllm.yaml",
+                ".github/workflows/ci_test.yml",
+            ),
+        )
+
+    def check_recipe_lifecycle(self, group, names):
+        # Exercise each input independently so one detected change cannot hide another.
+        for name in names:
+            with self.subTest(name=name):
+                target = self.root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("original", encoding="utf-8")
+                added = baseline.compare(self.expected, baseline.inventory(self.root))
+                self.assertEqual(added[group]["added"], [name])
+                previous = {**self.expected, "groups": baseline.inventory(self.root)}
+                target.write_text("changed", encoding="utf-8")
+                changed = baseline.compare(previous, baseline.inventory(self.root))
+                self.assertEqual(changed[group]["changed"], [name])
+                target.unlink()
+                removed = baseline.compare(previous, baseline.inventory(self.root))
+                self.assertEqual(removed[group]["removed"], [name])
+
     def test_capture_refuses_overwrite_and_check_exit_codes(self):
         path = self.root / "snapshot.json"
         command = [sys.executable, str(ROOT / "scripts/compatibility_baseline.py")]
