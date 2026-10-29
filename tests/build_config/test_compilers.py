@@ -2,6 +2,7 @@
 
 import os
 import pathlib
+import runpy
 import shlex
 import shutil
 import subprocess
@@ -10,6 +11,24 @@ import pytest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the GPU compiler wrapper uses POSIX")
+def test_workspace_probe_uses_host_compiler(tmp_path, monkeypatch):
+    compiler = shutil.which("g++") or shutil.which("clang++")
+
+    if not compiler:
+        pytest.skip("a host C++ compiler is required")
+
+    gpu_compiler = tmp_path / "gpu-cxx"
+    gpu_compiler.write_text(
+        '#!/bin/sh\necho "GPU compiler used for host probe" >&2\nexit 1\n'
+    )
+    gpu_compiler.chmod(0o755)
+    monkeypatch.setenv("CXX", str(gpu_compiler))
+    monkeypatch.setenv("HOST_CXX", compiler)
+    module = runpy.run_path(str(ROOT / "tests/test_cpp_api.py"))
+    module["test_ascend_workspace_pool_retains_allocations_until_destruction"](tmp_path)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="MetaX uses a POSIX compiler wrapper")
@@ -121,9 +140,27 @@ def test_nvidia_dispatch_and_quick_gelu_compile(tmp_path, architecture):
     if architecture not in supported:
         pytest.skip(f"nvcc does not support {architecture}")
 
+    public_header = runpy.run_path(
+        str(ROOT / "scripts/generate_public_operator_header.py")
+    )
+    public_header["generate_public_operator_header"](
+        ROOT / "src/operator.h", tmp_path / "operator.h"
+    )
+    (tmp_path / "generated_dispatch.h").write_text('#include "operator.h"\n')
+    (tmp_path / "infini").mkdir()
+    (tmp_path / "infini/operator_call_instantiations.h").write_text("\n")
+    generator = runpy.run_path(str(ROOT / "scripts/generate_wrappers.py"))
+    dispatch = tmp_path / "generated_dispatch_regression.cu"
+    dispatch.write_text(
+        generator["_generate_generated_dispatch_source"](
+            ["native/cuda/nvidia/ops/cat/kernel.h"], []
+        )
+    )
+
     for source in (
         ROOT / "tests/build_config/nvidia_dispatch.cu",
         ROOT / "src/native/cuda/nvidia/ops/quick_gelu/kernel.cu",
+        dispatch,
     ):
         result = subprocess.run(
             [
@@ -132,6 +169,8 @@ def test_nvidia_dispatch_and_quick_gelu_compile(tmp_path, architecture):
                 f"-arch={architecture}",
                 "-DWITH_CPU=1",
                 "-DWITH_NVIDIA=1",
+                *([f"-I{tmp_path}"] if source == dispatch else []),
+                f"-I{ROOT}",
                 f"-I{ROOT / 'src'}",
                 f"-I{ROOT / 'include'}",
                 f"-I{pathlib.Path(runtime) / 'include'}",

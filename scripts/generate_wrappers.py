@@ -1439,7 +1439,8 @@ namespace infini::ops::generated_dispatch {{
 def _generate_generated_dispatch_source(impl_paths, definitions):
     impl_includes = "\n".join(f'#include "{impl_path}"' for impl_path in impl_paths)
 
-    return f"""#include "generated_dispatch.h"
+    return f"""#include "src/operator.h"
+#include "generated_dispatch.h"
 #include "infini/operator_call_instantiations.h"
 #include "host_range_profiler.h"
 

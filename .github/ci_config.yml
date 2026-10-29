@@ -96,7 +96,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: CXX=/usr/bin/g++ pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: HOST_CXX=/usr/bin/g++ pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
     runner_label: Moore
