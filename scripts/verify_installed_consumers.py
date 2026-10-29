@@ -160,7 +160,17 @@ def verify(prefix, rt_prefix, output):
         report["python"] = sys.version
         report["platform"] = platform.platform()
         report["core_revision"] = run(
-            ["git", "-C", str(ROOT), "rev-parse", "HEAD"], "core-revision", env=env
+            [
+                "git",
+                "-c",
+                "safe.directory=" + str(ROOT),
+                "-C",
+                str(ROOT),
+                "rev-parse",
+                "HEAD",
+            ],
+            "core-revision",
+            env=env,
         ).strip()
         report["rt_revision"] = env.get("INFINI_RT_REVISION")
         report["verification_inputs"] = {

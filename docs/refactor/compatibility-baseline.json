@@ -21,7 +21,7 @@
       "scripts/mxcc_wrapper.sh": "1bc5f06f5a702c76c722da67c5ac334952a6b6819630f9504a31ad8155b94a42",
       "scripts/prepare_flash_attention_inference.py": "e31cea98107ae57c6723635d466673069999b6cf2f524e3063e6de4f79e11a51",
       "scripts/prepare_marlin.py": "cec90bb973343f24aee47eec944593dee76a07c603920295b3e35ad02a58d351",
-      "scripts/verify_installed_consumers.py": "50971c53ff6626675f3d0c9087a6187999426dfaeaad932963e820088aa32484",
+      "scripts/verify_installed_consumers.py": "ec6b16df68b3b239c1b75cfd98265054731c09068e34634d3ff7671e053feb56",
       "src/CMakeLists.txt": "0793b476534d4ca5a33afa62eb15d54771aef7366dd3b4f137b531cd95250351",
       "src/linked/torch/cambricon/apex_fused_layer_norm.yaml": "2d72e8826d3d96546c82e4fd658af1e7275d26a78c080b1e430caf990e0fe32c",
       "src/linked/torch/cambricon/apex_glu_activation.yaml": "904593e1ea82fcee8df6abe121fa5561fbda796f48e713cec29579efa8429f3e",
@@ -736,5 +736,5 @@
       "scripts/configs/**/*.json"
     ]
   },
-  "source_revision": "384f939066667caa8deaf4f4eed3ba0f81d0444b"
+  "source_revision": "9c0f3da5bc0dbe6b1404273d282337c1360a3f1c"
 }
