@@ -11,6 +11,8 @@ import torch
 pytest.importorskip("torch_npu")
 import infini.ops
 
+pytestmark = pytest.mark.smoke
+
 
 def test_external_stream_restores_callers_device():
     original_device = torch.npu.current_device()
