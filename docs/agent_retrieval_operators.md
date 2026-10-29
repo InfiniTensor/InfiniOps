@@ -10,7 +10,7 @@
 - Matmul、Softmax、Add/Sub/Mul/Div、Erf、Tanh、Addmm 和布局算子沿用已有实现。导出图的 GELU 由 Div／Erf／Add／Mul 表达。分类头可由 Matmul＋Add 或 Addmm 表达；旧 `Gemm` 的 C 输入限制不在本次扩大。
 - RMSNorm 修复公开工厂的输入约束。它不在上述两个固定 encoder 图内，但通用调用者不应依赖上层兜底才能避免越界。
 
-`scripts/configs/infiniops_ops_retrieval_torch.json` 提供跨这四类设备的 ATen 检索构建清单。Cast 固定选择 slot 8，避免清单在没有原生 slot 0 的设备上配置失败；其他原生实现仍可由调用方按能力显式选择。清单不改变默认构建及默认 dispatch 策略。
+`scripts/configs/infiniops_ops_retrieval_torch.json` 提供跨这四类设备的 ATen 检索构建清单。Cast 固定选择 slot 8，避免清单在没有原生 slot 0 的设备上配置失败；其他原生实现仍可由调用方按能力显式选择。检索清单选择既有 ATen Add slot 1，以避免原生广播 Add 在大形状上的逐元素慢通路；该实现现在和其他 ATen 算子一样使用调用方的 runtime stream。清单不改变默认构建及默认 dispatch 策略。
 
 ## 外部内存与流
 

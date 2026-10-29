@@ -18,7 +18,7 @@ pytestmark = pytest.mark.operator_set(
         "Div": 8,
         "Sub": 8,
         "Mul": 8,
-        "Add": 0,
+        "Add": 1,
         "Softmax": 8,
         "PermuteCopy": 8,
         "Erf": 8,
@@ -89,7 +89,7 @@ def test_retrieval_attention_and_classifier(device):
             penalty[:, None, None, :].expand_as(scores),
             1.0,
             masked,
-            implementation=0,
+            implementation=1,
         )
         probabilities = torch.empty_like(scores)
         invoke("softmax", masked, -1, None, probabilities)
@@ -104,7 +104,7 @@ def test_retrieval_attention_and_classifier(device):
         erf = torch.empty_like(states)
         invoke("erf", divided, erf)
         shifted = torch.empty_like(states)
-        invoke("add", erf, one.expand_as(erf), 1.0, shifted, implementation=0)
+        invoke("add", erf, one.expand_as(erf), 1.0, shifted, implementation=1)
         product = torch.empty_like(states)
         invoke("mul", states, shifted, product)
         activated = torch.empty_like(states)

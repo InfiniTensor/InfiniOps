@@ -44,6 +44,7 @@ std::vector<float> Run(const std::string& device_name, int device_index) {
   auto table = tensor({8, 4}, rt::DataType::kFloat32);
   auto ids = tensor({2, 3}, rt::DataType::kInt64);
   auto gathered = tensor({2, 3, 4}, rt::DataType::kFloat32);
+  auto adjusted = tensor({2, 3, 4}, rt::DataType::kFloat32);
   auto normalized = tensor({2, 3, 4}, rt::DataType::kFloat32);
   auto mean = tensor({2, 3, 1}, rt::DataType::kFloat32);
   auto rstd = tensor({2, 3, 1}, rt::DataType::kFloat32);
@@ -63,11 +64,14 @@ std::vector<float> Run(const std::string& device_name, int device_index) {
   config.set_implementation_index(8);
   ops::OnnxGather::Call(handle, config, table, ids, int64_t{0}, gathered);
   ops::Cast::Call(handle, config, ids, converted);
-  ops::NativeLayerNorm::Call(handle, config, gathered, std::vector<int64_t>{4},
+  ops::Config add_config;
+  add_config.set_implementation_index(1);
+  ops::Add::Call(handle, add_config, gathered, gathered, 1.0, adjusted);
+  ops::NativeLayerNorm::Call(handle, config, adjusted, std::vector<int64_t>{4},
                              std::optional<ops::Tensor>{},
                              std::optional<ops::Tensor>{}, 1e-5, normalized,
                              mean, rstd);
-  std::vector<float> result(30);
+  std::vector<float> result(54);
   if (device.type() == rt::Device::Type::kCpu) {
     assert(rt::runtime::Memcpy(result.data(), normalized.data(), 24 * 4,
                                rt::runtime::kMemcpyDeviceToHost) ==
@@ -75,11 +79,17 @@ std::vector<float> Run(const std::string& device_name, int device_index) {
     assert(rt::runtime::Memcpy(result.data() + 24, converted.data(), 6 * 4,
                                rt::runtime::kMemcpyDeviceToHost) ==
            rt::runtime::kSuccess);
+    assert(rt::runtime::Memcpy(result.data() + 30, adjusted.data(), 24 * 4,
+                               rt::runtime::kMemcpyDeviceToHost) ==
+           rt::runtime::kSuccess);
   } else {
     assert(rt::runtime::MemcpyAsync(result.data(), normalized.data(), 24 * 4,
                                     rt::runtime::kMemcpyDeviceToHost,
                                     storage.stream) == rt::runtime::kSuccess);
     assert(rt::runtime::MemcpyAsync(result.data() + 24, converted.data(), 6 * 4,
+                                    rt::runtime::kMemcpyDeviceToHost,
+                                    storage.stream) == rt::runtime::kSuccess);
+    assert(rt::runtime::MemcpyAsync(result.data() + 30, adjusted.data(), 24 * 4,
                                     rt::runtime::kMemcpyDeviceToHost,
                                     storage.stream) == rt::runtime::kSuccess);
   }

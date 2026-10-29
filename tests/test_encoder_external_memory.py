@@ -15,7 +15,7 @@ import infini.ops  # noqa: F401 -- load the selected provider before the probe
 from tests.test_cpp_api import _compiler, _install_prefixes, _library_dir, _run
 
 pytestmark = pytest.mark.operator_set(
-    {"OnnxGather": 8, "Cast": 8, "NativeLayerNorm": 8, "Matmul": 8}
+    {"OnnxGather": 8, "Cast": 8, "NativeLayerNorm": 8, "Matmul": 8, "Add": 1}
 )
 
 
@@ -66,7 +66,7 @@ def test_encoder_with_infinirt_memory_and_stream(external_memory_module, device)
     previous = accelerator.current_device() if accelerator else None
     table = (np.arange(32, dtype=np.float32) % 7 - 3).reshape(8, 4)
     indices = np.array([[7, 0, 3], [1, 6, 2]])
-    x = table[indices]
+    x = 2 * table[indices]
     expected = (x - x.mean(-1, keepdims=True)) / np.sqrt(
         x.var(-1, keepdims=True) + 1e-5
     )
@@ -91,6 +91,7 @@ print('RAW_RESULT=' + json.dumps(module.run({names[device]!r}, 0)))
     np.testing.assert_allclose(
         cold[:24].reshape(2, 3, 4), expected, atol=1e-5, rtol=1e-4
     )
+    np.testing.assert_array_equal(cold[30:].reshape(2, 3, 4), x)
     try:
         for index in range(count):
             first = np.array(external_memory_module.run(names[device], index))
@@ -99,8 +100,9 @@ print('RAW_RESULT=' + json.dumps(module.run({names[device]!r}, 0)))
                 first[:24].reshape(2, 3, 4), expected, atol=1e-5, rtol=1e-4
             )
             np.testing.assert_array_equal(
-                first[24:], indices.astype(np.float32).ravel()
+                first[24:30], indices.astype(np.float32).ravel()
             )
+            np.testing.assert_array_equal(first[30:].reshape(2, 3, 4), x)
             np.testing.assert_array_equal(first, second)
     finally:
         if accelerator:
