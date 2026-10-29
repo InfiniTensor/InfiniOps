@@ -80,3 +80,6 @@ Useful entry points:
 ## License
 
 See [LICENSE](LICENSE).
+
+Hygon Clover diffusion and native Triton JIT setup are described in
+[the Clover operator guide](docs/clover-hygon.md).

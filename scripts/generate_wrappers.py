@@ -2293,6 +2293,12 @@ if __name__ == "__main__":
         help="Include Triton backend implementations.",
     )
 
+    parser.add_argument(
+        "--declarations",
+        nargs="*",
+        default=[],
+        help="Also emit operator APIs with no active provider.",
+    )
     args = parser.parse_args()
 
     for directory in (_BINDINGS_DIR, _GENERATED_SRC_DIR, _INCLUDE_DIR):
@@ -2308,6 +2314,11 @@ if __name__ == "__main__":
         with_native_flash=args.with_native_flash,
         with_native_w4=args.with_native_w4,
     )
+
+    for name in _normalize_op_allowlist(args.declarations):
+        if not (_BASE_DIR / f"{name}.h").is_file():
+            raise ValueError(f"Unknown operator declaration: {name}")
+        ops.setdefault(name, [])
 
     if config_path is not None:
         config = ops_config.load_ops_config(config_path)

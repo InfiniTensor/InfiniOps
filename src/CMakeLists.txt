@@ -249,6 +249,11 @@ if(WITH_TRITON OR GENERATE_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
 endif()
 
+if(WITH_TRITON AND WITH_HYGON)
+    target_link_directories(infiniops PRIVATE "${HYGON_CUDA_ROOT}/lib64")
+    target_link_libraries(infiniops PRIVATE cuda)
+endif()
+
 if(WITH_TRITON)
     target_link_libraries(infiniops PRIVATE
         Python::Python
@@ -1290,6 +1295,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
+    if(INFINI_OPS_DECLARATIONS)
+        list(APPEND GENERATOR_ARGS --declarations ${INFINI_OPS_DECLARATIONS})
+    endif()
     if(_infini_ops_ops_config)
         list(APPEND GENERATOR_ARGS
             --ops-config "${_infini_ops_ops_config}")
