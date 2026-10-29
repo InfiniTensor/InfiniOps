@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import runpy
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,33 @@ def validate_junit(path, required=REQUIRED):
 
 def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validate_loaded_libraries(paths, prefix, rt_prefix):
+    prefix, rt_prefix = prefix.resolve(), rt_prefix.resolve()
+    expected = {
+        "libinfiniops.so": list(prefix.rglob("libinfiniops.so")),
+        "libinfinirt.so": list(rt_prefix.rglob("libinfinirt.so")),
+    }
+    result = {name: [] for name in expected}
+
+    for value in paths:
+        path = Path(value).resolve()
+        name = next((name for name in expected if path.name.startswith(name)), None)
+        if name is None or not path.is_file() or not expected[name]:
+            raise ValueError("Unrecognized or missing loaded runtime library.")
+        allowed = path.is_relative_to(prefix)
+        if name == "libinfinirt.so":
+            allowed = allowed or path.is_relative_to(rt_prefix)
+        digest = sha256(path)
+        if not allowed or digest not in {sha256(p) for p in expected[name]}:
+            raise ValueError(f"Loaded library identity mismatch: `{path}`.")
+        result[name].append({"path": str(path), "sha256": digest})
+
+    if not all(result.values()):
+        raise ValueError("Consumer did not load both expected runtime libraries.")
+
+    return result
 
 
 def verify(prefix, rt_prefix, output):
@@ -107,7 +135,20 @@ def verify(prefix, rt_prefix, output):
                 raise ValueError(f"Required tool `{tool}` is unavailable.")
 
         env = os.environ.copy()
-        for key in ("PYTHONPATH", "PYTHONHOME", "PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
+        for key in (
+            "PYTHONPATH",
+            "PYTHONHOME",
+            "PYTEST_ADDOPTS",
+            "PYTEST_PLUGINS",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "LD_AUDIT",
+            "CMAKE_PREFIX_PATH",
+            "CMAKE_INCLUDE_PATH",
+            "CMAKE_LIBRARY_PATH",
+            "InfiniOps_DIR",
+            "InfiniRT_DIR",
+        ):
             env.pop(key, None)
         env.update(
             {
@@ -166,6 +207,13 @@ def verify(prefix, rt_prefix, output):
             consumer,
             ignore=shutil.ignore_patterns("requirements.*"),
         )
+        fixture = runpy.run_path(str(output / "test_cpp_api.py"))[
+            "_ADD_RETURN_SMOKE_SOURCE"
+        ]
+        support, separator, _ = fixture.partition("int main() {")
+        if not separator:
+            raise ValueError("Existing returning Tensor fixture was not found.")
+        (consumer / "returning_support.h").write_text(support, encoding="utf-8")
         run(
             [
                 "cmake",
@@ -184,18 +232,25 @@ def verify(prefix, rt_prefix, output):
             "consumer-build",
             env=env,
         )
-        selection = json.loads(
+        cpp_consumer = json.loads(
             run([str(output / "consumer-build/consumer")], "selection", env=env)
         )
+        selection = cpp_consumer["selection"]
         if selection != {op: {"default": 0, "active": [0]} for op in ("add", "gemm")}:
             raise ValueError("Installed CPU selection differs from the recipe.")
         report["selection"] = selection
+        report["cpp_libraries"] = validate_loaded_libraries(
+            cpp_consumer["loaded_libraries"], prefix, rt_prefix
+        )
         report["python_consumer"] = json.loads(
             run(
                 [sys.executable, "-I", str(consumer / "consumer.py"), str(prefix)],
                 "python-consumer",
                 env=env,
             )
+        )
+        report["python_libraries"] = validate_loaded_libraries(
+            report["python_consumer"]["loaded_libraries"], prefix, rt_prefix
         )
 
         libraries = sorted(prefix.rglob("libinfiniops.so"))

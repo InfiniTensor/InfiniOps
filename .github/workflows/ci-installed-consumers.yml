@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   cpu:
+    permissions:
+      contents: read
+      checks: write
     runs-on: ubuntu-latest
     timeout-minutes: 35
     container: python:3.12.10-bookworm@sha256:91487c05f87617b9d1165274c07a9b0040dfef21a855b5b418a0ebc6aa26c5de
@@ -65,3 +68,21 @@ jobs:
             ${{ runner.temp }}/consumer-evidence
             ${{ runner.temp }}/wheels
           if-no-files-found: warn
+      - name: Publish failure diagnosis
+        if: failure() && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, urllib.request
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'consumer-evidence'
+          logs = '\n'.join('### ' + p.name + '\n```text\n' + p.read_text(errors='replace')[-12000:] + '\n```' for p in folder.glob('*') if p.suffix in ('.log', '.json'))
+          body = {'name': 'Installed consumer diagnostics', 'head_sha': os.environ['GITHUB_SHA'],
+                  'status': 'completed', 'conclusion': 'failure', 'output': {
+                      'title': 'Installed consumer verification failed', 'summary': (logs or 'See build step logs.')[-60000:]}}
+          request = urllib.request.Request(os.environ['GITHUB_API_URL'] + '/repos/' + os.environ['GITHUB_REPOSITORY'] + '/check-runs',
+              data=json.dumps(body).encode(), headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}, method='POST')
+          with urllib.request.urlopen(request) as response:
+              print('Published diagnostic check', json.load(response)['id'])
+          PY

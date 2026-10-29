@@ -17,6 +17,28 @@ spec.loader.exec_module(guard)
 
 
 class ConsumerGuardTests(unittest.TestCase):
+    def test_loaded_library_identity_is_required(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prefix, rt, foreign = (root / name for name in ("prefix", "rt", "foreign"))
+            for directory in (prefix, rt, foreign):
+                directory.mkdir()
+            core = prefix / "libinfiniops.so"
+            runtime = rt / "libinfinirt.so"
+            core.write_bytes(b"core")
+            runtime.write_bytes(b"runtime")
+            copied = prefix / "libinfinirt.so"
+            copied.write_bytes(b"runtime")
+            self.assertTrue(guard.validate_loaded_libraries([core, copied], prefix, rt))
+            wrong = foreign / "libinfiniops.so"
+            wrong.write_bytes(b"core")
+            for paths in ([core], [], [wrong, runtime]):
+                with self.subTest(paths=paths), self.assertRaises(ValueError):
+                    guard.validate_loaded_libraries(paths, prefix, rt)
+            copied.write_bytes(b"wrong-runtime")
+            with self.assertRaises(ValueError):
+                guard.validate_loaded_libraries([core, copied], prefix, rt)
+
     def xml(self, body, required=("required",)):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "cases.xml"

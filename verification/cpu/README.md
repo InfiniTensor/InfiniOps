@@ -26,9 +26,13 @@ python scripts/verify_installed_consumers.py --prefix /installed/site-packages/i
 
 执行器从仓库原样复制 `test_cpp_api.py`，不复制 `conftest.py`，只选择安装消费者、JSON 调用追踪和 returning API 三个既有测试。它们以独立 Python 进程从源码树外运行，关闭第三方 pytest 插件自动加载并清除 Python 路径覆盖。必需测试缺失、重复、零执行、skip、failure 或 error 都阻止通过；原测试本身的 skip 行为不改。
 
-另一个仅依赖 `find_package(InfiniOps)` 的消费者输出 Add/Gemm 的实际 active/default 映射，预期均为 slot 0。独立 Python 消费者使用旧 `infini.ops` 入口检查 Add 默认调用、alpha 重载与 Gemm 固定 golden，记录实际模块位置、导出名和已加载库位置。
+另一个仅依赖 `find_package(InfiniOps)` 的消费者输出 Add/Gemm 的实际 active/default 映射，预期均为 slot 0，并以 `isfinite` 加固定 golden 检查 returning 调用。它复用既有测试中的 OwningTensor 客户端适配，不修改原测试。独立 Python 消费者使用旧 `infini.ops` 入口检查 Add 默认调用、alpha 重载与 Gemm 固定 golden，记录实际模块位置、导出名和已加载库位置。
+
+验证进程清理动态库和 CMake 包搜索覆盖。Python 和 C++ 实际加载的 Core 必须来自指定 wheel prefix，RT 必须来自该 prefix 或固定 RT prefix；两者均核对磁盘制品 hash。仅记录加载位置而不校验身份不能作为通过证据。
 
 证据包含命令与返回码、core/RT 身份、依赖清单、编译器版本、验证输入 hash、安装文件 hash、默认/active 映射、导出符号和动态依赖。wheel 中重复安装的 `libinfiniops.so` 必须内容一致。GitHub artifact 名包含提交 SHA；构建本身失败时以该提交的 step 日志为证据，不把缺失消费者报告解释为成功。
+
+失败时 push/手动运行会通过独立 check 保存验证诊断，所需权限仅为 checks 写入，不写源码或创建 PR。fork PR 无此权限时仍保留失败状态及普通 artifact；诊断发布失败不会把主验证变成通过。
 
 ## 验证层次
 
