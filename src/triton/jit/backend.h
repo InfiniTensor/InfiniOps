@@ -31,6 +31,8 @@ struct Target {
   int warp_size{0};
 };
 
+Target HygonTarget(int device_id);
+
 enum class DataType {
   kPointer,
   kInt8,
@@ -111,6 +113,11 @@ struct BackendTraits<Device::Type::kNvidia> {
   static constexpr const char* kName = "cuda";
 };
 
+template <>
+struct BackendTraits<Device::Type::kHygon> {
+  static constexpr const char* kName = "hip";
+};
+
 template <Device::Type kDev,
           typename = std::void_t<decltype(BackendTraits<kDev>::kName)>>
 class Backend {
@@ -124,6 +131,9 @@ class Backend {
   static Target CurrentTarget() {
     const int device_id = CurrentDevice();
     if (device_id < 0) return {};
+    if constexpr (kDev == Device::Type::kHygon) {
+      return HygonTarget(device_id);
+    }
 
     int major = 0;
     auto status = Runtime::DeviceGetAttribute(
@@ -179,12 +189,12 @@ class Backend {
     constexpr unsigned kDefaultSharedMemoryLimit = 48 * 1024;
     if (metadata.shared_memory_size > kDefaultSharedMemoryLimit) {
       int maximum_shared_memory = 0;
-      status = Runtime::DeviceGetAttribute(
+      const auto runtime_status = Runtime::DeviceGetAttribute(
           &maximum_shared_memory, Runtime::kDevAttrMaxSharedMemoryPerBlockOptin,
           CurrentDevice());
-      assert(status == Runtime::kSuccess &&
+      assert(runtime_status == Runtime::kSuccess &&
              "Triton JIT failed to get the shared memory limit.");
-      if (status != Runtime::kSuccess) {
+      if (runtime_status != Runtime::kSuccess) {
         Driver::ModuleUnload(module);
         return nullptr;
       }

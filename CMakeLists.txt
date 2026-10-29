@@ -31,6 +31,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(PYBIND11_ENABLE_EXTRAS ON)
 
 # Options for backends.
+set(INFINI_OPS_DECLARATIONS "" CACHE STRING "Additional public operator APIs, even without active providers")
+
 option(WITH_CPU "Enable CPU backend" OFF)
 option(WITH_NVIDIA "Enable CUDA backend" OFF)
 option(WITH_ILUVATAR "Enable Iluvatar GPU backend" OFF)
@@ -419,10 +421,10 @@ if(WITH_NINETOOTHED)
 endif()
 
 if(WITH_TRITON)
-    if(NOT WITH_NVIDIA)
+    if(NOT WITH_NVIDIA AND NOT WITH_HYGON)
         message(
             FATAL_ERROR
-            "`WITH_TRITON` requires `WITH_NVIDIA=ON` because NVIDIA is the only implemented Triton JIT backend."
+            "`WITH_TRITON` requires `WITH_NVIDIA=ON` or `WITH_HYGON=ON`."
         )
     endif()
     if(NOT GENERATE_PYTHON_BINDINGS)

@@ -113,3 +113,11 @@ from actual package metadata. That conservative package inventory can include
 materials for components outside these two DSOs; it is intentionally not filtered
 by fixed hashes or used to restrict build capability. A complete wheel or SDK
 redistribution must retain its own applicable notices, including secondary ones.
+
+Clover preview kernels
+src/triton/ops/clover_block_conv1d/jit.py and
+src/triton/ops/clover_local_memory/jit.py are adapted from SGLang PR #46927,
+WilliamZR/sglang commit 058939af24d5cdc44bb4b8852d0ddfab555ed71e,
+python/sglang/kernels/ops/{mamba/clover_conv_triton.py,attention/clover_gdn_triton.py}.
+They retain Apache-2.0 licensing. Changes provide InfiniOps JIT entry points,
+Hygon launch geometry, and bounds checks for the state pool.

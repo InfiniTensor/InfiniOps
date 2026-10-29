@@ -1317,3 +1317,15 @@ def test_w4_public_api_selection_is_explicit(tmp_path):
         module._select_ops_from_config(
             {}, {name: {"headers": None, "implementations": (0,)}}, "ops.json"
         )
+
+
+def test_default_argument_scan_ignores_comment_examples(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    header = tmp_path / "sample.h"
+    header.write_text(
+        "// bool is_neox=false is GPT-J, true is GPT-NeoX.\n"
+        "/* float alpha = invalid example, */\n"
+        "class Sample { public: Sample(bool is_neox, float alpha = 1.0f); };\n"
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda name: header)
+    assert module._find_params_with_defaults("sample") == {"alpha": "1.0f"}

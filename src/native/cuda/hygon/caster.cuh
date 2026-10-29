@@ -7,6 +7,9 @@
 
 namespace infini::ops {
 
+using infini::rt::cuda_bfloat16;
+using infini::rt::cuda_bfloat162;
+
 namespace detail {
 
 template <>
