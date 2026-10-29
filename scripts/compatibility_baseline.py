@@ -44,6 +44,12 @@ GROUPS = {
         ".github/ci_config.yml",
         ".github/workflows/ci*.yml",
         "images/**/Dockerfile*",
+        "verification/**/*.in",
+        "verification/**/*.lock",
+        "verification/**/CMakeLists.txt",
+        "verification/**/*.py",
+        "verification/**/*.cc",
+        "scripts/verify_installed_consumers.py",
     ],
 }
 

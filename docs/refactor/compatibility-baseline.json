@@ -3,6 +3,7 @@
   "groups": {
     "build_and_dependency_recipes": {
       ".github/ci_config.yml": "1e65fc4cd7173994f699cb672ad78bc53c1e1138a189420cfbdb6a7d458214b2",
+      ".github/workflows/ci-installed-consumers.yml": "ea36cb5109d2c5d6df6e06dc96b6c0b56f6eedeb3b00ab2d1646342cb229bfe2",
       ".github/workflows/ci_test.yml": "8e150ec099c9af22446e2a91c91f4c58b0abab768a3c8648fafc516229328ba9",
       ".github/workflows/ci_v2_shadow.yml": "31250d893d92f1f2bff58529ca9fff14d8ab405cff6c6274555de7d44c42a891",
       "CMakeLists.txt": "248cfa30beb0fd9991c9f51582435cc5beaf79e3053fb8f9f3ae94b052474c04",
@@ -20,6 +21,7 @@
       "scripts/mxcc_wrapper.sh": "1bc5f06f5a702c76c722da67c5ac334952a6b6819630f9504a31ad8155b94a42",
       "scripts/prepare_flash_attention_inference.py": "e31cea98107ae57c6723635d466673069999b6cf2f524e3063e6de4f79e11a51",
       "scripts/prepare_marlin.py": "cec90bb973343f24aee47eec944593dee76a07c603920295b3e35ad02a58d351",
+      "scripts/verify_installed_consumers.py": "1d6a3dfe840c6e35c96c4341e87f40c9aa71afff72ee1a4bb8729c15d0e969a4",
       "src/CMakeLists.txt": "0793b476534d4ca5a33afa62eb15d54771aef7366dd3b4f137b531cd95250351",
       "src/linked/torch/cambricon/apex_fused_layer_norm.yaml": "2d72e8826d3d96546c82e4fd658af1e7275d26a78c080b1e430caf990e0fe32c",
       "src/linked/torch/cambricon/apex_glu_activation.yaml": "904593e1ea82fcee8df6abe121fa5561fbda796f48e713cec29579efa8429f3e",
@@ -75,7 +77,12 @@
       "src/native/ascend/custom/cmake/config_envs.cmake": "c891d2950348509c7977d38384fa112898c3b4af0577079bdc241d4eb071e987",
       "src/native/ascend/custom/cmake/detect_soc.cmake": "83853df708bb60a6db7ac40f06e2a12857f8a127e6cca22284bfc4aa44fd7275",
       "src/native/ascend/custom/cmake/flatten_host_objects.cmake": "029dec2d3b3780c8594788b2adba18ae1664c03098cb967a1be5a1c0cf656b67",
-      "src/native/ascend/custom/rms_norm/CMakeLists.txt": "7b0ee2f2695131ecfe9d18751690253c718a716e2c3e32799511d1d24af381af"
+      "src/native/ascend/custom/rms_norm/CMakeLists.txt": "7b0ee2f2695131ecfe9d18751690253c718a716e2c3e32799511d1d24af381af",
+      "verification/cpu/CMakeLists.txt": "7459c0674579b742096da4f4906ce586b6dd1f81e77c67e760ea6dc0a50cf626",
+      "verification/cpu/consumer.cc": "fba58f8f48d99c1da8005239cddb7ff9cf66b69b8404c15d7797f1d77f25b8c4",
+      "verification/cpu/consumer.py": "4617e803d5cb92182dc725982c75bd9114b35e21fb311be5c17ad46c4df441e2",
+      "verification/cpu/requirements.in": "e1a51213b815d01a852e9f18f488f1de401597f4f3531263015175db49ab7783",
+      "verification/cpu/requirements.lock": "914db335000cdd6566f7f9d1a1b8e0c3ebd7b25a5a39d984c5e35e1cffaa758e"
     },
     "declaration_inputs": {
       "docs/compatibility.md": "27b61fc53796780b03719d185f4ad840da88b2dec5c1579e8cba7273f87c9f8d",
@@ -703,7 +710,13 @@
       "pyproject.toml",
       ".github/ci_config.yml",
       ".github/workflows/ci*.yml",
-      "images/**/Dockerfile*"
+      "images/**/Dockerfile*",
+      "verification/**/*.in",
+      "verification/**/*.lock",
+      "verification/**/CMakeLists.txt",
+      "verification/**/*.py",
+      "verification/**/*.cc",
+      "scripts/verify_installed_consumers.py"
     ],
     "declaration_inputs": [
       "include/**/*.h",
@@ -723,5 +736,5 @@
       "scripts/configs/**/*.json"
     ]
   },
-  "source_revision": "3ac67190a5996dbf9fe03dc8d8eb68847715ce34"
+  "source_revision": "f21a927fbbe7ae5d4b1c1508ddce094119d313b6"
 }

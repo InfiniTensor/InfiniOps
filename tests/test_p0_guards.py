@@ -189,6 +189,19 @@ class BaselineTests(unittest.TestCase):
             ),
         )
 
+    def test_installed_consumer_recipe_inputs(self):
+        self.check_recipe_lifecycle(
+            "build_and_dependency_recipes",
+            (
+                "verification/cpu/requirements.in",
+                "verification/cpu/requirements.lock",
+                "verification/cpu/CMakeLists.txt",
+                "verification/cpu/consumer.py",
+                "verification/cpu/consumer.cc",
+                "scripts/verify_installed_consumers.py",
+            ),
+        )
+
     def check_recipe_lifecycle(self, group, names):
         # Exercise each input independently so one detected change cannot hide another.
         for name in names:

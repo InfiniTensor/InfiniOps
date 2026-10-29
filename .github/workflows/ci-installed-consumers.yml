@@ -1,0 +1,67 @@
+name: Installed CPU Consumers
+
+on:
+  push:
+    branches: [master, ci/verify-installed-consumers]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    container: python:3.12.10-bookworm@sha256:91487c05f87617b9d1165274c07a9b0040dfef21a855b5b418a0ebc6aa26c5de
+    defaults:
+      run:
+        shell: bash
+    env:
+      INFINI_RT_REVISION: cd1d48258f0a6b8d9f66111d5d6cb1664205e78d
+      CXX: g++
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install locked verification dependencies
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: \
+            --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r verification/cpu/requirements.lock
+      - name: Test verification failure paths
+        run: python -m unittest discover -s tests -p test_installed_consumer_guard.py -v
+      - name: Build and install pinned CPU InfiniRT
+        run: |
+          git init "$RUNNER_TEMP/rt-source"
+          git -C "$RUNNER_TEMP/rt-source" remote add origin https://github.com/InfiniTensor/InfiniRT.git
+          git -C "$RUNNER_TEMP/rt-source" fetch --depth 1 origin "$INFINI_RT_REVISION"
+          git -C "$RUNNER_TEMP/rt-source" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/rt-source" rev-parse HEAD)" = "$INFINI_RT_REVISION"
+          cmake -S "$RUNNER_TEMP/rt-source" -B "$RUNNER_TEMP/rt-build" -G Ninja \
+            -DWITH_CPU=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/rt-prefix"
+          cmake --build "$RUNNER_TEMP/rt-build" --parallel 2
+          cmake --install "$RUNNER_TEMP/rt-build"
+      - name: Build and install one CPU wheel
+        run: |
+          python -m pip wheel . --no-build-isolation --no-deps -w "$RUNNER_TEMP/wheels" \
+            -Ccmake.define.INFINI_RT_ROOT="$RUNNER_TEMP/rt-prefix" \
+            -Ccmake.define.WITH_CPU=ON -Ccmake.define.AUTO_DETECT_DEVICES=OFF \
+            -Ccmake.define.AUTO_DETECT_BACKENDS=OFF -Ccmake.define.WITH_TORCH=OFF \
+            -Ccmake.define.WITH_LINKED=OFF -Ccmake.define.WITH_TRITON=OFF \
+            -Ccmake.define.WITH_NINETOOTHED=OFF -Ccmake.define.GENERATE_OPERATOR_CALL_INSTANTIATIONS=ON \
+            -Ccmake.define.INFINI_OPS_OPS=add,gemm
+          python -m pip install --no-deps "$RUNNER_TEMP"/wheels/*.whl
+      - name: Verify installed legacy consumers outside source
+        run: |
+          prefix="$(cd "$RUNNER_TEMP" && python -I -c 'import infini; from pathlib import Path; print(Path(infini.__file__).parent)')"
+          python scripts/verify_installed_consumers.py --prefix "$prefix" \
+            --rt-prefix "$RUNNER_TEMP/rt-prefix" --output "$RUNNER_TEMP/consumer-evidence"
+      - name: Save consumer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: installed-cpu-consumers-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/consumer-evidence
+            ${{ runner.temp }}/wheels
+          if-no-files-found: warn
