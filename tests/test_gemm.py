@@ -128,6 +128,15 @@ def _gemm(a, b, c, alpha, beta, trans_a, trans_b, y, implementation_index=0):
 
 
 def _torch_gemm(a, b, c, alpha, beta, trans_a, trans_b, y):
+    if a.device.type == "musa" and a.dtype == torch.float32:
+        # Match native muBLAS FP32 arithmetic when computing the reference.
+        with torch.backends.mudnn.flags(allow_tf32=False):
+            return _torch_gemm_reference(a, b, c, alpha, beta, trans_a, trans_b, y)
+
+    return _torch_gemm_reference(a, b, c, alpha, beta, trans_a, trans_b, y)
+
+
+def _torch_gemm_reference(a, b, c, alpha, beta, trans_a, trans_b, y):
     if trans_a:
         a = a.transpose(-2, -1)
 

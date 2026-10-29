@@ -45,6 +45,35 @@ def test_ci_installs_declared_build_requirements(platform):
             assert tokens[:4] == ["python", "-m", "pip", "install"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="CI stages use a POSIX shell")
+@pytest.mark.parametrize("allocated_devices", ("0", "2,5", "", None))
+def test_moore_smoke_uses_allocated_devices(tmp_path, monkeypatch, allocated_devices):
+    config = yaml.safe_load((ROOT / ".github/ci_config.yml").read_text())
+    stage = config["platforms"]["moore"]["jobs"]["gpu"]["stages"][0]["run"]
+    probe = tmp_path / "pytest"
+    probe.write_text('#!/bin/sh\nprintf "%s" "$MUSA_VISIBLE_DEVICES"\n')
+    probe.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("MUSA_VISIBLE_DEVICES", "7")
+
+    if allocated_devices is None:
+        monkeypatch.delenv("MTHREADS_VISIBLE_DEVICES", raising=False)
+    else:
+        monkeypatch.setenv("MTHREADS_VISIBLE_DEVICES", allocated_devices)
+
+    result = subprocess.run(
+        ["/bin/sh", "-c", stage], capture_output=True, text=True, timeout=10
+    )
+
+    if allocated_devices:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == allocated_devices
+    else:
+        assert result.returncode != 0
+        assert not result.stdout
+        assert "CI must select a Moore GPU" in result.stderr
+
+
 def test_wheel_metadata_accepts_sdist_configuration(tmp_path, monkeypatch):
     from scikit_build_core.build import prepare_metadata_for_build_wheel
 

@@ -104,7 +104,7 @@ platforms:
     image:
       dockerfile: images/moore/
       build_args:
-        BASE_IMAGE: sh-harbor.mthreads.com/mcctest/vllm_musa:20251112_hygon
+        BASE_IMAGE: registry.mthreads.com/mcconline/inference/vllm:4.3.6_torch2.7.1_20260323_ubuntu
         APT_MIRROR: http://archive.ubuntu.com/ubuntu
         PIP_INDEX_URL: https://pypi.org/simple
     docker_args:
@@ -116,7 +116,7 @@ platforms:
         resources:
           gpu_ids: "1"
           ngpus: 1
-          gpu_style: none                  # Moore uses passthrough via `--privileged`; `MTHREADS_VISIBLE_DEVICES` controls device selection.
+          gpu_style: none                  # `MTHREADS_VISIBLE_DEVICES` loads drivers; PyTorch also needs `MUSA_VISIBLE_DEVICES`.
           memory: 32GB
           shm_size: 16g
           timeout: 3600
@@ -124,7 +124,7 @@ platforms:
           junit_path: test-results.xml
         stages:
           - name: test
-            run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+            run: MUSA_VISIBLE_DEVICES="${MTHREADS_VISIBLE_DEVICES:?CI must select a Moore GPU}" pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
     runner_label: Cambricon
