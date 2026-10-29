@@ -94,6 +94,29 @@ def test_silu_and_mul_non_default_stream(device, implementation_index):
         accelerator.synchronize()
 
 
+@pytest.mark.parametrize("padded", (False, True))
+def test_silu_and_mul_repeated_small_shape(device, implementation_index, padded):
+    if device != "npu" or implementation_index != 0:
+        pytest.skip("Ascend native small-shape regression")
+
+    for value in (0.25, 0.75):
+        input = torch.empty_strided(
+            (13, 8),
+            (12, 1) if padded else (8, 1),
+            dtype=torch.float16,
+            device=device,
+        ).fill_(value)
+        out = torch.empty_strided(
+            (13, 4),
+            (6, 1) if padded else (4, 1),
+            dtype=torch.float16,
+            device=device,
+        ).fill_(-9)
+        expected = _torch_silu_and_mul(input, torch.empty_like(out)).cpu()
+        actual = _silu_and_mul(input, out, implementation_index).cpu()
+        torch.testing.assert_close(actual, expected, rtol=1e-3, atol=1e-3)
+
+
 def _silu_and_mul(input, out, implementation_index=0):
     infini.ops.silu_and_mul(
         input,

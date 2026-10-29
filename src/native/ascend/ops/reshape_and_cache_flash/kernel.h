@@ -14,6 +14,7 @@
 #include "base/reshape_and_cache_flash.h"
 #include "data_type.h"
 #include "native/ascend/common.h"
+#include "native/ascend/error_.h"
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
@@ -33,7 +34,8 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
            Tensor value_cache)
       : ReshapeAndCacheFlash(key, value, slot_mapping, k_scale, v_scale,
                              kv_cache_dtype, key_cache, value_cache),
-        use_fast_path_(dtype_ != DataType::kFloat32 && key.IsContiguous() &&
+        use_fast_path_(!ascend::IsAscend310P() &&
+                       dtype_ != DataType::kFloat32 && key.IsContiguous() &&
                        value.IsContiguous() && key_cache.IsContiguous() &&
                        value_cache.IsContiguous()),
         num_blocks_(key_cache.size(0)),
@@ -48,12 +50,12 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
         value_cache_cache_(value_cache),
         slot_mapping_host_(num_tokens_),
         indices_host_(num_tokens_ * 2) {
-    if (!use_fast_path_ && num_tokens_ > 0) {
+    use_copy_fallback_ = ascend::IsAscend310P();
+    if (!use_fast_path_ && !use_copy_fallback_ && num_tokens_ > 0) {
       auto ret = aclrtMalloc(&indices_device_,
                              indices_host_.size() * sizeof(indices_host_[0]),
                              ACL_MEM_MALLOC_NORMAL_ONLY);
-      assert(ret == ACL_SUCCESS &&
-             "Ascend `ReshapeAndCacheFlash` failed to allocate indices");
+      ascend::CheckAcl(ret, "ReshapeAndCacheFlash index allocation");
     }
   }
 
@@ -71,6 +73,12 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     if (num_tokens_ == 0) return;
 
     auto stream = static_cast<aclrtStream>(stream_);
+#ifndef INFINI_HAS_CUSTOM_KERNELS
+    if (use_copy_fallback_) {
+      RunFallback(key, value, slot_mapping, key_cache, value_cache, stream);
+      return;
+    }
+#endif
     if (use_fast_path_) {
       RunFastPath(key, value, slot_mapping, key_cache, value_cache, stream);
     } else {
@@ -107,13 +115,11 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
         t_key, t_key_cache, t_slot_mapping, t_value, t_value_cache, nullptr,
         nullptr, nullptr, cache_mode_.data(), nullptr, nullptr, nullptr,
         &workspace_size, &executor);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` workspace query failed");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash fast workspace query");
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
     ret = aclnnScatterPaKvCache(arena.buf, workspace_size, executor, stream);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` execution failed");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash fast execution");
   }
 
 #ifdef INFINI_HAS_CUSTOM_KERNELS
@@ -137,8 +143,7 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
         static_cast<int64_t>(value_cache_page_stride_),
         static_cast<int64_t>(value_cache_head_stride_),
         static_cast<int64_t>(element_size_));
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` strided execution failed");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash strided execution");
   }
 #endif
 
@@ -149,11 +154,52 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     auto ret = aclrtMemcpyAsync(slot_mapping_host_.data(), mapping_bytes,
                                 slot_mapping.data(), mapping_bytes,
                                 ACL_MEMCPY_DEVICE_TO_HOST, stream);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` failed to copy slot mapping");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash slot mapping copy");
     ret = aclrtSynchronizeStream(stream);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` failed to synchronize slot mapping");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash slot mapping synchronization");
+
+    if (use_copy_fallback_) {
+      // Runtime copies support arbitrary NHD/HND strides without relying on
+      // ScatterPaKvCache or a strided ScatterNdUpdate kernel on 310P.
+      const auto bytes = head_size_ * element_size_;
+      for (std::size_t token = 0; token < num_tokens_; ++token) {
+        const auto slot = slot_mapping_host_[token];
+        if (slot < 0) continue;
+        assert(static_cast<std::size_t>(slot) < num_blocks_ * block_size_ &&
+               "`ReshapeAndCacheFlash` slot is outside the cache.");
+        const auto block = slot / block_size_;
+        const auto page = slot % block_size_;
+        for (std::size_t head = 0; head < num_heads_; ++head) {
+          const auto key_offset =
+              token * key_token_stride_ + head * key_head_stride_;
+          const auto value_offset =
+              token * value_token_stride_ + head * value_head_stride_;
+          const auto key_cache_offset = block * key_cache_block_stride_ +
+                                        page * key_cache_page_stride_ +
+                                        head * key_cache_head_stride_;
+          const auto value_cache_offset = block * value_cache_block_stride_ +
+                                          page * value_cache_page_stride_ +
+                                          head * value_cache_head_stride_;
+          ascend::CheckAcl(
+              aclrtMemcpyAsync(static_cast<uint8_t*>(key_cache.data()) +
+                                   key_cache_offset * element_size_,
+                               bytes,
+                               static_cast<const uint8_t*>(key.data()) +
+                                   key_offset * element_size_,
+                               bytes, ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+              "ReshapeAndCacheFlash key copy");
+          ascend::CheckAcl(
+              aclrtMemcpyAsync(static_cast<uint8_t*>(value_cache.data()) +
+                                   value_cache_offset * element_size_,
+                               bytes,
+                               static_cast<const uint8_t*>(value.data()) +
+                                   value_offset * element_size_,
+                               bytes, ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+              "ReshapeAndCacheFlash value copy");
+        }
+      }
+      return;
+    }
 
     for (std::size_t token = 0; token < num_tokens_; ++token) {
       auto slot = slot_mapping_host_[token];
@@ -168,8 +214,7 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     auto indices_bytes = indices_host_.size() * sizeof(indices_host_[0]);
     ret = aclrtMemcpyAsync(indices_device_, indices_bytes, indices_host_.data(),
                            indices_bytes, ACL_MEMCPY_HOST_TO_DEVICE, stream);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` failed to copy cache indices");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash index copy");
 
     auto* key_data = static_cast<const char*>(key.data());
     auto* value_data = static_cast<const char*>(value.data());
@@ -200,16 +245,15 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     uint64_t workspace_size = 0;
     auto ret = aclnnScatterNdUpdateGetWorkspaceSize(cache, indices, update,
                                                     &workspace_size, &executor);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` fallback query failed");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash fallback workspace query");
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
     ret = aclnnScatterNdUpdate(arena.buf, workspace_size, executor, stream);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `ReshapeAndCacheFlash` fallback execution failed");
+    ascend::CheckAcl(ret, "ReshapeAndCacheFlash fallback execution");
   }
 
   bool use_fast_path_{false};
+  bool use_copy_fallback_{false};
   std::size_t num_blocks_{0};
   std::size_t element_size_{0};
 

@@ -14,6 +14,7 @@
 #include "base/rms_norm.h"
 #include "data_type.h"
 #include "native/ascend/common.h"
+#include "native/ascend/error_.h"
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
@@ -25,8 +26,7 @@ inline void* AllocateOnes(Tensor::Size dim, DataType dtype) {
   auto bytes = dim * element_size;
   void* data = nullptr;
   auto ret = aclrtMalloc(&data, bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
-  assert(ret == ACL_SUCCESS &&
-         "`FusedAddRmsNorm` Ascend path failed to allocate unit weight");
+  ascend::CheckAcl(ret, "FusedAddRmsNorm unit weight allocation");
 
   if (dtype == DataType::kFloat32) {
     std::vector<float> host(dim, 1.0f);
@@ -42,8 +42,7 @@ inline void* AllocateOnes(Tensor::Size dim, DataType dtype) {
         aclrtMemcpy(data, bytes, host.data(), bytes, ACL_MEMCPY_HOST_TO_DEVICE);
   }
 
-  assert(ret == ACL_SUCCESS &&
-         "`FusedAddRmsNorm` Ascend path failed to initialize unit weight");
+  ascend::CheckAcl(ret, "FusedAddRmsNorm unit weight initialization");
   return data;
 }
 
@@ -65,6 +64,8 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
         tensor_bytes_(num_tokens_ * row_bytes_),
         needs_input_staging_(!input.IsContiguous()),
         needs_residual_staging_(!residual.IsContiguous()) {
+    use_small_fallback_ = ascend::IsAscend310P() &&
+                          dtype_ == DataType::kFloat16 && row_bytes_ < 32;
     if (!weight.has_value()) {
       unit_weight_data_ =
           ascend_fused_add_rms_norm_detail::AllocateOnes(dim_, input.dtype());
@@ -130,6 +131,18 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
     auto t_residual = residual_cache_.get(residual_data);
     auto t_weight = weight_cache_.get(const_cast<void*>(weight_data));
 
+    if (use_small_fallback_) {
+      RunSmallFallback(input, input_data, residual_data, t_weight, epsilon,
+                       stream);
+      if (needs_input_staging_) {
+        UnpackRows(input.data(), input_data, input_strides_, stream);
+      }
+      if (needs_residual_staging_) {
+        UnpackRows(residual.data(), residual_data, residual_strides_, stream);
+      }
+      return;
+    }
+
     auto& rstd_arena = ascend::GetWorkspacePool().Ensure(
         stream, rstd_size_, "fused_add_rms_norm_rstd");
     if (!rstd_tensor_) {
@@ -138,24 +151,44 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
           ACL_FLOAT, /*strides=*/nullptr, 0, ACL_FORMAT_ND, rstd_shape_.data(),
           static_cast<int64_t>(rstd_shape_.size()), rstd_arena.buf);
     } else {
-      aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf);
+      ascend::CheckAcl(aclSetRawTensorAddr(rstd_tensor_, rstd_arena.buf),
+                       "FusedAddRmsNorm rstd address");
     }
 
     if (!executor_) {
-      aclnnInplaceAddRmsNormGetWorkspaceSize(
-          t_input, t_residual, t_weight, static_cast<double>(epsilon),
-          rstd_tensor_, &ws_size_, &executor_);
-      aclSetAclOpExecutorRepeatable(executor_);
+      ascend::CheckAcl(
+          aclnnInplaceAddRmsNormGetWorkspaceSize(
+              t_input, t_residual, t_weight, static_cast<double>(epsilon),
+              rstd_tensor_, &ws_size_, &executor_),
+          "FusedAddRmsNorm workspace query");
+      ascend::CheckAcl(aclSetAclOpExecutorRepeatable(executor_),
+                       "FusedAddRmsNorm repeatable executor");
     } else {
-      aclSetInputTensorAddr(executor_, 0, t_input, input_data);
-      aclSetInputTensorAddr(executor_, 1, t_residual, residual_data);
-      aclSetInputTensorAddr(executor_, 2, t_weight,
-                            const_cast<void*>(weight_data));
-      aclSetOutputTensorAddr(executor_, 0, rstd_tensor_, rstd_arena.buf);
+      ascend::CheckAcl(aclSetInputTensorAddr(executor_, 0, t_input, input_data),
+                       "FusedAddRmsNorm input address");
+      ascend::CheckAcl(
+          aclSetInputTensorAddr(executor_, 1, t_residual, residual_data),
+          "FusedAddRmsNorm residual address");
+      ascend::CheckAcl(aclSetInputTensorAddr(executor_, 2, t_weight,
+                                             const_cast<void*>(weight_data)),
+                       "FusedAddRmsNorm weight address");
+      // InplaceAddRmsNorm has outputs [x1Ref, rstdOut, x2Ref]. Rebind
+      // the in-place outputs too when a cached executor sees new buffers.
+      ascend::CheckAcl(
+          aclSetOutputTensorAddr(executor_, 0, t_input, input_data),
+          "FusedAddRmsNorm input output address");
+      ascend::CheckAcl(
+          aclSetOutputTensorAddr(executor_, 1, rstd_tensor_, rstd_arena.buf),
+          "FusedAddRmsNorm rstd output address");
+      ascend::CheckAcl(
+          aclSetOutputTensorAddr(executor_, 2, t_residual, residual_data),
+          "FusedAddRmsNorm residual output address");
     }
 
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, ws_size_);
-    aclnnInplaceAddRmsNorm(arena.buf, ws_size_, executor_, stream);
+    ascend::CheckAcl(
+        aclnnInplaceAddRmsNorm(arena.buf, ws_size_, executor_, stream),
+        "FusedAddRmsNorm execution");
 
     if (needs_input_staging_) {
       UnpackRows(input.data(), input_data, input_strides_, stream);
@@ -166,6 +199,61 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
   }
 
  private:
+  void RunSmallFallback(const Tensor input, void* input_data,
+                        void* residual_data, const aclTensor* t_weight,
+                        float epsilon, aclrtStream stream) const {
+    // A single short row works on 310P, whereas packed short rows do not.
+    // Separate 32-byte arenas avoid adjacent-row reads/writes in that path.
+    auto& input_arena = ascend::GetWorkspacePool().Ensure(
+        stream, 32, "fused_add_rms_norm_short_input");
+    auto& residual_arena = ascend::GetWorkspacePool().Ensure(
+        stream, 32, "fused_add_rms_norm_short_residual");
+    auto& rstd_arena = ascend::GetWorkspacePool().Ensure(
+        stream, 32, "fused_add_rms_norm_short_rstd");
+    Tensor row_input{input_arena.buf, Tensor::Shape{1, dim_}, dtype_,
+                     input.device()};
+    Tensor row_residual{residual_arena.buf, Tensor::Shape{1, dim_}, dtype_,
+                        input.device()};
+    Tensor rstd{rstd_arena.buf, Tensor::Shape{1, 1}, DataType::kFloat32,
+                input.device()};
+    auto t_input = ascend::OwnAclTensor(ascend::BuildAclTensor(row_input));
+    auto t_residual =
+        ascend::OwnAclTensor(ascend::BuildAclTensor(row_residual));
+    auto t_rstd = ascend::OwnAclTensor(ascend::BuildAclTensor(rstd));
+    for (Tensor::Size row = 0; row < num_tokens_; ++row) {
+      auto* input_row = static_cast<uint8_t*>(input_data) + row * row_bytes_;
+      auto* residual_row =
+          static_cast<uint8_t*>(residual_data) + row * row_bytes_;
+      ascend::CheckAcl(
+          aclrtMemcpyAsync(input_arena.buf, 32, input_row, row_bytes_,
+                           ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+          "FusedAddRmsNorm short input copy");
+      ascend::CheckAcl(
+          aclrtMemcpyAsync(residual_arena.buf, 32, residual_row, row_bytes_,
+                           ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+          "FusedAddRmsNorm short residual copy");
+      uint64_t workspace_size = 0;
+      aclOpExecutor* executor = nullptr;
+      ascend::CheckAcl(aclnnInplaceAddRmsNormGetWorkspaceSize(
+                           t_input.get(), t_residual.get(), t_weight,
+                           static_cast<double>(epsilon), t_rstd.get(),
+                           &workspace_size, &executor),
+                       "FusedAddRmsNorm short-row workspace query");
+      auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
+      ascend::CheckAcl(
+          aclnnInplaceAddRmsNorm(arena.buf, workspace_size, executor, stream),
+          "FusedAddRmsNorm short-row execution");
+      ascend::CheckAcl(
+          aclrtMemcpyAsync(input_row, row_bytes_, input_arena.buf, row_bytes_,
+                           ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+          "FusedAddRmsNorm short input writeback");
+      ascend::CheckAcl(
+          aclrtMemcpyAsync(residual_row, row_bytes_, residual_arena.buf,
+                           row_bytes_, ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+          "FusedAddRmsNorm short residual writeback");
+    }
+  }
+
   int64_t RowOffset(int64_t row, const Tensor::Strides& strides) const {
     int64_t remaining = row;
     int64_t offset = 0;
@@ -186,8 +274,7 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
           static_cast<uint8_t*>(dst) + row * row_bytes_, row_bytes_,
           static_cast<const uint8_t*>(src) + offset * element_size_, row_bytes_,
           ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
-      assert(ret == ACL_SUCCESS &&
-             "`FusedAddRmsNorm` Ascend input pack failed");
+      ascend::CheckAcl(ret, "FusedAddRmsNorm input pack");
     }
   }
 
@@ -199,8 +286,7 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
           static_cast<uint8_t*>(dst) + offset * element_size_, row_bytes_,
           static_cast<const uint8_t*>(src) + row * row_bytes_, row_bytes_,
           ACL_MEMCPY_DEVICE_TO_DEVICE, stream);
-      assert(ret == ACL_SUCCESS &&
-             "`FusedAddRmsNorm` Ascend output unpack failed");
+      ascend::CheckAcl(ret, "FusedAddRmsNorm output unpack");
     }
   }
 
@@ -217,6 +303,8 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
   bool needs_input_staging_{false};
 
   bool needs_residual_staging_{false};
+
+  bool use_small_fallback_{false};
 
   void* unit_weight_data_{nullptr};
 

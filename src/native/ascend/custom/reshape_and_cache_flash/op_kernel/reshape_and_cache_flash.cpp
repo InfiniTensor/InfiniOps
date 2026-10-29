@@ -43,6 +43,11 @@ class KernelReshapeAndCacheFlashStrided {
   }
 
   __aicore__ inline void Process() {
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+    AscendC::DataCacheCleanAndInvalid<int64_t,
+                                      AscendC::CacheLine::ENTIRE_DATA_CACHE>(
+        slot_mapping_);
+#endif
     auto local = copy_buffer_.Get<uint8_t>();
     AscendC::DataCopyExtParams copy_params{
         1, static_cast<uint32_t>(head_bytes_), 0, 0, 0};
@@ -79,6 +84,11 @@ class KernelReshapeAndCacheFlashStrided {
              copy_params, pad_params);
       }
     }
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+    AscendC::DataCacheCleanAndInvalid<uint8_t,
+                                      AscendC::CacheLine::ENTIRE_DATA_CACHE>(
+        key_cache_);
+#endif
   }
 
  private:
@@ -88,10 +98,19 @@ class KernelReshapeAndCacheFlashStrided {
       AscendC::LocalTensor<uint8_t>& local,
       const AscendC::DataCopyExtParams& copy_params,
       const AscendC::DataCopyPadExtParams<uint8_t>& pad_params) {
+#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
+    // DataCopyPad is unsupported on 310P's m200 cores. Scalar GM accesses
+    // preserve exact bytes even when padded head addresses are unaligned.
+    for (int64_t byte = 0; byte < head_bytes_; ++byte) {
+      destination.SetValue(destination_offset + byte,
+                           source.GetValue(source_offset + byte));
+    }
+#else
     AscendC::DataCopyPad(local, source[source_offset], copy_params, pad_params);
     AscendC::PipeBarrier<PIPE_ALL>();
     AscendC::DataCopyPad(destination[destination_offset], local, copy_params);
     AscendC::PipeBarrier<PIPE_ALL>();
+#endif
   }
 
   AscendC::TPipe pipe_;

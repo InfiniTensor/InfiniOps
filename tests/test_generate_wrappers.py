@@ -937,6 +937,45 @@ def _generate_binding(op_name, tmp_path, monkeypatch, source):
     return module._generate_pybind11(operator)
 
 
+def test_scalar_default_parsing_ignores_cpp_comments(tmp_path, monkeypatch):
+    text = _generate_binding(
+        "separate_table_rope",
+        tmp_path,
+        monkeypatch,
+        """
+#include <cstdint>
+#include <optional>
+
+namespace infini::ops {
+
+struct Tensor {};
+
+template <typename T>
+class Operator {};
+
+// bool is_neox=false is GPT-J, true is GPT-NeoX.
+class SeparateTableRope : public Operator<SeparateTableRope> {
+ public:
+  static constexpr bool kAutomaticDefault = true;
+
+  SeparateTableRope(const Tensor input, const Tensor positions,
+                    const Tensor sin_table, const Tensor cos_table,
+                    bool is_neox, Tensor out) {}
+
+  virtual void operator()(const Tensor input, const Tensor positions,
+                          const Tensor sin_table, const Tensor cos_table,
+                          bool is_neox, Tensor out) const = 0;
+};
+
+}  // namespace infini::ops
+""",
+    )
+
+    assert 'py::arg("is_neox"), py::arg("out")' in text
+    assert 'py::arg("is_neox") = false is GPT-J' not in text
+    assert 'py::arg("kAutomaticDefault")' not in text
+
+
 def test_mha_varlen_fwd_requires_out_binding(tmp_path, monkeypatch):
     text = _generate_binding(
         "mha_varlen_fwd",

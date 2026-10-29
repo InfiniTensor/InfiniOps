@@ -14,8 +14,10 @@
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
 #include "aclnnop/aclnn_fused_infer_attention_score_v4.h"
+#include "aclnnop/aclnn_prompt_flash_attention_v3.h"
 #include "base/flash_attn_varlen_func.h"
 #include "native/ascend/common.h"
+#include "native/ascend/error_.h"
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
@@ -58,7 +60,36 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     q_lengths_i64_.resize(sequence_count_);
     k_lengths_i64_.resize(sequence_count_);
 
-    if (causal || window_size != std::vector<int64_t>({-1, -1})) {
+    use_prompt_310p_ = ascend::IsAscend310P() && !block_table.has_value() &&
+                       sequence_count_ == 1 && q.size(0) > 0 &&
+                       q.dtype() == DataType::kFloat16 &&
+                       q.size(2) == v.size(2) && q.size(0) == k.size(0) &&
+                       q.size(0) == v.size(0) && causal &&
+                       window_size == std::vector<int64_t>({-1, -1});
+    if (use_prompt_310p_) {
+      // The 310P prompt kernel's causal mask tiles require aligned sequences.
+      constexpr int64_t kPromptSequenceAlignment = 256;
+      padded_sequence_ = ((q.size(0) + kPromptSequenceAlignment - 1) /
+                          kPromptSequenceAlignment) *
+                         kPromptSequenceAlignment;
+      prompt_q_cache_ = ascend::AclTensorCache(
+          {1, padded_sequence_, static_cast<int64_t>(q.size(1) * q.size(2))},
+          ACL_FLOAT16, nullptr);
+      prompt_k_cache_ = ascend::AclTensorCache(
+          {1, padded_sequence_, static_cast<int64_t>(k.size(1) * k.size(2))},
+          ACL_FLOAT16, nullptr);
+      prompt_v_cache_ = ascend::AclTensorCache(
+          {1, padded_sequence_, static_cast<int64_t>(v.size(1) * v.size(2))},
+          ACL_FLOAT16, nullptr);
+      prompt_out_cache_ = ascend::AclTensorCache(
+          {1, padded_sequence_,
+           static_cast<int64_t>(out.size(1) * out.size(2))},
+          ACL_FLOAT16, nullptr);
+    }
+
+    use_prompt_fallback_310p_ = ascend::IsAscend310P() && !use_prompt_310p_;
+    if (!use_prompt_fallback_310p_ &&
+        (causal || window_size != std::vector<int64_t>({-1, -1}))) {
       InitializeAttentionMask();
     }
   }
@@ -119,6 +150,22 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     auto actual_seq_lengths_kv =
         MakeSequenceLengths(cu_seqlens_k, k_lengths_i64_, stream,
                             /*cumulative=*/!block_table.has_value());
+    if (use_prompt_fallback_310p_) {
+      RunVariablePrompt310P(q, k, v, block_table, softmax_scale, causal,
+                            window_size, out, stream);
+      aclDestroyIntArray(actual_seq_lengths);
+      aclDestroyIntArray(actual_seq_lengths_kv);
+      return;
+    }
+    if (use_prompt_310p_) {
+      assert(q_lengths_i64_[0] == static_cast<int64_t>(q.size(0)) &&
+             k_lengths_i64_[0] == static_cast<int64_t>(k.size(0)) &&
+             "310P prompt attention requires one complete sequence");
+      RunPrompt310P(q, k, v, softmax_scale, out, stream);
+      aclDestroyIntArray(actual_seq_lengths);
+      aclDestroyIntArray(actual_seq_lengths_kv);
+      return;
+    }
     auto t_q = q_cache_.get(const_cast<void*>(q.data()));
     auto t_k = paged ? BuildPagedCacheAclTensor(k) : ascend::BuildAclTensor(k);
     auto t_v = paged ? BuildPagedCacheAclTensor(v) : ascend::BuildAclTensor(v);
@@ -214,6 +261,178 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
   }
 
  private:
+  void RunVariablePrompt310P(const Tensor q, const Tensor k, const Tensor v,
+                             const std::optional<Tensor>& block_table,
+                             const std::optional<double> scale, bool causal,
+                             const std::vector<int64_t>& window_size,
+                             Tensor out, aclrtStream stream) const {
+    assert(q.dtype() == DataType::kFloat16 &&
+           "310P prompt attention requires FP16 tensors.");
+    const bool paged = block_table.has_value();
+    const int64_t kv_heads = paged ? k.size(2) : k.size(1);
+    const size_t q_row_bytes = q.size(1) * q.size(2) * sizeof(uint16_t);
+    const size_t k_row_bytes = kv_heads * q.size(2) * sizeof(uint16_t);
+    const size_t v_row_bytes =
+        kv_heads * v.size(v.ndim() - 1) * sizeof(uint16_t);
+    std::vector<int32_t> blocks;
+    if (paged) {
+      blocks.resize(block_table->numel());
+      ascend::CheckAcl(
+          aclrtMemcpyAsync(blocks.data(), blocks.size() * sizeof(int32_t),
+                           block_table->data(), blocks.size() * sizeof(int32_t),
+                           ACL_MEMCPY_DEVICE_TO_HOST, stream),
+          "read 310P attention block table");
+      ascend::CheckAcl(aclrtSynchronizeStream(stream),
+                       "synchronize 310P attention block table");
+    }
+    int64_t q_begin = 0;
+    int64_t k_begin = 0;
+    for (size_t batch = 0; batch < sequence_count_; ++batch) {
+      const int64_t q_end = q_lengths_i64_[batch];
+      const int64_t q_length = q_end - q_begin;
+      const int64_t k_length =
+          paged ? k_lengths_i64_[batch] : k_lengths_i64_[batch] - k_begin;
+      assert(q_length >= 0 && k_length >= 0 &&
+             q_end <= static_cast<int64_t>(q.size(0)) &&
+             "Invalid 310P attention sequence lengths.");
+      auto* output = static_cast<char*>(out.data()) + q_begin * q_row_bytes;
+      if (q_length == 0 || k_length == 0) {
+        if (q_length > 0) {
+          ascend::CheckAcl(aclrtMemsetAsync(output, q_length * q_row_bytes, 0,
+                                            q_length * q_row_bytes, stream),
+                           "zero 310P attention with empty keys");
+        }
+        q_begin = q_end;
+        if (!paged) k_begin += k_length;
+        continue;
+      }
+      // The 310P prompt kernel requires aligned sequence tiles. An explicit
+      // mask preserves right-down causal/window semantics after padding.
+      constexpr int64_t kAlignment = 256;
+      const int64_t padded_length =
+          ((std::max(q_length, k_length) + kAlignment - 1) / kAlignment) *
+          kAlignment;
+      const size_t q_bytes = padded_length * q_row_bytes;
+      const size_t k_bytes = padded_length * k_row_bytes;
+      const size_t v_bytes = padded_length * v_row_bytes;
+      const size_t out_bytes = padded_length * q_row_bytes;
+      const size_t total_bytes = q_bytes + k_bytes + v_bytes + out_bytes;
+      auto& staging = ascend::GetWorkspacePool().Ensure(
+          stream, total_bytes, "variable_prompt_310p_qkv_out");
+      auto* q_data = static_cast<char*>(staging.buf);
+      auto* k_data = q_data + q_bytes;
+      auto* v_data = k_data + k_bytes;
+      auto* out_data = v_data + v_bytes;
+      ascend::CheckAcl(
+          aclrtMemsetAsync(staging.buf, total_bytes, 0, total_bytes, stream),
+          "zero 310P variable attention staging");
+      const auto copy = [stream](void* dst, const void* src, size_t bytes) {
+        ascend::CheckAcl(aclrtMemcpyAsync(dst, bytes, src, bytes,
+                                          ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+                         "stage 310P variable attention");
+      };
+      copy(q_data, static_cast<const char*>(q.data()) + q_begin * q_row_bytes,
+           q_length * q_row_bytes);
+      if (paged) {
+        const int64_t page_size = k.size(1);
+        const int64_t page_count = (k_length + page_size - 1) / page_size;
+        assert(page_count <= static_cast<int64_t>(block_table->size(1)) &&
+               "310P attention block table is too short.");
+        for (int64_t page = 0; page < page_count; ++page) {
+          const int64_t block = blocks[batch * block_table->size(1) + page];
+          assert(block >= 0 && block < static_cast<int64_t>(k.size(0)) &&
+                 "Invalid active 310P attention cache block.");
+          const int64_t rows = std::min(page_size, k_length - page * page_size);
+          copy(k_data + page * page_size * k_row_bytes,
+               static_cast<const char*>(k.data()) +
+                   block * page_size * k_row_bytes,
+               rows * k_row_bytes);
+          copy(v_data + page * page_size * v_row_bytes,
+               static_cast<const char*>(v.data()) +
+                   block * page_size * v_row_bytes,
+               rows * v_row_bytes);
+        }
+      } else {
+        assert(k_begin + k_length <= static_cast<int64_t>(k.size(0)) &&
+               "310P attention key lengths exceed storage.");
+        copy(k_data, static_cast<const char*>(k.data()) + k_begin * k_row_bytes,
+             k_length * k_row_bytes);
+        copy(v_data, static_cast<const char*>(v.data()) + k_begin * v_row_bytes,
+             k_length * v_row_bytes);
+      }
+      std::vector<uint8_t> mask(padded_length * padded_length, 1);
+      std::vector<bool> empty_rows(q_length, true);
+      for (int64_t row = 0; row < q_length; ++row) {
+        const int64_t center = row + k_length - q_length;
+        for (int64_t column = 0; column < k_length; ++column) {
+          const bool masked =
+              (causal && column > center) ||
+              (window_size[0] >= 0 && column < center - window_size[0]) ||
+              (window_size[1] >= 0 && column > center + window_size[1]);
+          mask[row * padded_length + column] = masked;
+          if (!masked) empty_rows[row] = false;
+        }
+      }
+      // Avoid all-masked softmax rows inside CANN; discard these results below.
+      for (int64_t row = 0; row < padded_length; ++row) {
+        if (row >= q_length || empty_rows[row]) mask[row * padded_length] = 0;
+      }
+      auto& mask_buffer = ascend::GetWorkspacePool().Ensure(
+          stream, mask.size(), "variable_prompt_310p_mask");
+      ascend::CheckAcl(
+          aclrtMemcpyAsync(mask_buffer.buf, mask.size(), mask.data(),
+                           mask.size(), ACL_MEMCPY_HOST_TO_DEVICE, stream),
+          "upload 310P variable attention mask");
+      ascend::AclTensorCache t_q(
+          {1, padded_length, static_cast<int64_t>(q.size(1) * q.size(2))},
+          ACL_FLOAT16, q_data);
+      ascend::AclTensorCache t_k(
+          {1, padded_length, kv_heads * static_cast<int64_t>(q.size(2))},
+          ACL_FLOAT16, k_data);
+      ascend::AclTensorCache t_v(
+          {1, padded_length,
+           kv_heads * static_cast<int64_t>(v.size(v.ndim() - 1))},
+          ACL_FLOAT16, v_data);
+      ascend::AclTensorCache t_out(
+          {1, padded_length, static_cast<int64_t>(q.size(1) * q.size(2))},
+          ACL_FLOAT16, out_data);
+      ascend::AclTensorCache t_mask({padded_length, padded_length}, ACL_BOOL,
+                                    mask_buffer.buf);
+      uint64_t workspace_bytes = 0;
+      aclOpExecutor* executor = nullptr;
+      char layout[] = "BSH";
+      ascend::CheckAcl(
+          aclnnPromptFlashAttentionV3GetWorkspaceSize(
+              t_q.get(q_data), t_k.get(k_data), t_v.get(v_data), nullptr,
+              t_mask.get(mask_buffer.buf), nullptr, nullptr, nullptr, nullptr,
+              nullptr, nullptr, nullptr, q.size(1),
+              scale.value_or(1.0 / std::sqrt(q.size(2))),
+              std::numeric_limits<int32_t>::max(),
+              std::numeric_limits<int32_t>::max(), layout, kv_heads, 0, 0,
+              t_out.get(out_data), &workspace_bytes, &executor),
+          "query 310P variable PromptFlashAttentionV3 workspace");
+      auto& workspace = ascend::GetWorkspacePool().Ensure(
+          stream, workspace_bytes, "variable_prompt_310p_workspace");
+      ascend::CheckAcl(aclnnPromptFlashAttentionV3(
+                           workspace.buf, workspace_bytes, executor, stream),
+                       "run 310P variable PromptFlashAttentionV3");
+      copy(output, out_data, q_length * q_row_bytes);
+      for (int64_t row = 0; row < q_length; ++row) {
+        if (empty_rows[row]) {
+          ascend::CheckAcl(
+              aclrtMemsetAsync(output + row * q_row_bytes, q_row_bytes, 0,
+                               q_row_bytes, stream),
+              "zero fully masked 310P attention row");
+        }
+      }
+      // Keep the host mask and ACL descriptors alive until this sequence ends.
+      ascend::CheckAcl(aclrtSynchronizeStream(stream),
+                       "synchronize 310P variable prompt attention");
+      q_begin = q_end;
+      if (!paged) k_begin += k_length;
+    }
+  }
+
   static void ValidateSupportedOptions(
       const std::optional<Tensor>& alibi_slopes, bool return_attn_probs,
       const std::optional<Tensor>& softmax_lse,
@@ -246,7 +465,7 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
   }
 
   void InitializeAttentionMask() {
-    constexpr int64_t mask_size = 2048;
+    const int64_t mask_size = use_prompt_310p_ ? padded_sequence_ : 2048;
     std::vector<uint8_t> mask(mask_size * mask_size);
 
     for (int64_t row = 0; row < mask_size; ++row) {
@@ -266,6 +485,61 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
            "Ascend `FlashAttnVarlenFunc` failed to upload attention mask");
     attention_mask_cache_ = ascend::AclTensorCache(
         {mask_size, mask_size}, ACL_BOOL, attention_mask_data_);
+  }
+
+  void RunPrompt310P(const Tensor q, const Tensor k, const Tensor v,
+                     const std::optional<double> scale, Tensor out,
+                     aclrtStream stream) const {
+    const size_t q_row_bytes = q.size(1) * q.size(2) * sizeof(uint16_t);
+    const size_t k_row_bytes = k.size(1) * k.size(2) * sizeof(uint16_t);
+    const size_t v_row_bytes = v.size(1) * v.size(2) * sizeof(uint16_t);
+    const size_t q_bytes = padded_sequence_ * q_row_bytes;
+    const size_t k_bytes = padded_sequence_ * k_row_bytes;
+    const size_t v_bytes = padded_sequence_ * v_row_bytes;
+    const size_t total_bytes = q_bytes * 2 + k_bytes + v_bytes;
+    auto& padded = ascend::GetWorkspacePool().Ensure(
+        stream, total_bytes, "prompt_310p_padded_qkv_out");
+    auto* q_data = static_cast<char*>(padded.buf);
+    auto* k_data = q_data + q_bytes;
+    auto* v_data = k_data + k_bytes;
+    auto* out_data = v_data + v_bytes;
+    ascend::CheckAcl(
+        aclrtMemsetAsync(padded.buf, total_bytes, 0, total_bytes, stream),
+        "zero padded prompt QKV");
+    ascend::CheckAcl(
+        aclrtMemcpyAsync(q_data, q_bytes, q.data(), q.size(0) * q_row_bytes,
+                         ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+        "pad prompt Q");
+    ascend::CheckAcl(
+        aclrtMemcpyAsync(k_data, k_bytes, k.data(), k.size(0) * k_row_bytes,
+                         ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+        "pad prompt K");
+    ascend::CheckAcl(
+        aclrtMemcpyAsync(v_data, v_bytes, v.data(), v.size(0) * v_row_bytes,
+                         ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+        "pad prompt V");
+    char layout[] = "BSH";
+    uint64_t workspace_bytes = 0;
+    aclOpExecutor* executor = nullptr;
+    const auto status = aclnnPromptFlashAttentionV3GetWorkspaceSize(
+        prompt_q_cache_.get(q_data), prompt_k_cache_.get(k_data),
+        prompt_v_cache_.get(v_data), nullptr,
+        attention_mask_cache_.get(attention_mask_data_), nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, q.size(1),
+        scale.value_or(1.0 / std::sqrt(q.size(2))),
+        std::numeric_limits<int32_t>::max(), 0, layout, k.size(1), 0, 0,
+        prompt_out_cache_.get(out_data), &workspace_bytes, &executor);
+    ascend::CheckAcl(status, "query 310P PromptFlashAttentionV3 workspace");
+    auto& workspace = ascend::GetWorkspacePool().Ensure(
+        stream, workspace_bytes, "prompt_310p_attention_workspace");
+    ascend::CheckAcl(aclnnPromptFlashAttentionV3(workspace.buf, workspace_bytes,
+                                                 executor, stream),
+                     "run 310P PromptFlashAttentionV3");
+    const auto output_bytes = q.size(0) * q_row_bytes;
+    ascend::CheckAcl(
+        aclrtMemcpyAsync(out.data(), output_bytes, out_data, output_bytes,
+                         ACL_MEMCPY_DEVICE_TO_DEVICE, stream),
+        "unpad prompt output");
   }
 
   // Dense TND K/V uses cumulative endpoints, while paged K/V uses per-batch
@@ -299,6 +573,13 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
   mutable std::vector<int64_t> q_lengths_i64_;
   mutable std::vector<int64_t> k_lengths_i64_;
   void* attention_mask_data_{nullptr};
+  bool use_prompt_310p_{false};
+  bool use_prompt_fallback_310p_{false};
+  int64_t padded_sequence_{0};
+  mutable ascend::AclTensorCache prompt_q_cache_;
+  mutable ascend::AclTensorCache prompt_k_cache_;
+  mutable ascend::AclTensorCache prompt_v_cache_;
+  mutable ascend::AclTensorCache prompt_out_cache_;
   mutable std::array<char, 4> input_layout_{'T', 'N', 'D', '\0'};
 };
 

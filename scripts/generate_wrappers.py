@@ -589,8 +589,22 @@ def _find_tensor_params(op_name):
 
 
 def _find_params_with_defaults(op_name):
-    """Return `{param_name: default_literal}` for scalar params with defaults."""
-    source = _find_base_header(op_name).read_text()
+    """Return scalar defaults found in operator parameter declarations."""
+    class_name = _op_class_name(op_name)
+    source = _strip_cpp_comments(_find_base_header(op_name).read_text())
+    class_body = _extract_class_body(source, class_name)
+    parameter_lists = []
+
+    for pattern in (
+        rf"(?:explicit\s+)?{class_name}\s*\(",
+        r"virtual\s+void\s+operator\s*\(\s*\)\s*\(",
+    ):
+        parameter_lists.extend(_find_signature_parameters(class_body, pattern))
+
+    # Restrict the legacy scalar-default regex to constructor/call parameter
+    # lists.  Scanning the whole class body also picks up constants and local
+    # variables, while scanning raw source can pick up prose in comments.
+    source = ",\n".join(parameter_lists) + ",\n"
     mapping = {}
 
     for name, default in re.findall(
