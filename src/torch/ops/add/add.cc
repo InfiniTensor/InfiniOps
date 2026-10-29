@@ -1,5 +1,6 @@
-#include "torch/c10.h"
 #include "torch/ops/add/add.h"
+
+#include "torch/c10.h"
 #ifdef WITH_NVIDIA
 #include "torch/nvidia/c10.h"
 #endif
