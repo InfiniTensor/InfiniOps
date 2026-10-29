@@ -31,10 +31,11 @@ def test_workspace_probe_uses_host_compiler(tmp_path, monkeypatch):
     module["test_ascend_workspace_pool_retains_allocations_until_destruction"](tmp_path)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="MetaX uses a POSIX compiler wrapper")
+@pytest.mark.skipif(os.name == "nt", reason="GPU compiler wrappers use POSIX")
+@pytest.mark.parametrize("backend", ("metax", "moore"))
 @pytest.mark.parametrize("auto_detect", (False, True))
-def test_metax_compiler_preserves_infinirt_configuration(
-    tmp_path, monkeypatch, auto_detect
+def test_gpu_compiler_preserves_infinirt_configuration(
+    tmp_path, monkeypatch, auto_detect, backend
 ):
     cmake = shutil.which("cmake")
     compiler = shutil.which("g++") or shutil.which("clang++")
@@ -42,21 +43,26 @@ def test_metax_compiler_preserves_infinirt_configuration(
     if not cmake or not compiler:
         pytest.skip("cmake and a C++ compiler are required")
 
-    toolkit = tmp_path / "maca"
-    mxcc = toolkit / "mxgpu_llvm/bin/mxcc"
-    mxcc.parent.mkdir(parents=True)
-    mxcc.write_text(f'#!/bin/sh\nexec {shlex.quote(compiler)} "$@"\n')
-    mxcc.chmod(0o755)
+    toolkit = tmp_path / "toolkit"
+    compiler_path = "mxgpu_llvm/bin/mxcc" if backend == "metax" else "bin/mcc"
+    gpu_compiler = toolkit / compiler_path
+    gpu_compiler.parent.mkdir(parents=True)
+    gpu_compiler.write_text(f'#!/bin/sh\nexec {shlex.quote(compiler)} "$@"\n')
+    gpu_compiler.chmod(0o755)
     libraries = toolkit / "lib"
     libraries.mkdir()
 
-    for name in ("mcruntime", "mcdnn", "mcblas"):
+    library_names = (
+        ("mcruntime", "mcdnn", "mcblas")
+        if backend == "metax"
+        else ("musa", "musart", "mublas", "iomp5")
+    )
+    for name in library_names:
         (libraries / f"lib{name}.so").touch()
-
-    monkeypatch.setenv("MACA_PATH", str(toolkit))
 
     for name in (
         "INFINI_RT_ROOT",
+        "MACA_PATH",
         "HPCC_PATH",
         "NEUWARE_HOME",
         "MUSA_ROOT",
@@ -66,9 +72,11 @@ def test_metax_compiler_preserves_infinirt_configuration(
     ):
         monkeypatch.delenv(name, raising=False)
 
-    wrapper = tmp_path / "scripts/mxcc_wrapper.sh"
+    monkeypatch.setenv("MACA_PATH" if backend == "metax" else "MUSA_HOME", str(toolkit))
+    wrapper_name = "mxcc_wrapper.sh" if backend == "metax" else "mcc_wrapper.sh"
+    wrapper = tmp_path / "scripts" / wrapper_name
     wrapper.parent.mkdir()
-    shutil.copyfile(ROOT / "scripts/mxcc_wrapper.sh", wrapper)
+    shutil.copyfile(ROOT / "scripts" / wrapper_name, wrapper)
     wrapper.chmod(0o755)
     prefix = tmp_path / "infinirt"
     (prefix / "include/infini").mkdir(parents=True)
@@ -78,14 +86,18 @@ def test_metax_compiler_preserves_infinirt_configuration(
 
     source = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     initialization = source.split("if(AUTO_DETECT_BACKENDS)", 1)[0]
-    metax_start = source.index("if(WITH_METAX)\n    add_compile_definitions")
-    metax = source[metax_start : source.index("if(WITH_MARS)", metax_start)]
+    backend_option = f"WITH_{backend.upper()}"
+    backend_start = source.index(f"if({backend_option})\n    add_compile_definitions")
+    next_backend = "WITH_MARS" if backend == "metax" else "WITH_CAMBRICON"
+    backend_config = source[
+        backend_start : source.index(f"if({next_backend})", backend_start)
+    ]
     runtime_start = source.index('set(INFINI_RT_ROOT "$ENV{INFINI_RT_ROOT}"')
     runtime = source[
         runtime_start : source.index("add_subdirectory(src)", runtime_start)
     ]
     (tmp_path / "CMakeLists.txt").write_text(
-        initialization + metax + runtime + "\nadd_subdirectory(dependency)\n"
+        initialization + backend_config + runtime + "\nadd_subdirectory(dependency)\n"
         'file(WRITE "${CMAKE_BINARY_DIR}/selected-compiler.txt" '
         '"${CMAKE_CXX_COMPILER}")\nadd_library(probe OBJECT probe.cc)\n'
     )
@@ -107,7 +119,7 @@ def test_metax_compiler_preserves_infinirt_configuration(
     ]
 
     if not auto_detect:
-        configure.append("-DWITH_METAX=ON")
+        configure.append(f"-D{backend_option}=ON")
 
     for _ in range(2):
         result = subprocess.run(configure, capture_output=True, text=True, timeout=45)

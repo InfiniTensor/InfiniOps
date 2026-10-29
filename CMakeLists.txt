@@ -210,10 +210,14 @@ if(AUTO_DETECT_DEVICES)
     endif()
 endif()
 
-# Select the MetaX compiler before CMake initializes CXX and its cache.
+# Select backend compilers before CMake initializes CXX and its cache.
 if(WITH_METAX)
     set(CMAKE_C_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh")
     set(CMAKE_CXX_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh")
+endif()
+if(WITH_MOORE)
+    set(CMAKE_C_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh")
+    set(CMAKE_CXX_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh")
 endif()
 enable_language(CXX)
 
@@ -631,9 +635,6 @@ if(WITH_MOORE)
     endif()
 
     message(STATUS "Using Moore from `${MUSA_ROOT}`.")
-
-    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh)
-    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh)
 
     include_directories("${MUSA_ROOT}/include")
     link_directories("${MUSA_ROOT}/lib")
