@@ -643,7 +643,7 @@ if(WITH_NVIDIA)
 endif()
 
 if(WITH_NVIDIA AND WITH_NINETOOTHED)
-    list(APPEND _infini_ops_smoke_ops fused_add_rms_norm)
+    list(APPEND _infini_ops_smoke_ops fused_add_rms_norm merged_qk_rms_norm)
 endif()
 
 if(((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH) OR WITH_ILUVATAR)

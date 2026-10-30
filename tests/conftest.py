@@ -245,6 +245,7 @@ def _is_smoke_item(item):
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
         "tests/test_flash_attn_varlen_func.py": _is_smoke_flash_attn_varlen_func_case,
         "tests/test_fused_add_rms_norm.py": _is_smoke_fused_add_rms_norm_case,
+        "tests/test_merged_qk_rms_norm.py": _is_smoke_merged_qk_rms_norm_case,
         "tests/test_swiglu.py": _is_smoke_swiglu_case,
         "tests/test_torch_ops.py": _is_smoke_torch_op_case,
     }
@@ -472,6 +473,10 @@ def _is_smoke_fused_add_rms_norm_case(params):
         )
         in {((2, 2, 4), None, None), ((2, 2, 2, 8), None, None)}
     )
+
+
+def _is_smoke_merged_qk_rms_norm_case(params):
+    return params.get("seq_len") == 1
 
 
 def _is_smoke_moe_sum_case(params):
