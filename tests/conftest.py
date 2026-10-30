@@ -244,6 +244,7 @@ def _is_smoke_item(item):
         "tests/test_silu_and_mul.py": _is_smoke_silu_and_mul_case,
         "tests/test_cutlass_scaled_mm.py": _is_smoke_cutlass_scaled_mm_case,
         "tests/test_flash_attn_varlen_func.py": _is_smoke_flash_attn_varlen_func_case,
+        "tests/test_fused_add_rms_norm.py": _is_smoke_fused_add_rms_norm_case,
         "tests/test_swiglu.py": _is_smoke_swiglu_case,
         "tests/test_torch_ops.py": _is_smoke_torch_op_case,
     }
@@ -455,6 +456,21 @@ def _is_smoke_rms_norm_case(params):
             "out_strides",
         )
         in cases
+    )
+
+
+def _is_smoke_fused_add_rms_norm_case(params):
+    return (
+        _is_float32(params)
+        and params.get("epsilon") == 1e-6
+        and not params.get("has_weight")
+        and _shape_case(
+            params,
+            "shape",
+            "input_strides",
+            "residual_strides",
+        )
+        in {((2, 2, 4), None, None), ((2, 2, 2, 8), None, None)}
     )
 
 

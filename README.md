@@ -48,6 +48,7 @@ InfiniOps extension so `import infini.ops` can load its runtime dependency.
 | `-DWITH_MOORE=[ON\|OFF]` | Compile the Moore implementation | OFF |
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
 | `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |
+| `-DWITH_NINETOOTHED=[ON\|OFF]` | Compile NineToothed-generated NVIDIA kernels; also requires `-DWITH_NVIDIA=ON` and Python packages `ninetoothed` and `ntops` | OFF |
 | `-DWITH_TORCH=[ON\|OFF]` | Compile generated PyTorch ATen-backed operators | OFF |
 | `-DBUILD_NVIDIA_W4_MARLIN=[ON\|OFF]` | Build AWQ/GPTQ Marlin providers; requires CUDA >= 12.3 and C++20 | OFF |
 | `-DAUTO_DETECT_DEVICES=[ON\|OFF]` | Auto-detect available platforms | ON |
