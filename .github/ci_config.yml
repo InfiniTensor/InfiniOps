@@ -212,13 +212,13 @@ platforms:
       npu:
         type: unittest
         resources:
-          gpu_ids: "1"
+          gpu_ids: auto
           ngpus: 1
           gpu_style: none
           memory: 32GB
           shm_size: 16g
           timeout: 3600
-          queue_timeout: 3600
+          queue_timeout: 600
           junit_path: test-results.xml
         stages:
           - name: test
