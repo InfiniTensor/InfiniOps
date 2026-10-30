@@ -840,6 +840,13 @@ if(WITH_TORCH)
     # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
     # which we then glob below alongside any hand-written torch sources.
     find_package(Python COMPONENTS Interpreter REQUIRED)
+    if(WITH_ASCEND)
+        # The vendor runtime uses CPython callbacks; the preflight probe must
+        # use the matching public C API and an explicit link dependency.
+        find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
+        list(APPEND TORCH_INCLUDE_DIRS ${Python_INCLUDE_DIRS})
+        list(APPEND TORCH_LIBRARIES Python::Python)
+    endif()
 
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py"

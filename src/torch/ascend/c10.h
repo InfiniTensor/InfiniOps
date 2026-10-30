@@ -1,6 +1,7 @@
 #ifndef INFINI_OPS_TORCH_ASCEND_C10_H_
 #define INFINI_OPS_TORCH_ASCEND_C10_H_
 
+#include <Python.h>
 #include <acl/acl_rt.h>
 #include <torch_npu/csrc/core/npu/NPUFunctions.h>
 #include <torch_npu/csrc/core/npu/NPUGuard.h>
@@ -24,6 +25,9 @@ struct C10<Device::Type::kAscend> {
 
   static c10_npu::NPUStream GetStreamFromExternal(void* stream,
                                                   int device_index) {
+    TORCH_CHECK(Py_IsInitialized(),
+                "Ascend ATen provider requires an initialized Python "
+                "interpreter and imported torch_npu module");
     const auto device = static_cast<c10::DeviceIndex>(device_index);
     // InfiniRT activates ACL directly; align torch_npu's cached device first.
     int32_t current = -1;
