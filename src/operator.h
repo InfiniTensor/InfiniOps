@@ -698,7 +698,7 @@ class Operator : public OperatorBase {
   template <typename Selected, typename... Args>
   static bool SelectWithDevice(const Config& config,
                                Device::Type dispatch_device_type, bool strict,
-                               Selected&& selected, Args&&... args) {
+                               Selected&& selected, Args&&... call_args) {
     bool matched = false;
 
     if (!detail::ListContains(dispatch_device_type, ActiveDevices<Key>{})) {
@@ -710,15 +710,13 @@ class Operator : public OperatorBase {
 
     DispatchFunc<ActiveDevices<Key>>(
         dispatch_device_type,
-        [&](auto device_tag) {
+        [&](auto device_tag, auto&&... dispatched_args) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
           using Implementations =
               typename ActiveImplementations<Key, kDev>::type;
           const bool automatic =
               config.implementation_index() == Config::kAutomaticImplementation;
-          // Avoid NVCC's nested-lambda capture error for the argument pack.
-          const auto construct = [&](auto implementation_tag,
-                                     auto&... provider_args) {
+          const auto construct = [&](auto implementation_tag) {
             constexpr std::size_t kImplementationIndex =
                 decltype(implementation_tag)::value;
             using Provider = Operator<Key, kDev, kImplementationIndex>;
@@ -730,11 +728,11 @@ class Operator : public OperatorBase {
                           std::is_constructible_v<Provider, Args...>) {
               bool supported = false;
               if constexpr (kConfigAware) {
-                supported =
-                    Provider::supports(config, std::as_const(provider_args)...);
+                supported = Provider::supports(
+                    config, std::as_const(dispatched_args)...);
               } else if (!config.requires_config_aware_provider()) {
                 supported = detail::ProviderSupports<Provider>(
-                    0, std::as_const(provider_args)...);
+                    0, std::as_const(dispatched_args)...);
               }
               if (!supported) {
                 if (automatic) return;
@@ -748,7 +746,7 @@ class Operator : public OperatorBase {
               matched = true;
               selected(device_tag, implementation_tag,
                        std::bool_constant<kConfigConstructor>{},
-                       provider_args...);
+                       dispatched_args...);
             } else {
               if (!automatic && strict) {
                 throw std::invalid_argument(
@@ -762,7 +760,7 @@ class Operator : public OperatorBase {
             for (const auto index : detail::ListToVector(Implementations{})) {
               detail::DispatchImplementation(index, construct,
                                              "Operator::Make(automatic)",
-                                             Implementations{}, args...);
+                                             Implementations{});
               if (matched) break;
             }
           } else {
@@ -773,11 +771,10 @@ class Operator : public OperatorBase {
             }
             detail::DispatchImplementation(
                 config.implementation_index(), construct,
-                "Operator::Make(implementation_index)", Implementations{},
-                args...);
+                "Operator::Make(implementation_index)", Implementations{});
           }
         },
-        "Operator::Make");
+        "Operator::Make", call_args...);
 
     return matched;
   }
