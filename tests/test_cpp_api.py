@@ -96,7 +96,33 @@ def test_tuning_disabled_by_default(tmp_path):
         assert not cache_path.exists()
 
 
-def _compile_cpp(tmp_path, name, source_text):
+def test_cpp_external_tensor_wrapping(tmp_path):
+    import torch
+    from torch.utils.cpp_extension import include_paths, library_paths
+
+    repo_root = Path(__file__).resolve().parents[1]
+    torch_library_dirs = library_paths()
+    binary = _compile_cpp(
+        tmp_path,
+        "external_tensor_wrapping",
+        _EXTERNAL_TENSOR_WRAPPING_SOURCE,
+        compile_flags=[
+            f"-I{repo_root / 'src'}",
+            *(f"-I{directory}" for directory in include_paths()),
+            f"-D_GLIBCXX_USE_CXX11_ABI={int(torch.compiled_with_cxx11_abi())}",
+        ],
+        link_flags=[
+            *(f"-L{directory}" for directory in torch_library_dirs),
+            "-ltorch",
+            "-ltorch_cpu",
+            "-lc10",
+            *(f"-Wl,-rpath,{directory}" for directory in torch_library_dirs),
+        ],
+    )
+    _run([str(binary)])
+
+
+def _compile_cpp(tmp_path, name, source_text, *, compile_flags=(), link_flags=()):
     install_prefixes = _install_prefixes()
     include_dirs = [prefix / "include" for prefix in install_prefixes]
     library_dirs = list(
@@ -117,8 +143,10 @@ def _compile_cpp(tmp_path, name, source_text):
             "-std=c++17",
             "-Werror",
             "-Wno-error=deprecated-declarations",
+            *compile_flags,
             *(f"-I{include_dir}" for include_dir in include_dirs),
             str(source),
+            *link_flags,
             *(f"-L{library_dir}" for library_dir in library_dirs),
             "-linfiniops",
             "-linfinirt",
@@ -243,6 +271,63 @@ def _run(command, **kwargs):
     except subprocess.CalledProcessError as error:
         output = f"{error.stdout}\n{error.stderr}".strip()
         raise AssertionError(output) from error
+
+
+_EXTERNAL_TENSOR_WRAPPING_SOURCE = textwrap.dedent(
+    """\
+    #include <array>
+    #include <cassert>
+    #include <cstdint>
+
+    #include "torch/tensor_.h"
+
+    int main() {
+      namespace rt = infini::rt;
+      using namespace infini::ops;
+      rt::set_runtime_device_type(Device::Type::kCpu);
+      void* allocation = nullptr;
+      const auto status = rt::runtime::Malloc(&allocation, 64 * sizeof(float));
+      assert(status == rt::runtime::kSuccess);
+      auto* data = static_cast<float*>(allocation);
+      for (int i = 0; i < 64; ++i) data[i] = static_cast<float>(i);
+
+      {
+        const std::array<int64_t, 2> shape{3, 7};
+        const std::array<int64_t, 2> strides{14, 2};
+        auto view = ToAtenTensor<Device::Type::kCpu>(
+            data, shape, strides, DataType::kFloat32);
+        assert(view.data_ptr<float>() == data);
+        assert(view.sizes() == at::IntArrayRef(shape));
+        assert(view.strides() == at::IntArrayRef(strides));
+        assert(view[2][6].item<float>() == 40.0F);
+        view.fill_(7.0F);
+      }
+
+      // Destroying the view must not free the caller's storage.
+      assert(data[0] == 7.0F && data[40] == 7.0F && data[1] == 1.0F);
+      {
+        const std::array<int64_t, 0> scalar_shape{};
+        auto scalar = ToAtenTensor<Device::Type::kCpu>(
+            data + 1, scalar_shape, scalar_shape, DataType::kFloat32);
+        assert(scalar.dim() == 0 && scalar.numel() == 1);
+        assert(scalar.data_ptr<float>() == data + 1);
+        assert(scalar.item<float>() == 1.0F);
+
+        const std::array<int64_t, 2> empty_shape{0, 7};
+        const std::array<int64_t, 2> empty_strides{7, 1};
+        auto empty = ToAtenTensor<Device::Type::kCpu>(
+            data, empty_shape, empty_strides, DataType::kFloat32);
+        assert(empty.sizes() == at::IntArrayRef(empty_shape));
+        assert(empty.strides() == at::IntArrayRef(empty_strides));
+        assert(empty.numel() == 0);
+      }
+
+      const auto free_status = rt::runtime::Free(allocation);
+      assert(free_status == rt::runtime::kSuccess);
+      return 0;
+    }
+    """
+).lstrip()
 
 
 _CMAKE_PACKAGE_SMOKE_PROJECT = textwrap.dedent(
