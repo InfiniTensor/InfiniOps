@@ -184,7 +184,7 @@ def test_ascend_workspace_pool_retains_allocations_until_destruction(tmp_path, d
 
     _run(
         [
-            _compiler("CXX", "c++"),
+            _compiler("HOST_CXX", os.environ.get("CXX", "c++")),
             "-std=c++17",
             "-Werror",
             f"-I{tmp_path / 'include'}",

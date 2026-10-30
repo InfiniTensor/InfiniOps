@@ -18,7 +18,7 @@ if(SKBUILD_STATE STREQUAL "sdist")
         DESTINATION "${CMAKE_BINARY_DIR}/flash-attention-cutlass-source")
     return()
 endif()
-project(InfiniOps LANGUAGES CXX)
+project(InfiniOps LANGUAGES NONE)
 
 if(POLICY CMP0116)
     cmake_policy(SET CMP0116 NEW)
@@ -209,6 +209,17 @@ if(AUTO_DETECT_DEVICES)
         endif()
     endif()
 endif()
+
+# Select backend compilers before CMake initializes CXX and its cache.
+if(WITH_METAX)
+    set(CMAKE_C_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh")
+    set(CMAKE_CXX_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh")
+endif()
+if(WITH_MOORE)
+    set(CMAKE_C_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh")
+    set(CMAKE_CXX_COMPILER "${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh")
+endif()
+enable_language(CXX)
 
 if(BUILD_NVIDIA_FLASH_INFERENCE AND NOT WITH_NVIDIA)
     message(FATAL_ERROR "Native FlashAttention requires WITH_NVIDIA")
@@ -567,8 +578,6 @@ if(WITH_METAX)
 
     # Normally can be found at: `/opt/maca/`.
     set(MACA_PATH $ENV{MACA_PATH})
-    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
-    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mxcc_wrapper.sh)
 
     include_directories("${MACA_PATH}/include")
     link_directories("${MACA_PATH}/lib")
@@ -626,9 +635,6 @@ if(WITH_MOORE)
     endif()
 
     message(STATUS "Using Moore from `${MUSA_ROOT}`.")
-
-    set(CMAKE_C_COMPILER   ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh)
-    set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/scripts/mcc_wrapper.sh)
 
     include_directories("${MUSA_ROOT}/include")
     link_directories("${MUSA_ROOT}/lib")
