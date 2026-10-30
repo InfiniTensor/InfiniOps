@@ -87,8 +87,6 @@ class Operator<Fill, Device::Type::kCambricon> : public Fill {
     is_out_contiguous_ = out.IsContiguous();
     cnrt_utils::GetLaunchConfig(out.device(), &core_per_cluster_,
                                 &cluster_count_);
-    default_workspace_ =
-        cnrt_utils::AllocateDeviceBuffer(workspace_size_in_bytes());
   }
 
   void Run(const void* device_value, double host_value, Tensor out) const {
@@ -97,7 +95,10 @@ class Operator<Fill, Device::Type::kCambricon> : public Fill {
     }
 
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    void* workspace = workspace_ ? workspace_ : default_workspace_.get();
+    void* workspace = workspace_
+                          ? workspace_
+                          : cnrt_utils::DefaultWorkspace(
+                                default_workspace_, workspace_size_in_bytes());
 
     DispatchFunc<Device::Type::kCambricon, CambriconFillTypes>(
         out_type_,
@@ -137,7 +138,7 @@ class Operator<Fill, Device::Type::kCambricon> : public Fill {
 
   bool is_out_contiguous_{false};
 
-  cnrt_utils::DeviceBuffer default_workspace_{};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
 
   int core_per_cluster_{0};
 

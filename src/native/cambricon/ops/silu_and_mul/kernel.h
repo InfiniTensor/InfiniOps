@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "base/silu_and_mul.h"
+#include "native/cambricon/cnrt_utils.h"
 #include "native/cambricon/common.h"
 #include "native/cambricon/data_type_.h"
 
@@ -27,7 +28,6 @@ class Operator<SiluAndMul, Device::Type::kCambricon> : public SiluAndMul {
            "`SiluAndMul` Cambricon supports float16, bfloat16, and float32");
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster_,
                                 &cluster_count_);
-    CNRT_CHECK(cnrtMalloc(&default_workspace_, workspace_size_in_bytes()));
   }
 
   void operator()(const Tensor input, Tensor out) const override {
@@ -36,7 +36,10 @@ class Operator<SiluAndMul, Device::Type::kCambricon> : public SiluAndMul {
     }
 
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    auto* workspace = workspace_ ? workspace_ : default_workspace_;
+    auto* workspace = workspace_
+                          ? workspace_
+                          : cnrt_utils::DefaultWorkspace(
+                                default_workspace_, workspace_size_in_bytes());
     DispatchFunc<
         Device::Type::kCambricon,
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
@@ -53,14 +56,12 @@ class Operator<SiluAndMul, Device::Type::kCambricon> : public SiluAndMul {
         "CambriconSiluAndMul::operator()");
   }
 
-  ~Operator() { CNRT_CHECK(cnrtFree(default_workspace_)); }
-
   std::size_t workspace_size_in_bytes() const override {
     return ndim_ * (2 * sizeof(size_t) + 2 * sizeof(ptrdiff_t));
   }
 
  private:
-  void* default_workspace_{nullptr};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
   int core_per_cluster_{0};
   int cluster_count_{0};
 };

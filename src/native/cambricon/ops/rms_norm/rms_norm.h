@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "base/rms_norm.h"
+#include "native/cambricon/cnrt_utils.h"
 #include "native/cambricon/common.h"
 #include "native/cambricon/data_type_.h"
 
@@ -31,13 +32,15 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
       : RmsNorm{input, weight, eps, out} {
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster,
                                 &cluster_count);
-    cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
   }
 
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    auto workspace{workspace_ ? workspace_ : default_workspace_};
+    auto workspace{workspace_
+                       ? workspace_
+                       : cnrt_utils::DefaultWorkspace(
+                             default_workspace_, workspace_size_in_bytes())};
 
     DispatchFunc<
         Device::Type::kCambricon,
@@ -56,13 +59,11 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
         "CambriconRmsNorm::operator() - output dispatch");
   }
 
-  ~Operator() { cnrtFree(default_workspace_); }
-
   std::size_t workspace_size_in_bytes() const override {
     return ndim_ * (sizeof(size_t) + 2 * sizeof(ptrdiff_t));
   }
 
-  void* default_workspace_{nullptr};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
   int core_per_cluster = 0;
   int cluster_count = 0;
 };

@@ -95,7 +95,6 @@ class Operator<Softmax, Device::Type::kCambricon> : public Softmax {
           std::max(input_copy_workspace_size, output_copy_workspace_size);
       tensor_buffer_size_ = AlignUp(out.numel() * out.element_size(), 128);
       workspace_size_ = 2 * tensor_buffer_size_ + copy_workspace_size_;
-      default_workspace_ = cnrt_utils::AllocateDeviceBuffer(workspace_size_);
     }
   }
 
@@ -117,7 +116,9 @@ class Operator<Softmax, Device::Type::kCambricon> : public Softmax {
 
     if (needs_staging_) {
       auto* workspace = static_cast<char*>(
-          workspace_ ? workspace_ : default_workspace_.get());
+          workspace_ ? workspace_
+                     : cnrt_utils::DefaultWorkspace(default_workspace_,
+                                                    workspace_size_in_bytes()));
       const auto available_workspace_size =
           workspace_ ? workspace_size_in_bytes_ : workspace_size_;
       assert(available_workspace_size >= workspace_size_ &&
@@ -183,7 +184,7 @@ class Operator<Softmax, Device::Type::kCambricon> : public Softmax {
   cnnl_utils::TensorDescriptor input_desc_{};
   cnnl_utils::TensorDescriptor out_desc_{};
   cnnl_utils::TensorDescriptor contiguous_desc_{};
-  cnrt_utils::DeviceBuffer default_workspace_{};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
   bool needs_staging_{false};
   std::size_t tensor_buffer_size_{0};
   std::size_t copy_workspace_size_{0};

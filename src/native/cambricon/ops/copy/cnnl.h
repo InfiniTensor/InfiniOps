@@ -35,8 +35,6 @@ class Operator<Copy, Device::Type::kCambricon> : public Copy {
     INFINI_OPS_CNNL_CHECK(
         cnnlGetCopyWorkspaceSize(cnnl_handle_.get(), input_desc_.get(),
                                  out_desc_.get(), &workspace_size_));
-
-    default_workspace_ = cnrt_utils::AllocateDeviceBuffer(workspace_size_);
   }
 
   void operator()(const Tensor src, const bool /*non_blocking*/,
@@ -48,7 +46,10 @@ class Operator<Copy, Device::Type::kCambricon> : public Copy {
     INFINI_OPS_CNNL_CHECK(cnnlSetQueue(
         cnnl_handle_.get(), static_cast<cnrtQueue_t>(stream_ ? stream_ : 0)));
 
-    void* workspace = workspace_ ? workspace_ : default_workspace_.get();
+    void* workspace = workspace_
+                          ? workspace_
+                          : cnrt_utils::DefaultWorkspace(
+                                default_workspace_, workspace_size_in_bytes());
     const auto workspace_size =
         workspace_ ? workspace_size_in_bytes_ : workspace_size_;
     assert(workspace_size >= workspace_size_ &&
@@ -66,7 +67,7 @@ class Operator<Copy, Device::Type::kCambricon> : public Copy {
  private:
   std::size_t workspace_size_{0};
 
-  cnrt_utils::DeviceBuffer default_workspace_{};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
 
   cnnl_utils::Handle cnnl_handle_{};
 

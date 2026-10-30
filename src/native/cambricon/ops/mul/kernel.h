@@ -24,9 +24,7 @@ template <>
 class Operator<Mul, Device::Type::kCambricon> : public Mul {
  public:
   Operator(const Tensor input, const Tensor other, Tensor out)
-      : Mul{input, other, out},
-        default_workspace_{
-            cnrt_utils::AllocateDeviceBuffer(workspace_size_in_bytes())} {
+      : Mul{input, other, out} {
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster_,
                                 &cluster_count_);
   }
@@ -41,7 +39,10 @@ class Operator<Mul, Device::Type::kCambricon> : public Mul {
                            is_out_contiguous_ && input.shape() == out.shape() &&
                            other.shape() == out.shape();
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    void* workspace = workspace_ ? workspace_ : default_workspace_.get();
+    void* workspace = workspace_
+                          ? workspace_
+                          : cnrt_utils::DefaultWorkspace(
+                                default_workspace_, workspace_size_in_bytes());
 
     using SupportedTypes =
         List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32,
@@ -67,7 +68,7 @@ class Operator<Mul, Device::Type::kCambricon> : public Mul {
   }
 
  private:
-  cnrt_utils::DeviceBuffer default_workspace_{};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
 
   int core_per_cluster_{0};
 

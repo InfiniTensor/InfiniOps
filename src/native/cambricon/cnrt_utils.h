@@ -31,6 +31,15 @@ inline DeviceBuffer AllocateDeviceBuffer(std::size_t size) {
   return DeviceBuffer{buffer};
 }
 
+// Called only when an invocation has no caller-owned workspace. Keep the
+// fallback alive for asynchronous execution and reuse it on later calls.
+inline void* DefaultWorkspace(DeviceBuffer& buffer, std::size_t size) {
+  if (!buffer && size != 0) {
+    buffer = AllocateDeviceBuffer(size);
+  }
+  return buffer.get();
+}
+
 }  // namespace infini::ops::cnrt_utils
 
 #endif
