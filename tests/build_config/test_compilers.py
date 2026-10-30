@@ -28,7 +28,9 @@ def test_workspace_probe_uses_host_compiler(tmp_path, monkeypatch):
     monkeypatch.setenv("CXX", str(gpu_compiler))
     monkeypatch.setenv("HOST_CXX", compiler)
     module = runpy.run_path(str(ROOT / "tests/test_cpp_api.py"))
-    module["test_ascend_workspace_pool_retains_allocations_until_destruction"](tmp_path)
+    module["test_ascend_workspace_pool_retains_allocations_until_destruction"](
+        tmp_path, "npu"
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="GPU compiler wrappers use POSIX")

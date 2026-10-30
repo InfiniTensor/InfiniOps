@@ -642,6 +642,10 @@ if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()
 
+if(WITH_NVIDIA AND WITH_NINETOOTHED)
+    list(APPEND _infini_ops_smoke_ops fused_add_rms_norm)
+endif()
+
 if(((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH) OR WITH_ILUVATAR)
     list(APPEND _infini_ops_smoke_ops flash_attn_varlen_func)
 endif()
@@ -1434,6 +1438,8 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
         "${PROJECT_SOURCE_DIR}/generated/bindings/generated_dispatch_*.cc")
 
     if(OPERATOR_DISPATCH_SOURCES)
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/operator.h"
+            "${PROJECT_SOURCE_DIR}/generated/bindings/operator.h" COPYONLY)
         target_include_directories(infiniops PRIVATE "${PROJECT_SOURCE_DIR}")
         if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD)
             set_source_files_properties(${OPERATOR_DISPATCH_SOURCES}

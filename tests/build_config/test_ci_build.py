@@ -2,6 +2,7 @@
 
 import os
 import pathlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -40,6 +41,9 @@ def test_ci_installs_declared_build_requirements(platform):
 
     for command in commands:
         tokens = shlex.split(command)
+
+        while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
+            tokens.pop(0)
 
         if "install" in tokens and "pip" in tokens:
             assert tokens[:4] == ["python", "-m", "pip", "install"]
