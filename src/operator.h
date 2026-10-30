@@ -710,12 +710,13 @@ class Operator : public OperatorBase {
 
     DispatchFunc<ActiveDevices<Key>>(
         dispatch_device_type,
-        [&](auto device_tag, auto&... device_args) {
+        [&](auto device_tag) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
           using Implementations =
               typename ActiveImplementations<Key, kDev>::type;
           const bool automatic =
               config.implementation_index() == Config::kAutomaticImplementation;
+          // Avoid NVCC's nested-lambda capture error for the argument pack.
           const auto construct = [&](auto implementation_tag,
                                      auto&... provider_args) {
             constexpr std::size_t kImplementationIndex =
@@ -761,7 +762,7 @@ class Operator : public OperatorBase {
             for (const auto index : detail::ListToVector(Implementations{})) {
               detail::DispatchImplementation(index, construct,
                                              "Operator::Make(automatic)",
-                                             Implementations{}, device_args...);
+                                             Implementations{}, args...);
               if (matched) break;
             }
           } else {
@@ -773,10 +774,10 @@ class Operator : public OperatorBase {
             detail::DispatchImplementation(
                 config.implementation_index(), construct,
                 "Operator::Make(implementation_index)", Implementations{},
-                device_args...);
+                args...);
           }
         },
-        "Operator::Make", args...);
+        "Operator::Make");
 
     return matched;
   }
