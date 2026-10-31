@@ -34,19 +34,25 @@ struct C10<Device::Type::kAscend> {
     TORCH_CHECK(aclrtGetDevice(&current) == ACL_ERROR_NONE &&
                     c10_npu::SetDevice(current) == ACL_ERROR_NONE,
                 "Failed to synchronize the current ACL and Torch NPU device");
-    // Host-queued ATen work must not be overtaken by native runtime copies.
+    // Keep Torch-owned streams in their original queue domain. Rewrapping
+    // them as external streams loses the backend's host-queue association.
+    const auto default_stream = c10_npu::getDefaultNPUStream(device);
+    if (stream == nullptr || stream == default_stream.stream()) {
+      return default_stream;
+    }
+    const auto external_stream = c10_npu::getStreamFromExternal(
+        reinterpret_cast<aclrtStream>(stream), device);
+    const auto current_stream = c10_npu::getCurrentNPUStream(device);
+    // External wrapping preserves the identity of an already external stream.
+    if (current_stream.id() != external_stream.id() &&
+        stream == current_stream.stream()) {
+      return current_stream;
+    }
+    // Native runtime submissions cannot observe Torch's pending host tasks.
     TORCH_CHECK(OpApiGetTaskQueueEnable() == 0,
                 "Ascend external streams require TASK_QUEUE_ENABLE=0 before "
                 "importing torch_npu");
-    if (stream == nullptr) {
-      // `torch_npu` rejects null external streams, while InfiniOps uses null
-      // to select the default device stream.
-      return c10_npu::getDefaultNPUStream(
-          static_cast<c10::DeviceIndex>(device_index));
-    }
-
-    return c10_npu::getStreamFromExternal(reinterpret_cast<aclrtStream>(stream),
-                                          device);
+    return external_stream;
   }
 };
 

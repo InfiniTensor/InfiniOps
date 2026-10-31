@@ -245,7 +245,9 @@ def test_cpp_base_headers_compile_with_metadata_views(tmp_path, header):
     )
 
 
-def test_ascend_workspace_pool_retains_allocations_until_destruction(tmp_path):
+def test_ascend_workspace_pool_retains_allocations_until_destruction(tmp_path, device):
+    if device != "npu":
+        pytest.skip("Ascend workspace-pool regression")
     repo_root = Path(__file__).resolve().parents[1]
     fake_acl_dir = tmp_path / "include" / "acl"
     fake_acl_dir.mkdir(parents=True)

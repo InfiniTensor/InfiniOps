@@ -117,3 +117,19 @@ def test_generate_rms_norm_uses_ntops_premake_with_rank_configs(monkeypatch):
                 },
             )
         ]
+
+
+def test_discovers_ninetoothed_operator_build_modules(monkeypatch):
+    module = _load_generator_module(
+        types.SimpleNamespace(
+            float32="ninetoothed.float32",
+            float16="ninetoothed.float16",
+            bfloat16="ninetoothed.bfloat16",
+        ),
+        monkeypatch,
+    )
+
+    ops = module._find_op_modules()
+
+    assert "rms_norm" in ops
+    assert "fused_add_rms_norm" in ops

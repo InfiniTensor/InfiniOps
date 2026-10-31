@@ -105,7 +105,7 @@ _PROVIDER_SIGNATURES = (
             r"const\s+Config\s*&\s*config\s*,\s*"
             r"Device::Type\s+dispatch_device_type\s*,\s*"
             r"bool\s+strict\s*,\s*Selected\s*&&\s*selected\s*,\s*"
-            r"Args\s*&&\s*\.\.\.\s*args\s*\)\s*",
+            r"Args\s*&&\s*\.\.\.\s*(?:args|call_args)\s*\)\s*",
             re.MULTILINE,
         ),
     ),

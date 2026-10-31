@@ -25,7 +25,7 @@ export TASK_QUEUE_ENABLE=0
 export INFINIOPS_PROVIDER_MODULES=torch_npu
 ```
 
-检查使用 torch_npu SDK 导出的 `OpApiGetTaskQueueEnable()` 获取实际状态，不仅读取环境变量。初始化以后修改环境变量不能伪装队列已关闭；默认 stream 也不绕过此约束。对应 CI 配置已同步。
+检查使用 torch_npu SDK 导出的 `OpApiGetTaskQueueEnable()` 获取实际状态，不仅读取环境变量。初始化以后修改环境变量不能伪装队列已关闭；Torch 当前／默认 stream 保留其 host queue 关联，不要求关闭队列；独立原生 runtime stream 仍须满足上述约束。非当前的 raw stream 按外部 runtime stream 处理，Torch 调用方可在对应 stream 上下文中调用。
 
 ## 验证
 

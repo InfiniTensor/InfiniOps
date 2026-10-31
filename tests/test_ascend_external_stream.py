@@ -34,7 +34,8 @@ def test_external_stream_restores_callers_device():
         torch.npu.set_device(original_device)
 
 
-def test_changing_environment_does_not_hide_an_enabled_task_queue():
+@pytest.mark.parametrize("queue", [1, 2])
+def test_changing_environment_does_not_hide_an_enabled_task_queue(queue):
     source = textwrap.dedent(r"""
         import ctypes
         import os
@@ -51,7 +52,20 @@ def test_changing_environment_does_not_hide_an_enabled_task_queue():
         assert query() != 0, 'backend queue state must remain cached'
         x = torch.ones((2, 3), dtype=torch.float32, device='npu')
         out = torch.full((2, 3), -123.0, device='npu')
+        # Torch-managed streams remain valid with a cached host task queue.
         for stream in (0, torch.npu.current_stream().npu_stream):
+            infini.ops.exp(x, out, implementation_index=8, stream=stream)
+            torch.testing.assert_close(out.cpu(), x.cpu().exp())
+        managed = torch.npu.Stream()
+        with torch.npu.stream(managed):
+            infini.ops.exp(x, out, implementation_index=8, stream=managed.npu_stream)
+            torch.testing.assert_close(out.cpu(), x.cpu().exp())
+        # An independently created native stream still requires queue-free
+        # submission; changing the environment cannot bypass actual state.
+        native = torch.npu.Stream()
+        # A non-current raw stream enters the external runtime contract.
+        out.fill_(-123)
+        for stream in (native.npu_stream,):
             try:
                 infini.ops.exp(x, out, implementation_index=8, stream=stream)
             except RuntimeError as error:
@@ -62,7 +76,7 @@ def test_changing_environment_does_not_hide_an_enabled_task_queue():
         print('Cached task queue rejected before external stream execution')
     """)
     environment = os.environ.copy()
-    environment["TASK_QUEUE_ENABLE"] = "1"
+    environment["TASK_QUEUE_ENABLE"] = str(queue)
     environment.pop("ASCEND_LAUNCH_BLOCKING", None)
     result = subprocess.run(
         [sys.executable, "-c", source],

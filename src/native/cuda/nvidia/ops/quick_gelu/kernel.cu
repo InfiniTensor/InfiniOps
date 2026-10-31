@@ -11,16 +11,16 @@
 
 namespace infini::ops::nvidia_quick_gelu_detail {
 namespace {
-// The three branches preserve Core 0.2.9 quickgelu/cuda/kernel.cuh semantics.
-// In particular FP16 must not be promoted to the BF16 FP32-intermediate path.
+// CUDA 12.6 exposes colliding FP16/BF16 overloads for these intrinsic names.
+// Keep FP16 on the same FP32-intermediate path used by BF16.
 template <typename T>
 __device__ __forceinline__ T Apply(T x) {
   constexpr float alpha = 1.702f;
   if constexpr (std::is_same_v<T, __half>) {
-    const __half ax = __hmul(__float2half(alpha), x);
-    const __half denominator = __hadd(__float2half(1.0f), hexp(__hneg(ax)));
-    const __half sigmoid = hrcp(denominator);
-    return __hmul(x, sigmoid);
+    const float xf = __half2float(x);
+    const float ax = alpha * xf;
+    const float sigmoid = 1.0f / (1.0f + __expf(-ax));
+    return __float2half(xf * sigmoid);
   } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
     const float xf = __bfloat162float(x);
     const float ax = alpha * xf;
