@@ -53,6 +53,80 @@ def test_cpp_returning_call_smoke(tmp_path):
     _run([str(binary)])
 
 
+def test_cpp_rms_norm_validation_in_release(tmp_path):
+    binary = _compile_cpp(tmp_path, "rms_norm_validation", _RMS_NORM_VALIDATION_SOURCE)
+    _run([str(binary)])
+
+
+_RMS_NORM_VALIDATION_SOURCE = textwrap.dedent(
+    r"""
+    #define NDEBUG 1
+    #include <infini/ops.h>
+    #include <cmath>
+    #include <stdexcept>
+
+    using namespace infini::ops;
+
+    // Check common metadata without imposing a native provider's rank limits.
+    struct MetadataOnly : RmsNorm {
+      using RmsNorm::RmsNorm;
+      void operator()(const Tensor, const Tensor, float, Tensor) const override {}
+    };
+
+    int main() {
+      float x[24], w[4] = {1, 2, 3, 4}, y[24];
+      for (int i = 0; i < 24; ++i) x[i] = static_cast<float>(i + 1);
+      const Device cpu{Device::Type::kCpu, 0};
+      const auto tensor = [&](void* data, Tensor::Shape shape,
+                              DataType dtype = DataType::kFloat32) {
+        return Tensor{data, std::move(shape), dtype, cpu};
+      };
+      const auto reject = [](auto make) {
+        try { make(); } catch (const std::invalid_argument&) { return true; }
+        return false;
+      };
+      const auto a = tensor(x, {2, 4});
+      const auto weight = tensor(w, {4});
+      const auto out = tensor(y, {2, 4});
+      if (!reject([&] { RmsNorm::Make(Config{}, a, tensor(w, {1}), out); })) return 1;
+      if (!reject([&] { RmsNorm::Make(Config{}, a, tensor(w, {1, 4}), out); })) return 2;
+      if (!reject([&] { RmsNorm::Make(Config{}, a, weight, tensor(y, {4, 2})); })) return 3;
+      if (!reject([&] { RmsNorm::Make(Config{}, tensor(x, {}), weight, tensor(y, {})); })) return 4;
+      if (!reject([&] { RmsNorm::Make(Config{}, tensor(x, {2, 0}), tensor(w, {0}), tensor(y, {2, 0})); })) return 5;
+      if (!reject([&] { RmsNorm::Make(Config{}, a, weight, tensor(y, {2, 4}, DataType::kFloat16)); })) return 6;
+      if (!reject([&] { RmsNorm::Make(Config{}, a, tensor(w, {4}, DataType::kFloat16), out); })) return 7;
+      if (!reject([&] { RmsNorm::Make(Config{}, tensor(x, {4}), weight, tensor(y, {4})); })) return 8;
+      if (!reject([&] { RmsNorm::Make(Config{}, tensor(x, {1, 2, 3, 4}), weight, tensor(y, {1, 2, 3, 4})); })) return 9;
+      const Tensor strided{x, {2, 4}, DataType::kFloat32, cpu, {8, 2}};
+      if (!reject([&] { RmsNorm::Make(Config{}, strided, weight, out); })) return 10;
+      const Tensor spaced_weight{w, {4}, DataType::kFloat32, cpu, {2}};
+      if (!reject([&] { RmsNorm::Make(Config{}, a, spaced_weight, out); })) return 11;
+      // No pointers are dereferenced by the common constructor.
+      MetadataOnly rank_one{tensor(x, {4}), weight, tensor(y, {4})};
+      MetadataOnly rank_four{tensor(x, {1, 2, 3, 4}), weight, tensor(y, {1, 2, 3, 4})};
+      MetadataOnly mixed_weight{a, tensor(w, {4}, DataType::kFloat16), out};
+      const Tensor other_device{w, {4}, DataType::kFloat32,
+                               Device{Device::Type::kCpu, 1}};
+      if (RmsNorm::supports(a, other_device, out)) return 12;
+      for (const auto shape : {Tensor::Shape{2, 4}, Tensor::Shape{2, 3, 4}}) {
+        auto input = tensor(x, shape), output = tensor(y, shape);
+        RmsNorm::Call(Handle{}, Config{}, input, weight, 1e-6f, output);
+        const int rows = shape.size() == 2 ? 2 : 6;
+        for (int row = 0; row < rows; ++row) {
+          double sum = 0;
+          for (int k = 0; k < 4; ++k) sum += x[row * 4 + k] * x[row * 4 + k];
+          for (int k = 0; k < 4; ++k) {
+            const double expected = x[row * 4 + k] * w[k] / std::sqrt(sum / 4 + 1e-6);
+            if (std::abs(y[row * 4 + k] - expected) > 1e-5) return 13;
+          }
+        }
+      }
+      return 0;
+    }
+    """
+).lstrip()
+
+
 def test_tuning_cache_round_trip(tmp_path):
     binary = _compile_cpp(tmp_path, "tuning_cache", _TUNING_CACHE_SOURCE)
     cache_path = tmp_path / "tuning.json"

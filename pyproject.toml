@@ -34,4 +34,5 @@ CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
 testpaths = ["tests"]
 markers = [
     "smoke: minimal representative tests for routine development and PR validation",
+    "operator_set(implementations): integration test requiring every named operator implementation",
 ]

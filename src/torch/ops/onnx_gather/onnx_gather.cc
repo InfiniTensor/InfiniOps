@@ -7,6 +7,12 @@
 #ifdef WITH_NVIDIA
 #include "torch/nvidia/c10.h"
 #endif
+#ifdef WITH_CAMBRICON
+#include "torch/cambricon/c10.h"
+#endif
+#ifdef WITH_ASCEND
+#include "torch/ascend/c10.h"
+#endif
 #include "torch/tensor_.h"
 
 namespace infini::ops {
@@ -64,7 +70,7 @@ void AtenOnnxGather<kDev>::operator()(const Tensor input, const Tensor indices,
       y.copy_(at::index_select(x, dim, normalized).reshape(y.sizes()));
     }
   };
-  if constexpr (kDev == Device::Type::kNvidia) {
+  if constexpr (kDev != Device::Type::kCpu) {
     const typename C10<kDev>::StreamGuard guard{
         C10<kDev>::GetStreamFromExternal(stream_, out.device().index())};
     run();
@@ -78,6 +84,14 @@ template class AtenOnnxGather<Device::Type::kCpu>;
 #endif
 #ifdef WITH_NVIDIA
 template class AtenOnnxGather<Device::Type::kNvidia>;
+#endif
+
+#ifdef WITH_CAMBRICON
+template class AtenOnnxGather<Device::Type::kCambricon>;
+#endif
+
+#ifdef WITH_ASCEND
+template class AtenOnnxGather<Device::Type::kAscend>;
 #endif
 
 }  // namespace infini::ops

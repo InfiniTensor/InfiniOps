@@ -32,6 +32,20 @@ class Operator<Cast, Device::Type::kNvidia, 8>
   using AtenCast<Device::Type::kNvidia>::AtenCast;
 };
 
+template <>
+class Operator<Cast, Device::Type::kCambricon, 8>
+    : public AtenCast<Device::Type::kCambricon> {
+ public:
+  using AtenCast<Device::Type::kCambricon>::AtenCast;
+};
+
+template <>
+class Operator<Cast, Device::Type::kAscend, 8>
+    : public AtenCast<Device::Type::kAscend> {
+ public:
+  using AtenCast<Device::Type::kAscend>::AtenCast;
+};
+
 }  // namespace infini::ops
 
 #endif  // INFINI_OPS_TORCH_CAST_H_

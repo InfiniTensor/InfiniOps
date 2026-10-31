@@ -50,10 +50,6 @@ class Operator<Gelu, Device::Type::kCambricon> : public Gelu {
     if (approximate_ == "tanh" || input_type_ == DataType::kBFloat16) {
       cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster_,
                                   &cluster_count_);
-      const auto workspace_size = workspace_size_in_bytes();
-      if (workspace_size != 0) {
-        CNRT_CHECK(cnrtMalloc(&default_workspace_, workspace_size));
-      }
       return;
     }
 
@@ -83,9 +79,6 @@ class Operator<Gelu, Device::Type::kCambricon> : public Gelu {
   }
 
   ~Operator() {
-    if (default_workspace_) {
-      (void)cnrtFree(default_workspace_);
-    }
     if (activation_desc_) {
       (void)cnnlDestroyActivationDescriptor(activation_desc_);
     }
@@ -101,7 +94,10 @@ class Operator<Gelu, Device::Type::kCambricon> : public Gelu {
 
     if (approximate_ == "tanh" || input_type_ == DataType::kBFloat16) {
       auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-      auto* workspace = workspace_ ? workspace_ : default_workspace_;
+      auto* workspace =
+          workspace_ ? workspace_
+                     : cnrt_utils::DefaultWorkspace(default_workspace_,
+                                                    workspace_size_in_bytes());
       DispatchFunc<
           Device::Type::kCambricon,
           List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
@@ -137,7 +133,7 @@ class Operator<Gelu, Device::Type::kCambricon> : public Gelu {
   cnnl_utils::TensorDescriptor input_desc_{};
   cnnl_utils::TensorDescriptor out_desc_{};
   cnnlActivationDescriptor_t activation_desc_{nullptr};
-  void* default_workspace_{nullptr};
+  mutable cnrt_utils::DeviceBuffer default_workspace_{};
   int core_per_cluster_{0};
   int cluster_count_{0};
 };

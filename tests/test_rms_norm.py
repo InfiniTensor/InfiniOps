@@ -5,6 +5,16 @@ import torch
 from tests.utils import Payload, empty_strided, get_stream, randn_strided
 
 
+@pytest.mark.parametrize("bad_weight_shape", [(1,), (1, 64), (65,)])
+def test_rms_norm_rejects_invalid_weight(bad_weight_shape, device):
+    x = torch.ones((2, 64), device=device)
+    weight = torch.ones(bad_weight_shape, device=device)
+    out = torch.full_like(x, -123)
+    with pytest.raises(ValueError, match="does not support these parameters"):
+        infini.ops.rms_norm(x, weight, 1e-6, out, stream=get_stream(device))
+    assert torch.all(out == -123)
+
+
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
     "input_shape, weight_shape, input_strides, weight_strides, out_strides",
