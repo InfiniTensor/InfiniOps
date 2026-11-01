@@ -18,9 +18,9 @@ def test_missing_operator_requirement(monkeypatch, tested_device, strict):
         config=SimpleNamespace(getoption=options.get),
         node=SimpleNamespace(
             callspec=SimpleNamespace(params={"device": tested_device}),
-            get_closest_marker=lambda _: pytest.mark.operator_set(
-                {"OnnxGather": 8}
-            ).mark,
+            get_closest_marker=lambda _: (
+                pytest.mark.operator_set({"OnnxGather": 8}).mark
+            ),
         ),
     )
     expected = pytest.fail.Exception if strict else pytest.skip.Exception
