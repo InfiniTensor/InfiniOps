@@ -11,7 +11,6 @@
 // clang-format on
 
 #include "base/gemm.h"
-#include "native/cambricon/cnrt_utils.h"
 #include "native/cambricon/common.h"
 
 namespace infini::ops {
@@ -56,6 +55,8 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
     cnnlGetBatchMatMulExAlgoHeuristic(cnnl_handle_, matmul_desc_, desc_a_,
                                       desc_b_, desc_y_, NULL, 1,
                                       &heuristic_result_, &count);
+
+    cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
   }
 
   Operator(const Tensor a, const Tensor b, Tensor y)
@@ -71,6 +72,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
   using Gemm::operator();
 
   ~Operator() {
+    cnrtFree(default_workspace_);
     cnnlDestroyTensorDescriptor(desc_y_);
     cnnlDestroyTensorDescriptor(desc_b_);
     cnnlDestroyTensorDescriptor(desc_a_);
@@ -89,10 +91,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
     cnnlSetQueue(cnnl_handle_, (cnrtQueue_t)stream_);
 
-    auto workspace{workspace_
-                       ? workspace_
-                       : cnrt_utils::DefaultWorkspace(
-                             default_workspace_, workspace_size_in_bytes())};
+    auto workspace{workspace_ ? workspace_ : default_workspace_};
     auto workspace_size{workspace_size_in_bytes_ ? workspace_size_in_bytes_
                                                  : workspace_size_in_bytes()};
 
@@ -157,7 +156,7 @@ class Operator<Gemm, Device::Type::kCambricon> : public Gemm {
 
   // TODO: Remove the following member after default workspace mechanism has
   // been introduced globally.
-  mutable cnrt_utils::DeviceBuffer default_workspace_{};
+  void* default_workspace_{nullptr};
 };
 
 }  // namespace infini::ops

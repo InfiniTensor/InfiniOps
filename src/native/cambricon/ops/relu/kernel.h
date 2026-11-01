@@ -29,6 +29,16 @@ class Operator<Relu, Device::Type::kCambricon> : public Relu {
            "device compiler does not support float64 comparisons.");
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster_,
                                 &cluster_count_);
+    const auto workspace_size = workspace_size_in_bytes();
+    if (workspace_size != 0) {
+      CNRT_CHECK(cnrtMalloc(&default_workspace_, workspace_size));
+    }
+  }
+
+  ~Operator() {
+    if (default_workspace_) {
+      (void)cnrtFree(default_workspace_);
+    }
   }
 
   void operator()(const Tensor input, Tensor out) const override {
@@ -37,10 +47,7 @@ class Operator<Relu, Device::Type::kCambricon> : public Relu {
     }
 
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    auto* workspace = workspace_
-                          ? workspace_
-                          : cnrt_utils::DefaultWorkspace(
-                                default_workspace_, workspace_size_in_bytes());
+    auto* workspace = workspace_ ? workspace_ : default_workspace_;
     const auto available_workspace_size =
         workspace_ ? workspace_size_in_bytes_ : workspace_size_in_bytes();
     assert(available_workspace_size >= workspace_size_in_bytes() &&
@@ -70,7 +77,7 @@ class Operator<Relu, Device::Type::kCambricon> : public Relu {
 
  private:
   std::size_t element_size_{0};
-  mutable cnrt_utils::DeviceBuffer default_workspace_{};
+  void* default_workspace_{nullptr};
   int core_per_cluster_{0};
   int cluster_count_{0};
 };

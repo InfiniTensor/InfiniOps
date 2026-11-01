@@ -2,7 +2,6 @@
 #define INFINI_OPS_CAMBRICON_ADD_H_
 
 #include "base/add.h"
-#include "native/cambricon/cnrt_utils.h"
 #include "native/cambricon/common.h"
 #include "native/cambricon/data_type_.h"
 
@@ -25,6 +24,7 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
       : Add{input, other, alpha, out} {
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster,
                                 &cluster_count);
+    cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
   }
 
   Operator(const Tensor input, const Tensor other, Tensor out)
@@ -33,10 +33,7 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
   void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    auto workspace{workspace_
-                       ? workspace_
-                       : cnrt_utils::DefaultWorkspace(
-                             default_workspace_, workspace_size_in_bytes())};
+    auto workspace{workspace_ ? workspace_ : default_workspace_};
 
     bool fast_path = is_input_contiguous_ && is_other_contiguous_ &&
                      is_out_contiguous_ && input_shape_ == out_shape_ &&
@@ -58,11 +55,13 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
         "CambriconAdd::operator() - output dispatch");
   }
 
+  ~Operator() { cnrtFree(default_workspace_); }
+
   std::size_t workspace_size_in_bytes() const override {
     return ndim_ * (3 * sizeof(size_t) + 3 * sizeof(ptrdiff_t));
   }
 
-  mutable cnrt_utils::DeviceBuffer default_workspace_{};
+  void* default_workspace_{nullptr};
   int core_per_cluster = 0;
   int cluster_count = 0;
 };

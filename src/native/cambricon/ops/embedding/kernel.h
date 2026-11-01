@@ -90,6 +90,7 @@ class Operator<Embedding, Device::Type::kCambricon> : public Embedding {
 
     workspace_size_ = EmbeddingWorkspaceSize(
         input_ndim_, vocab_size_, max_norm.has_value(), !use_cnnl_forward_);
+    default_workspace_ = cnrt_utils::AllocateDeviceBuffer(workspace_size_);
   }
 
   Operator(const Tensor input, const Tensor weight, Tensor out)
@@ -98,9 +99,9 @@ class Operator<Embedding, Device::Type::kCambricon> : public Embedding {
 
   /// \deprecated Use the overload that also accepts `max_norm` and
   /// `norm_type` instead.
-  [[deprecated("Use the PyTorch-compatible overload instead.")]] Operator(
-      const Tensor input, const Tensor weight, const int64_t padding_idx,
-      const bool scale_grad_by_freq, const bool sparse, Tensor out)
+  [[deprecated("Use the PyTorch-compatible overload instead.")]]
+  Operator(const Tensor input, const Tensor weight, const int64_t padding_idx,
+           const bool scale_grad_by_freq, const bool sparse, Tensor out)
       : Operator(input, weight, padding_idx, std::nullopt, 2.0,
                  scale_grad_by_freq, sparse, out) {}
 
@@ -124,10 +125,7 @@ class Operator<Embedding, Device::Type::kCambricon> : public Embedding {
     const bool launch_custom_forward = !use_cnnl_forward_;
 
     if (max_norm.has_value() || launch_custom_forward) {
-      void* workspace =
-          workspace_ ? workspace_
-                     : cnrt_utils::DefaultWorkspace(default_workspace_,
-                                                    workspace_size_in_bytes());
+      void* workspace = workspace_ ? workspace_ : default_workspace_.get();
       [[maybe_unused]] const auto workspace_size =
           workspace_ ? workspace_size_in_bytes_ : workspace_size_;
       assert(workspace && workspace_size >= workspace_size_ &&
@@ -174,7 +172,7 @@ class Operator<Embedding, Device::Type::kCambricon> : public Embedding {
 
   std::size_t workspace_size_{0};
 
-  mutable cnrt_utils::DeviceBuffer default_workspace_{};
+  cnrt_utils::DeviceBuffer default_workspace_{};
 
   bool use_cnnl_forward_{false};
 
