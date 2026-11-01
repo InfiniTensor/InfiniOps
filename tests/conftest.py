@@ -13,11 +13,6 @@ from tests.utils import clone_strided, get_available_devices
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--require-operator-set",
-        action="store_true",
-        help="Fail instead of skipping when an operator_set requirement is unavailable.",
-    )
-    parser.addoption(
         "--benchmark", action="store_true", help="Run performance benchmarks."
     )
     parser.addoption(
@@ -145,20 +140,6 @@ def skip_unsupported_dtypes(request):
         pytest.skip(f"{params['dtype']} not supported on Ascend 910B")
 
 
-def missing_operator_requirement(requirements, selectors):
-    from infini import ops
-
-    for name, index in requirements.items():
-        op = getattr(ops, name, None)
-        if op is None or not any(
-            index in op.active_implementation_indices(d) for d in selectors
-        ):
-            return (
-                f"Required operator {name} slot {index} is unavailable on {selectors}"
-            )
-    return None
-
-
 @pytest.fixture(autouse=True)
 def skip_op_without_platform_impl(request):
     """Skip `device=<torch_type>` parametrizations when the op has no
@@ -178,29 +159,11 @@ def skip_op_without_platform_impl(request):
     if "implementation_index" in params:
         return
 
-    operator_set = request.node.get_closest_marker("operator_set")
-    if operator_set is not None and request.config.getoption("--require-operator-set"):
-        available = get_available_devices()
-        for requested in request.config.getoption("--devices") or ():
-            assert _resolve_device(requested) in available, (
-                f"Required retrieval test device {requested} is unavailable; "
-                f"available devices: {available}"
-            )
-
     device_selectors = _active_device_selectors_for_torch_device(
         request.config, params.get("device")
     )
 
     if not device_selectors:
-        return
-
-    if operator_set is not None:
-        strict = request.config.getoption("--require-operator-set")
-        message = missing_operator_requirement(operator_set.args[0], device_selectors)
-        if message:
-            if strict:
-                pytest.fail(message)
-            pytest.skip(message)
         return
 
     op_cls = _op_class_from_module(request.node.module)

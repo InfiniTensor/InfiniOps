@@ -6,7 +6,6 @@ import torch.nn.functional as F
 from tests.utils import get_stream
 
 
-@pytest.mark.operator_set({"MaxPool2d": 8})
 @pytest.mark.parametrize("shape", [(1, 2, 7, 9), (2, 3, 8, 10), (2, 7, 9)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 @pytest.mark.parametrize(
@@ -17,7 +16,9 @@ from tests.utils import get_stream
         ([2, 2], [2, 2], [0, 0], [1, 1], True),
     ],
 )
-def test_value_only_pool(shape, dtype, kernel, stride, padding, dilation, ceil, device):
+def test_value_only_pool(
+    shape, dtype, kernel, stride, padding, dilation, ceil, device, implementation_index
+):
     x = torch.randn(shape, dtype=dtype, device=device)
     expected = F.max_pool2d(x, kernel, stride, padding, dilation, ceil)
     out = torch.empty_like(expected)
@@ -29,15 +30,14 @@ def test_value_only_pool(shape, dtype, kernel, stride, padding, dilation, ceil, 
         dilation,
         ceil,
         out,
-        implementation_index=8,
+        implementation_index=implementation_index,
         stream=get_stream(x.device),
     )
     torch.testing.assert_close(out, expected, rtol=0, atol=0)
 
 
-@pytest.mark.operator_set({"MaxPool2d": 8})
 @pytest.mark.parametrize("invalid", ["broadcast_shape", "dtype"])
-def test_value_only_pool_rejects_invalid_output(invalid, device):
+def test_value_only_pool_rejects_invalid_output(invalid, device, implementation_index):
     x = torch.arange(4, dtype=torch.float32, device=device).reshape(1, 1, 2, 2)
     out = torch.full(
         (1, 1, 2, 2) if invalid == "broadcast_shape" else (1, 1, 1, 1),
@@ -55,7 +55,7 @@ def test_value_only_pool_rejects_invalid_output(invalid, device):
             [1, 1],
             False,
             out,
-            implementation_index=8,
+            implementation_index=implementation_index,
             stream=get_stream(x.device),
         )
     assert out.data_ptr() == address
