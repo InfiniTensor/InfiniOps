@@ -8,6 +8,8 @@
 #include <torch_npu/csrc/core/npu/NPUStream.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 
 #include "torch/c10.h"
 
@@ -21,7 +23,39 @@ template <>
 struct C10<Device::Type::kAscend> {
   static constexpr Device::Type kDeviceType = Device::Type::kAscend;
 
-  using StreamGuard = c10_npu::NPUStreamGuard;
+  class StreamGuard {
+   public:
+    explicit StreamGuard(c10_npu::NPUStream stream)
+        : stream_{stream},
+          guard_{stream},
+          flush_host_queue_{OpApiGetTaskQueueEnable() != 0} {}
+
+    ~StreamGuard() noexcept(false) {
+      if (!flush_host_queue_) return;
+      const auto submit_pending_tasks = [&] {
+        // stream() waits for host submission, not device completion. Native
+        // providers may consume this result immediately after this scope.
+        TORCH_CHECK(stream_.stream() != nullptr,
+                    "Failed to submit pending NPU host tasks");
+      };
+      if (std::uncaught_exceptions() == 0) {
+        submit_pending_tasks();
+      } else {
+        try {
+          submit_pending_tasks();
+        } catch (...) {
+          std::fputs(
+              "Failed to drain NPU host tasks during exception cleanup\n",
+              stderr);
+        }
+      }
+    }
+
+   private:
+    c10_npu::NPUStream stream_;
+    c10_npu::NPUStreamGuard guard_;
+    bool flush_host_queue_;
+  };
 
   static c10_npu::NPUStream GetStreamFromExternal(void* stream,
                                                   int device_index) {

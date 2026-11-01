@@ -184,6 +184,7 @@ def _torch_gemm_portable(a, b, c, alpha, beta, trans_a, trans_b, y):
     return y
 
 
+@pytest.mark.smoke
 def test_aten_external_stream(device, implementation_index):
     if implementation_index != 2 or device == "cpu":
         pytest.skip("Requires the accelerator ATen provider")
@@ -193,10 +194,35 @@ def test_aten_external_stream(device, implementation_index):
     raw = getattr(stream, f"{torch.device(device).type}_stream")
     x = torch.arange(6, device=device, dtype=torch.float32).reshape(2, 3)
     y = torch.arange(6, device=device, dtype=torch.float32).reshape(3, 2)
-    out = torch.empty((2, 2), device=device)
+    out = torch.full((2, 2), -123.0, device=device)
     reference = x @ y
+    initial = out.clone()
     stream.wait_stream(accelerator.current_stream())
-    infini.ops.gemm(x, y, out, implementation_index=implementation_index, stream=raw)
-    stream.synchronize()
-    assert get_stream(device) == previous
-    torch.testing.assert_close(out, reference, rtol=1e-4, atol=1e-5)
+
+    def invoke():
+        infini.ops.gemm(
+            x, y, out, implementation_index=implementation_index, stream=raw
+        )
+
+    try:
+        invoke()
+        accelerator.synchronize()
+        out.copy_(initial)
+        accelerator.synchronize()
+        delayed = None
+        if device == "cuda":
+            accelerator._sleep(200_000_000)
+            delayed = accelerator.Event()
+            delayed.record()
+        invoke()
+        with accelerator.stream(stream):
+            snapshot = out.clone()
+        stream.synchronize()
+        if delayed is not None:
+            assert not delayed.query(), (
+                "The unrelated stream completed before the snapshot"
+            )
+        assert get_stream(device) == previous
+    finally:
+        accelerator.synchronize()
+    torch.testing.assert_close(snapshot, reference, rtol=1e-4, atol=1e-5)

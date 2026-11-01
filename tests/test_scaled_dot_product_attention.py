@@ -141,6 +141,7 @@ def _make_mask(mask_kind, query_length, key_length, dtype, device):
     return mask
 
 
+@pytest.mark.smoke
 @pytest.mark.parametrize("managed", [False, True])
 def test_aten_external_stream(device, implementation_index, managed):
     if implementation_index != 1 or device == "cpu":
@@ -152,16 +153,36 @@ def test_aten_external_stream(device, implementation_index, managed):
     x = torch.randn((1, 2, 4, 8), device=device)
     out = torch.full_like(x, -123)
     reference = torch.nn.functional.scaled_dot_product_attention(x, x, x)
+    initial = out.clone()
     stream.wait_stream(accelerator.current_stream())
-    try:
+
+    def invoke():
         with accelerator.stream(stream) if managed else nullcontext():
             infini.ops.scaled_dot_product_attention(
                 x, x, x, out, implementation_index=implementation_index, stream=raw
             )
+
+    try:
+        invoke()
+        accelerator.synchronize()
+        out.copy_(initial)
+        accelerator.synchronize()
+        delayed = None
+        if device == "cuda":
+            accelerator._sleep(200_000_000)
+            delayed = accelerator.Event()
+            delayed.record()
+        invoke()
+        with accelerator.stream(stream):
+            snapshot = out.clone()
+        stream.synchronize()
+        if delayed is not None:
+            assert not delayed.query(), (
+                "The unrelated stream completed before the snapshot"
+            )
+        assert get_stream(device) == previous
     except RuntimeError as error:
-        # Some torch_npu versions use an internal event unsupported on a raw
-        # external stream. Preserve that explicit error rather than execute
-        # on an unrelated stream or silently change the attention algorithm.
+        # Preserve the SDK's explicit rejection of an event on a raw stream.
         if (
             device != "npu"
             or managed
@@ -170,8 +191,8 @@ def test_aten_external_stream(device, implementation_index, managed):
         ):
             raise
         assert get_stream(device) == previous
-        assert torch.all(out == -123)
+        assert torch.all(out == initial)
         return
-    stream.synchronize()
-    assert get_stream(device) == previous
-    torch.testing.assert_close(out, reference, rtol=1e-4, atol=1e-5)
+    finally:
+        accelerator.synchronize()
+    torch.testing.assert_close(snapshot, reference, rtol=1e-4, atol=1e-5)
