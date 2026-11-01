@@ -55,4 +55,11 @@ template class AtenCast<Device::Type::kCpu>;
 template class AtenCast<Device::Type::kNvidia>;
 #endif
 
+#ifdef WITH_CAMBRICON
+template class AtenCast<Device::Type::kCambricon>;
+#endif
+#ifdef WITH_ASCEND
+template class AtenCast<Device::Type::kAscend>;
+#endif
+
 }  // namespace infini::ops

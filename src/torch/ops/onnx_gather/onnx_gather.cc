@@ -69,4 +69,11 @@ template class AtenOnnxGather<Device::Type::kCpu>;
 template class AtenOnnxGather<Device::Type::kNvidia>;
 #endif
 
+#ifdef WITH_CAMBRICON
+template class AtenOnnxGather<Device::Type::kCambricon>;
+#endif
+#ifdef WITH_ASCEND
+template class AtenOnnxGather<Device::Type::kAscend>;
+#endif
+
 }  // namespace infini::ops

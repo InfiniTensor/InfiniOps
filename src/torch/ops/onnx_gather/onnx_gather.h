@@ -35,6 +35,20 @@ class Operator<OnnxGather, Device::Type::kNvidia, 8>
   using AtenOnnxGather<Device::Type::kNvidia>::AtenOnnxGather;
 };
 
+template <>
+class Operator<OnnxGather, Device::Type::kCambricon, 8>
+    : public AtenOnnxGather<Device::Type::kCambricon> {
+ public:
+  using AtenOnnxGather<Device::Type::kCambricon>::AtenOnnxGather;
+};
+
+template <>
+class Operator<OnnxGather, Device::Type::kAscend, 8>
+    : public AtenOnnxGather<Device::Type::kAscend> {
+ public:
+  using AtenOnnxGather<Device::Type::kAscend>::AtenOnnxGather;
+};
+
 }  // namespace infini::ops
 
 #endif  // INFINI_OPS_TORCH_ONNX_GATHER_H_
