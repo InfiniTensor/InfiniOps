@@ -7,6 +7,12 @@
 
 namespace infini::ops::detail {
 
+// Ascend from_blob performs lazy initialization itself, including GIL handling.
+// Do not hold a second initialization lock while entering the vendor factory.
+template <>
+inline void InitializeTorchDevice<Device::Type::kAscend>(
+    const at::TensorOptions&) {}
+
 template <>
 struct ExternalTorchTensor<Device::Type::kAscend> {
   static at::Tensor Wrap(void* data, at::IntArrayRef shape,

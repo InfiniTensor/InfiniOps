@@ -99,4 +99,8 @@ std::vector<float> Run(const std::string& device_name, int device_index) {
 }
 }  // namespace
 
-PYBIND11_MODULE(_encoder_external_memory, module) { module.def("run", &Run); }
+PYBIND11_MODULE(_encoder_external_memory, module) {
+  module.def("run", &Run);
+  module.def("run_without_gil", &Run,
+             pybind11::call_guard<pybind11::gil_scoped_release>());
+}

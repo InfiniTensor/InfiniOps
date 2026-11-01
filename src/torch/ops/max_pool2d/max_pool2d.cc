@@ -1,6 +1,9 @@
 #include "torch/ops/max_pool2d/max_pool2d.h"
 
 #include "torch/c10.h"
+#ifdef WITH_THEAD
+#include "torch/thead/c10.h"
+#endif
 #ifdef WITH_NVIDIA
 #include "torch/nvidia/c10.h"
 #endif
@@ -60,6 +63,9 @@ void Operator<MaxPool2d, kDev, 8>::operator()(
 }
 #ifdef WITH_CPU
 template class Operator<MaxPool2d, Device::Type::kCpu, 8>;
+#endif
+#ifdef WITH_THEAD
+template class Operator<MaxPool2d, Device::Type::kThead, 8>;
 #endif
 #ifdef WITH_NVIDIA
 template class Operator<MaxPool2d, Device::Type::kNvidia, 8>;

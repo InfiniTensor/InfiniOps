@@ -32,9 +32,9 @@ export INFINIOPS_PROVIDER_MODULES=torch_npu
 ```bash
 # 按硬件选择 --devices：cpu cuda / mlu / npu。
 python -m pytest tests/test_onnx_gather.py tests/test_cast.py tests/test_native_layer_norm.py -k 'onnx_gather or encoder_' --devices cpu cuda -q -rs
-# 必需集成测试显式检查所有算子实现，不能以缺算子或设备不可用作为 skip 放行。
+# 普通测试按构建能力跳过；专用检索验收必须启用 --require-operator-set。
 INFINI_OPS_INSTALL_PREFIX=<ops-prefix> INFINI_RT_ROOT=<rt-prefix> \
-python -m pytest tests/test_retrieval_encoder.py tests/test_encoder_external_memory.py --devices cpu cuda -q -rs
+python -m pytest tests/test_retrieval_encoder.py tests/test_encoder_external_memory.py --devices cpu cuda --require-operator-set -q -rs
 # 昇腾专用：跨卡后恢复原设备／流，以及已缓存的 host queue 不能靠改环境变量绕过。
 python -m pytest tests/test_ascend_external_stream.py --devices npu -q -rs
 ```

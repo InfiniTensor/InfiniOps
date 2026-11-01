@@ -60,18 +60,21 @@ def test_changing_environment_does_not_hide_an_enabled_task_queue(queue):
         with torch.npu.stream(managed):
             infini.ops.exp(x, out, implementation_index=8, stream=managed.npu_stream)
             torch.testing.assert_close(out.cpu(), x.cpu().exp())
-        # An independently created native stream still requires queue-free
-        # submission; changing the environment cannot bypass actual state.
-        native = torch.npu.Stream()
-        # A non-current raw stream enters the external runtime contract.
+        noncurrent = torch.npu.Stream()
+        acl = ctypes.CDLL('libascendcl.so')
+        native = ctypes.c_void_p()
+        acl.aclrtCreateStream.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        acl.aclrtDestroyStream.argtypes = [ctypes.c_void_p]
+        assert acl.aclrtCreateStream(ctypes.byref(native)) == 0
         out.fill_(-123)
-        for stream in (native.npu_stream,):
+        for stream in (noncurrent.npu_stream, native.value):
             try:
                 infini.ops.exp(x, out, implementation_index=8, stream=stream)
             except RuntimeError as error:
                 assert 'TASK_QUEUE_ENABLE=0 before' in str(error), str(error)
             else:
                 raise AssertionError('An initialized host task queue was accepted')
+        assert acl.aclrtDestroyStream(native) == 0
         assert torch.all(out.cpu() == -123)
         print('Cached task queue rejected before external stream execution')
     """)

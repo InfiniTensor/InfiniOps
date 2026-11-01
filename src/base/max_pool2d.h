@@ -14,13 +14,7 @@ class MaxPool2d : public Operator<MaxPool2d> {
             const std::vector<int64_t> stride,
             const std::vector<int64_t> padding,
             const std::vector<int64_t> dilation, bool ceil_mode, Tensor out)
-      : input_layout_{input},
-        out_layout_{out},
-        kernel_size_{kernel_size},
-        stride_{stride},
-        padding_{padding},
-        dilation_{dilation},
-        ceil_mode_{ceil_mode} {}
+      : input_layout_{input}, out_layout_{out} {}
   virtual void operator()(const Tensor input,
                           const std::vector<int64_t> kernel_size,
                           const std::vector<int64_t> stride,
@@ -30,8 +24,6 @@ class MaxPool2d : public Operator<MaxPool2d> {
 
  protected:
   Tensor input_layout_, out_layout_;
-  std::vector<int64_t> kernel_size_, stride_, padding_, dilation_;
-  bool ceil_mode_;
 };
 }  // namespace infini::ops
 #endif
