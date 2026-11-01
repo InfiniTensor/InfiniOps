@@ -1,5 +1,6 @@
 #include "torch/ops/max_pool2d/max_pool2d.h"
 
+#include "torch/instantiate.h"
 #include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
@@ -26,34 +27,5 @@ void Operator<MaxPool2d, kDev, 8>::operator()(
               "MaxPool2d output shape must match the pooling result.");
   y.copy_(result);
 }
-#ifdef WITH_CPU
-template class Operator<MaxPool2d, Device::Type::kCpu, 8>;
-#endif
-#ifdef WITH_THEAD
-template class Operator<MaxPool2d, Device::Type::kThead, 8>;
-#endif
-#ifdef WITH_NVIDIA
-template class Operator<MaxPool2d, Device::Type::kNvidia, 8>;
-#endif
-#ifdef WITH_CAMBRICON
-template class Operator<MaxPool2d, Device::Type::kCambricon, 8>;
-#endif
-#ifdef WITH_ASCEND
-template class Operator<MaxPool2d, Device::Type::kAscend, 8>;
-#endif
-#ifdef WITH_METAX
-template class Operator<MaxPool2d, Device::Type::kMetax, 8>;
-#endif
-#ifdef WITH_MOORE
-template class Operator<MaxPool2d, Device::Type::kMoore, 8>;
-#endif
-#ifdef WITH_ILUVATAR
-template class Operator<MaxPool2d, Device::Type::kIluvatar, 8>;
-#endif
-#ifdef WITH_HYGON
-template class Operator<MaxPool2d, Device::Type::kHygon, 8>;
-#endif
-#ifdef WITH_MARS
-template class Operator<MaxPool2d, Device::Type::kMars, 8>;
-#endif
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(MaxPool2d, 8)
 }  // namespace infini::ops
