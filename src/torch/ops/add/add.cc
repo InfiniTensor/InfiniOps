@@ -1,5 +1,7 @@
 #include "torch/ops/add/add.h"
 
+#include "torch/instantiate.h"
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {
@@ -17,6 +19,7 @@ Operator<Add, kDev, 1>::Operator(const Tensor input, const Tensor other,
 template <Device::Type kDev>
 void Operator<Add, kDev, 1>::operator()(const Tensor input, const Tensor other,
                                         const double alpha, Tensor out) const {
+  const TorchStreamGuard<kDev> guard{stream_, device_index_};
   auto at_input =
       ToAtenTensor<kDev>(const_cast<void*>(input.data()), input_shape_,
                          input_strides_, input_type_, device_index_);
@@ -32,14 +35,6 @@ void Operator<Add, kDev, 1>::operator()(const Tensor input, const Tensor other,
   at::add_out(at_out, at_input, at_other, at_alpha);
 }
 
-template class Operator<Add, Device::Type::kCpu, 1>;
-template class Operator<Add, Device::Type::kNvidia, 1>;
-template class Operator<Add, Device::Type::kCambricon, 1>;
-template class Operator<Add, Device::Type::kAscend, 1>;
-template class Operator<Add, Device::Type::kMetax, 1>;
-template class Operator<Add, Device::Type::kMoore, 1>;
-template class Operator<Add, Device::Type::kIluvatar, 1>;
-template class Operator<Add, Device::Type::kHygon, 1>;
-template class Operator<Add, Device::Type::kMars, 1>;
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(Add, 1)
 
 }  // namespace infini::ops

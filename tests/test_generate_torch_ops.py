@@ -139,13 +139,11 @@ def test_torch_source_uses_existing_c10_stream_guards():
     source = module._generate_torch_source("abs", [op])
 
     assert "stream_ == nullptr" not in method
-    assert "C10<kDev>::GetStreamFromExternal(stream_, device_index)" in method
+    assert "TorchStreamGuard<kDev> stream_guard{stream_, device_index}" in method
 
-    for device in ("nvidia", "cambricon", "ascend", "metax", "moore", "iluvatar"):
-        assert f'#include "torch/{device}/c10.h"' in source
-
-    for device in ("cpu", "hygon"):
-        assert f'#include "torch/{device}/c10.h"' not in source
+    assert '#include "torch/stream_guard.h"' in source
+    assert "INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(Abs, 8)" in source
+    assert '#include "torch/nvidia/c10.h"' not in source
 
 
 def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
