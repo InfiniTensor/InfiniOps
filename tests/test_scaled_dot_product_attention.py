@@ -167,6 +167,10 @@ def test_aten_external_stream(device, implementation_index, managed):
         accelerator.synchronize()
         out.copy_(initial)
         accelerator.synchronize()
+        with accelerator.stream(stream):
+            snapshot = torch.empty_like(out)
+            snapshot.copy_(out)
+        stream.synchronize()
         delayed = None
         if device == "cuda":
             accelerator._sleep(200_000_000)
@@ -174,7 +178,7 @@ def test_aten_external_stream(device, implementation_index, managed):
             delayed.record()
         invoke()
         with accelerator.stream(stream):
-            snapshot = out.clone()
+            snapshot.copy_(out)
         stream.synchronize()
         if delayed is not None:
             assert not delayed.query(), (
