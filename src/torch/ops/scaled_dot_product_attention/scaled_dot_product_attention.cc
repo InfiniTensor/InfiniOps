@@ -1,5 +1,6 @@
 #include "torch/ops/scaled_dot_product_attention/scaled_dot_product_attention.h"
 
+#include "torch/instantiate.h"
 #include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
@@ -69,35 +70,6 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
   at_out.copy_(result);
 }
 
-#ifdef WITH_CPU
-template class Operator<ScaledDotProductAttention, Device::Type::kCpu, 1>;
-#endif
-#ifdef WITH_THEAD
-template class Operator<ScaledDotProductAttention, Device::Type::kThead, 1>;
-#endif
-#ifdef WITH_NVIDIA
-template class Operator<ScaledDotProductAttention, Device::Type::kNvidia, 1>;
-#endif
-#ifdef WITH_CAMBRICON
-template class Operator<ScaledDotProductAttention, Device::Type::kCambricon, 1>;
-#endif
-#ifdef WITH_ASCEND
-template class Operator<ScaledDotProductAttention, Device::Type::kAscend, 1>;
-#endif
-#ifdef WITH_METAX
-template class Operator<ScaledDotProductAttention, Device::Type::kMetax, 1>;
-#endif
-#ifdef WITH_MOORE
-template class Operator<ScaledDotProductAttention, Device::Type::kMoore, 1>;
-#endif
-#ifdef WITH_ILUVATAR
-template class Operator<ScaledDotProductAttention, Device::Type::kIluvatar, 1>;
-#endif
-#ifdef WITH_HYGON
-template class Operator<ScaledDotProductAttention, Device::Type::kHygon, 1>;
-#endif
-#ifdef WITH_MARS
-template class Operator<ScaledDotProductAttention, Device::Type::kMars, 1>;
-#endif
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(ScaledDotProductAttention, 1)
 
 }  // namespace infini::ops

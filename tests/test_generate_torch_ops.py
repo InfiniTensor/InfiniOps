@@ -142,6 +142,7 @@ def test_torch_source_uses_existing_c10_stream_guards():
     assert "TorchStreamGuard<kDev> stream_guard{stream_, device_index}" in method
 
     assert '#include "torch/stream_guard.h"' in source
+    assert "INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(Abs, 8)" in source
     assert '#include "torch/nvidia/c10.h"' not in source
 
 

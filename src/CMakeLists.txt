@@ -638,6 +638,10 @@ set(_infini_ops_smoke_ops
     causal_softmax causal_softmax_infinilm abs clamp exp)
 set(_infini_ops_smoke_torch_ops abs clamp exp relu)
 
+if(WITH_TORCH)
+    list(APPEND _infini_ops_smoke_ops reshape_and_cache scaled_dot_product_attention)
+endif()
+
 if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
 endif()

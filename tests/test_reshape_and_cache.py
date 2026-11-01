@@ -123,6 +123,7 @@ def _torch_reshape_and_cache(
     value_cache[block_indices, :, :, block_offsets] = value_values
 
 
+@pytest.mark.smoke
 def test_aten_external_stream(device, implementation_index):
     if implementation_index != 1 or device == "cpu":
         pytest.skip("Requires the accelerator ATen provider")
@@ -137,19 +138,42 @@ def test_aten_external_stream(device, implementation_index):
     scale = torch.ones((1,), device=device)
     reference = out.clone()
     reference[0, 0, :, 0] = x.flatten()
+    initial = out.clone()
     stream.wait_stream(accelerator.current_stream())
-    infini.ops.reshape_and_cache(
-        x,
-        x,
-        key_cache,
-        out,
-        indices,
-        scale,
-        scale,
-        "auto",
-        implementation_index=implementation_index,
-        stream=raw,
-    )
-    stream.synchronize()
-    assert get_stream(device) == previous
-    torch.testing.assert_close(out, reference, rtol=1e-4, atol=1e-5)
+
+    def invoke():
+        infini.ops.reshape_and_cache(
+            x,
+            x,
+            key_cache,
+            out,
+            indices,
+            scale,
+            scale,
+            "auto",
+            implementation_index=implementation_index,
+            stream=raw,
+        )
+
+    try:
+        invoke()
+        accelerator.synchronize()
+        out.copy_(initial)
+        accelerator.synchronize()
+        delayed = None
+        if device == "cuda":
+            accelerator._sleep(200_000_000)
+            delayed = accelerator.Event()
+            delayed.record()
+        invoke()
+        with accelerator.stream(stream):
+            snapshot = out.clone()
+        stream.synchronize()
+        if delayed is not None:
+            assert not delayed.query(), (
+                "The unrelated stream completed before the snapshot"
+            )
+        assert get_stream(device) == previous
+    finally:
+        accelerator.synchronize()
+    torch.testing.assert_close(snapshot, reference, rtol=1e-4, atol=1e-5)

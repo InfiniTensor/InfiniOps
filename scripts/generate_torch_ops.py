@@ -64,22 +64,6 @@ _ENUM_DEFAULTS = {
 # from installed `torchgen/packaged/ATen/native/native_functions.yaml`.
 _DEFAULT_PYTORCH_VERSION = "v2.4.0"
 
-# Order matches the device list in existing hand-written torch backends
-# (see `src/torch/add/add.cc`).
-_DEVICE_TYPES = (
-    "kCpu",
-    "kNvidia",
-    "kCambricon",
-    "kAscend",
-    "kMetax",
-    "kMoore",
-    "kIluvatar",
-    "kHygon",
-    "kThead",
-    "kMars",
-)
-
-
 # YAML scalar-type tokens → C++ types. Reference types (e.g. `const Scalar&`)
 # are not used so the generated signatures match the existing hand-written
 # ones, which pass by value to keep pybind11 binding generation simple.
@@ -1462,22 +1446,11 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     op_type = _op_cpp_type(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
-    # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
-    # so a build that only enables a subset of devices does not pay the
-    # ATen template-instantiation cost (and memory pressure) for the
-    # devices it does not link against. Each macro is set by
-    # `target_compile_definitions` in `src/CMakeLists.txt`.
-    instantiations = "\n".join(
-        f"#ifdef WITH_{dev.removeprefix('k').upper()}\n"
-        f"template class Operator<{op_type}, Device::Type::{dev}, {_PYTORCH_SLOT}>;\n"
-        f"#endif"
-        for dev in _DEVICE_TYPES
-    )
-
     return _TORCH_SOURCE_TEMPLATE.format(
         name=name,
         methods=methods,
-        instantiations=instantiations,
+        op_type=op_type,
+        slot=_PYTORCH_SLOT,
     )
 
 
@@ -1542,6 +1515,7 @@ void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
 _TORCH_SOURCE_TEMPLATE = """\
 #include "torch/{name}/{name}.h"
 
+#include "torch/instantiate.h"
 #include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
@@ -1549,7 +1523,7 @@ namespace infini::ops {{
 
 {methods}
 
-{instantiations}
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR({op_type}, {slot})
 
 }}  // namespace infini::ops
 """

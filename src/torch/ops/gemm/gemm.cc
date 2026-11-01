@@ -1,5 +1,6 @@
 #include "torch/ops/gemm/gemm.h"
 
+#include "torch/instantiate.h"
 #include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
@@ -78,35 +79,6 @@ void Operator<Gemm, kDev, 2>::operator()(
   at_y.add_(product, alpha_val);
 }
 
-#ifdef WITH_CPU
-template class Operator<Gemm, Device::Type::kCpu, 2>;
-#endif
-#ifdef WITH_THEAD
-template class Operator<Gemm, Device::Type::kThead, 2>;
-#endif
-#ifdef WITH_NVIDIA
-template class Operator<Gemm, Device::Type::kNvidia, 2>;
-#endif
-#ifdef WITH_CAMBRICON
-template class Operator<Gemm, Device::Type::kCambricon, 2>;
-#endif
-#ifdef WITH_ASCEND
-template class Operator<Gemm, Device::Type::kAscend, 2>;
-#endif
-#ifdef WITH_METAX
-template class Operator<Gemm, Device::Type::kMetax, 2>;
-#endif
-#ifdef WITH_MOORE
-template class Operator<Gemm, Device::Type::kMoore, 2>;
-#endif
-#ifdef WITH_ILUVATAR
-template class Operator<Gemm, Device::Type::kIluvatar, 2>;
-#endif
-#ifdef WITH_HYGON
-template class Operator<Gemm, Device::Type::kHygon, 2>;
-#endif
-#ifdef WITH_MARS
-template class Operator<Gemm, Device::Type::kMars, 2>;
-#endif
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(Gemm, 2)
 
 }  // namespace infini::ops
