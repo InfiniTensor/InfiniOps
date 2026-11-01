@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import infini.ops
 import pytest
 import torch
@@ -137,3 +139,39 @@ def _make_mask(mask_kind, query_length, key_length, dtype, device):
     mask[0, -1] = -3.0
 
     return mask
+
+
+@pytest.mark.parametrize("managed", [False, True])
+def test_aten_external_stream(device, implementation_index, managed):
+    if implementation_index != 1 or device == "cpu":
+        pytest.skip("Requires the accelerator ATen provider")
+    accelerator = getattr(torch, torch.device(device).type)
+    previous = get_stream(device)
+    stream = accelerator.Stream()
+    raw = getattr(stream, f"{torch.device(device).type}_stream")
+    x = torch.randn((1, 2, 4, 8), device=device)
+    out = torch.full_like(x, -123)
+    reference = torch.nn.functional.scaled_dot_product_attention(x, x, x)
+    stream.wait_stream(accelerator.current_stream())
+    try:
+        with accelerator.stream(stream) if managed else nullcontext():
+            infini.ops.scaled_dot_product_attention(
+                x, x, x, out, implementation_index=implementation_index, stream=raw
+            )
+    except RuntimeError as error:
+        # Some torch_npu versions use an internal event unsupported on a raw
+        # external stream. Preserve that explicit error rather than execute
+        # on an unrelated stream or silently change the attention algorithm.
+        if (
+            device != "npu"
+            or managed
+            or "External NPU stream is not supported in NPUEvent::record"
+            not in str(error)
+        ):
+            raise
+        assert get_stream(device) == previous
+        assert torch.all(out == -123)
+        return
+    stream.synchronize()
+    assert get_stream(device) == previous
+    torch.testing.assert_close(out, reference, rtol=1e-4, atol=1e-5)

@@ -1,5 +1,6 @@
 #include "torch/ops/rotary_embedding/rotary_embedding.h"
 
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {
@@ -54,6 +55,7 @@ void Operator<RotaryEmbedding, kDev, 1>::operator()(
     return;
   }
 
+  const TorchStreamGuard<kDev> guard{stream_, device_index_};
   auto at_positions =
       ToAtenTensor<kDev>(const_cast<void*>(positions.data()), positions_shape_,
                          positions_strides_, positions_type_, device_index_);
@@ -75,14 +77,35 @@ void Operator<RotaryEmbedding, kDev, 1>::operator()(
   }
 }
 
+#ifdef WITH_CPU
 template class Operator<RotaryEmbedding, Device::Type::kCpu, 1>;
+#endif
+#ifdef WITH_THEAD
+template class Operator<RotaryEmbedding, Device::Type::kThead, 1>;
+#endif
+#ifdef WITH_NVIDIA
 template class Operator<RotaryEmbedding, Device::Type::kNvidia, 1>;
+#endif
+#ifdef WITH_CAMBRICON
 template class Operator<RotaryEmbedding, Device::Type::kCambricon, 1>;
+#endif
+#ifdef WITH_ASCEND
 template class Operator<RotaryEmbedding, Device::Type::kAscend, 1>;
+#endif
+#ifdef WITH_METAX
 template class Operator<RotaryEmbedding, Device::Type::kMetax, 1>;
+#endif
+#ifdef WITH_MOORE
 template class Operator<RotaryEmbedding, Device::Type::kMoore, 1>;
+#endif
+#ifdef WITH_ILUVATAR
 template class Operator<RotaryEmbedding, Device::Type::kIluvatar, 1>;
+#endif
+#ifdef WITH_HYGON
 template class Operator<RotaryEmbedding, Device::Type::kHygon, 1>;
+#endif
+#ifdef WITH_MARS
 template class Operator<RotaryEmbedding, Device::Type::kMars, 1>;
+#endif
 
 }  // namespace infini::ops
