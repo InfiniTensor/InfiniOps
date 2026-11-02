@@ -1,4 +1,4 @@
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 
 import infini.ops
 import pytest
@@ -230,13 +230,18 @@ def _reference_attention(query, key, value, **kwargs):
 @pytest.mark.smoke
 @pytest.mark.parametrize("mask_kind", ["none", "bool", "float"])
 @pytest.mark.parametrize("enable_gqa", [False, True])
-def test_aten_fp32_cpu_reference(device, implementation_index, mask_kind, enable_gqa):
+@pytest.mark.parametrize("value_size", [6, 8])
+def test_aten_fp32_cpu_reference(
+    device, implementation_index, mask_kind, enable_gqa, value_size
+):
     if implementation_index != 1:
         pytest.skip("Requires the ATen provider")
+    if device == "musa" and value_size != 8:
+        pytest.skip("muDNN SDPA requires equal query/value head widths")
     heads = 2 if enable_gqa else 4
     query = torch.randn(1, 4, 3, 8, device=device)
     key = torch.randn(1, heads, 5, 8, device=device)
-    value = torch.randn(1, heads, 5, 6, device=device)
+    value = torch.randn(1, heads, 5, value_size, device=device)
     mask = _make_mask(mask_kind, 3, 5, query.dtype, device)
     q, k, v = [tensor.cpu().double() for tensor in (query, key, value)]
     if enable_gqa:
@@ -250,18 +255,42 @@ def test_aten_fp32_cpu_reference(device, implementation_index, mask_kind, enable
         else:
             scores = scores + cpu_mask.double()
     reference = torch.softmax(scores, dim=-1) @ v
-    out = torch.empty(1, 4, 3, 6, device=device)
-    infini.ops.scaled_dot_product_attention(
-        query,
-        key,
-        value,
-        mask,
-        0.0,
-        False,
-        0.5,
-        enable_gqa,
-        out,
-        implementation_index=implementation_index,
-        stream=get_stream(query.device),
-    )
+    out = torch.empty(1, 4, 3, value_size, device=device)
+    with _fp32_attention(device):
+        infini.ops.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            mask,
+            0.0,
+            False,
+            0.5,
+            enable_gqa,
+            out,
+            implementation_index=implementation_index,
+            stream=get_stream(query.device),
+        )
     torch.testing.assert_close(out.cpu().double(), reference, rtol=1e-4, atol=1e-5)
+
+
+@contextmanager
+def _fp32_attention(device):
+    # Compare against CPU FP64 using full FP32 arithmetic, then restore defaults.
+    if device == "musa":
+        with torch.backends.mudnn.flags(allow_tf32=False):
+            yield
+    elif device == "cuda":
+        backend = torch.backends.cuda.matmul
+        precision = (
+            "fp32_precision" if hasattr(backend, "fp32_precision") else "allow_tf32"
+        )
+        previous = getattr(backend, precision)
+        try:
+            setattr(
+                backend, precision, "ieee" if precision == "fp32_precision" else False
+            )
+            yield
+        finally:
+            setattr(backend, precision, previous)
+    else:
+        yield
