@@ -183,6 +183,34 @@ __global__ void ClearEmbeddingVisitedKernel(int* visited, size_t vocab_size) {
   }
 }
 
+template <Device::Type kDev, typename T, typename IndexT>
+__global__ void EmbeddingContiguousKernel(
+    T* __restrict__ output, const IndexT* __restrict__ indices,
+    const T* __restrict__ weight, size_t num_indices,
+    ptrdiff_t weight_row_stride, size_t embedding_dim, size_t vocab_size) {
+  const size_t row = blockIdx.x;
+  if (row >= num_indices) {
+    return;
+  }
+
+  __shared__ IndexT index;
+  if (threadIdx.x == 0) {
+    index = __ldg(&indices[row]);
+  }
+  __syncthreads();
+
+  if (index < 0 || static_cast<size_t>(index) >= vocab_size) {
+    return;
+  }
+
+  const T* src = weight + static_cast<size_t>(index) * weight_row_stride;
+  T* dst = output + row * embedding_dim;
+  for (size_t column = threadIdx.x; column < embedding_dim;
+       column += blockDim.x) {
+    dst[column] = embedding_detail::LoadGlobal<kDev, T>(&src[column]);
+  }
+}
+
 template <unsigned int block_size, Device::Type kDev, typename T,
           typename IndexT>
 __global__ void EmbeddingRenormKernel(
