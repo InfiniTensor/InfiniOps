@@ -41,9 +41,20 @@ def test_cast(
 ):
     input = randn_strided(shape, input_strides, dtype=input_dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=out_dtype, device=device)
+    cast = _cast
+
+    if (
+        device == "cuda"
+        and infini.ops.Cast.active_implementation_indices("nvidia")
+        and (not input.is_contiguous() or not out.is_contiguous())
+    ):
+        if 8 not in infini.ops.Cast.active_implementation_indices("nvidia"):
+            pytest.skip("strided NVIDIA Cast requires ATen slot 8")
+
+        cast = _cast_aten
 
     return Payload(
-        _cast,
+        cast,
         _torch_cast,
         (input, out),
         {},
@@ -52,16 +63,34 @@ def test_cast(
     )
 
 
-def _cast(input, out):
-    infini.ops.cast(input, out, stream=get_stream(input.device))
+def _cast(input, out, **kwargs):
+    infini.ops.cast(input, out, stream=get_stream(input.device), **kwargs)
 
     return out
+
+
+def _cast_aten(input, out):
+    return _cast(input, out, implementation_index=8)
 
 
 def _torch_cast(input, out):
     out.copy_(input.to(out.dtype))
 
     return out
+
+
+@pytest.mark.smoke
+def test_native_cuda_cast_rejects_strided_layout(device):
+    if device != "cuda" or 0 not in infini.ops.Cast.active_implementation_indices(
+        "nvidia"
+    ):
+        pytest.skip("native NVIDIA Cast is not active")
+
+    input = randn_strided((13, 4), (10, 1), device=device)
+    out = empty_strided((13, 4), (10, 1), dtype=torch.float16, device=device)
+
+    with pytest.raises(ValueError, match="does not support these parameters"):
+        infini.ops.cast(input, out, implementation_index=0, stream=get_stream(device))
 
 
 @pytest.fixture

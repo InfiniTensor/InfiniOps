@@ -1,4 +1,4 @@
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 
 import infini.ops
 import pytest
@@ -80,7 +80,7 @@ def test_scaled_dot_product_attention(
     )
 
     torch.manual_seed(1234)
-    expected = torch.nn.functional.scaled_dot_product_attention(
+    expected = _reference_attention(
         query,
         key,
         value,
@@ -152,7 +152,7 @@ def test_aten_external_stream(device, implementation_index, managed):
     raw = getattr(stream, f"{torch.device(device).type}_stream")
     x = torch.randn((1, 2, 4, 8), device=device)
     out = torch.full_like(x, -123)
-    reference = torch.nn.functional.scaled_dot_product_attention(x, x, x)
+    reference = _reference_attention(x, x, x)
     initial = out.clone()
     stream.wait_stream(accelerator.current_stream())
 
@@ -200,3 +200,97 @@ def test_aten_external_stream(device, implementation_index, managed):
     finally:
         accelerator.synchronize()
     torch.testing.assert_close(snapshot, reference, rtol=1e-4, atol=1e-5)
+
+
+def _reference_attention(query, key, value, **kwargs):
+    if tuple(map(int, torch.__version__.split(".")[:2])) < (2, 5):
+        if kwargs.pop("enable_gqa", False):
+            groups = query.size(-3) // key.size(-3)
+            key = key.repeat_interleave(groups, -3)
+            value = value.repeat_interleave(groups, -3)
+    iluvatar_math = (
+        query.device.type == "cuda"
+        and (query.dtype == torch.float32 or query.size(-1) != value.size(-1))
+        and torch.__version__.startswith("2.4.")
+        and infini.ops.ScaledDotProductAttention.active_implementation_indices(
+            "iluvatar"
+        )
+    )
+    if iluvatar_math:
+        # These inputs are outside the SDK's fused SDPA domain.
+        with torch.backends.cuda.sdp_kernel(
+            enable_flash=False, enable_math=True, enable_mem_efficient=False
+        ):
+            return torch.nn.functional.scaled_dot_product_attention(
+                query, key, value, **kwargs
+            )
+    return torch.nn.functional.scaled_dot_product_attention(query, key, value, **kwargs)
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize("mask_kind", ["none", "bool", "float"])
+@pytest.mark.parametrize("enable_gqa", [False, True])
+@pytest.mark.parametrize("value_size", [6, 8])
+def test_aten_fp32_cpu_reference(
+    device, implementation_index, mask_kind, enable_gqa, value_size
+):
+    if implementation_index != 1:
+        pytest.skip("Requires the ATen provider")
+    if device == "musa" and value_size != 8:
+        pytest.skip("muDNN SDPA requires equal query/value head widths")
+    heads = 2 if enable_gqa else 4
+    query = torch.randn(1, 4, 3, 8, device=device)
+    key = torch.randn(1, heads, 5, 8, device=device)
+    value = torch.randn(1, heads, 5, value_size, device=device)
+    mask = _make_mask(mask_kind, 3, 5, query.dtype, device)
+    q, k, v = [tensor.cpu().double() for tensor in (query, key, value)]
+    if enable_gqa:
+        k = k.repeat_interleave(2, -3)
+        v = v.repeat_interleave(2, -3)
+    scores = (q @ k.transpose(-2, -1)) * 0.5
+    if mask is not None:
+        cpu_mask = mask.cpu()
+        if mask.dtype == torch.bool:
+            scores = scores.masked_fill(~cpu_mask, float("-inf"))
+        else:
+            scores = scores + cpu_mask.double()
+    reference = torch.softmax(scores, dim=-1) @ v
+    out = torch.empty(1, 4, 3, value_size, device=device)
+    with _fp32_attention(device):
+        infini.ops.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            mask,
+            0.0,
+            False,
+            0.5,
+            enable_gqa,
+            out,
+            implementation_index=implementation_index,
+            stream=get_stream(query.device),
+        )
+    torch.testing.assert_close(out.cpu().double(), reference, rtol=1e-4, atol=1e-5)
+
+
+@contextmanager
+def _fp32_attention(device):
+    # Compare against CPU FP64 using full FP32 arithmetic, then restore defaults.
+    if device == "musa":
+        with torch.backends.mudnn.flags(allow_tf32=False):
+            yield
+    elif device == "cuda":
+        backend = torch.backends.cuda.matmul
+        precision = (
+            "fp32_precision" if hasattr(backend, "fp32_precision") else "allow_tf32"
+        )
+        previous = getattr(backend, precision)
+        try:
+            setattr(
+                backend, precision, "ieee" if precision == "fp32_precision" else False
+            )
+            yield
+        finally:
+            setattr(backend, precision, previous)
+    else:
+        yield

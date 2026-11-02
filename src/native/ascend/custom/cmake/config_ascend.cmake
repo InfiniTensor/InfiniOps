@@ -6,7 +6,7 @@ endif()
 
 set(ASCEND_CANN_PACKAGE_PATH ${ASCEND_HOME_PATH})
 
-# Auto-detect `SOC_VERSION` from `npu-smi info` if not set externally.
+# Auto-detect `SOC_VERSION` from the runtime or `npu-smi` if not set externally.
 # Required by `CANN`'s `ascendc.cmake` for `AscendC` kernel compilation.
 if(NOT DEFINED SOC_VERSION OR "${SOC_VERSION}" STREQUAL "")
     include(${CMAKE_CURRENT_LIST_DIR}/detect_soc.cmake)

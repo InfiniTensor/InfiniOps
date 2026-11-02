@@ -4,6 +4,13 @@
 #include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
+#if defined(WITH_ILUVATAR) && TORCH_VERSION_MAJOR == 2 && \
+    TORCH_VERSION_MINOR == 4
+#include <ATen/ops/_scaled_dot_product_attention_math.h>
+
+#include <limits>
+#endif
+
 namespace infini::ops {
 
 template <Device::Type kDev>
@@ -63,6 +70,28 @@ void Operator<ScaledDotProductAttention, kDev, 1>::operator()(
     at_value =
         at_value.repeat_interleave(at_query.size(-3) / at_value.size(-3), -3);
   }
+
+#if defined(WITH_ILUVATAR) && TORCH_VERSION_MAJOR == 2 && \
+    TORCH_VERSION_MINOR == 4
+  if constexpr (kDev == Device::Type::kIluvatar) {
+    // CoreX Torch 2.4 fused SDPA does not support FP32 or unequal query/value
+    // head widths. Use math without changing global backend flags.
+    if (query_type_ == DataType::kFloat32 ||
+        query_shape_.back() != value_shape_.back()) {
+      auto math_mask = at_attn_mask;
+      if (math_mask.has_value() && math_mask->scalar_type() == at::kBool) {
+        math_mask = at::zeros_like(*math_mask, at_query.options())
+                        .masked_fill_(math_mask->logical_not(),
+                                      -std::numeric_limits<float>::infinity());
+      }
+      auto result = std::get<0>(at::_scaled_dot_product_attention_math(
+          at_query, at_key, at_value, math_mask, dropout_p, is_causal,
+          c10::nullopt, at_scale));
+      at_out.copy_(result);
+      return;
+    }
+  }
+#endif
 
   auto result = at::scaled_dot_product_attention(
       at_query, at_key, at_value, at_attn_mask, dropout_p, is_causal, at_scale);
