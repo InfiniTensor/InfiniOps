@@ -18,6 +18,16 @@ class CudaRmsNorm : public RmsNorm {
  public:
   using RmsNorm::RmsNorm;
 
+  static bool supports(const Tensor input, const Tensor weight, float,
+                       const Tensor out) {
+    return NativeSupports(input, weight, out);
+  }
+
+  static bool supports(const Tensor input, const Tensor weight,
+                       const Tensor out) {
+    return NativeSupports(input, weight, out);
+  }
+
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     auto cuda_stream =

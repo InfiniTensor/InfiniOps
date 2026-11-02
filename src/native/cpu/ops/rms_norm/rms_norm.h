@@ -17,6 +17,17 @@ class Operator<RmsNorm, Device::Type::kCpu> : public RmsNorm,
  public:
   using RmsNorm::RmsNorm;
 
+  static bool supports(const Tensor input, const Tensor weight, float,
+                       const Tensor out) {
+    return NativeSupports(input, weight, out) &&
+           input.dtype() == weight.dtype();
+  }
+
+  static bool supports(const Tensor input, const Tensor weight,
+                       const Tensor out) {
+    return supports(input, weight, 1e-6f, out);
+  }
+
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     DispatchFunc<Device::Type::kCpu, AllFloatTypes>(

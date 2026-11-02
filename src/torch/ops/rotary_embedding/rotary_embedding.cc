@@ -1,5 +1,7 @@
 #include "torch/ops/rotary_embedding/rotary_embedding.h"
 
+#include "torch/instantiate.h"
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {
@@ -54,6 +56,7 @@ void Operator<RotaryEmbedding, kDev, 1>::operator()(
     return;
   }
 
+  const TorchStreamGuard<kDev> guard{stream_, device_index_};
   auto at_positions =
       ToAtenTensor<kDev>(const_cast<void*>(positions.data()), positions_shape_,
                          positions_strides_, positions_type_, device_index_);
@@ -75,14 +78,6 @@ void Operator<RotaryEmbedding, kDev, 1>::operator()(
   }
 }
 
-template class Operator<RotaryEmbedding, Device::Type::kCpu, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kNvidia, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kCambricon, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kAscend, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kMetax, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kMoore, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kIluvatar, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kHygon, 1>;
-template class Operator<RotaryEmbedding, Device::Type::kMars, 1>;
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(RotaryEmbedding, 1)
 
 }  // namespace infini::ops

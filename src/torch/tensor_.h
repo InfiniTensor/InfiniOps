@@ -9,6 +9,10 @@
 
 #include "tensor.h"
 #include "torch/device_.h"
+#include "torch/external_tensor.h"
+#ifdef WITH_ASCEND
+#include "torch/ascend/external_tensor.h"
+#endif
 
 namespace infini::ops {
 
@@ -104,11 +108,13 @@ inline at::Tensor ToAtenTensor(
     options = options.device(device_str);
   }
 
+  detail::InitializeTorchDevice<kDev>(options);
   for (auto dim : shape) {
     if (dim == 0) return at::empty_strided(at_shape, at_strides, options);
   }
 
-  return at::from_blob(data, at_shape, at_strides, options);
+  return detail::ExternalTorchTensor<kDev>::Wrap(data, at_shape, at_strides,
+                                                 options);
 }
 
 }  // namespace infini::ops

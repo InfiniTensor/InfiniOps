@@ -70,18 +70,6 @@ def test_gemm(
     ):
         pytest.skip("Iluvatar GEMM reports fp16 execution failures")
 
-    if implementation_index == 2 and device == "npu":
-        # `src/torch/gemm/gemm.h` partial-specializes `Operator<Gemm, kDev, 2>`
-        # for every `kDev` including `kAscend`, so the SFINAE-based
-        # `active_implementation_indices` reports `2` as active even though
-        # `torch/gemm/gemm.cc` only instantiates it for CPU/NVIDIA.
-        # Dispatching through the unused Ascend specialization reads from an
-        # uninitialized vtable and crashes. See PR #64 discussion.
-        pytest.skip(
-            "Gemm impl=2 on Ascend is a torch-fallback stub without an "
-            "instantiated specialization"
-        )
-
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
 
@@ -203,3 +191,51 @@ def _torch_gemm_portable(a, b, c, alpha, beta, trans_a, trans_b, y):
     y.add_(product, alpha=alpha)
 
     return y
+
+
+@pytest.mark.smoke
+def test_aten_external_stream(device, implementation_index):
+    if implementation_index != 2 or device == "cpu":
+        pytest.skip("Requires the accelerator ATen provider")
+    accelerator = getattr(torch, torch.device(device).type)
+    previous = get_stream(device)
+    stream = accelerator.Stream()
+    raw = getattr(stream, f"{torch.device(device).type}_stream")
+    x = torch.arange(6, device=device, dtype=torch.float32).reshape(2, 3)
+    y = torch.arange(6, device=device, dtype=torch.float32).reshape(3, 2)
+    out = torch.full((2, 2), -123.0, device=device)
+    reference = x @ y
+    initial = out.clone()
+    stream.wait_stream(accelerator.current_stream())
+
+    def invoke():
+        infini.ops.gemm(
+            x, y, out, implementation_index=implementation_index, stream=raw
+        )
+
+    try:
+        invoke()
+        accelerator.synchronize()
+        out.copy_(initial)
+        accelerator.synchronize()
+        with accelerator.stream(stream):
+            snapshot = torch.empty_like(out)
+            snapshot.copy_(out)
+        stream.synchronize()
+        delayed = None
+        if device == "cuda":
+            accelerator._sleep(200_000_000)
+            delayed = accelerator.Event()
+            delayed.record()
+        invoke()
+        with accelerator.stream(stream):
+            snapshot.copy_(out)
+        stream.synchronize()
+        if delayed is not None:
+            assert not delayed.query(), (
+                "The unrelated stream completed before the snapshot"
+            )
+        assert get_stream(device) == previous
+    finally:
+        accelerator.synchronize()
+    torch.testing.assert_close(snapshot, reference, rtol=1e-4, atol=1e-5)
