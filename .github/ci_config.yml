@@ -33,7 +33,7 @@ platforms:
           - name: test
             run: pytest tests/ -m smoke -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
-    runner_label: iluvatar
+    runner_label: Iluvatar-InfiniOps-Validation-000
     execution_mode: agent_local
     image:
       dockerfile: images/iluvatar/
@@ -69,7 +69,7 @@ platforms:
             run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
-    runner_label: Metax
+    runner_label: Metax-InfiniOps-Validation-000
     execution_mode: agent_local
     image:
       dockerfile: images/metax/
