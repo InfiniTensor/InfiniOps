@@ -111,7 +111,8 @@ platforms:
       - "--privileged"
     setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_MOORE=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && SKBUILD_CMAKE_DEFINE="CMAKE_C_COMPILER=$PWD/scripts/mcc_wrapper.sh;CMAKE_CXX_COMPILER=$PWD/scripts/mcc_wrapper.sh;WITH_MOORE=ON;GENERATE_PYTHON_BINDINGS=ON;INFINI_OPS_SMOKE_BUILD=ON;INFINI_RT_ROOT=/tmp/infinirt-prefix" python -m pip install .[dev] --no-build-isolation
     jobs:
-      gpu:
+      gpu_001: &moore_fleet_smoke
+        runner_label: Moore-Server-001
         type: unittest
         resources:
           gpu_ids: auto
@@ -125,6 +126,25 @@ platforms:
         stages:
           - name: test
             run: LD_LIBRARY_PATH=/usr/local/musa/lib:$LD_LIBRARY_PATH MUSA_VISIBLE_DEVICES="${MTHREADS_VISIBLE_DEVICES:?CI must select a Moore GPU}" pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+      gpu_002:
+        <<: *moore_fleet_smoke
+        runner_label: Moore-Server-002
+      gpu_003:
+        <<: *moore_fleet_smoke
+        runner_label: Moore-Server-003
+      gpu_004:
+        <<: *moore_fleet_smoke
+        runner_label: Moore-Server-004
+      gpu_005:
+        <<: *moore_fleet_smoke
+        runner_label: Moore-Server-005
+      gpu_006:
+        <<: *moore_fleet_smoke
+        runner_label: Moore-Server-006
+      gpu_007:
+        <<: *moore_fleet_smoke
+        runner_label: Moore-Server-007
+
 
   cambricon:
     runner_label: Cambricon-Server-000
