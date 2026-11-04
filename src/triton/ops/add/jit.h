@@ -95,6 +95,13 @@ class Operator<Add, Device::Type::kNvidia, 10>
   using triton::jit::Add<Device::Type::kNvidia>::Add;
 };
 
+template <>
+class Operator<Add, Device::Type::kHygon, 10>
+    : public triton::jit::Add<Device::Type::kHygon> {
+ public:
+  using triton::jit::Add<Device::Type::kHygon>::Add;
+};
+
 }  // namespace infini::ops
 
 #endif
