@@ -7,7 +7,7 @@ github:
 
 platforms:
   nvidia:
-    runner_label: Nvidia
+    runner_label: Nvidia-Server-000
     execution_mode: agent_local
     image:
       dockerfile: images/nvidia/
@@ -33,7 +33,7 @@ platforms:
           - name: test
             run: pytest tests/ -m smoke -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
   iluvatar:
-    runner_label: Iluvatar-InfiniOps-Validation-000
+    runner_label: Iluvatar-Server-000
     execution_mode: agent_local
     image:
       dockerfile: images/iluvatar/
@@ -69,7 +69,7 @@ platforms:
             run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   metax:
-    runner_label: Metax-InfiniOps-Validation-000
+    runner_label: Metax-Server-000
     execution_mode: agent_local
     image:
       dockerfile: images/metax/
@@ -99,7 +99,7 @@ platforms:
             run: HOST_CXX=/usr/bin/g++ pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   moore:
-    runner_label: Moore
+    runner_label: Moore-Server-000
     execution_mode: agent_local
     image:
       dockerfile: images/moore/
@@ -127,7 +127,7 @@ platforms:
             run: LD_LIBRARY_PATH=/usr/local/musa/lib:$LD_LIBRARY_PATH MUSA_VISIBLE_DEVICES="${MTHREADS_VISIBLE_DEVICES:?CI must select a Moore GPU}" pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   cambricon:
-    runner_label: Cambricon
+    runner_label: Cambricon-Server-000
     execution_mode: agent_local
     image:
       dockerfile: images/cambricon/
@@ -190,7 +190,7 @@ platforms:
             run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
 
   ascend:
-    runner_label: Ascend
+    runner_label: Ascend-910C-Server-000
     execution_mode: agent_local
     image:
       dockerfile: images/ascend/
