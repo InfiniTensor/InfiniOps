@@ -17,7 +17,8 @@ platforms:
         PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
     setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix /tmp/ninetoothed-src /tmp/ntops-src && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_NVIDIA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && git clone ${NINETOOTHED_GIT_URL:-https://github.com/InfiniTensor/ninetoothed.git} /tmp/ninetoothed-src && git -C /tmp/ninetoothed-src checkout bf8d7c42f86cf5feafe4a3ad443f1df151016886 && python -m pip install /tmp/ninetoothed-src && git clone --depth 1 ${NTOPS_GIT_URL:-https://github.com/InfiniTensor/ntops.git} /tmp/ntops-src && git -C /tmp/ntops-src checkout 82cba6cf2200919b5d12c86adbea60cbfb516040 && python -m pip install /tmp/ntops-src && python -m pip install "numpy<2" && python -m pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.WITH_NINETOOTHED=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
-      gpu:
+      gpu_001: &nvidia_fleet_smoke
+        runner_label: Nvidia-Server-001
         type: unittest
         resources:
           gpu_ids: auto
@@ -32,6 +33,25 @@ platforms:
         stages:
           - name: test
             run: pytest tests/ -m smoke -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
+      gpu_002:
+        <<: *nvidia_fleet_smoke
+        runner_label: Nvidia-Server-002
+      gpu_003:
+        <<: *nvidia_fleet_smoke
+        runner_label: Nvidia-Server-003
+      gpu_004:
+        <<: *nvidia_fleet_smoke
+        runner_label: Nvidia-Server-004
+      gpu_005:
+        <<: *nvidia_fleet_smoke
+        runner_label: Nvidia-Server-005
+      gpu_006:
+        <<: *nvidia_fleet_smoke
+        runner_label: Nvidia-Server-006
+      gpu_007:
+        <<: *nvidia_fleet_smoke
+        runner_label: Nvidia-Server-007
+
   iluvatar:
     runner_label: Iluvatar-Server-000
     execution_mode: agent_local
@@ -53,7 +73,8 @@ platforms:
       - /lib/modules:/lib/modules
     setup: python -m pip install 'scikit-build-core>=1.1.1' exceptiongroup typing-extensions pygments pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_ILUVATAR=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix -DCMAKE_CUDA_ARCHITECTURES=OFF -DCMAKE_CUDA_COMPILER=/usr/local/corex-4.3.0.20250624/bin/clang++ -DCUDAToolkit_ROOT=/usr/local/corex-4.3.0.20250624 && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && python -m pip install . --no-build-isolation --no-deps --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
-      gpu:
+      gpu_001: &iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-001
         type: unittest
         resources:
           gpu_ids: auto
@@ -67,6 +88,24 @@ platforms:
         stages:
           - name: test
             run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+      gpu_002:
+        <<: *iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-002
+      gpu_003:
+        <<: *iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-003
+      gpu_004:
+        <<: *iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-004
+      gpu_005:
+        <<: *iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-005
+      gpu_006:
+        <<: *iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-006
+      gpu_007:
+        <<: *iluvatar_fleet_smoke
+        runner_label: Iluvatar-Server-007
 
   metax:
     runner_label: Metax-Server-000
@@ -83,7 +122,8 @@ platforms:
       - "--ulimit=stack=67108864"
     setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_METAX=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && MACA_PATH=/opt/maca SKBUILD_CMAKE_DEFINE="CMAKE_C_COMPILER=$PWD/scripts/mxcc_wrapper.sh;CMAKE_CXX_COMPILER=$PWD/scripts/mxcc_wrapper.sh;WITH_METAX=ON;GENERATE_PYTHON_BINDINGS=ON;INFINI_OPS_SMOKE_BUILD=ON;INFINI_RT_ROOT=/tmp/infinirt-prefix" python -m pip install .[dev] --no-build-isolation
     jobs:
-      gpu:
+      gpu_001: &metax_fleet_smoke
+        runner_label: Metax-Server-001
         type: unittest
         resources:
           gpu_ids: auto
@@ -97,6 +137,24 @@ platforms:
         stages:
           - name: test
             run: HOST_CXX=/usr/bin/g++ pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
+      gpu_002:
+        <<: *metax_fleet_smoke
+        runner_label: Metax-Server-002
+      gpu_003:
+        <<: *metax_fleet_smoke
+        runner_label: Metax-Server-003
+      gpu_004:
+        <<: *metax_fleet_smoke
+        runner_label: Metax-Server-004
+      gpu_005:
+        <<: *metax_fleet_smoke
+        runner_label: Metax-Server-005
+      gpu_006:
+        <<: *metax_fleet_smoke
+        runner_label: Metax-Server-006
+      gpu_007:
+        <<: *metax_fleet_smoke
+        runner_label: Metax-Server-007
 
   moore:
     runner_label: Moore-Server-000
@@ -158,7 +216,8 @@ platforms:
       - "--privileged"
     setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_CAMBRICON=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && python -m pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
-      gpu:
+      gpu_001: &cambricon_fleet_smoke
+        runner_label: Cambricon-Server-001
         type: unittest
         resources:
           gpu_ids: auto
@@ -172,6 +231,24 @@ platforms:
         stages:
           - name: test
             run: pytest tests/ -m smoke -n 4 -v --tb=short --junitxml=/workspace/results/test-results.xml
+      gpu_002:
+        <<: *cambricon_fleet_smoke
+        runner_label: Cambricon-Server-002
+      gpu_003:
+        <<: *cambricon_fleet_smoke
+        runner_label: Cambricon-Server-003
+      gpu_004:
+        <<: *cambricon_fleet_smoke
+        runner_label: Cambricon-Server-004
+      gpu_005:
+        <<: *cambricon_fleet_smoke
+        runner_label: Cambricon-Server-005
+      gpu_006:
+        <<: *cambricon_fleet_smoke
+        runner_label: Cambricon-Server-006
+      gpu_007:
+        <<: *cambricon_fleet_smoke
+        runner_label: Cambricon-Server-007
 
   hygon:
     runner_label: Hygon
@@ -231,7 +308,8 @@ platforms:
       TASK_QUEUE_ENABLE: "0"
     setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_ASCEND=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && python -m pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
-      npu:
+      npu_001: &ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-001
         type: unittest
         resources:
           gpu_ids: auto
@@ -245,3 +323,21 @@ platforms:
         stages:
           - name: test
             run: pytest tests/ -m smoke -n 1 -v --tb=short --junitxml=/workspace/results/test-results.xml
+      npu_002:
+        <<: *ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-002
+      npu_003:
+        <<: *ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-003
+      npu_004:
+        <<: *ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-004
+      npu_005:
+        <<: *ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-005
+      npu_006:
+        <<: *ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-006
+      npu_007:
+        <<: *ascend_fleet_smoke
+        runner_label: Ascend-910C-Server-007
