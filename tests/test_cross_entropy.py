@@ -2,7 +2,13 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_stream, randn_strided, randint_strided
+from tests.utils import (
+    Payload,
+    empty_strided,
+    get_stream,
+    randn_strided,
+    randint_strided,
+)
 
 
 # Format: (input_shape, input_strides, target_strides)

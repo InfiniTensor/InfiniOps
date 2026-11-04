@@ -6,14 +6,13 @@
 namespace infini::ops {
 
 template <Device::Type kDev>
-class Operator<RepeatInterleaveBackward, kDev, 1> : public RepeatInterleaveBackward {
+class Operator<RepeatInterleaveBackward, kDev, 1>
+    : public RepeatInterleaveBackward {
  public:
-  Operator(const Tensor grad_output, const int64_t dim,
-                           Tensor grad_input);
-
+  Operator(const Tensor grad_output, const int64_t dim, Tensor grad_input);
 
   void operator()(const Tensor grad_output, const int64_t dim,
-                           Tensor grad_input) const override;
+                  Tensor grad_input) const override;
 
  private:
   int device_index_{0};

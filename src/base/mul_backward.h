@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_MUL_BACKWARD_H_
 
 #include <cassert>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -27,12 +28,15 @@ class MulBackward : public Operator<MulBackward> {
         grad_b_strides_{grad_b.strides()},
         grad_b_type_{grad_b.dtype()},
         device_index_{grad_a.device().index()} {
+    AssertTrainingDevices({grad_output, a, b, grad_a, grad_b});
     assert(grad_output_type_ == grad_a_type_ && grad_a_type_ == grad_b_type_ &&
            "`MulBackward` requires matching grad dtypes");
     assert(a_type_ == grad_output_type_ && b_type_ == grad_output_type_ &&
            "`MulBackward` requires a/b dtype to match grad_output dtype");
     assert(grad_output.device() == a.device() && a.device() == b.device() &&
            "`MulBackward` requires all tensors on the same device");
+    assert(grad_a.shape() == a.shape() && grad_b.shape() == b.shape() &&
+           "Multiplication gradients must match their input shapes.");
     ValidateBroadcast(a, grad_output);
     ValidateBroadcast(b, grad_output);
     ValidateBroadcast(grad_a, grad_output);
@@ -44,13 +48,23 @@ class MulBackward : public Operator<MulBackward> {
                           Tensor grad_b) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   static void ValidateBroadcast(const Tensor input, const Tensor out) {
     assert(input.ndim() <= out.ndim() &&
            "`MulBackward` input rank must not exceed grad_output rank");
     const auto offset = out.ndim() - input.ndim();
     for (Tensor::Size i = 0; i < input.ndim(); ++i) {
-      assert((input.size(i) == 1 || input.size(i) == out.size(i + offset)) &&
-             "`MulBackward` input must broadcast (right-aligned) to grad_output");
+      assert(
+          (input.size(i) == 1 || input.size(i) == out.size(i + offset)) &&
+          "`MulBackward` input must broadcast (right-aligned) to grad_output");
     }
   }
 

@@ -2,6 +2,8 @@
 
 #include <cassert>
 
+#include "torch/instantiate.h"
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {
@@ -14,9 +16,9 @@ Operator<VocabParallelCrossEntropyBackward, kDev, 1>::Operator(
     const int64_t vocab_size_original, const double label_smoothing,
     Tensor grad_input)
     : VocabParallelCrossEntropyBackward{
-          grad_output, softmax_local, target_mask, masked_target,
-          valid_mask_local, vocab_size_local, vocab_size_original,
-          label_smoothing, grad_input} {}
+          grad_output,         softmax_local,    target_mask,
+          masked_target,       valid_mask_local, vocab_size_local,
+          vocab_size_original, label_smoothing,  grad_input} {}
 
 template <Device::Type kDev>
 void Operator<VocabParallelCrossEntropyBackward, kDev, 1>::operator()(
@@ -25,12 +27,13 @@ void Operator<VocabParallelCrossEntropyBackward, kDev, 1>::operator()(
     const Tensor valid_mask_local, const int64_t vocab_size_local,
     const int64_t vocab_size_original, const double label_smoothing,
     Tensor grad_input) const {
+  const TorchStreamGuard<kDev> guard{stream_, device_index_};
   auto at_grad_output = ToAtenTensor<kDev>(
       const_cast<void*>(grad_output.data()), grad_output_shape_,
       grad_output_strides_, grad_output_type_, device_index_);
-  auto at_softmax = ToAtenTensor<kDev>(
-      const_cast<void*>(softmax_local.data()), softmax_shape_, softmax_strides_,
-      softmax_type_, device_index_);
+  auto at_softmax = ToAtenTensor<kDev>(const_cast<void*>(softmax_local.data()),
+                                       softmax_shape_, softmax_strides_,
+                                       softmax_type_, device_index_);
   auto at_target_mask = ToAtenTensor<kDev>(
       const_cast<void*>(target_mask.data()), target_mask_shape_,
       target_mask_strides_, target_mask_type_, device_index_);
@@ -40,9 +43,9 @@ void Operator<VocabParallelCrossEntropyBackward, kDev, 1>::operator()(
   auto at_valid_mask = ToAtenTensor<kDev>(
       const_cast<void*>(valid_mask_local.data()), valid_mask_shape_,
       valid_mask_strides_, valid_mask_type_, device_index_);
-  auto at_grad_input = ToAtenTensor<kDev>(
-      grad_input.data(), grad_input_shape_, grad_input_strides_,
-      grad_input_type_, device_index_);
+  auto at_grad_input =
+      ToAtenTensor<kDev>(grad_input.data(), grad_input_shape_,
+                         grad_input_strides_, grad_input_type_, device_index_);
 
   assert(vocab_size_local > 0 &&
          "VocabParallelCrossEntropyBackward requires positive local vocab");
@@ -91,23 +94,6 @@ void Operator<VocabParallelCrossEntropyBackward, kDev, 1>::operator()(
   at_grad_input.copy_(gradient.reshape(at_grad_input.sizes()));
 }
 
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kCpu, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kNvidia, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kCambricon, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kAscend, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kMetax, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kMoore, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kIluvatar, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kHygon, 1>;
-template class Operator<VocabParallelCrossEntropyBackward,
-                        Device::Type::kMars, 1>;
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(VocabParallelCrossEntropyBackward, 1)
 
 }  // namespace infini::ops

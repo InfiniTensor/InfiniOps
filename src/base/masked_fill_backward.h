@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -22,10 +23,13 @@ class MaskedFillBackward : public Operator<MaskedFillBackward> {
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
         device_index_{grad_input.device().index()} {
-    assert(grad_output.shape() == grad_input.shape() &&
-           "`MaskedFillBackward` requires grad_output/grad_input to share shape");
-    assert(grad_output_type_ == grad_input_type_ &&
-           "`MaskedFillBackward` requires grad_output/grad_input dtype to match");
+    AssertTrainingDevices({grad_output, mask, grad_input});
+    assert(
+        grad_output.shape() == grad_input.shape() &&
+        "`MaskedFillBackward` requires grad_output/grad_input to share shape");
+    assert(
+        grad_output_type_ == grad_input_type_ &&
+        "`MaskedFillBackward` requires grad_output/grad_input dtype to match");
     assert(mask_type_ == DataType::kBool &&
            "`MaskedFillBackward` requires a bool `mask`");
     assert(mask.ndim() <= grad_output.ndim() &&
@@ -33,8 +37,9 @@ class MaskedFillBackward : public Operator<MaskedFillBackward> {
 
     tail_aligned_ = AlignsAt(mask, grad_output, /*tail=*/true);
     if (!tail_aligned_) {
-      assert(AlignsAt(mask, grad_output, /*tail=*/false) &&
-             "`MaskedFillBackward` mask must align to leading or trailing dims");
+      assert(
+          AlignsAt(mask, grad_output, /*tail=*/false) &&
+          "`MaskedFillBackward` mask must align to leading or trailing dims");
     }
   }
 
@@ -42,7 +47,17 @@ class MaskedFillBackward : public Operator<MaskedFillBackward> {
                           Tensor grad_input) const = 0;
 
  protected:
-  static bool AlignsAt(const Tensor mask, const Tensor tensor, const bool tail) {
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
+  static bool AlignsAt(const Tensor mask, const Tensor tensor,
+                       const bool tail) {
     const auto offset = tail ? tensor.ndim() - mask.ndim() : 0;
     for (Tensor::Size i = 0; i < mask.ndim(); ++i) {
       const auto dim = tensor.size(i + offset);

@@ -8,12 +8,12 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<Split, kDev, 1> : public Split {
  public:
-    Operator(const Tensor input, const int64_t split_size, const int64_t dim,
-        std::vector<Tensor> outs);
+  Operator(const Tensor input, const int64_t split_size, const int64_t dim,
+           std::vector<Tensor> outs);
 
-    void operator()(const Tensor input, const int64_t split_size, const int64_t dim,
-        std::vector<Tensor> outs) const override;
-        
+  void operator()(const Tensor input, const int64_t split_size,
+                  const int64_t dim, std::vector<Tensor> outs) const override;
+
  private:
   int device_index_{0};
 };

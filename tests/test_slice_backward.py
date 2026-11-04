@@ -109,9 +109,7 @@ def test_slice_backward(
     grad_input.fill_(17)
 
     return Payload(
-        lambda *args: _slice_backward(
-            *args, implementation_index=implementation_index
-        ),
+        lambda *args: _slice_backward(*args, implementation_index=implementation_index),
         _torch_slice_backward,
         (grad_output, starts, ends, steps, grad_input),
         {},
@@ -153,6 +151,5 @@ def _slice_index(starts, ends, steps):
     assert len(starts) == len(ends) == len(steps)
 
     return tuple(
-        slice(start, end, step)
-        for start, end, step in zip(starts, ends, steps)
+        slice(start, end, step) for start, end, step in zip(starts, ends, steps)
     )

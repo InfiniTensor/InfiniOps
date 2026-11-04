@@ -2,6 +2,8 @@
 #define INFINI_OPS_BASE_EMBEDDING_BACKWARD_H_
 
 #include <cassert>
+#include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -27,21 +29,30 @@ class EmbeddingBackward : public Operator<EmbeddingBackward> {
         scale_grad_by_freq_{scale_grad_by_freq},
         sparse_{sparse},
         device_index_{grad_weight.device().index()} {
-    assert((indices_type_ == DataType::kInt32 || indices_type_ == DataType::kInt64) &&
+    AssertTrainingDevices({grad_output, indices, grad_weight});
+    assert(!(sparse_ && scale_grad_by_freq_) &&
+           "Sparse embedding does not support frequency scaling.");
+    assert((indices_type_ == DataType::kInt32 ||
+            indices_type_ == DataType::kInt64) &&
            "`EmbeddingBackward` requires int32 or int64 `indices`");
     assert(grad_output_type_ == grad_weight_type_ &&
-           "`EmbeddingBackward` requires `grad_output` and `grad_weight` to have the same dtype");
-    assert(grad_weight.ndim() == 2 && "`EmbeddingBackward` requires 2D `grad_weight`");
+           "`EmbeddingBackward` requires `grad_output` and `grad_weight` to "
+           "have the same dtype");
+    assert(grad_weight.ndim() == 2 &&
+           "`EmbeddingBackward` requires 2D `grad_weight`");
     assert(grad_weight.size(0) == num_weights_ &&
-           "`EmbeddingBackward` requires `grad_weight` row count to equal `num_weights`");
+           "`EmbeddingBackward` requires `grad_weight` row count to equal "
+           "`num_weights`");
     assert(grad_output.ndim() == indices.ndim() + 1 &&
-           "`EmbeddingBackward` requires `grad_output` rank to be `indices` rank + 1");
+           "`EmbeddingBackward` requires `grad_output` rank to be `indices` "
+           "rank + 1");
     for (Tensor::Size i = 0; i < indices.ndim(); ++i) {
       assert(grad_output.size(i) == indices.size(i) &&
              "`EmbeddingBackward` requires matching leading dims");
     }
     assert(grad_output.size(-1) == grad_weight.size(1) &&
-           "`EmbeddingBackward` requires last dim of `grad_output` to equal embedding dim");
+           "`EmbeddingBackward` requires last dim of `grad_output` to equal "
+           "embedding dim");
   }
 
   virtual void operator()(const Tensor grad_output, const Tensor indices,
@@ -50,6 +61,15 @@ class EmbeddingBackward : public Operator<EmbeddingBackward> {
                           Tensor grad_weight) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   Tensor::Shape grad_output_shape_;
   Tensor::Strides grad_output_strides_;
   DataType grad_output_type_;

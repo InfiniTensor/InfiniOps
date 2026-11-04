@@ -115,6 +115,9 @@ def _rsqrt_backward(
 
 
 def _torch_rsqrt_backward(grad_output, input, grad_input):
-    grad_input.copy_(-0.5 * grad_output * torch.pow(input, -1.5))
+    differentiable_input = input.detach().clone().requires_grad_(True)
+    result = torch.rsqrt(differentiable_input)
+    gradient = torch.autograd.grad(result, differentiable_input, grad_output)[0]
+    grad_input.copy_(gradient)
 
     return grad_input

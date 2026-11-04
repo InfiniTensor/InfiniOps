@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_stream, randn_strided
+from tests.utils import Payload, get_stream, randn_strided
 
 
 # Format: (shape, learning_rate, beta1, beta2, eps, step, strides)
@@ -78,7 +78,7 @@ def test_adam_accumulate_grad(
             implementation_index=implementation_index,
         ),
         _torch_adam_accumulate_grad,
-        (grad, param, m, v, learning_rate, beta1, beta2, eps, step),
+        (grad, learning_rate, beta1, beta2, eps, step, param, m, v),
         {},
         rtol=rtol,
         atol=atol,
@@ -87,27 +87,27 @@ def test_adam_accumulate_grad(
 
 def _adam_accumulate_grad(
     grad,
-    param,
-    m,
-    v,
     learning_rate,
     beta1,
     beta2,
     eps,
     step,
+    param,
+    m,
+    v,
     *,
     implementation_index,
 ):
     infini.ops.adam_accumulate_grad(
         grad,
-        param,
-        m,
-        v,
         learning_rate,
         beta1,
         beta2,
         eps,
         step,
+        param,
+        m,
+        v,
         stream=get_stream(grad.device),
         implementation_index=implementation_index,
     )
@@ -117,23 +117,34 @@ def _adam_accumulate_grad(
 
 def _torch_adam_accumulate_grad(
     grad,
-    param,
-    m,
-    v,
     learning_rate,
     beta1,
     beta2,
     eps,
     step,
+    param,
+    m,
+    v,
 ):
-    m.copy_(beta1 * m + (1 - beta1) * grad)
-    v.copy_(beta2 * v + (1 - beta2) * grad * grad)
-
-    bias_correction_m = 1 - beta1**step
-    bias_correction_v = 1 - beta2**step
-    m_hat = m.float() / bias_correction_m
-    v_hat = v.float() / bias_correction_v
-    update = learning_rate * m_hat / (torch.sqrt(v_hat) + eps)
-    param.copy_(param - update.to(dtype=param.dtype))
+    reference_param = torch.nn.Parameter(
+        param.detach().to(device="cpu", dtype=torch.float64)
+    )
+    optimizer = torch.optim.Adam(
+        [reference_param],
+        lr=learning_rate,
+        betas=(beta1, beta2),
+        eps=eps,
+        foreach=False,
+    )
+    optimizer.state[reference_param] = {
+        "step": torch.tensor(float(step - 1)),
+        "exp_avg": m.detach().to(device="cpu", dtype=torch.float64).clone(),
+        "exp_avg_sq": v.detach().to(device="cpu", dtype=torch.float64).clone(),
+    }
+    reference_param.grad = grad.detach().to(device="cpu", dtype=torch.float64).clone()
+    optimizer.step()
+    param.copy_(reference_param.detach())
+    m.copy_(optimizer.state[reference_param]["exp_avg"])
+    v.copy_(optimizer.state[reference_param]["exp_avg_sq"])
 
     return torch.cat((param.reshape(-1), m.reshape(-1), v.reshape(-1)))

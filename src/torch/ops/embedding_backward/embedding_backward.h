@@ -10,7 +10,8 @@ class Operator<EmbeddingBackward, kDev, 1> : public EmbeddingBackward {
  public:
   Operator(const Tensor grad_output, const Tensor indices,
            const int64_t num_weights, const int64_t padding_idx,
-           const bool scale_grad_by_freq, const bool sparse, Tensor grad_weight);
+           const bool scale_grad_by_freq, const bool sparse,
+           Tensor grad_weight);
 
   void operator()(const Tensor grad_output, const Tensor indices,
                   const int64_t num_weights, const int64_t padding_idx,

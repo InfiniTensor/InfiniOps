@@ -68,12 +68,9 @@ def test_split(
     rtol,
     atol,
 ):
-    input = randn_strided(
-        input_shape, input_strides, dtype=dtype, device=device
-    )
+    input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     output_shapes = tuple(
-        output.shape
-        for output in torch.split(input, split_size, dim=dim)
+        output.shape for output in torch.split(input, split_size, dim=dim)
     )
     outs = [
         empty_strided(shape, None, dtype=dtype, device=device)

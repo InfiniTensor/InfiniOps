@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -21,11 +22,17 @@ class RepeatInterleave : public Operator<RepeatInterleave> {
         repeats_{repeats},
         dim_{NormalizeDim(dim, input.ndim())},
         device_index_{out.device().index()} {
-    assert(repeats_ > 0 && "`RepeatInterleave` requires positive `repeats`");
-    assert(input_type_ == out_type_ && "`RepeatInterleave` requires same dtype");
+    AssertTrainingDevices({input, out});
+    assert(repeats_ >= 0 &&
+           "`RepeatInterleave` requires non-negative repeats.");
+    assert(input.ndim() == out.ndim() && "RepeatInterleave ranks must match.");
+    assert(input_type_ == out_type_ &&
+           "`RepeatInterleave` requires same dtype");
     for (Tensor::Size i = 0; i < input.ndim(); ++i) {
-      const auto expect = (i == dim_) ? input.size(i) * repeats_ : input.size(i);
-      assert(out.size(i) == expect && "`RepeatInterleave` output shape mismatch");
+      const auto expect =
+          (i == dim_) ? input.size(i) * repeats_ : input.size(i);
+      assert(out.size(i) == expect &&
+             "`RepeatInterleave` output shape mismatch");
     }
   }
 
@@ -33,11 +40,20 @@ class RepeatInterleave : public Operator<RepeatInterleave> {
                           const int64_t dim, Tensor out) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   static int64_t NormalizeDim(const int64_t dim, const Tensor::Size ndim) {
-    assert(ndim > 0 && "`RepeatInterleave` requires ndim > 0");
-    if (ndim == 0) return 0;
-    const auto d = dim % static_cast<int64_t>(ndim);
-    return d < 0 ? d + static_cast<int64_t>(ndim) : d;
+    const auto rank = static_cast<int64_t>(ndim);
+    assert(rank > 0 && "Training dimension requires a non-scalar tensor.");
+    assert(dim >= -rank && dim < rank && "Training dimension is out of range.");
+    return dim < 0 ? dim + rank : dim;
   }
 
   Tensor::Shape input_shape_;

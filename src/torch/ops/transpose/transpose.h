@@ -8,11 +8,11 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<Transpose, kDev, 1> : public Transpose {
  public:
-    Operator(const Tensor input, const int64_t dim0, const int64_t dim1,
-            Tensor out);
-    
-    void operator()(const Tensor input, const int64_t dim0, const int64_t dim1,
-            Tensor out) const override;
+  Operator(const Tensor input, const int64_t dim0, const int64_t dim1,
+           Tensor out);
+
+  void operator()(const Tensor input, const int64_t dim0, const int64_t dim1,
+                  Tensor out) const override;
 
  private:
   int device_index_{0};

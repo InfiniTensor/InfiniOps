@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_RSQRT_BACKWARD_H_
 
 #include <cassert>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -20,12 +21,14 @@ class RsqrtBackward : public Operator<RsqrtBackward> {
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
         device_index_{grad_input.device().index()} {
+    AssertTrainingDevices({grad_output, input, grad_input});
     assert(input.shape() == grad_output.shape() &&
            grad_output.shape() == grad_input.shape() &&
            "`RsqrtBackward` requires matching shapes");
-    assert(input_type_ == grad_output_type_ && grad_output_type_ == grad_input_type_ &&
+    assert(input_type_ == grad_output_type_ &&
+           grad_output_type_ == grad_input_type_ &&
            "`RsqrtBackward` requires matching dtypes");
-    assert(input_type_ != DataType::kInt32 && input_type_ != DataType::kInt64 &&
+    assert(IsTrainingFloat(input_type_) &&
            "`RsqrtBackward` requires floating point dtypes");
   }
 
@@ -33,6 +36,20 @@ class RsqrtBackward : public Operator<RsqrtBackward> {
                           Tensor grad_input) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
+  static bool IsTrainingFloat(DataType dtype) {
+    return dtype == DataType::kFloat16 || dtype == DataType::kBFloat16 ||
+           dtype == DataType::kFloat32 || dtype == DataType::kFloat64;
+  }
+
   Tensor::Shape grad_output_shape_;
   Tensor::Strides grad_output_strides_;
   DataType grad_output_type_;

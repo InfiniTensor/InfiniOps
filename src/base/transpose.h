@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -21,11 +22,12 @@ class Transpose : public Operator<Transpose> {
         dim0_{NormalizeDim(dim0, input.ndim())},
         dim1_{NormalizeDim(dim1, input.ndim())},
         device_index_{out.device().index()} {
-    assert(input.ndim() >= 2 && "`Transpose` requires at least 2 dims");
-    assert(dim0_ != dim1_ && "`Transpose` requires distinct dims");
+    AssertTrainingDevices({input, out});
+    assert(input.ndim() >= 1 && "Transpose requires a non-scalar input.");
+    assert(out.ndim() == input.ndim() && "Transpose ranks must match.");
     assert(input_type_ == out_type_ && "`Transpose` requires same dtype");
     for (Tensor::Size i = 0; i < input.ndim(); ++i) {
-      const auto expect = (i == dim0_) ? input.size(dim1_)
+      const auto expect = (i == dim0_)   ? input.size(dim1_)
                           : (i == dim1_) ? input.size(dim0_)
                                          : input.size(i);
       assert(out.size(i) == expect && "`Transpose` output shape mismatch");
@@ -36,11 +38,20 @@ class Transpose : public Operator<Transpose> {
                           const int64_t dim1, Tensor out) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   static int64_t NormalizeDim(const int64_t dim, const Tensor::Size ndim) {
-    assert(ndim > 0 && "`Transpose` requires ndim > 0");
-    if (ndim == 0) return 0;
-    const auto d = dim % static_cast<int64_t>(ndim);
-    return d < 0 ? d + static_cast<int64_t>(ndim) : d;
+    const auto rank = static_cast<int64_t>(ndim);
+    assert(rank > 0 && "Training dimension requires a non-scalar tensor.");
+    assert(dim >= -rank && dim < rank && "Training dimension is out of range.");
+    return dim < 0 ? dim + rank : dim;
   }
 
   Tensor::Shape input_shape_;

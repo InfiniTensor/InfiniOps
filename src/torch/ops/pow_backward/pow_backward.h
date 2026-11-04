@@ -9,10 +9,11 @@ template <Device::Type kDev>
 class Operator<PowBackward, kDev, 1> : public PowBackward {
  public:
   Operator(const Tensor grad_output, const Tensor input, const double scalar,
-              const bool scalar_is_base, Tensor grad_input);
+           const bool scalar_is_base, Tensor grad_input);
 
-  void operator()(const Tensor grad_output, const Tensor input, const double scalar,
-              const bool scalar_is_base, Tensor grad_input) const override;
+  void operator()(const Tensor grad_output, const Tensor input,
+                  const double scalar, const bool scalar_is_base,
+                  Tensor grad_input) const override;
 
  private:
   int device_index_{0};

@@ -161,20 +161,14 @@ def _torch_pow_backward(
     scalar_is_base,
     grad_input,
 ):
-    scalar_tensor = torch.as_tensor(
-        scalar,
-        dtype=input.dtype,
-        device=input.device,
-    )
+    differentiable_input = input.detach().clone().requires_grad_(True)
 
     if scalar_is_base:
-        derivative = torch.log(scalar_tensor) * torch.pow(
-            scalar_tensor,
-            input,
-        )
+        result = torch.pow(scalar, differentiable_input)
     else:
-        derivative = scalar_tensor * torch.pow(input, scalar_tensor - 1)
+        result = torch.pow(differentiable_input, scalar)
 
-    grad_input.copy_(grad_output * derivative)
+    gradient = torch.autograd.grad(result, differentiable_input, grad_output)[0]
+    grad_input.copy_(gradient)
 
     return grad_input

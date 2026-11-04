@@ -8,11 +8,10 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<MaskedFillBackward, kDev, 1> : public MaskedFillBackward {
  public:
-    Operator(const Tensor grad_output, const Tensor mask,
-                     Tensor grad_input);
-    
-    void operator()(const Tensor grad_output, const Tensor mask,
-                     Tensor grad_input) const override;
+  Operator(const Tensor grad_output, const Tensor mask, Tensor grad_input);
+
+  void operator()(const Tensor grad_output, const Tensor mask,
+                  Tensor grad_input) const override;
 
  private:
   int device_index_{0};

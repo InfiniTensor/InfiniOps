@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -20,6 +21,7 @@ class RepeatInterleaveBackward : public Operator<RepeatInterleaveBackward> {
         grad_input_type_{grad_input.dtype()},
         dim_{NormalizeDim(dim, grad_input.ndim())},
         device_index_{grad_input.device().index()} {
+    AssertTrainingDevices({grad_output, grad_input});
     assert(grad_output_type_ == grad_input_type_ &&
            "`RepeatInterleaveBackward` requires same dtype");
     assert(grad_output.ndim() == grad_input.ndim() &&
@@ -29,22 +31,35 @@ class RepeatInterleaveBackward : public Operator<RepeatInterleaveBackward> {
       assert(grad_output.size(i) == grad_input.size(i) &&
              "`RepeatInterleaveBackward` shape mismatch on non-repeated dims");
     }
-    assert(grad_input.size(dim_) > 0 &&
-           "`RepeatInterleaveBackward` requires non-empty repeated dim");
-    repeats_ = grad_output.size(dim_) / grad_input.size(dim_);
-    assert(grad_output.size(dim_) == grad_input.size(dim_) * repeats_ &&
-           "`RepeatInterleaveBackward` grad_output dim must be divisible");
+    if (grad_input.size(dim_) == 0) {
+      assert(grad_output.size(dim_) == 0 &&
+             "Empty repeated dimensions must match.");
+      repeats_ = 0;
+    } else {
+      repeats_ = grad_output.size(dim_) / grad_input.size(dim_);
+      assert(grad_output.size(dim_) == grad_input.size(dim_) * repeats_ &&
+             "RepeatInterleaveBackward grad_output dim must be divisible.");
+    }
   }
 
   virtual void operator()(const Tensor grad_output, const int64_t dim,
                           Tensor grad_input) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   static int64_t NormalizeDim(const int64_t dim, const Tensor::Size ndim) {
-    assert(ndim > 0 && "`RepeatInterleaveBackward` requires ndim > 0");
-    if (ndim == 0) return 0;
-    const auto d = dim % static_cast<int64_t>(ndim);
-    return d < 0 ? d + static_cast<int64_t>(ndim) : d;
+    const auto rank = static_cast<int64_t>(ndim);
+    assert(rank > 0 && "Training dimension requires a non-scalar tensor.");
+    assert(dim >= -rank && dim < rank && "Training dimension is out of range.");
+    return dim < 0 ? dim + rank : dim;
   }
 
   Tensor::Shape grad_output_shape_;

@@ -9,11 +9,10 @@ template <Device::Type kDev>
 class Operator<RepeatInterleave, kDev, 1> : public RepeatInterleave {
  public:
   Operator(const Tensor input, const int64_t repeats, const int64_t dim,
-                   Tensor out);
-
+           Tensor out);
 
   void operator()(const Tensor input, const int64_t repeats, const int64_t dim,
-                   Tensor out) const override;
+                  Tensor out) const override;
 
  private:
   int device_index_{0};

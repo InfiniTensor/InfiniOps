@@ -15,12 +15,12 @@ class Operator<VocabParallelCrossEntropyBackward, kDev, 1>
            const int64_t vocab_size_original, const double label_smoothing,
            Tensor grad_input);
 
-  void operator()(
-      const Tensor grad_output, const Tensor softmax_local,
-      const Tensor target_mask, const Tensor masked_target,
-      const Tensor valid_mask_local, const int64_t vocab_size_local,
-      const int64_t vocab_size_original, const double label_smoothing,
-      Tensor grad_input) const override;
+  void operator()(const Tensor grad_output, const Tensor softmax_local,
+                  const Tensor target_mask, const Tensor masked_target,
+                  const Tensor valid_mask_local, const int64_t vocab_size_local,
+                  const int64_t vocab_size_original,
+                  const double label_smoothing,
+                  Tensor grad_input) const override;
 };
 
 }  // namespace infini::ops

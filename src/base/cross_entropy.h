@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -10,8 +11,6 @@ namespace infini::ops {
 
 class CrossEntropy : public Operator<CrossEntropy> {
  public:
-  // This operator follows ATen's default CrossEntropyLoss contract:
-  // dimension 1 stores the class logits and -100 is the ignored target.
   static constexpr int64_t kIgnoreIndex = -100;
 
   CrossEntropy(const Tensor input, const Tensor target, Tensor out)
@@ -25,6 +24,7 @@ class CrossEntropy : public Operator<CrossEntropy> {
         out_strides_{out.strides()},
         out_type_{out.dtype()},
         device_index_{out.device().index()} {
+    AssertTrainingDevices({input, target, out});
     assert(input.ndim() >= 2 && "`CrossEntropy` requires input rank >= 2");
     assert(input.device() == target.device() &&
            target.device() == out.device() &&
@@ -34,7 +34,8 @@ class CrossEntropy : public Operator<CrossEntropy> {
             input_type_ == DataType::kFloat32 ||
             input_type_ == DataType::kFloat64) &&
            "`CrossEntropy` requires floating-point logits");
-    assert((target_type_ == DataType::kInt64 || target_type_ == DataType::kInt32 ||
+    assert((target_type_ == DataType::kInt64 ||
+            target_type_ == DataType::kInt32 ||
             target_type_ == DataType::kUInt8) &&
            "`CrossEntropy` supports int64/int32/uint8 targets");
     assert(target.ndim() == input.ndim() - 1 &&
@@ -45,13 +46,23 @@ class CrossEntropy : public Operator<CrossEntropy> {
              "`CrossEntropy` target shape mismatch");
     }
     assert(out.ndim() == 0 && "`CrossEntropy` output must be a 0-dim scalar");
-    assert(out_type_ == input_type_ && "`CrossEntropy` output dtype must match input");
+    assert(out_type_ == input_type_ &&
+           "`CrossEntropy` output dtype must match input");
   }
 
   virtual void operator()(const Tensor input, const Tensor target,
                           Tensor out) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   Tensor::Shape input_shape_;
   Tensor::Strides input_strides_;
   DataType input_type_;

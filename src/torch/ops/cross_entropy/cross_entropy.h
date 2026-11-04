@@ -10,8 +10,8 @@ class Operator<CrossEntropy, kDev, 1> : public CrossEntropy {
  public:
   Operator(const Tensor input, const Tensor target, Tensor out);
 
-
-  void operator()(const Tensor input, const Tensor target, Tensor out) const override;
+  void operator()(const Tensor input, const Tensor target,
+                  Tensor out) const override;
 
  private:
   int device_index_{0};

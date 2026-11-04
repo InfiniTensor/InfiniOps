@@ -10,8 +10,8 @@ class Operator<AccumulateGrad, kDev, 1> : public AccumulateGrad {
  public:
   Operator(const Tensor gradient, const double rate, Tensor tensor);
 
-
-  void operator()(const Tensor gradient, const double rate, Tensor tensor) const override;
+  void operator()(const Tensor gradient, const double rate,
+                  Tensor tensor) const override;
 
  private:
   int device_index_{0};

@@ -6,8 +6,7 @@
 namespace infini::ops {
 
 template <Device::Type kDev>
-class Operator<CrossEntropyBackward, kDev, 1>
-    : public CrossEntropyBackward {
+class Operator<CrossEntropyBackward, kDev, 1> : public CrossEntropyBackward {
  public:
   Operator(const Tensor input, const Tensor target, const Tensor grad_output,
            Tensor grad_input);

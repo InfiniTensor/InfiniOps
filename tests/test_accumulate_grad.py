@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, get_stream, randn_strided
+from tests.utils import Payload, get_stream, randn_strided
 
 
 # Format: (shape, rate, gradient_strides, tensor_strides)

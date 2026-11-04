@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -21,6 +22,7 @@ class MeanBackward : public Operator<MeanBackward> {
         dim_{NormalizeDim(dim, grad_input.ndim())},
         keep_dim_{keep_dim},
         device_index_{grad_input.device().index()} {
+    AssertTrainingDevices({grad_output, grad_input});
     assert(grad_output_type_ == grad_input_type_ &&
            "`MeanBackward` requires matching dtypes");
     assert(grad_input.ndim() >= 1 && "`MeanBackward` requires ndim >= 1");
@@ -30,14 +32,16 @@ class MeanBackward : public Operator<MeanBackward> {
              "`MeanBackward` keep_dim=true requires size-1 dim in grad_output");
       for (Tensor::Size i = 0; i < grad_input.ndim(); ++i) {
         if (i == dim_) continue;
-        assert(grad_output.size(i) == grad_input.size(i) && "`MeanBackward` shape mismatch");
+        assert(grad_output.size(i) == grad_input.size(i) &&
+               "`MeanBackward` shape mismatch");
       }
     } else {
       assert(grad_output.ndim() == grad_input.ndim() - 1 &&
              "`MeanBackward` keep_dim=false requires rank-1 grad_output");
       for (Tensor::Size i = 0, s = 0; i < grad_input.ndim(); ++i) {
         if (i == dim_) continue;
-        assert(grad_output.size(s) == grad_input.size(i) && "`MeanBackward` shape mismatch");
+        assert(grad_output.size(s) == grad_input.size(i) &&
+               "`MeanBackward` shape mismatch");
         ++s;
       }
     }
@@ -47,11 +51,20 @@ class MeanBackward : public Operator<MeanBackward> {
                           const bool keep_dim, Tensor grad_input) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   static int64_t NormalizeDim(const int64_t dim, const Tensor::Size ndim) {
-    assert(ndim > 0 && "`MeanBackward` requires ndim > 0");
-    if (ndim == 0) return 0;
-    const auto d = dim % static_cast<int64_t>(ndim);
-    return d < 0 ? d + static_cast<int64_t>(ndim) : d;
+    const auto rank = static_cast<int64_t>(ndim);
+    assert(rank > 0 && "Training dimension requires a non-scalar tensor.");
+    assert(dim >= -rank && dim < rank && "Training dimension is out of range.");
+    return dim < 0 ? dim + rank : dim;
   }
 
   Tensor::Shape grad_output_shape_;

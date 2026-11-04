@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -21,15 +22,15 @@ class TransposeBackward : public Operator<TransposeBackward> {
         dim0_{NormalizeDim(dim0, grad_output.ndim())},
         dim1_{NormalizeDim(dim1, grad_output.ndim())},
         device_index_{grad_input.device().index()} {
-    assert(grad_output.ndim() >= 2 &&
-           "`TransposeBackward` requires at least 2 dims");
-    assert(dim0_ != dim1_ &&
-           "`TransposeBackward` requires distinct dims");
+    AssertTrainingDevices({grad_output, grad_input});
+    assert(grad_output.ndim() >= 1 && "Transpose requires a non-scalar input.");
+    assert(grad_input.ndim() == grad_output.ndim() &&
+           "Transpose ranks must match.");
     assert(grad_output_type_ == grad_input_type_ &&
            "`TransposeBackward` requires same dtype");
 
     for (Tensor::Size i = 0; i < grad_output.ndim(); ++i) {
-      const auto expect = (i == dim0_) ? grad_output.size(dim1_)
+      const auto expect = (i == dim0_)   ? grad_output.size(dim1_)
                           : (i == dim1_) ? grad_output.size(dim0_)
                                          : grad_output.size(i);
       assert(grad_input.size(i) == expect &&
@@ -41,11 +42,20 @@ class TransposeBackward : public Operator<TransposeBackward> {
                           const int64_t dim1, Tensor grad_input) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   static int64_t NormalizeDim(const int64_t dim, const Tensor::Size ndim) {
-    assert(ndim > 0 && "`TransposeBackward` requires ndim > 0");
-    if (ndim == 0) return 0;
-    const auto d = dim % static_cast<int64_t>(ndim);
-    return d < 0 ? d + static_cast<int64_t>(ndim) : d;
+    const auto rank = static_cast<int64_t>(ndim);
+    assert(rank > 0 && "Training dimension requires a non-scalar tensor.");
+    assert(dim >= -rank && dim < rank && "Training dimension is out of range.");
+    return dim < 0 ? dim + rank : dim;
   }
 
   Tensor::Shape grad_output_shape_;

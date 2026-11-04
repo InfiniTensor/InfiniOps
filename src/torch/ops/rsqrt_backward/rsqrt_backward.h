@@ -10,8 +10,8 @@ class Operator<RsqrtBackward, kDev, 1> : public RsqrtBackward {
  public:
   Operator(const Tensor grad_output, const Tensor input, Tensor grad_input);
 
-
-  void operator()(const Tensor grad_output, const Tensor input, Tensor grad_input) const override;
+  void operator()(const Tensor grad_output, const Tensor input,
+                  Tensor grad_input) const override;
 
  private:
   int device_index_{0};

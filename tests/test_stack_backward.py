@@ -41,6 +41,7 @@ _TEST_CASES = (
     ),
 )
 
+
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
     (
@@ -74,9 +75,7 @@ def test_stack_backward(
 ):
     normalized_dim = dim % len(input_shape + (0,))
     grad_output_shape = (
-        input_shape[:normalized_dim]
-        + (num_inputs,)
-        + input_shape[normalized_dim:]
+        input_shape[:normalized_dim] + (num_inputs,) + input_shape[normalized_dim:]
     )
     grad_output = randn_strided(
         grad_output_shape,
@@ -128,9 +127,7 @@ def _stack_backward(
 
 
 def _torch_stack_backward(grad_output, dim, grad_inputs):
-    for grad_input, expected in zip(
-        grad_inputs, torch.unbind(grad_output, dim=dim)
-    ):
+    for grad_input, expected in zip(grad_inputs, torch.unbind(grad_output, dim=dim)):
         grad_input.copy_(expected)
 
     return torch.stack(grad_inputs, dim=dim)

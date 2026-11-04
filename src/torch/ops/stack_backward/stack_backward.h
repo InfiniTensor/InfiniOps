@@ -8,11 +8,11 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<StackBackward, kDev, 1> : public StackBackward {
  public:
-    Operator(const Tensor grad_output, const int64_t dim,
-                std::vector<Tensor> outs);
+  Operator(const Tensor grad_output, const int64_t dim,
+           std::vector<Tensor> outs);
 
-    void operator()(const Tensor grad_output, const int64_t dim,
-                std::vector<Tensor> outs) const override;
+  void operator()(const Tensor grad_output, const int64_t dim,
+                  std::vector<Tensor> outs) const override;
 
  private:
   int device_index_{0};

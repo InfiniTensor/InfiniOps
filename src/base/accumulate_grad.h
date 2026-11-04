@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_ACCUMULATE_GRAD_H_
 
 #include <cassert>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -18,18 +19,29 @@ class AccumulateGrad : public Operator<AccumulateGrad> {
         tensor_type_{tensor.dtype()},
         rate_{rate},
         device_index_{tensor.device().index()} {
+    AssertTrainingDevices({gradient, tensor});
     assert(gradient.shape() == tensor.shape() &&
            "`AccumulateGrad` requires `gradient` and `tensor` to share shape");
     assert(gradient_type_ == tensor_type_ &&
            "`AccumulateGrad` requires `gradient` and `tensor` to share dtype");
-    assert(gradient.device() == tensor.device() &&
-           "`AccumulateGrad` requires `gradient` and `tensor` on the same device");
+    assert(
+        gradient.device() == tensor.device() &&
+        "`AccumulateGrad` requires `gradient` and `tensor` on the same device");
   }
 
   virtual void operator()(const Tensor gradient, const double rate,
                           Tensor tensor) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   Tensor::Shape gradient_shape_;
   Tensor::Strides gradient_strides_;
   DataType gradient_type_;

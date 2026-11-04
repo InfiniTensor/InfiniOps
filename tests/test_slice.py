@@ -94,15 +94,11 @@ def test_slice(
     rtol,
     atol,
 ):
-    input = randn_strided(
-        input_shape, input_strides, dtype=dtype, device=device
-    )
+    input = randn_strided(input_shape, input_strides, dtype=dtype, device=device)
     out = empty_strided(out_shape, out_strides, dtype=dtype, device=device)
 
     return Payload(
-        lambda *args: _slice(
-            *args, implementation_index=implementation_index
-        ),
+        lambda *args: _slice(*args, implementation_index=implementation_index),
         _torch_slice,
         (input, starts, ends, steps, out),
         {},

@@ -12,9 +12,9 @@ class Operator<Slice, kDev, 1> : public Slice {
            const std::vector<int64_t> ends, const std::vector<int64_t> steps,
            Tensor out);
 
-    void operator()(const Tensor input, const std::vector<int64_t> starts,
-                    const std::vector<int64_t> ends, const std::vector<int64_t> steps,
-                    Tensor out) const override;
+  void operator()(const Tensor input, const std::vector<int64_t> starts,
+                  const std::vector<int64_t> ends,
+                  const std::vector<int64_t> steps, Tensor out) const override;
 
  private:
   int device_index_{0};

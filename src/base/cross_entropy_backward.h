@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -10,7 +11,6 @@ namespace infini::ops {
 
 class CrossEntropyBackward : public Operator<CrossEntropyBackward> {
  public:
-  // Keep this synchronized with CrossEntropy's forward contract.
   static constexpr int64_t kIgnoreIndex = -100;
 
   CrossEntropyBackward(const Tensor input, const Tensor target,
@@ -28,6 +28,7 @@ class CrossEntropyBackward : public Operator<CrossEntropyBackward> {
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
         device_index_{grad_input.device().index()} {
+    AssertTrainingDevices({input, target, grad_output, grad_input});
     assert(input.ndim() >= 2 &&
            "`CrossEntropyBackward` requires input rank >= 2");
     assert(input.device() == target.device() &&
@@ -64,6 +65,15 @@ class CrossEntropyBackward : public Operator<CrossEntropyBackward> {
                           Tensor grad_input) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
   Tensor::Shape input_shape_;
   Tensor::Strides input_strides_;
   DataType input_type_;

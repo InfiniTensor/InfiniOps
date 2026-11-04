@@ -2,6 +2,7 @@
 #define INFINI_OPS_BASE_POW_BACKWARD_H_
 
 #include <cassert>
+#include <initializer_list>
 
 #include "operator.h"
 
@@ -23,13 +24,18 @@ class PowBackward : public Operator<PowBackward> {
         scalar_{scalar},
         scalar_is_base_{scalar_is_base},
         device_index_{grad_input.device().index()} {
-    assert(input.shape() == grad_output.shape() &&
-           grad_output.shape() == grad_input.shape() &&
-           "`PowBackward` requires input/grad_output/grad_input to share shape");
-    assert(input_type_ == grad_output_type_ && grad_output_type_ == grad_input_type_ &&
+    AssertTrainingDevices({grad_output, input, grad_input});
+    assert(
+        input.shape() == grad_output.shape() &&
+        grad_output.shape() == grad_input.shape() &&
+        "`PowBackward` requires input/grad_output/grad_input to share shape");
+    assert(input_type_ == grad_output_type_ &&
+           grad_output_type_ == grad_input_type_ &&
            "`PowBackward` requires matching dtypes");
-    assert(!scalar_is_base_ || scalar_ > 0.0 &&
-           "`PowBackward` scalar base must be positive for log(scalar)");
+    assert((!scalar_is_base_ || scalar_ > 0.0) &&
+           "`PowBackward` scalar base must be positive for log(scalar).");
+    assert(IsTrainingFloat(input_type_) &&
+           "Power gradients require floating dtypes.");
   }
 
   virtual void operator()(const Tensor grad_output, const Tensor input,
@@ -37,6 +43,20 @@ class PowBackward : public Operator<PowBackward> {
                           Tensor grad_input) const = 0;
 
  protected:
+  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
+    if (tensors.size() == 0) return;
+    const auto device = tensors.begin()->device();
+    for (const auto& tensor : tensors) {
+      assert(tensor.device() == device &&
+             "Training tensors must share a device type and index.");
+    }
+  }
+
+  static bool IsTrainingFloat(DataType dtype) {
+    return dtype == DataType::kFloat16 || dtype == DataType::kBFloat16 ||
+           dtype == DataType::kFloat32 || dtype == DataType::kFloat64;
+  }
+
   Tensor::Shape grad_output_shape_;
   Tensor::Strides grad_output_strides_;
   DataType grad_output_type_;
