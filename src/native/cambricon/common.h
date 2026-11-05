@@ -38,10 +38,16 @@ namespace infini::ops::cnnl_utils {
 
 inline cnnlDataType_t GetDataType(DataType dtype) {
   switch (dtype) {
+    case DataType::kBool:
+      return CNNL_DTYPE_BOOL;
     case DataType::kInt8:
       return CNNL_DTYPE_INT8;
     case DataType::kUInt8:
       return CNNL_DTYPE_UINT8;
+    case DataType::kInt16:
+      return CNNL_DTYPE_INT16;
+    case DataType::kUInt32:
+      return CNNL_DTYPE_UINT32;
     case DataType::kInt32:
       return CNNL_DTYPE_INT32;
     case DataType::kInt64:

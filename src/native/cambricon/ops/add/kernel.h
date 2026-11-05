@@ -4,6 +4,7 @@
 #include "base/add.h"
 #include "native/cambricon/common.h"
 #include "native/cambricon/data_type_.h"
+#include "native/cambricon/op_tensor.h"
 
 namespace infini::ops {
 
@@ -22,6 +23,14 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
   Operator(const Tensor input, const Tensor other, const double alpha,
            Tensor out)
       : Add{input, other, alpha, out} {
+    if (output_size_ == 0) return;
+    if ((out_type_ == DataType::kFloat16 || out_type_ == DataType::kFloat32) &&
+        input_type_ == out_type_ && other_type_ == out_type_ &&
+        input.device() == out.device() && other.device() == out.device() &&
+        input.IsContiguous() && other.IsContiguous() && out.IsContiguous()) {
+      cnnl_ = std::make_unique<cnnl_utils::OpTensor>(CNNL_OP_TENSOR_ADD, input, other, out);
+      return;
+    }
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster,
                                 &cluster_count);
     cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
@@ -32,7 +41,13 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
 
   void operator()(const Tensor input, const Tensor other, const double alpha,
                   Tensor out) const override {
+    if (output_size_ == 0) return;
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
+    if (cnnl_) {
+      cnnl_->Run(input, other, out, static_cast<float>(alpha), queue,
+                 workspace_, workspace_size_in_bytes_);
+      return;
+    }
     auto workspace{workspace_ ? workspace_ : default_workspace_};
 
     bool fast_path = is_input_contiguous_ && is_other_contiguous_ &&
@@ -40,8 +55,7 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
                      other_shape_ == out_shape_;
 
     DispatchFunc<Device::Type::kCambricon,
-                 List<DataType::kFloat16, DataType::kBFloat16,
-                      DataType::kFloat32, DataType::kInt32, DataType::kInt64>>(
+                 CambriconBangFloatTypes<DataType::kInt32, DataType::kInt64>>(
         {out_type_},
         [&](auto tag) {
           using T = typename decltype(tag)::type;
@@ -55,15 +69,22 @@ class Operator<Add, Device::Type::kCambricon> : public Add {
         "CambriconAdd::operator() - output dispatch");
   }
 
-  ~Operator() { cnrtFree(default_workspace_); }
+  ~Operator() {
+    if (default_workspace_) cnrtFree(default_workspace_);
+  }
 
   std::size_t workspace_size_in_bytes() const override {
+    if (cnnl_) return cnnl_->WorkspaceSize();
+    if (output_size_ == 0) return 0;
     return ndim_ * (3 * sizeof(size_t) + 3 * sizeof(ptrdiff_t));
   }
 
   void* default_workspace_{nullptr};
   int core_per_cluster = 0;
   int cluster_count = 0;
+
+ private:
+  std::unique_ptr<cnnl_utils::OpTensor> cnnl_;
 };
 
 }  // namespace infini::ops

@@ -1,0 +1,73 @@
+#include "kernel.h"
+
+namespace infini::ops {
+namespace {
+
+template <typename T>
+__mlu_global__ void NormalizeKernel(const T* input, T* output,
+                                    const int64_t* dims, size_t count,
+                                    size_t width, uint32_t axis_dim) {
+  constexpr size_t tile = 1024;
+  constexpr size_t max_cached_dims = 16;
+  __nram__ T values[tile];
+  __nram__ int64_t cached_dims[max_cached_dims];
+  if (dims && width <= max_cached_dims)
+    __memcpy(cached_dims, dims, width * sizeof(int64_t), GDRAM2NRAM);
+  const size_t per_task = (count + taskDim - 1) / taskDim;
+  const size_t begin = taskId * per_task;
+  const size_t end = std::min(begin + per_task, count);
+  for (size_t offset = begin; offset < end; offset += tile) {
+    const size_t length = std::min(tile, end - offset);
+    __memcpy(values, input + offset, length * sizeof(T), GDRAM2NRAM);
+    for (size_t j = 0; j < length; ++j) {
+      uint32_t dim = axis_dim;
+      if (dims) {
+        const auto d = (offset + j) % width;
+        dim = static_cast<uint32_t>(width <= max_cached_dims ? cached_dims[d] : dims[d]);
+      }
+      if constexpr (std::is_same_v<T, int64_t>) {
+        auto* words = reinterpret_cast<uint32_t*>(values) + 2 * j;
+        if (words[1] & 0x80000000u) {
+          const uint32_t low = words[0];
+          words[0] = low + dim;
+          words[1] += words[0] < low;
+        }
+      } else if (values[j] < 0) {
+        values[j] += static_cast<int32_t>(dim);
+      }
+    }
+    __memcpy(output + offset, values, length * sizeof(T), NRAM2GDRAM);
+  }
+}
+
+void NormalizeIndices(const void* indices, void* normalized, const int64_t* dims,
+                      size_t count, size_t width, uint32_t axis_dim,
+                      DataType dtype, cnrtQueue_t queue) {
+  if (!count) return;
+  const cnrtDim3_t grid{static_cast<unsigned>(std::min(count, size_t{32})), 1, 1};
+  if (dtype == DataType::kInt64) {
+    NormalizeKernel<int64_t><<<grid, cnrtFuncTypeBlock, queue>>>(
+        static_cast<const int64_t*>(indices), static_cast<int64_t*>(normalized),
+        dims, count, width, axis_dim);
+  } else {
+    NormalizeKernel<int32_t><<<grid, cnrtFuncTypeBlock, queue>>>(
+        static_cast<const int32_t*>(indices), static_cast<int32_t*>(normalized),
+        dims, count, width, axis_dim);
+  }
+}
+
+}  // namespace
+
+void NormalizeScatterCoordinates(const void* indices, void* normalized,
+                                 const int64_t* dims, size_t count, size_t width,
+                                 DataType dtype, cnrtQueue_t queue) {
+  NormalizeIndices(indices, normalized, dims, count, width, 0, dtype, queue);
+}
+
+void NormalizeAxisIndices(const void* indices, void* normalized,
+                          uint32_t dim, size_t count, DataType dtype,
+                          cnrtQueue_t queue) {
+  NormalizeIndices(indices, normalized, nullptr, count, 1, dim, dtype, queue);
+}
+
+}  // namespace infini::ops

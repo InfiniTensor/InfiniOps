@@ -12,7 +12,7 @@ __nram__ char relu_nram_buffer[NRAM_MAX_SIZE] __attribute__((aligned(128)));
 template <typename T>
 __mlu_device__ void ComputeRelu(const T* input, T* output, float* values,
                                 size_t count) {
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_half2float(values, reinterpret_cast<half*>(const_cast<T*>(input)),
                       count);
     for (size_t i = 0; i < count; ++i) {

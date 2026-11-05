@@ -12,7 +12,7 @@ template <typename T>
 __mlu_device__ void LoadAsFloat(float* dst, T* cache, const T* src,
                                 size_t count) {
   __memcpy(cache, src, count * sizeof(T), GDRAM2NRAM);
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_half2float(dst, reinterpret_cast<half*>(cache), count);
   } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
     __bang_bfloat162float(dst, cache, count);
@@ -23,7 +23,7 @@ __mlu_device__ void LoadAsFloat(float* dst, T* cache, const T* src,
 
 template <typename T>
 __mlu_device__ void ConvertFromFloat(T* dst, const float* src, size_t count) {
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_float2half(reinterpret_cast<half*>(dst), const_cast<float*>(src),
                       count);
   } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
@@ -35,7 +35,7 @@ __mlu_device__ void ConvertFromFloat(T* dst, const float* src, size_t count) {
 
 template <typename T>
 __mlu_device__ void ConvertToFloat(float* dst, T* src, size_t count) {
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_half2float(dst, reinterpret_cast<half*>(src), count);
   } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
     __bang_bfloat162float(dst, src, count);
