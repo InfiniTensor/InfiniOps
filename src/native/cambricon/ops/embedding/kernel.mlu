@@ -70,7 +70,7 @@ __mlu_func__ ptrdiff_t LogicalOffset(size_t logical_index, size_t ndim,
 
 template <typename T>
 __mlu_func__ float LoadFloat(const T* source) {
-  if constexpr (std::is_same<T, __half>::value) {
+  if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
     return __half2float(*source);
   } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
     return __bfloat162float(*source);
@@ -253,7 +253,7 @@ void EmbeddingKernelLaunch(
 
   DispatchFunc<
       Device::Type::kCambricon, List<DataType::kInt32, DataType::kInt64>,
-      List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
+      CambriconBangFloatTypes<>>(
       {input_dtype, weight_dtype},
       [&](auto input_tag, auto weight_tag) {
         using IndexT = typename decltype(input_tag)::type;

@@ -39,7 +39,7 @@ class Operator<SiluAndMul, Device::Type::kCambricon> : public SiluAndMul {
     auto* workspace = workspace_ ? workspace_ : default_workspace_;
     DispatchFunc<
         Device::Type::kCambricon,
-        List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32>>(
+        CambriconBangFloatTypes<>>(
         out_type_,
         [&](auto tag) {
           using T = typename decltype(tag)::type;
