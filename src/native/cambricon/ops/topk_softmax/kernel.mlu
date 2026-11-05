@@ -20,13 +20,16 @@ __mlu_device__ std::size_t AlignUpDevice(std::size_t size) {
 template <typename T>
 __mlu_device__ void LoadAsFloat(float* destination, T* cache, const T* source,
                                 std::size_t count) {
-  __memcpy(cache, const_cast<T*>(source), count * sizeof(T), GDRAM2NRAM);
-  if constexpr (std::is_same_v<T, __half>) {
-    __bang_half2float(destination, reinterpret_cast<half*>(cache), count);
-  } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
-    __bang_bfloat162float(destination, cache, count);
+  if constexpr (std::is_same_v<T, float>) {
+    __memcpy(destination, const_cast<T*>(source), count * sizeof(T),
+             GDRAM2NRAM);
   } else {
-    __memcpy(destination, cache, count * sizeof(float), NRAM2NRAM);
+    __memcpy(cache, const_cast<T*>(source), count * sizeof(T), GDRAM2NRAM);
+    if constexpr (std::is_same_v<T, __half>) {
+      __bang_half2float(destination, reinterpret_cast<half*>(cache), count);
+    } else {
+      __bang_bfloat162float(destination, cache, count);
+    }
   }
 }
 
