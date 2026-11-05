@@ -19,6 +19,7 @@ on:
           - metax
           - moore
           - cambricon
+          - hygon
           - ascend
           - all
   push:
@@ -28,6 +29,7 @@ on:
 
 jobs:
   ci:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform != 'hygon' }}
     uses: InfiniTensor/ci/.github/workflows/infiniops-ci.yml@901566229509ac54f520210c6856bf163209f907
     with:
       config_path: .github/ci_config.yml
@@ -35,3 +37,19 @@ jobs:
       max_parallel: 2
       platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon,ascend' }}
     secrets: inherit
+
+  hygon-runner-acceptance:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.platform == 'hygon' }}
+    runs-on: [self-hosted, linux, Hygon-Server-000]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify service account, Docker and platform smoke tests
+        run: python3 .github/scripts/validate_hygon_runner.py
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hygon-server-000-results
+          path: ci-results/hygon-runner
+          if-no-files-found: ignore
