@@ -117,6 +117,8 @@ torch.cuda.synchronize()
         "export CUDA_PATH=/opt/dtk/cuda/cuda-12\n"
         "export CUDA_HOME=$CUDA_PATH\n"
         'export PATH="$CUDA_PATH/bin:$PATH"\n'
+        'export LD_LIBRARY_PATH="$CUDA_PATH/targets/x86_64-linux/lib:${LD_LIBRARY_PATH:-}"\n'
+        "export CMAKE_BUILD_PARALLEL_LEVEL=8\n"
     )
     cleanup = (
         "trap 'status=$?; chown -R --no-dereference %d:%d /workspace || exit 125; exit \"$status\"' EXIT\n"

@@ -269,7 +269,7 @@ platforms:
       - "--group-add=video"
     volumes:
       - /opt/hyhal:/opt/hyhal:ro
-    setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git clone --depth 1 ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} /tmp/infinirt-src && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_HYGON=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && python -m pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
+    setup: python -m pip install 'scikit-build-core>=1.1.1' pybind11 libclang packaging pyyaml jinja2 && rm -rf /tmp/infinirt-src /tmp/infinirt-build /tmp/infinirt-prefix && git init /tmp/infinirt-src && git -C /tmp/infinirt-src remote add origin ${INFINI_RT_GIT_URL:-https://github.com/InfiniTensor/InfiniRT.git} && git -C /tmp/infinirt-src fetch --depth 1 origin 46d411ef37f7c8a5d599ceca78547eac0bcbbfd4 && git -C /tmp/infinirt-src checkout --detach FETCH_HEAD && git -C /tmp/infinirt-src rev-parse HEAD && cmake -S /tmp/infinirt-src -B /tmp/infinirt-build -DWITH_CPU=ON -DWITH_HYGON=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/infinirt-prefix && cmake --build /tmp/infinirt-build -j$(nproc) && cmake --install /tmp/infinirt-build && python -m pip install .[dev] --no-build-isolation --config-settings=cmake.define.INFINI_OPS_SMOKE_BUILD=ON --config-settings=cmake.define.INFINI_RT_ROOT=/tmp/infinirt-prefix
     jobs:
       gpu:
         type: unittest
