@@ -25,10 +25,15 @@ __mlu_device__ void LoadAsFloat(float* destination, T* cache, const T* source,
              GDRAM2NRAM);
   } else {
     __memcpy(cache, const_cast<T*>(source), count * sizeof(T), GDRAM2NRAM);
-    if constexpr (std::is_same_v<T, __half>) {
+    if constexpr (std::is_same_v<T, __half> ||
+                  std::is_same_v<T, infini::rt::Float16>) {
       __bang_half2float(destination, reinterpret_cast<half*>(cache), count);
+    } else if constexpr (std::is_same_v<T, __bang_bfloat16> ||
+                         std::is_same_v<T, infini::rt::BFloat16>) {
+      __bang_bfloat162float(
+          destination, reinterpret_cast<const __bang_bfloat16*>(cache), count);
     } else {
-      __bang_bfloat162float(destination, cache, count);
+      __memcpy(destination, cache, count * sizeof(float), NRAM2NRAM);
     }
   }
 }
