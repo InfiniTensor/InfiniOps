@@ -39,8 +39,23 @@ jobs:
     secrets: inherit
 
   hygon-runner-acceptance:
+    name: Hygon / ${{ matrix.runner }}
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.platform == 'hygon' }}
-    runs-on: [self-hosted, linux, Hygon-Server-000]
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        runner:
+          - Hygon-Server-001
+          - Hygon-Server-002
+          - Hygon-Server-003
+          - Hygon-Server-004
+          - Hygon-Server-005
+          - Hygon-Server-006
+          - Hygon-Server-007
+    runs-on: [self-hosted, linux, "${{ matrix.runner }}"]
+    env:
+      EXPECTED_RUNNER_NAME: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +65,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hygon-server-000-results
+          name: ${{ matrix.runner }}-results
           path: ci-results/hygon-runner
           if-no-files-found: ignore

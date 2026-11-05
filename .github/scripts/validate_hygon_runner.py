@@ -85,7 +85,9 @@ def acquire_device(queue_seconds):
 
 def main():
     assert pwd.getpwuid(os.getuid()).pw_name == "infiniops"
-    assert os.environ.get("RUNNER_NAME") == "Hygon-Server-000"
+    expected_runner = os.environ.get("EXPECTED_RUNNER_NAME", "Hygon-Server-000")
+    assert re.fullmatch(r"Hygon-Server-00[0-7]", expected_runner)
+    assert os.environ.get("RUNNER_NAME") == expected_runner
     repo = Path.cwd().resolve()
     with (repo / ".github/ci_config.yml").open() as source:
         config = yaml.safe_load(source)["platforms"]["hygon"]
@@ -97,7 +99,11 @@ def main():
     results = repo / "ci-results/hygon-runner"
     results.mkdir(parents=True, exist_ok=True)
     device, lease = acquire_device(int(resources["queue_timeout"]))
-    name = "infiniops-hygon-validation-" + os.environ["GITHUB_RUN_ID"]
+    name = "infiniops-hygon-validation-%s-%s-%s" % (
+        os.environ["GITHUB_RUN_ID"],
+        os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
+        expected_runner.lower(),
+    )
     preflight = """import torch
 print('Torch:', torch.__version__, 'HIP:', torch.version.hip, flush=True)
 assert torch.cuda.is_available(), 'DCU runtime is unavailable'
@@ -179,6 +185,7 @@ torch.cuda.synchronize()
                     "physical_device": device,
                     "visible_device_count_required": 1,
                     "image": image,
+                    "runner_name": expected_runner,
                 },
                 output,
             )
