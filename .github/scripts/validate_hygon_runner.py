@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import pwd
 import re
+import shlex
 import subprocess
 import time
 
@@ -112,7 +113,8 @@ torch.cuda.synchronize()
         "set -euo pipefail\ngit config --global --add safe.directory /workspace\npython3 - <<'GPU_CHECK'\n"
         + preflight
         + "GPU_CHECK\n"
-        + setup
+        + "bash -euo pipefail -c "
+        + shlex.quote(setup)
         + "\n"
         + test
         + "\n"
@@ -165,13 +167,15 @@ torch.cuda.synchronize()
         if result.returncode:
             raise SystemExit(result.returncode)
     finally:
-        subprocess.run(
-            ["docker", "stop", "--time", "30", name],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=40,
-        )
-        lease.close()
+        try:
+            subprocess.run(
+                ["docker", "stop", "--time", "30", name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=40,
+            )
+        finally:
+            lease.close()
 
 
 if __name__ == "__main__":
