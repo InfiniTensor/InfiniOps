@@ -114,6 +114,9 @@ torch.cuda.synchronize()
     toolkit = (
         "test -x /opt/dtk/cuda/cuda-12/bin/nvcc\n"
         "ln -s /opt/dtk/cuda/cuda-12 /opt/dtk/cuda/cuda\n"
+        "export CUDA_PATH=/opt/dtk/cuda/cuda-12\n"
+        "export CUDA_HOME=$CUDA_PATH\n"
+        'export PATH="$CUDA_PATH/bin:$PATH"\n'
     )
     cleanup = (
         "trap 'status=$?; chown -R --no-dereference %d:%d /workspace || exit 125; exit \"$status\"' EXIT\n"
