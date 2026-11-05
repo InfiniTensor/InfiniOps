@@ -42,6 +42,32 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kIluvatar>
   using FlashAttnVarlenFunc::FlashAttnVarlenFunc;
   using FlashAttnVarlenFunc::operator();
 
+  static bool supports(
+      const Tensor q, const Tensor k, const Tensor v, const Tensor cu_seqlens_q,
+      const Tensor cu_seqlens_k, const std::optional<Tensor> alibi_slopes,
+      const std::optional<Tensor> block_table, const int64_t max_seqlen_q,
+      const int64_t max_seqlen_k, const double dropout_p,
+      const std::optional<double> softmax_scale, const bool causal,
+      const std::vector<int64_t> window_size, const double softcap,
+      const bool deterministic, const bool return_attn_probs, Tensor out,
+      std::optional<Tensor> softmax_lse, std::optional<Tensor> s_dmask) {
+    return block_table && causal &&
+           window_size == std::vector<int64_t>({-1, -1}) &&
+           !return_attn_probs && !softmax_lse && !s_dmask &&
+           (!alibi_slopes || alibi_slopes->ndim() == 1) && q.ndim() == 3 &&
+           (q.size(2) == 64 || q.size(2) == 128) &&
+           FlashAttnVarlenFunc::supports(
+               q, k, v, cu_seqlens_q, cu_seqlens_k, alibi_slopes, block_table,
+               max_seqlen_q, max_seqlen_k, dropout_p, softmax_scale, causal,
+               window_size, softcap, deterministic, return_attn_probs, out,
+               softmax_lse, s_dmask);
+  }
+
+  static bool supports(const Tensor, const Tensor, const Tensor, const Tensor,
+                       const Tensor, const int64_t, const int64_t, Tensor) {
+    return false;
+  }
+
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
                   const std::optional<Tensor> alibi_slopes,

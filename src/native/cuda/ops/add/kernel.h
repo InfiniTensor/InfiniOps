@@ -23,6 +23,12 @@ class CudaAdd : public Add {
   CudaAdd(const Tensor input, const Tensor other, const double alpha,
           Tensor out)
       : Add{input, other, alpha, out} {
+    if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
+      if (output_size_ == 0 || (is_input_contiguous_ && is_other_contiguous_ &&
+                                is_out_contiguous_)) {
+        return;
+      }
+    }
     const size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     const size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 3 * (shape_size + strides_size);

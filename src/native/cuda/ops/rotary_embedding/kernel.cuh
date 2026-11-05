@@ -29,7 +29,8 @@ __device__ __forceinline__ void ApplyRotaryPair(T* data, const TCache* cache,
   data[y_index] = Caster<kDev>::template Cast<T>(y * cos_value + x * sin_value);
 }
 
-template <Device::Type kDev, typename T, typename TCache, bool kIsNeox>
+template <Device::Type kDev, typename T, typename TCache, bool kIsNeox,
+          bool kHeadBlocks = false>
 __global__ void RotaryEmbeddingKernel(
     const int64_t* __restrict__ positions, T* query, T* key,
     const TCache* __restrict__ cos_sin_cache, int64_t cache_token_stride,
@@ -40,6 +41,21 @@ __global__ void RotaryEmbeddingKernel(
   const int64_t position = positions[token_idx];
   const TCache* cache = cos_sin_cache + position * cache_token_stride;
   const size_t embed_dim = rot_dim / 2;
+
+  if constexpr (kHeadBlocks) {
+    const size_t head = blockIdx.y;
+    for (size_t i = threadIdx.x; i < embed_dim; i += blockDim.x) {
+      ApplyRotaryPair<kDev, T, TCache, kIsNeox>(
+          query + token_idx * query_token_stride + head * query_head_stride +
+              rope_dim_offset,
+          cache, i, embed_dim, inverse);
+      ApplyRotaryPair<kDev, T, TCache, kIsNeox>(
+          key + token_idx * key_token_stride + head * key_head_stride +
+              rope_dim_offset,
+          cache, i, embed_dim, inverse);
+    }
+    return;
+  }
 
   for (size_t i = threadIdx.x; i < num_heads * embed_dim; i += blockDim.x) {
     const size_t head_idx = i / embed_dim;

@@ -51,7 +51,8 @@ __device__ __forceinline__ size_t SoftmaxInfinilmRowOffset(
 
 }  // namespace
 
-template <unsigned int block_size, Device::Type kDev, typename T>
+template <unsigned int block_size, Device::Type kDev, typename T,
+          bool kContiguousRows = false>
 __global__ void SoftmaxInfinilmKernel(
     T* __restrict__ out, const T* __restrict__ input,
     const size_t* __restrict__ shape, const ptrdiff_t* __restrict__ out_strides,
@@ -62,12 +63,16 @@ __global__ void SoftmaxInfinilmKernel(
     return;
   }
 
-  size_t input_base =
-      SoftmaxInfinilmRowOffset(row, ndim, dim, shape, input_strides);
-  size_t out_base =
-      SoftmaxInfinilmRowOffset(row, ndim, dim, shape, out_strides);
-  ptrdiff_t input_dim_stride = input_strides[dim];
-  ptrdiff_t out_dim_stride = out_strides[dim];
+  size_t input_base = row * dim_size;
+  size_t out_base = input_base;
+  ptrdiff_t input_dim_stride = 1;
+  ptrdiff_t out_dim_stride = 1;
+  if constexpr (!kContiguousRows) {
+    input_base = SoftmaxInfinilmRowOffset(row, ndim, dim, shape, input_strides);
+    out_base = SoftmaxInfinilmRowOffset(row, ndim, dim, shape, out_strides);
+    input_dim_stride = input_strides[dim];
+    out_dim_stride = out_strides[dim];
+  }
 
   float thread_max = -FLT_MAX;
   for (size_t i = threadIdx.x; i < dim_size; i += block_size) {
