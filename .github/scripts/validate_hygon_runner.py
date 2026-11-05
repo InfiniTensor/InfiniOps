@@ -109,8 +109,21 @@ torch.cuda.synchronize()
 """
     test = config["jobs"]["gpu"]["stages"][0]["run"]
     setup = config["setup"]
+    # Both projects prefer /opt/dtk/cuda/cuda over versioned directories.
+    # Select the image's CUDA 12 compatibility API for current InfiniRT.
+    toolkit = (
+        "test -x /opt/dtk/cuda/cuda-12/bin/nvcc\n"
+        "ln -s /opt/dtk/cuda/cuda-12 /opt/dtk/cuda/cuda\n"
+    )
+    cleanup = (
+        "trap 'status=$?; chown -R --no-dereference %d:%d /workspace || exit 125; exit \"$status\"' EXIT\n"
+        % (os.getuid(), os.getgid())
+    )
     script = (
-        "set -euo pipefail\ngit config --global --add safe.directory /workspace\npython3 - <<'GPU_CHECK'\n"
+        "set -euo pipefail\n"
+        + cleanup
+        + toolkit
+        + "git config --global --add safe.directory /workspace\npython3 - <<'GPU_CHECK'\n"
         + preflight
         + "GPU_CHECK\n"
         + "bash -euo pipefail -c "
@@ -143,6 +156,10 @@ torch.cuda.synchronize()
             "/workspace",
             "-e",
             "HIP_VISIBLE_DEVICES=" + str(device),
+            "-e",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "-e",
+            "PYTEST_ADDOPTS=-o cache_dir=/tmp/infiniops-pytest-cache",
             "--entrypoint",
             "bash",
             image,
