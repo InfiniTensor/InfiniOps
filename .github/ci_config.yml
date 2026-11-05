@@ -27,8 +27,8 @@ platforms:
           timeout: 3600
           queue_timeout: 3600
           junit_path: test-results.xml
-        # env:                             # Uncomment to inject extra env vars into the container.
-        #   MY_VAR: value
+        env:
+          PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
         stages:
           - name: test
             run: pytest tests/ -m smoke -n 8 -v --tb=short --junitxml=/workspace/results/test-results.xml
