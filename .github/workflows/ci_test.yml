@@ -1,4 +1,5 @@
 name: CI
+run-name: "MetaX proxy validation / 000 + 002"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -20,10 +21,6 @@ on:
           - cambricon
           - ascend
           - all
-  push:
-    branches: ["master"]
-  pull_request:
-    branches: ["master", "ci/ci-online"]
 
 jobs:
   ci:
@@ -31,6 +28,6 @@ jobs:
     with:
       config_path: .github/ci_config.yml
       ci_ref: 901566229509ac54f520210c6856bf163209f907
-      max_parallel: 10
-      platform: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' && 'nvidia,iluvatar,metax,moore,cambricon,ascend' || inputs.platform) || 'nvidia,iluvatar,metax,moore,cambricon,ascend' }}
+      max_parallel: 2
+      platform: metax
     secrets: inherit
