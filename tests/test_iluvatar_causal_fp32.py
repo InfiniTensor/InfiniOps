@@ -7,7 +7,8 @@ from tests.utils import get_stream
 
 @pytest.mark.parametrize("q,k", ((2, 3), (521, 521), (2051, 2051), (521, 4096)))
 @pytest.mark.parametrize("inplace", (False, True))
-def test_iluvatar_causal_fp32(q, k, inplace, device):
+@pytest.mark.parametrize("implementation_index", (0,))
+def test_iluvatar_causal_fp32(q, k, inplace, device, implementation_index):
     if (
         device != "cuda"
         or not infini.ops.CausalSoftmaxInfinilm.active_implementation_indices(
@@ -27,7 +28,10 @@ def test_iluvatar_causal_fp32(q, k, inplace, device):
     # Match the FP32 sum before BF16 exponent storage of the InfiniLM path.
     infini.ops.softmax(reference, -1, None, reference, stream=get_stream(source.device))
     out = source if inplace else torch.empty_like(source)
-    infini.ops.causal_softmax_infinilm(source, out, stream=get_stream(source.device))
+    infini.ops.causal_softmax_infinilm(
+        source, out, stream=get_stream(source.device),
+        implementation_index=implementation_index,
+    )
     torch.testing.assert_close(out, reference, rtol=0, atol=0)
     assert torch.isfinite(out).all()
     assert torch.count_nonzero(out.masked_select(mask)) == 0
