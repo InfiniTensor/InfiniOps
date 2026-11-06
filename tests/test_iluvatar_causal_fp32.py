@@ -29,7 +29,9 @@ def test_iluvatar_causal_fp32(q, k, inplace, device, implementation_index):
     infini.ops.softmax(reference, -1, None, reference, stream=get_stream(source.device))
     out = source if inplace else torch.empty_like(source)
     infini.ops.causal_softmax_infinilm(
-        source, out, stream=get_stream(source.device),
+        source,
+        out,
+        stream=get_stream(source.device),
         implementation_index=implementation_index,
     )
     torch.testing.assert_close(out, reference, rtol=0, atol=0)
