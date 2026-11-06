@@ -7,7 +7,8 @@ from tests.utils import get_stream
 
 @pytest.mark.parametrize("batch", (1, 2))
 @pytest.mark.parametrize("length", (7, 2049, 2910, 4096))
-def test_iluvatar_decode_reduction(batch, length, device):
+@pytest.mark.parametrize("implementation_index", (0,))
+def test_iluvatar_decode_reduction(batch, length, device, implementation_index):
     if (
         device != "cuda"
         or not infini.ops.PagedAttentionInfinilm.active_implementation_indices(
@@ -32,7 +33,8 @@ def test_iluvatar_decode_reduction(batch, length, device):
     )
     out = torch.empty_like(q)
     infini.ops.paged_attention_infinilm(
-        q, k, v, blocks, lengths, None, 128**-0.5, out, stream=get_stream(q.device)
+        q, k, v, blocks, lengths, None, 128**-0.5, out, stream=get_stream(q.device),
+        implementation_index=implementation_index,
     )
     expected = torch.empty_like(q)
     for b in range(batch):
