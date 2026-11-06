@@ -626,7 +626,7 @@ __device__ void FlashAttentionDecodeSplitKvCombineWarpKernel(
 // KV, writes partial (m, l, acc) to workspace, then a combine kernel merges
 // splits.
 template <typename TIndex, typename TData, int kHeadSize, int kCtaThreads,
-          int kTokensPerTile>
+          int kTokensPerTile, bool kBatchQkReduction = false>
 __device__ void FlashAttentionDecodeSplitKvCtaKernel(
     float* partial_acc,  // [num_splits, num_seqs, num_heads, head_size]
     float* partial_m,    // [num_splits, num_seqs, num_heads]
@@ -914,11 +914,39 @@ __device__ void FlashAttentionDecodeSplitKvCtaKernel(
         }
       }
 
+      if constexpr (kBatchQkReduction) {
+        static_assert(kCtaThreads == 64 && kTokensPerTile == 8 &&
+                      kHeadSize == 128);
+        // Preserve each 32-lane FP32 tree while sharing its six barriers
+        // across all eight tokens (48 barriers in the scalar fallback).
+        __shared__ float token_reduce[kTokensPerTile][kCtaThreads];
 #pragma unroll
-      for (int j = 0; j < kTokensPerTile; ++j) {
-        const float sum = WarpReduceSum(partial[j]);
+        for (int j = 0; j < kTokensPerTile; ++j) {
+          token_reduce[j][tid] = partial[j];
+        }
+        __syncthreads();
+        for (int offset = 16; offset > 0; offset >>= 1) {
+          if (lane < offset) {
+#pragma unroll
+            for (int j = 0; j < kTokensPerTile; ++j) {
+              token_reduce[j][tid] += token_reduce[j][tid + offset];
+            }
+          }
+          __syncthreads();
+        }
         if (lane == 0 && warp_id < kComputeWarps) {
-          warp_sums[j][warp_id] = sum;
+#pragma unroll
+          for (int j = 0; j < kTokensPerTile; ++j) {
+            warp_sums[j][warp_id] = token_reduce[j][tid];
+          }
+        }
+      } else {
+#pragma unroll
+        for (int j = 0; j < kTokensPerTile; ++j) {
+          const float sum = WarpReduceSum(partial[j]);
+          if (lane == 0 && warp_id < kComputeWarps) {
+            warp_sums[j][warp_id] = sum;
+          }
         }
       }
 
@@ -2218,7 +2246,8 @@ __device__ void FlashAttentionDecodeCtaGqaKernel(
 
 namespace infini::ops {
 
-template <typename TIndex, typename TData, int kHeadSize>
+template <typename TIndex, typename TData, int kHeadSize,
+          bool kBatchQkReduction = false>
 __global__ void PagedAttentionInfinilmSplitKvCtaKernel(
     float* __restrict__ partial_acc, float* __restrict__ partial_m,
     float* __restrict__ partial_l, const TData* __restrict__ q,
@@ -2231,7 +2260,7 @@ __global__ void PagedAttentionInfinilmSplitKvCtaKernel(
     std::ptrdiff_t v_cacheblock_stride, std::ptrdiff_t v_cacheslot_stride,
     std::ptrdiff_t v_cachehead_stride, int num_splits) {
   op::paged_attention::cuda::FlashAttentionDecodeSplitKvCtaKernel<
-      TIndex, TData, kHeadSize, 64, 8>(
+      TIndex, TData, kHeadSize, 64, 8, kBatchQkReduction>(
       partial_acc, partial_m, partial_l, q, k_cache, v_cache, block_tables,
       seqlens, alibi_slopes, num_kv_heads, scale, max_num_blocks_per_seq,
       block_size, qstride, k_cacheblock_stride, k_cacheslot_stride,
