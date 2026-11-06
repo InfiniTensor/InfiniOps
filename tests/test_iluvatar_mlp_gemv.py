@@ -7,7 +7,8 @@ from tests.utils import get_stream
 
 @pytest.mark.parametrize("m", (1, 2))
 @pytest.mark.parametrize("k,n", ((4096, 32768), (16384, 4096)))
-def test_iluvatar_mlp_gemv(m, k, n, device):
+@pytest.mark.parametrize("implementation_index", (0,))
+def test_iluvatar_mlp_gemv(m, k, n, device, implementation_index):
     if device != "cuda" or not infini.ops.Gemm.active_implementation_indices(
         "iluvatar"
     ):
@@ -30,7 +31,7 @@ def test_iluvatar_mlp_gemv(m, k, n, device):
         False,
         out,
         stream=get_stream(a.device),
-        implementation_index=0,
+        implementation_index=implementation_index,
     )
     torch.testing.assert_close(out, expected, rtol=0, atol=0)
 
@@ -46,7 +47,7 @@ def test_iluvatar_mlp_gemv(m, k, n, device):
         False,
         out,
         stream=get_stream(a.device),
-        implementation_index=0,
+        implementation_index=implementation_index,
     )
     expected = (0.5 * (a.float() @ b.float()) + bias.float()).to(torch.bfloat16)
     torch.testing.assert_close(out, expected, rtol=1e-2, atol=1e-2)
