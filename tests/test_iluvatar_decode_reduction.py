@@ -33,7 +33,15 @@ def test_iluvatar_decode_reduction(batch, length, device, implementation_index):
     )
     out = torch.empty_like(q)
     infini.ops.paged_attention_infinilm(
-        q, k, v, blocks, lengths, None, 128**-0.5, out, stream=get_stream(q.device),
+        q,
+        k,
+        v,
+        blocks,
+        lengths,
+        None,
+        128**-0.5,
+        out,
+        stream=get_stream(q.device),
         implementation_index=implementation_index,
     )
     expected = torch.empty_like(q)
