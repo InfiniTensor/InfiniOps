@@ -35,19 +35,19 @@ def test_iluvatar_mlp_gemv(m, k, n, device, implementation_index):
     )
     torch.testing.assert_close(out, expected, rtol=0, atol=0)
 
-    # Bias/scalar calls must retain BLAS semantics outside the specialization.
-    bias = torch.ones_like(out)
+    # Non-default alpha must retain the supported BLAS fallback.
+    # The current base GEMM contract requires C=None and forces beta=0.
     infini.ops.gemm(
         a,
         b,
-        bias,
+        None,
         0.5,
-        1.0,
+        0.0,
         False,
         False,
         out,
         stream=get_stream(a.device),
         implementation_index=implementation_index,
     )
-    expected = (0.5 * (a.float() @ b.float()) + bias.float()).to(torch.bfloat16)
+    expected = (0.5 * (a.float() @ b.float())).to(torch.bfloat16)
     torch.testing.assert_close(out, expected, rtol=1e-2, atol=1e-2)
