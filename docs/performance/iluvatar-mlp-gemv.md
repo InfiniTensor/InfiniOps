@@ -19,8 +19,7 @@ an acceptance requirement.
 The measured private implementation on TG-V200/CoreX used these same kernel
 shapes and arithmetic. The submission factors the two identical algorithms into
 one template, removes experimental counters, and adds an alignment fallback.
-Its final integration on current upstream still requires an Iluvatar smoke build
-and tests; the PR is a draft until that check is available.
+Its current submitted-code CoreX build and GPU checks are recorded below.
 
 Historical same-card measurements, using two fixed GSM8K tasks with a 512-token
 greedy budget, found Gate/Up reduced application completion time by
@@ -59,4 +58,47 @@ python -m pytest tests/test_iluvatar_mlp_gemv.py -q
 
 The portable test checks eligibility/fallback boundaries. The device test covers
 both shapes and batch sizes against a deterministic FP32 reference, plus the
-bias/scalar BLAS fallback. Existing `tests/test_gemm.py` covers general GEMM.
+supported no-C scalar BLAS fallback. Existing `tests/test_gemm.py` covers general GEMM.
+
+## Current submitted-code CoreX validation
+
+CoreX current-code validation completed on 2026-11-06 against InfiniLM
+`12a4492f70dd33235e3d142e333ad4a9629d3b7b` and InfiniOps
+`1a68b261d19f0ed6f76bbabeab7a25f479f05e07`. Both complete SDKs compiled
+and imported. Both roles used the identical documented CoreX validation adapter
+and ABI0, with automatic tuning disabled. The adapter includes existing CUDA
+Argmax/Triu/Tril registrations, unchanged rejecting unavailable factories, a
+copy-on-write read-only-view loader, and the existing paged-only FlashVarlen
+provider's metadata gate. See the companion InfiniLM
+`docs/performance/corex-validation/README.md` for exact scope.
+
+The affected native GPU tests passed without skips: GEMV 4, causal Softmax 8,
+Decode Attention 8, plus 7 common Argmax/mask checks. The submitted device tests
+now explicitly bind implementation index 0. GEMV fallback uses the supported
+no-C, alpha=0.5 contract; this backend rejects C/bias at its base operator.
+
+Original tasks 554/172 ran on one TG-V200 in forward and reverse role order.
+Each of the four model processes used one simultaneous two-request warmup wave
+and one simultaneous two-request measured wave: 16 requests total, 8 measured.
+All 16 answers were correct with natural EOS, zero errors/truncations, normal
+scope return, final library maps, atexit and actual OS exit0. The original
+512-token greedy budget, EOS=[2,73440], strict last-#### numeric scorer, inputs
+and weights were unchanged. Two physical rows, full Prefill and graph off were
+held fixed. No new independent quality questions were added.
+
+Mean two-request measured-wave time was **14.976775177 ->
+9.782192262 seconds (-34.6843%)**.
+Completed request throughput was **0.133540096 -> 0.204453148
+requests/s (+53.1024%)**. Published token throughput
+was 20.631944884 -> 31.588011330 tokens/s and is reported separately.
+The time denominator includes queue and text processing and excludes loading,
+warmup and final shutdown. Both role orders reduced application time; this is
+the combined four-optimization gain, not an individual-PR or component sum.
+
+| Order | Official wave, s | Combined wave, s | Time reduction |
+| --- | ---: | ---: | ---: |
+| forward | 14.973374084 | 9.782256734 | 34.6690% |
+| reverse | 14.980176271 | 9.782127790 | 34.6995% |
+
+Token-different task IDs across the two measured orders: none. Answers and token differences are recorded separately.
+Raw clocks, output IDs, strict scores, native receipts and ordinary exits were independently recomputed. This two-question integration check is kept separate from the historical 100-question experiment above.
