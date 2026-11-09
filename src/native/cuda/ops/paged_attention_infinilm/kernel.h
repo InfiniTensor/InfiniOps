@@ -5,14 +5,12 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 
 #include "base/paged_attention_infinilm.h"
 #include "data_type.h"
 #include "dispatcher.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/paged_attention_infinilm/kernel.cuh"
-#include "native/cuda/ops/paged_attention_infinilm/reduction_policy.h"
 #include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
@@ -92,48 +90,22 @@ class CudaPagedAttentionInfinilm : public PagedAttentionInfinilm {
                               static_cast<unsigned>(num_seqs_),
                               static_cast<unsigned>(num_splits));
 
-              const auto launch_split = [&](auto batched) {
-                PagedAttentionInfinilmSplitKvCtaKernel<TIndex, TData, kHeadSize,
-                                                       decltype(batched)::value>
-                    <<<grid_split, 64, 0, cuda_stream>>>(
-                        partial_acc, partial_m, partial_l,
-                        reinterpret_cast<const TData*>(q.data()),
-                        reinterpret_cast<const TData*>(k_cache.data()),
-                        reinterpret_cast<const TData*>(v_cache.data()),
-                        reinterpret_cast<const TIndex*>(block_tables.data()),
-                        reinterpret_cast<const TIndex*>(seq_lens.data()),
-                        alibi_slopes.has_value()
-                            ? reinterpret_cast<const float*>(
-                                  alibi_slopes->data())
-                            : nullptr,
-                        num_kv_heads_, scale, max_num_blocks_per_seq_,
-                        block_size_, q_stride_, k_cache_block_stride_,
-                        k_cache_slot_stride_, k_cache_head_stride_,
-                        v_cache_block_stride_, v_cache_slot_stride_,
-                        v_cache_head_stride_, num_splits);
-              };
-
-              if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
-                const bool batch_qk =
-                    detail::CanBatchDecodeQkReduction(
-                        true, dtype_ == DataType::kBFloat16,
-                        index_dtype_ == DataType::kInt32, num_seqs_, num_heads_,
-                        num_kv_heads_, head_size_, max_num_blocks_per_seq_,
-                        block_size_, num_splits, alibi_slopes.has_value(),
-                        q_stride_, q_head_stride_, out_stride_,
-                        out_head_stride_, k_cache_block_stride_,
-                        k_cache_slot_stride_, k_cache_head_stride_,
-                        v_cache_block_stride_, v_cache_slot_stride_,
-                        v_cache_head_stride_) &&
-                    block_table_batch_stride_ == 1 && seq_lens_stride_ == 1;
-                if (batch_qk) {
-                  launch_split(std::true_type{});
-                } else {
-                  launch_split(std::false_type{});
-                }
-              } else {
-                launch_split(std::false_type{});
-              }
+              PagedAttentionInfinilmSplitKvCtaKernel<TIndex, TData, kHeadSize>
+                  <<<grid_split, 64, 0, cuda_stream>>>(
+                      partial_acc, partial_m, partial_l,
+                      reinterpret_cast<const TData*>(q.data()),
+                      reinterpret_cast<const TData*>(k_cache.data()),
+                      reinterpret_cast<const TData*>(v_cache.data()),
+                      reinterpret_cast<const TIndex*>(block_tables.data()),
+                      reinterpret_cast<const TIndex*>(seq_lens.data()),
+                      alibi_slopes.has_value()
+                          ? reinterpret_cast<const float*>(alibi_slopes->data())
+                          : nullptr,
+                      num_kv_heads_, scale, max_num_blocks_per_seq_,
+                      block_size_, q_stride_, k_cache_block_stride_,
+                      k_cache_slot_stride_, k_cache_head_stride_,
+                      v_cache_block_stride_, v_cache_slot_stride_,
+                      v_cache_head_stride_, num_splits);
               PagedAttentionInfinilmSplitKvCombineKernel<Backend::kDeviceType,
                                                          TData, kHeadSize>
                   <<<grid, 32, 0, cuda_stream>>>(

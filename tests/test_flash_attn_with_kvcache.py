@@ -1,4 +1,8 @@
+import ctypes
 import math
+import os
+import shlex
+from types import SimpleNamespace
 
 import infini.ops
 import pytest
@@ -815,3 +819,303 @@ def _attention_mask(q_len, k_len, causal, window_size, device):
     if right >= 0:
         mask &= key_positions <= aligned_query_positions + right
     return mask
+
+
+_ILUVATAR_DECODE_CASES = (
+    (1, 32, 2, 128, 4096, 1, 7, "head_first"),
+    (2, 32, 2, 128, 4096, 1, 7, "head_first"),
+    (1, 32, 2, 128, 4096, 1, 2049, "head_first"),
+    (2, 32, 2, 128, 4096, 1, 2049, "head_first"),
+    (1, 32, 2, 128, 4096, 1, 2910, "head_first"),
+    (2, 32, 2, 128, 4096, 1, 2910, "head_first"),
+    (1, 32, 2, 128, 4096, 1, 4096, "head_first"),
+    (2, 32, 2, 128, 4096, 1, 4096, "head_first"),
+    (1, 8, 1, 128, 256, 4, 777, "token_first"),
+    (2, 16, 4, 128, 512, 4, 1537, "token_first"),
+    (4, 32, 8, 128, 256, 16, 4096, "token_first"),
+    (8, 16, 2, 128, 512, 8, 2910, "head_first"),
+    (16, 8, 1, 128, 256, 8, 1025, "token_first"),
+    (1, 64, 8, 128, 1024, 4, 4095, "head_first"),
+    (2, 128, 16, 128, 2048, 2, 2049, "token_first"),
+    (4, 8, 8, 128, 256, 4, 513, "token_first"),
+    (1, 32, 2, 128, 256, 32, 8191, "token_first"),
+    (4, 16, 4, 128, 256, 32, 8192, "head_first"),
+    (4, 8, 2, 128, 512, 4, 2047, "padded_rows"),
+    (2, 16, 2, 128, 256, 1, 1, "token_first"),
+    (1, 8, 1, 128, 256, 1, 0, "token_first"),
+)
+
+
+def _iluvatar_decode_inputs(case, device, dtype=torch.bfloat16):
+    batch, heads, kv_heads, dim, page, blocks, length, layout = case
+    q = torch.randn((batch, 1, heads, dim), device=device, dtype=dtype)
+    physical_blocks = batch * blocks + 2
+    if layout == "head_first":
+        k = torch.randn(
+            (physical_blocks, kv_heads, page, dim), device=device, dtype=dtype
+        ).permute(0, 2, 1, 3)
+        v = torch.randn(
+            (physical_blocks, kv_heads, page, dim), device=device, dtype=dtype
+        ).permute(0, 2, 1, 3)
+    else:
+        k = torch.randn(
+            (physical_blocks, page, kv_heads, dim), device=device, dtype=dtype
+        )
+        v = torch.randn_like(k)
+
+    out = torch.empty_like(q)
+    if layout == "padded_rows":
+        padded_q = torch.empty((batch, 1, heads + 1, dim), device=device, dtype=dtype)
+        padded_q[:, :, :heads].copy_(q)
+        q = padded_q[:, :, :heads]
+        out = torch.empty((batch, 1, heads + 2, dim), device=device, dtype=dtype)[
+            :, :, :heads
+        ]
+
+    table = torch.arange(
+        physical_blocks - 1, 1, -1, device=device, dtype=torch.int32
+    ).reshape(batch, blocks)
+    lengths = tuple(max(0, length - index) for index in range(batch))
+    cache_seqlens = torch.tensor(lengths, dtype=torch.int32, device=device)
+    return q, k, v, table, cache_seqlens, out, lengths
+
+
+def _iluvatar_decode(q, k, v, table, lengths, out):
+    # Explicit tensor metadata prevents a singleton from selecting the scalar overload.
+    lengths_view = SimpleNamespace(
+        data_ptr=lengths.data_ptr,
+        shape=lengths.shape,
+        dtype=lengths.dtype,
+        device=lengths.device,
+        stride=lengths.stride,
+    )
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k,
+        v,
+        None,
+        None,
+        None,
+        None,
+        lengths_view,
+        None,
+        None,
+        table,
+        None,
+        q.size(-1) ** -0.5,
+        True,
+        (-1, -1),
+        0.0,
+        True,
+        0,
+        False,
+        out,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=0,
+    )
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize("case", _ILUVATAR_DECODE_CASES)
+@pytest.mark.parametrize("implementation_index", (0,))
+def test_flash_attn_with_kvcache_iluvatar_decode_reduction(
+    case, device, implementation_index
+):
+    if (
+        device != "cuda"
+        or not infini.ops.FlashAttnWithKvcache.active_implementation_indices("iluvatar")
+    ):
+        pytest.skip("requires the Iluvatar backend")
+
+    q, k, v, table, lengths, out, host_lengths = _iluvatar_decode_inputs(case, device)
+    expected = _reference_decode(q, k, v, host_lengths, block_table=table)
+    _iluvatar_decode(q, k, v, table, lengths, out)
+    torch.testing.assert_close(out, expected, rtol=2e-2, atol=2e-3)
+    assert torch.isfinite(out).all()
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize(
+    "case,dtype",
+    (
+        ((2, 8, 2, 64, 256, 4, 777, "token_first"), torch.bfloat16),
+        ((2, 8, 2, 128, 512, 4, 1537, "head_first"), torch.float16),
+        ((17, 8, 2, 128, 256, 4, 777, "token_first"), torch.bfloat16),
+    ),
+)
+@pytest.mark.parametrize("implementation_index", (0,))
+def test_flash_attn_with_kvcache_iluvatar_decode_fallback(
+    case, dtype, device, implementation_index
+):
+    if (
+        device != "cuda"
+        or not infini.ops.FlashAttnWithKvcache.active_implementation_indices("iluvatar")
+    ):
+        pytest.skip("requires the Iluvatar backend")
+
+    q, k, v, table, lengths, out, host_lengths = _iluvatar_decode_inputs(
+        case, device, dtype
+    )
+    expected = _reference_decode(q, k, v, host_lengths, block_table=table)
+    _iluvatar_decode(q, k, v, table, lengths, out)
+    torch.testing.assert_close(out, expected, rtol=2e-2, atol=2e-3)
+
+
+class _DecodeTensorView(ctypes.Structure):
+    _fields_ = [
+        ("data", ctypes.c_void_p),
+        ("shape", ctypes.c_int64 * 4),
+        ("strides", ctypes.c_int64 * 4),
+        ("rank", ctypes.c_int),
+        ("dtype", ctypes.c_int),
+    ]
+
+
+def _build_iluvatar_decode_bridge(directory):
+    from tests.test_cpp_api import _compiler, _install_prefixes, _library_dir, _run
+
+    prefixes = _install_prefixes()
+    library_dirs = list(
+        dict.fromkeys(
+            _library_dir(prefixes, name)
+            for name in ("libinfiniops.so", "libinfinirt.so")
+        )
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    source = directory / "flash_decode.cc"
+    library = directory / "flash_decode.so"
+    source.write_text(_ILUVATAR_WORKSPACE_SOURCE)
+    _run(
+        [
+            _compiler("CXX", "c++"),
+            "-std=c++17",
+            "-shared",
+            "-fPIC",
+            *shlex.split(os.environ.get("CXXFLAGS", "")),
+            *(f"-I{prefix / 'include'}" for prefix in prefixes),
+            str(source),
+            *(f"-L{path}" for path in library_dirs),
+            "-linfiniops",
+            "-linfinirt",
+            *(f"-Wl,-rpath,{path}" for path in library_dirs),
+            "-o",
+            str(library),
+        ]
+    )
+    bridge = ctypes.CDLL(str(library))
+    bridge.flash_decode.argtypes = [
+        ctypes.POINTER(_DecodeTensorView),
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_void_p,
+    ]
+    bridge.flash_decode.restype = None
+
+    return bridge
+
+
+@pytest.fixture(scope="module")
+def _iluvatar_decode_bridge(tmp_path_factory):
+    if not infini.ops.FlashAttnWithKvcache.active_implementation_indices("iluvatar"):
+        pytest.skip("requires the Iluvatar backend")
+
+    return _build_iluvatar_decode_bridge(tmp_path_factory.mktemp("flash_decode"))
+
+
+def _iluvatar_workspace_call(bridge, q, k, v, table, lengths, out):
+    tensors = (q, k, v, table, lengths, out)
+    dtype_ids = {torch.bfloat16: 0, torch.float16: 1, torch.int32: 2}
+    views = (_DecodeTensorView * len(tensors))(
+        *(
+            _DecodeTensorView(
+                tensor.data_ptr(),
+                (ctypes.c_int64 * 4)(*tensor.shape),
+                (ctypes.c_int64 * 4)(*tensor.stride()),
+                tensor.ndim,
+                dtype_ids[tensor.dtype],
+            )
+            for tensor in tensors
+        )
+    )
+    workspace = torch.empty(
+        8 * q.size(0) * q.size(2) * (q.size(3) + 2),
+        dtype=torch.float32,
+        device=q.device,
+    )
+
+    def call():
+        bridge.flash_decode(
+            views,
+            q.device.index,
+            workspace.data_ptr(),
+            workspace.numel() * workspace.element_size(),
+            get_stream(q.device),
+        )
+
+    return call
+
+
+@pytest.mark.parametrize("case", _ILUVATAR_DECODE_CASES)
+@pytest.mark.parametrize("implementation_index", (0,))
+def test_flash_attn_with_kvcache_iluvatar_workspace_decode(
+    case, device, implementation_index, _iluvatar_decode_bridge
+):
+    if device != "cuda":
+        pytest.skip("requires the Iluvatar backend")
+
+    q, k, v, table, lengths, out, host_lengths = _iluvatar_decode_inputs(case, device)
+    expected = _reference_decode(q, k, v, host_lengths, block_table=table)
+    call = _iluvatar_workspace_call(
+        _iluvatar_decode_bridge, q, k, v, table, lengths, out
+    )
+    call()
+    torch.testing.assert_close(out, expected, rtol=2e-2, atol=2e-3)
+    assert torch.isfinite(out).all()
+
+
+_ILUVATAR_WORKSPACE_SOURCE = r"""
+#include <infini/ops.h>
+#include <cmath>
+#include <cstdint>
+
+using namespace infini::ops;
+
+struct DecodeTensorView {
+  void* data;
+  int64_t shape[4];
+  int64_t strides[4];
+  int rank;
+  int dtype;
+};
+
+extern "C" void flash_decode(const DecodeTensorView* views, int device_index,
+                             void* workspace, std::size_t workspace_bytes,
+                             void* stream) {
+  const Device device{Device::Type::kIluvatar, device_index};
+  const auto tensor = [&](int index) {
+    const auto& view = views[index];
+    const auto dtype = view.dtype == 0 ? DataType::kBFloat16
+                     : view.dtype == 1 ? DataType::kFloat16 : DataType::kInt32;
+    return Tensor{view.data, Tensor::Shape(view.shape, view.shape + view.rank),
+                  dtype, device,
+                  Tensor::Strides(view.strides, view.strides + view.rank)};
+  };
+  const auto q = tensor(0), k = tensor(1), v = tensor(2);
+  const std::optional<Tensor> table{tensor(3)}, lengths{tensor(4)};
+  const auto out = tensor(5);
+  const std::optional<Tensor> none;
+  const std::optional<double> scale{1.0 / std::sqrt(double(q.size(3)))};
+  Handle handle;
+  handle.set_stream(stream);
+  handle.set_workspace(workspace);
+  handle.set_workspace_size_in_bytes(workspace_bytes);
+  Config config;
+  config.set_implementation_index(0);
+  FlashAttnWithKvcache::Call(handle, config, q, k, v, none, none, none, none,
+                           lengths, none, none, table, none, scale, true,
+                           std::vector<int64_t>{-1, -1}, 0.0, true, int64_t{0},
+                           false, out, none);
+}
+"""
