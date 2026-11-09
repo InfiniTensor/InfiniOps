@@ -1,103 +1,91 @@
-# AGENTS.md
+# Agent Guide
 
-## Project Overview
+## Start Here
 
-InfiniOps is a cross-platform operator library supporting multiple backends: **CPU**, **Nvidia**, **MetaX**, **Iluvatar**, **Moore**, **Cambricon**, and more. The codebase uses a template-based architecture where each platform provides its own specialization.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for coding style, operator conventions,
+  commits, and pull request requirements. Keep changes focused on the task.
+- Use [docs/README.md](docs/README.md) as the documentation index and
+  [docs/build.md](docs/build.md) for build configuration. This file supplements
+  those guides; keep detailed policies in their existing documents.
+- Before adding or changing a public operator interface, read
+  [docs/operator-api-alignment.md](docs/operator-api-alignment.md). Name the
+  upstream contract and document any C++ adaptations; matching the mathematical
+  operation alone does not establish API compatibility.
 
-## Build & Test
+## Repository Map
+
+- `src/base/`: operator interfaces and shared semantics.
+- `src/native/`: native implementations. `src/native/cuda/` contains shared
+  CUDA-like implementations and platform-specific subdirectories; other native
+  backends have their own directories under `src/native/`.
+- `src/torch/ops/`, `src/linked/`, `src/triton/`, and `src/ninetoothed/`:
+  alternative implementation backends. See [docs/backends.md](docs/backends.md).
+- `tests/`: pytest coverage and reference comparisons. Follow nearby tests and
+  the test conventions in `CONTRIBUTING.md`.
+- `scripts/generate_wrappers.py`, `scripts/generate_torch_ops.py`,
+  `scripts/torch_ops.yaml`, and `scripts/resolve_linked_ops.py`: generation and
+  provider-selection inputs. Change the relevant source or generator, rather
+  than hand-editing output under `generated/`; regenerate through the build.
+- `.github/workflows/ci_test.yml` and `.github/ci_config.yml`: CI entry points.
+  The workflow pins an external CI implementation; consult that revision's
+  documentation before using its command-line tools.
+
+## Implementation Constraints
+
+- Runtime, device, and core dtype definitions come from InfiniRT. The local
+  `src/runtime.h`, `src/device.h`, and `src/data_type.h` expose aliases and
+  integration helpers. Inspect that boundary before changing runtime behavior.
+- Resolve native element types with the appropriate device, for example
+  `TypeMapType<device, dtype>`. Half and bfloat16 representations and operations
+  can differ between platforms.
+- Keep vendor headers and intrinsics in the appropriate platform layer.
+  Shared CUDA-like templates must remain valid for the backends that include
+  them; use existing device-specific caster and specialization patterns.
+- Include the headers a file needs directly. Separate kernels from launchers
+  according to `CONTRIBUTING.md` and the surrounding implementation.
+- Preserve the operator's shape, stride, dtype, device, output, aliasing, and
+  mutation contract. For behavior changes, add or update focused reference
+  comparisons, including relevant noncontiguous layouts and boundary cases.
+
+## Build and Validate
+
+Install InfiniRT first and configure its install prefix via `INFINI_RT_ROOT`,
+as described in [README.md](README.md) and `docs/build.md`. Set up the development
+dependencies and the selected backend's SDK before building.
+
+The following commands run from the repository root in a configured Bash
+environment. Replace `nvidia` with the affected platform supported by
+`scripts/dev/test.sh`:
 
 ```bash
-python -m pip install .[dev]
-python -m pytest -n 1
+bash scripts/dev/test.sh nvidia --smoke
 ```
 
-To run CI across all supported platforms on remote machines:
+This builds and installs the smoke subset, then runs smoke tests. It does not
+cover every operator. For a changed operator, also run its relevant tests with
+the operator included in the build, for example:
 
 ```bash
-python .ci/agent.py run --branch <branch-name>
+bash scripts/dev/test.sh nvidia -- tests/test_add.py
 ```
 
-To run local code on the current machine:
+The second command builds without smoke mode before testing. `--no-build` is
+available only when deliberately reusing an up-to-date install containing the
+required operators. Check `docs/build.md` for operator allowlists that can
+further restrict a build.
 
-```bash
-python .ci/run.py --local
-```
+Follow `CONTRIBUTING.md` for validation scope: smoke build and tests on each
+affected platform, with full-suite or full-platform validation for high-risk
+changes and changes to shared build, dispatch, generation, or cross-platform
+behavior. For documentation-only edits, check links, commands, and whitespace.
 
-CI must pass on **all** platforms. Build failures are blockers; test failures may be pre-existing.
+## Review Handoff
 
-## Code Architecture
-
-### `Runtime<Device::Type>` Template
-
-`Runtime<Device::Type>` is the unified runtime abstraction for all platforms. Each specialization lives in `<platform>/runtime_.h` and wraps the platform's native APIs with a consistent interface:
-
-- `Stream` — type alias for the platform's stream/queue type (e.g. `cudaStream_t`, `cnrtQueue_t`).
-- `kDeviceType` — `static constexpr Device::Type` identifying the platform.
-- `Malloc`, `Free`, `Memcpy`, `MemcpyHostToDevice` — thin wrappers around the platform's runtime APIs.
-
-**`Runtime`, `Blas`, and similar classes/structs must only contain direct bindings to platform APIs** (e.g. what you find in `cuda_runtime.h` or `cublas_v2.h`). Helpers like `GetOptimalBlockSize`, `GetDataType`, or `GetComputeType` must live in separate classes — they are derived logic, not API bindings.
-
-### CRTP Interface Enforcement
-
-`Runtime` specializations inherit from a CRTP base to declare their interface level, then call `static_assert(Runtime<...>::Validate())` after the struct is complete. This catches signature mismatches at compile time, analogous to the `override` keyword.
-
-- `RuntimeBase<Derived>` — requires `kDeviceType` only (e.g. CPU).
-- `DeviceRuntime<Derived>` — additionally requires `Stream` and more.
-
-### Device-Aware Type System
-
-The type system is split across several layers:
-
-- **`data_type.h`** — declares `TypeMap<dev, dtype>`, `IsFP16<kDev, T>`, `IsBFloat16<kDev, T>`, and common type lists.
-- **`<platform>/data_type_.h`** — provides `TypeMap` specializations mapping `kFloat16`/`kBFloat16` to platform-specific C++ types (e.g. `half`, `__nv_bfloat16`). Also defines platform-specific type aliases like `cuda_bfloat16`.
-- **`caster.h`** — forward-declares `Caster<Device::Type>`.
-- **`<platform>/caster.cuh`** — specializes `Caster` for each platform. CUDA-like platforms inherit from `CudaCasterImpl` in `cuda/caster.cuh`.
-- **`dispatcher.h`** — `DispatchFunc` for device-aware runtime dispatch over type and block-size lists.
-
-Use `IsFP16<kDev, T>` / `IsBFloat16<kDev, T>` instead of `std::is_same_v<T, half>` in shared headers. Use `Caster<kDev>::template Cast<T>()` for type conversions.
-
-### Include-Order Independence
-
-Shared headers under `src/cuda/` must **not** reference platform-specific types or intrinsics directly (e.g. `half`, `__float2half`, `cuda_bfloat16`). Instead, use dependent template expressions like `Caster<kDev>::template Cast<T>()` so that name lookup is deferred to instantiation time (C++ two-phase lookup). This ensures shared headers are self-contained and include-order-independent.
-
-### Platform-Specific Directory Structure
-
-Platform-specific code **must** stay in its own directory under `src/<platform>/`. Do **not** lift platform-specific files (e.g. `device_.h`, casters, type mappings) into a common directory. The key architectural principle of the device-aware refactoring is separation into platform-specific directories.
-
-### Moore Polyfills
-
-Moore (MUSA) lacks some CUDA intrinsics. `src/moore/polyfills.cuh` provides replacements (e.g. `hrcp`, `__hadd`). This file must include `<musa_fp16.h>` and `<musa_bf16.h>` **before** defining polyfill macros, to prevent macro collisions with system headers.
-
-## Code Style
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full style guide. Key rules for agents:
-
-- Follow the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) strictly. Use the default `.clang-format`.
-- Keep changes minimal — do not add what is not necessary.
-- Do not use exceptions. Use `assert` for error handling.
-- Use absolute includes (e.g. `#include "cambricon/common.h"`) instead of relative includes.
-- Include guards should match the filename exactly, including underscores (e.g. `device_.h` -> `INFINI_OPS_<PLATFORM>_DEVICE__H_` with double underscore).
-- Wrap platform includes that need ordering protection with `// clang-format off` / `// clang-format on`.
-- Leave a blank line between consecutive `using` type alias declarations.
-- One blank line between classes, functions, and members within a class.
-- Comments and error messages must be in English, use complete sentences (capitalized, ending with punctuation), and use Markdown backticks around identifiers.
-- Error messages follow [LLVM Coding Standards](https://llvm.org/docs/CodingStandards.html#error-and-warning-messages).
-- Kernel file naming: `kernel` for custom kernels, `kernel_v2`/`kernel_v3` for variants, algorithm name for well-known algorithms (e.g. `flash_attention_v2`), library name for library-based implementations (e.g. `blas`).
-- Separate kernel (`.cuh`) from kernel launcher (`.h`).
-
-## Commit & PR Conventions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
-
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
-- Concise single-line commit messages with Markdown backticks around identifiers.
-- Each commit should do a single job — keep commits logically separated.
-- PR titles follow the same Conventional Commits format.
-- Small PRs should be squashed; large PRs may keep multiple commits if each is meaningful.
-- Branch names: `<type>/xxx-yyyy-zzzz` (hyphen-separated, type matches PR title).
-- Do **not** include AI as a co-author.
-
-## Known Pitfalls
-
-- **Non-dependent name lookup in NVCC**: Direct CUDA intrinsics like `__float2half()` are non-dependent names resolved at template definition time, before platform headers may be available. Wrap them in `Caster<kDev>` to make them dependent.
-- **Moore `hrcp` macro**: The `#define hrcp infini::ops::hrcp` in `polyfills.cuh` will collide with `musa_fp16_mtgpu.h` if the MUSA FP16 header is included after the macro definition.
+- Summarize the behavior changed, affected backends, and compatibility impact.
+- Record commands actually run, platforms, results, failures, and skipped or
+  unavailable validation. Do not infer platform coverage from another device's
+  successful run. Include reproducible before/after evidence for performance
+  claims.
+- Use [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) when
+  preparing a PR. Keep unrelated cleanup and generated build artifacts out of
+  the change.
