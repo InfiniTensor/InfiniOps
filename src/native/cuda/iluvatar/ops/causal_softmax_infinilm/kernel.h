@@ -14,10 +14,10 @@ namespace infini::ops {
 template <>
 class Operator<CausalSoftmaxInfinilm, Device::Type::kIluvatar>
     : public CudaCausalSoftmaxInfinilm<Runtime<Device::Type::kIluvatar>> {
-  using Parent = CudaCausalSoftmaxInfinilm<Runtime<Device::Type::kIluvatar>>;
+  using Base = CudaCausalSoftmaxInfinilm<Runtime<Device::Type::kIluvatar>>;
 
  public:
-  using Parent::Parent;
+  using Base::Base;
 
   void operator()(const Tensor input, Tensor out) const override {
     if (input.ndim() == 3 && out.ndim() == 3 && input.shape() == out.shape() &&
@@ -43,7 +43,7 @@ class Operator<CausalSoftmaxInfinilm, Device::Type::kIluvatar>
               input.size(1), input.size(2));
       return;
     }
-    Parent::operator()(input, out);
+    Base::operator()(input, out);
   }
 };
 
