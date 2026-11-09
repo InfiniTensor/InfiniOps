@@ -11,12 +11,12 @@ namespace infini::ops {
 template <>
 class Operator<Gemm, Device::Type::kIluvatar>
     : public BlasGemm<Blas<Device::Type::kIluvatar>> {
-  using Parent = BlasGemm<Blas<Device::Type::kIluvatar>>;
+  using Base = BlasGemm<Blas<Device::Type::kIluvatar>>;
 
  public:
-  using Parent::Parent;
+  using Base::Base;
 
-  using Parent::operator();
+  using Base::operator();
 
   void operator()(const Tensor a, const Tensor b, const std::optional<Tensor> c,
                   std::optional<float> alpha, std::optional<float> beta,
@@ -37,16 +37,11 @@ class Operator<Gemm, Device::Type::kIluvatar>
             reinterpret_cast<std::uintptr_t>(a.data()),
             reinterpret_cast<std::uintptr_t>(b.data()))) {
       auto stream = static_cast<cudaStream_t>(stream_ ? stream_ : 0);
-      if (a.size(1) == 4096) {
-        iluvatar::LaunchSmallBatchGemv<4096, 32768>(
-            a.data(), b.data(), y.data(), a.size(0), stream);
-      } else {
-        iluvatar::LaunchSmallBatchGemv<16384, 4096>(
-            a.data(), b.data(), y.data(), a.size(0), stream);
-      }
+      iluvatar::LaunchSmallBatchGemv(a.data(), b.data(), y.data(), a.size(0),
+                                     a.size(1), y.size(1), stream);
       return;
     }
-    Parent::operator()(a, b, c, alpha, beta, trans_a, trans_b, y);
+    Base::operator()(a, b, c, alpha, beta, trans_a, trans_b, y);
   }
 };
 

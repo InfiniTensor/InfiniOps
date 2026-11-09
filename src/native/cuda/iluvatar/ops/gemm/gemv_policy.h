@@ -3,10 +3,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace infini::ops::iluvatar {
 
-inline bool CanUseSmallBatchGemv(bool bf16, bool same_device, bool has_bias,
+inline bool CanUseSmallBatchGemv(bool all_bf16, bool same_device, bool has_bias,
                                  float alpha, float beta, int trans_a,
                                  int trans_b, std::size_t m, std::size_t k,
                                  std::size_t n, std::ptrdiff_t a0,
@@ -16,9 +17,13 @@ inline bool CanUseSmallBatchGemv(bool bf16, bool same_device, bool has_bias,
                                  std::uintptr_t b_address) {
   // Each lane loads two adjacent BF16 values. Reject offset views that are
   // not aligned for the packed load even when their strides match.
-  return bf16 && same_device && !has_bias && alpha == 1.0f && beta == 0.0f &&
-         trans_a == 0 && trans_b == 0 && (m == 1 || m == 2) &&
-         ((k == 4096 && n == 32768) || (k == 16384 && n == 4096)) &&
+  constexpr std::size_t kMinWeightElements = 8 * 1024 * 1024;
+  return all_bf16 && same_device && !has_bias && alpha == 1.0f &&
+         beta == 0.0f && trans_a == 0 && trans_b == 0 && (m == 1 || m == 2) &&
+         k >= 1024 && k % 64 == 0 && n >= 1024 && n % 4 == 0 &&
+         k <= static_cast<std::size_t>(std::numeric_limits<int>::max()) &&
+         n <= static_cast<std::size_t>(std::numeric_limits<int>::max()) &&
+         k >= (kMinWeightElements + n - 1) / n &&
          a0 == static_cast<std::ptrdiff_t>(k) && a1 == 1 && b0 == 1 &&
          b1 == static_cast<std::ptrdiff_t>(k) &&
          y0 == static_cast<std::ptrdiff_t>(n) && y1 == 1 &&
