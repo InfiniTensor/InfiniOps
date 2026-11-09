@@ -2,7 +2,7 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, empty_strided, rand_strided
+from tests.utils import Payload, empty_strided, get_stream, rand_strided
 
 
 @pytest.mark.auto_act_and_assert
@@ -28,17 +28,40 @@ from tests.utils import Payload, empty_strided, rand_strided
     ),
 )
 def test_swiglu(
-    shape, input_strides, gate_strides, out_strides, dtype, device, rtol, atol
+    shape,
+    input_strides,
+    gate_strides,
+    out_strides,
+    implementation_index,
+    dtype,
+    device,
+    rtol,
+    atol,
 ):
     input = rand_strided(shape, input_strides, dtype=dtype, device=device)
     gate = rand_strided(shape, gate_strides, dtype=dtype, device=device)
     out = empty_strided(shape, out_strides, dtype=dtype, device=device)
 
-    return Payload(_swiglu, _torch_swiglu, (input, gate, out), {}, rtol=rtol, atol=atol)
+    return Payload(
+        lambda *args, **kwargs: _swiglu(
+            *args, **kwargs, implementation_index=implementation_index
+        ),
+        _torch_swiglu,
+        (input, gate, out),
+        {},
+        rtol=rtol,
+        atol=atol,
+    )
 
 
-def _swiglu(input, gate, out):
-    infini.ops.swiglu(input, gate, out)
+def _swiglu(input, gate, out, implementation_index=0):
+    infini.ops.swiglu(
+        input,
+        gate,
+        out,
+        implementation_index=implementation_index,
+        stream=get_stream(input.device),
+    )
 
     return out
 

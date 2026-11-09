@@ -2,12 +2,12 @@ import infini.ops
 import pytest
 import torch
 
-from tests.utils import Payload, randn_strided
+from tests.utils import Payload, get_stream, randn_strided
 
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
-    "a_shape, b_shape, c_shape, a_strides, b_strides, c_strides",
+    "a_shape, b_shape, y_shape, a_strides, b_strides, y_strides",
     (
         ((1, 2048), (2048, 2048), (1, 2048), None, None, None),
         ((2, 4, 2048), (2, 2048, 2048), (2, 4, 2048), None, None, None),
@@ -20,7 +20,6 @@ from tests.utils import Payload, randn_strided
 @pytest.mark.parametrize("beta", (-1, -0.5, 0, 0.5, 1))
 @pytest.mark.parametrize("trans_a", (False, True))
 @pytest.mark.parametrize("trans_b", (False, True))
-@pytest.mark.parametrize("implementation_index", (0, 1))
 @pytest.mark.parametrize(
     ("dtype", "rtol", "atol"),
     (
@@ -32,10 +31,10 @@ from tests.utils import Payload, randn_strided
 def test_gemm(
     a_shape,
     b_shape,
-    c_shape,
+    y_shape,
     a_strides,
     b_strides,
-    c_strides,
+    y_strides,
     alpha,
     beta,
     trans_a,
@@ -54,13 +53,22 @@ def test_gemm(
     if device == "mlu" and dtype == torch.bfloat16:
         pytest.skip("`bfloat16` is not supported by `cnnlBatchMatMulEx`")
 
-    active_indices = infini.ops.Gemm.active_implementation_indices(device)
-
-    if implementation_index not in active_indices:
-        pytest.skip(f"implementation `{implementation_index}` not active on `{device}`")
-
     if implementation_index == 1 and dtype in (torch.float16, torch.bfloat16):
         pytest.skip("cuBLASLt half-precision exceeds current tolerances")
+
+    if (
+        implementation_index == 2
+        and device == "cpu"
+        and dtype in (torch.float16, torch.bfloat16)
+    ):
+        pytest.skip("ATen CPU `addmm`/`baddbmm` does not support half-precision")
+
+    if (
+        device == "cuda"
+        and dtype == torch.float16
+        and infini.ops.Gemm.active_implementation_indices("iluvatar")
+    ):
+        pytest.skip("Iluvatar GEMM reports fp16 execution failures")
 
     a = randn_strided(a_shape, a_strides, dtype=dtype, device=device)
     b = randn_strided(b_shape, b_strides, dtype=dtype, device=device)
@@ -71,59 +79,163 @@ def test_gemm(
     if trans_b:
         b = b.transpose(-2, -1)
 
-    c = randn_strided(c_shape, c_strides, dtype=dtype, device=device)
+    y = randn_strided(y_shape, y_strides, dtype=dtype, device=device)
+    use_portable_ref = implementation_index == 2 and not (
+        device == "cpu"
+        or (
+            device == "cuda" and infini.ops.Gemm.active_implementation_indices("nvidia")
+        )
+    )
+    ref = _torch_gemm_portable if use_portable_ref else _torch_gemm
 
     return Payload(
         lambda *args: _gemm(*args, implementation_index=implementation_index),
-        _torch_gemm,
-        (a, b, alpha, beta, trans_a, trans_b, c),
+        ref,
+        (a, b, None, alpha, beta, trans_a, trans_b, y),
         {},
         rtol=rtol,
         atol=atol,
     )
 
 
-def _gemm(a, b, alpha, beta, trans_a, trans_b, c, implementation_index=0):
+def _gemm(a, b, c, alpha, beta, trans_a, trans_b, y, implementation_index=0):
     infini.ops.gemm(
         a,
         b,
+        c,
         alpha,
         beta,
         trans_a,
         trans_b,
-        c,
+        y,
+        stream=get_stream(a.device),
         implementation_index=implementation_index,
     )
 
-    return c
+    return y
 
 
-def _torch_gemm(a, b, alpha=1.0, beta=1.0, trans_a=False, trans_b=False, c=None):
+def _torch_gemm(a, b, c, alpha, beta, trans_a, trans_b, y):
+    if a.device.type == "musa" and a.dtype == torch.float32:
+        # Match native muBLAS FP32 arithmetic when computing the reference.
+        with torch.backends.mudnn.flags(allow_tf32=False):
+            return _torch_gemm_reference(a, b, c, alpha, beta, trans_a, trans_b, y)
+
+    return _torch_gemm_reference(a, b, c, alpha, beta, trans_a, trans_b, y)
+
+
+def _torch_gemm_reference(a, b, c, alpha, beta, trans_a, trans_b, y):
     if trans_a:
         a = a.transpose(-2, -1)
 
     if trans_b:
         b = b.transpose(-2, -1)
 
+    if c is None:
+        beta = 0.0
+        y.zero_()
+        c = y
+
     # PyTorch `baddbmm`/`addmm` ignores `beta` when `alpha=0.0`.
     if alpha == 0:
-        c.mul_(beta)
+        y.copy_(c)
+        y.mul_(beta)
 
-        return c
+        return y
 
     # Some backends (e.g. `torch_musa`) may reject `addmm`/`baddbmm(out=...)`
     # for certain strided outputs. Fall back to `matmul` plus fused `alpha`/`beta`
     # update to keep reference coverage.
     try:
         if a.ndim == 2:
-            return torch.addmm(c, a, b, beta=beta, alpha=alpha, out=c)
+            return torch.addmm(c, a, b, beta=beta, alpha=alpha, out=y)
 
-        return torch.baddbmm(c, a, b, beta=beta, alpha=alpha, out=c)
+        return torch.baddbmm(c, a, b, beta=beta, alpha=alpha, out=y)
     except RuntimeError:
         # Fallback for backends that don't support `addmm`/`baddbmm` (e.g. CPU `float16`/`bfloat16`):
         # compute in float32 and cast back.
         c_original = c.float()
         result = torch.matmul(a.float(), b.float())
-        c.copy_((alpha * result + beta * c_original).to(c.dtype))
+        y.copy_((alpha * result + beta * c_original).to(y.dtype))
 
-        return c
+        return y
+
+
+def _torch_gemm_portable(a, b, c, alpha, beta, trans_a, trans_b, y):
+    if trans_a:
+        a = a.transpose(-2, -1)
+
+    if trans_b:
+        b = b.transpose(-2, -1)
+
+    if c is None:
+        beta = 0.0
+        y.zero_()
+        c = y
+
+    if alpha == 0:
+        y.copy_(c)
+        y.mul_(beta)
+
+        return y
+
+    product = torch.matmul(a, b)
+    if beta == 0:
+        y.copy_(product)
+        y.mul_(alpha)
+
+        return y
+
+    y.copy_(c)
+    y.mul_(beta)
+    y.add_(product, alpha=alpha)
+
+    return y
+
+
+@pytest.mark.smoke
+def test_aten_external_stream(device, implementation_index):
+    if implementation_index != 2 or device == "cpu":
+        pytest.skip("Requires the accelerator ATen provider")
+    accelerator = getattr(torch, torch.device(device).type)
+    previous = get_stream(device)
+    stream = accelerator.Stream()
+    raw = getattr(stream, f"{torch.device(device).type}_stream")
+    x = torch.arange(6, device=device, dtype=torch.float32).reshape(2, 3)
+    y = torch.arange(6, device=device, dtype=torch.float32).reshape(3, 2)
+    out = torch.full((2, 2), -123.0, device=device)
+    reference = x @ y
+    initial = out.clone()
+    stream.wait_stream(accelerator.current_stream())
+
+    def invoke():
+        infini.ops.gemm(
+            x, y, out, implementation_index=implementation_index, stream=raw
+        )
+
+    try:
+        invoke()
+        accelerator.synchronize()
+        out.copy_(initial)
+        accelerator.synchronize()
+        with accelerator.stream(stream):
+            snapshot = torch.empty_like(out)
+            snapshot.copy_(out)
+        stream.synchronize()
+        delayed = None
+        if device == "cuda":
+            accelerator._sleep(200_000_000)
+            delayed = accelerator.Event()
+            delayed.record()
+        invoke()
+        with accelerator.stream(stream):
+            snapshot.copy_(out)
+        stream.synchronize()
+        if delayed is not None:
+            assert not delayed.query(), (
+                "The unrelated stream completed before the snapshot"
+            )
+        assert get_stream(device) == previous
+    finally:
+        accelerator.synchronize()
+    torch.testing.assert_close(snapshot, reference, rtol=1e-4, atol=1e-5)

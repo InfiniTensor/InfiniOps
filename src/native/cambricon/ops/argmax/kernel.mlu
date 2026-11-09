@@ -1,0 +1,55 @@
+#include <bang.h>
+
+#include "native/cambricon/ops/argmax/kernel.h"
+
+namespace infini::ops {
+template <typename Bits>
+__mlu_global__ void CambriconArgmaxKernel(const Bits* input, int64_t* output,
+                                          int32_t count,
+                                          uint32_t positive_infinity) {
+  __nram__ Bits buffer[1024];
+  __nram__ int64_t result;
+  const uint32_t sign = sizeof(Bits) == 4 ? 0x80000000U : 0x8000U;
+  const uint32_t mask = sizeof(Bits) == 4 ? 0xffffffffU : 0xffffU;
+  uint32_t best_key = 0;
+  int32_t best_index = 0;
+  bool best_nan = false;
+  // Storage-only ordering avoids FTZ or conversion rounding of subnormals.
+  // Ascending traversal and strict replacement preserve the first equal max.
+  for (int32_t start = 0; start < count;) {
+    const int32_t n = count - start < 1024 ? count - start : 1024;
+    __memcpy(buffer, input + start, n * sizeof(Bits), GDRAM2NRAM);
+    for (int32_t j = 0; j < n; ++j) {
+      uint32_t bits = static_cast<uint32_t>(buffer[j]);
+      const uint32_t magnitude = bits & (sign - 1U);
+      const bool value_nan = magnitude > positive_infinity;
+      if (magnitude == 0) bits = 0;  // -0 and +0 have equal numeric value.
+      const uint32_t key = bits & sign ? (~bits & mask) : (bits ^ sign);
+      if (start + j == 0 ||
+          (value_nan ? !best_nan : !best_nan && key > best_key)) {
+        best_key = key;
+        best_index = start + j;
+        best_nan = value_nan;
+      }
+    }
+    start += n;  // Never advances beyond INT_MAX for the validated domain.
+  }
+  result = static_cast<int64_t>(best_index);
+  __memcpy(output, &result, sizeof(result), NRAM2GDRAM);
+}
+
+void CambriconArgmaxLaunch(cnrtQueue_t queue, const void* input, void* output,
+                           int32_t count, std::size_t item_bytes,
+                           uint32_t positive_infinity) {
+  const cnrtDim3_t dim = {1, 1, 1};
+  if (item_bytes == 4) {
+    CambriconArgmaxKernel<uint32_t><<<dim, cnrtFuncTypeBlock, queue>>>(
+        static_cast<const uint32_t*>(input), static_cast<int64_t*>(output),
+        count, positive_infinity);
+  } else {
+    CambriconArgmaxKernel<uint16_t><<<dim, cnrtFuncTypeBlock, queue>>>(
+        static_cast<const uint16_t*>(input), static_cast<int64_t*>(output),
+        count, positive_infinity);
+  }
+}
+}  // namespace infini::ops

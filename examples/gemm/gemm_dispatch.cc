@@ -61,9 +61,9 @@ int main() {
   DefaultRuntimeUtils::Malloc(&workspace_ptr, workspace_size_in_bytes);
 
   DefaultRuntimeUtils::Memcpy(a_ptr, a_vec.data(), a_size,
-                              DefaultRuntimeUtils::MemcpyHostToDevice);
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
   DefaultRuntimeUtils::Memcpy(b_ptr, b_vec.data(), b_size,
-                              DefaultRuntimeUtils::MemcpyHostToDevice);
+                              DefaultRuntimeUtils::kMemcpyHostToDevice);
   DefaultRuntimeUtils::Memset(c0_ptr, 0, c_size);
   DefaultRuntimeUtils::Memset(c1_ptr, 0, c_size);
 
@@ -88,18 +88,18 @@ int main() {
                                    device_dev, c0_host.strides()}};
   const auto c1_make_device{Tensor{c1_ptr, c1_host.shape(), c1_host.dtype(),
                                    device_dev, c1_host.strides()}};
-  auto op0 = Gemm::make(cublas_config, a_device, b_device, c0_make_device);
-  auto op1 = Gemm::make(cublaslt_config, a_device, b_device, c1_make_device);
+  auto op0 = Gemm::Make(cublas_config, a_device, b_device, c0_make_device);
+  auto op1 = Gemm::Make(cublaslt_config, a_device, b_device, c1_make_device);
   const auto* op0_ptr = op0.get();
   const auto* op1_ptr = op1.get();
 
-  Gemm::call(handle, cublas_config, a_device, b_device, c0_device);
-  Gemm::call(handle, cublaslt_config, a_device, b_device, c1_device);
+  Gemm::Call(handle, cublas_config, a_device, b_device, c0_device);
+  Gemm::Call(handle, cublaslt_config, a_device, b_device, c1_device);
 
   DefaultRuntimeUtils::Memcpy(c0_vec.data(), c0_ptr, c_size,
-                              DefaultRuntimeUtils::MemcpyDeviceToHost);
+                              DefaultRuntimeUtils::kMemcpyDeviceToHost);
   DefaultRuntimeUtils::Memcpy(c1_vec.data(), c1_ptr, c_size,
-                              DefaultRuntimeUtils::MemcpyDeviceToHost);
+                              DefaultRuntimeUtils::kMemcpyDeviceToHost);
 
   DefaultRuntimeUtils::Free(workspace_ptr);
   DefaultRuntimeUtils::Free(c1_ptr);
