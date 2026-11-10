@@ -56,6 +56,8 @@ class Operator<Argmax, Device::Type::kAscend> : public Argmax {
     }
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const std::optional<int64_t> dim,
                   const bool keepdim, Tensor out) const override {
     (void)dim;

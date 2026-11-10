@@ -49,28 +49,47 @@ class Operator<MatmulWeightNz, Device::Type::kAscend> : public MatmulWeightNz {
   Operator(const Tensor input, const Tensor weight, Tensor out)
       : MatmulWeightNz(input, weight, out) {}
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const Tensor weight,
                   Tensor out) const override {
     using ascend_matmul_weight_nz_detail::MakeContiguousTensor;
     using ascend_matmul_weight_nz_detail::MakeNzWeight;
 
-    auto input_tensor = ascend::OwnAclTensor(MakeContiguousTensor(input));
-    auto weight_tensor = ascend::OwnAclTensor(MakeNzWeight(weight));
-    auto out_tensor = ascend::OwnAclTensor(MakeContiguousTensor(out));
+    if (input_tensor_ == nullptr) {
+      input_tensor_ = MakeContiguousTensor(input);
+      weight_tensor_ = MakeNzWeight(weight);
+      out_tensor_ = MakeContiguousTensor(out);
+    } else {
+      aclSetRawTensorAddr(input_tensor_, const_cast<void*>(input.data()));
+      aclSetRawTensorAddr(weight_tensor_, const_cast<void*>(weight.data()));
+      aclSetRawTensorAddr(out_tensor_, out.data());
+    }
 
-    uint64_t workspace_size = 0;
-    aclOpExecutor* executor = nullptr;
-    ascend::CheckAcl(aclnnMatmulWeightNzGetWorkspaceSize(
-                         input_tensor.get(), weight_tensor.get(),
-                         out_tensor.get(), 1, &workspace_size, &executor),
-                     "MatmulWeightNz workspace query");
+    if (executor_ == nullptr) {
+      ascend::CheckAcl(aclnnMatmulWeightNzGetWorkspaceSize(
+                           input_tensor_, weight_tensor_, out_tensor_, 1,
+                           &workspace_size_, &executor_),
+                       "MatmulWeightNz workspace query");
+      ascend::CheckAcl(aclSetAclOpExecutorRepeatable(executor_),
+                       "MatmulWeightNz repeatable executor");
+    }
 
     auto stream = static_cast<aclrtStream>(stream_);
-    auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size_);
     ascend::CheckAcl(
-        aclnnMatmulWeightNz(arena.buf, workspace_size, executor, stream),
+        aclnnMatmulWeightNz(arena.buf, workspace_size_, executor_, stream),
         "MatmulWeightNz execution");
   }
+
+ private:
+  // Repeatable executors retain ACL descriptors at shutdown; follow the
+  // descriptor-release convention used by AclTensorCache in other providers.
+  mutable aclTensor* input_tensor_ = nullptr;
+  mutable aclTensor* weight_tensor_ = nullptr;
+  mutable aclTensor* out_tensor_ = nullptr;
+  mutable aclOpExecutor* executor_ = nullptr;
+  mutable uint64_t workspace_size_ = 0;
 };
 
 }  // namespace infini::ops

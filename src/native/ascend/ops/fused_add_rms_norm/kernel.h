@@ -105,6 +105,8 @@ class Operator<FusedAddRmsNorm, Device::Type::kAscend>
     // `rstd_tensor_` remains owned by the repeatable ACLNN executor.
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(Tensor input, Tensor residual,
                   const std::optional<Tensor> weight,
                   float epsilon) const override {

@@ -127,6 +127,8 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
                            const_cast<void*>(tensor.data()));
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor cu_seqlens_q, const Tensor cu_seqlens_k,
                   const std::optional<Tensor> alibi_slopes,

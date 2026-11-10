@@ -19,6 +19,8 @@ class Operator<Copy, Device::Type::kAscend> : public Copy {
         in_cache_(BroadcastView(src, out)),
         out_cache_(out) {}
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor src, const bool /*non_blocking*/,
                   Tensor out) const override {
     if (output_size_ == 0) return;
