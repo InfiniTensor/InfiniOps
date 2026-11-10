@@ -80,6 +80,8 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
 
   using FlashAttnWithKvcache::operator();
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor q, Tensor k_cache, Tensor v_cache,
                   const std::optional<Tensor> k, const std::optional<Tensor> v,
                   const std::optional<Tensor> rotary_cos,

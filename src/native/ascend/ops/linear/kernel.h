@@ -45,6 +45,8 @@ class Operator<Linear, Device::Type::kAscend> : public Linear {
     if (beta_scalar_) aclDestroyScalar(beta_scalar_);
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const Tensor weight,
                   std::optional<Tensor> bias, Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
