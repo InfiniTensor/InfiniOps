@@ -1,0 +1,5 @@
+library: mcoplib_moe
+required_symbols:
+  - >-
+    moe_align_block_size(at::Tensor, long, long, at::Tensor, at::Tensor,
+    at::Tensor, std::optional<at::Tensor>)

@@ -1,15 +1,14 @@
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
 // Ported from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
 // src/infiniop/ops/chunk_gated_delta_rule/cuda/kernel.cuh.
 // Modified for InfiniOps: active helpers/state kernel and namespace adaptation.
 // Copyright 2025 InfiniTensor; MIT notice: LICENSES/InfiniCore-MIT.txt.
 #pragma once
 #include <cstdint>
-
-#include "native/cuda/nvidia/data_type_.h"
-
 // Exact baseline helpers and active state-workspace kernel. The baseline
 // chunked-matrix branch is hard-disabled and is not copied as a second path.
-namespace infini::ops::chunk_native_detail {
+namespace infini::ops::chunk_gated_delta_rule_detail {
 __device__ inline int64_t loadOptionalIndex(const void* indices, bool is_i64,
                                             int idx, int fallback) {
   if (indices == nullptr) {
@@ -31,7 +30,7 @@ __device__ inline float loadAsFloat<half>(const half* ptr, ptrdiff_t offset) {
 }
 
 template <>
-__device__ inline float loadAsFloat<cuda_bfloat16>(const cuda_bfloat16* ptr,
+__device__ inline float loadAsFloat<__nv_bfloat16>(const __nv_bfloat16* ptr,
                                                    ptrdiff_t offset) {
   return __bfloat162float(ptr[offset]);
 }
@@ -259,4 +258,4 @@ __device__ void chunkGatedDeltaRuleRecurrentKernel(
   }
 }
 #undef CGDR_FOR
-}  // namespace infini::ops::chunk_native_detail
+}  // namespace infini::ops::chunk_gated_delta_rule_detail
