@@ -53,4 +53,10 @@ target_compile_definitions(infiniops_w4_marlin PRIVATE
     WITH_NVIDIA=1 INFINI_OPS_MARLIN_KERNEL_ONLY=1)
 target_compile_options(infiniops_w4_marlin PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr;--expt-extended-lambda>)
+# CUDA 13 makes global template stubs static by default. The Marlin selector
+# then cannot resolve explicit instantiations from neighboring targets.
+if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
+    target_compile_options(infiniops_w4_marlin PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--static-global-template-stub=false>)
+endif()
 target_sources(infiniops PRIVATE $<TARGET_OBJECTS:infiniops_w4_marlin>)
