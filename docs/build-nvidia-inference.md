@@ -1,6 +1,6 @@
 # Reproducible NVIDIA inference SDK inputs
 
-This recipe uses Linux x86-64, CPython 3.12, CUDA 12.8 wheel inputs, an SM80
+This recipe uses Linux x86-64, CPython 3.12, CUDA 12.8 or 13.0 wheel inputs, an SM80
 target and `_GLIBCXX_USE_CXX11_ABI=0`. It is not a toolkit qualification report.
 Use the source revisions pinned by the consuming InfiniCore checkout, not
 floating branches. Other architectures/toolkits require separate validation.
@@ -12,6 +12,7 @@ execute their Python inference APIs. No `flashinfer-python` or Torch is required
 | Input | Exact artifact | SHA256 |
 |---|---|---|
 | Sampling | `flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl` | `40139f1aab5435d9cb5ac0261883bf26740ba26680a9e2c9d7703168a6b4648d` |
+| Sampling (CUDA 13.x) | `flashinfer_jit_cache-0.6.7+cu130-cp39-abi3-manylinux_2_28_x86_64.whl` | `028be27687629f1e46e3b5da5625e315b0d4612386b019e53a7f2da1e5473315` |
 | TVM FFI | `apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl` | `73d478395a8625dd92fde7b7fd92b4719f18f480b78336e422cb66cc7985213d` |
 | CUTLASS | commit `087c84df83d254b5fb295a7a408f1a1d554085cf` archive | `99340f7a8c87f5295b91aecf8295df6693ad954807672c3869a7fb3d0084f709` |
 
@@ -45,10 +46,11 @@ that staging path unless also overriding the `force-include` mappings. Creating
 a complete sdist needs each source once, even if a later build disables it.
 Generated CUDA files and prepared source copies are not stored in the sdist.
 
-Installed library hashes for the two wheels above:
+Installed library hashes for the wheels above:
 
 ```text
-4aa059811da929fac4a4b25b26153649965d9d84ce35f29f06119fa874846c77  sampling.so
+4aa059811da929fac4a4b25b26153649965d9d84ce35f29f06119fa874846c77  cu128 sampling.so
+b14ef4eba9eb2259eee492469816c3f4fd60a3594fc865345272a79c65223495  cu130 sampling.so
 7657c74066e959a038324d618d92647a23c79433b3f7a9fbf4fd6354c4d3f9be  libtvm_ffi.so
 ```
 
@@ -66,15 +68,21 @@ set -euo pipefail
 export CORE=/absolute/path/to/InfiniCore
 export INFINI_ROOT="$PWD/sdk"
 export CUDA_HOME=/usr/local/cuda
+export FLASHINFER_WHEEL='flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl'
+export FLASHINFER_URL='https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.7/flashinfer_jit_cache-0.6.7%2Bcu128-cp39-abi3-manylinux_2_28_x86_64.whl'
+export FLASHINFER_SHA256='40139f1aab5435d9cb5ac0261883bf26740ba26680a9e2c9d7703168a6b4648d'
+# For CUDA 13.x, substitute the cu130 artifact:
+# FLASHINFER_WHEEL='flashinfer_jit_cache-0.6.7+cu130-cp39-abi3-manylinux_2_28_x86_64.whl'
+# FLASHINFER_URL='https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.7/flashinfer_jit_cache-0.6.7%2Bcu130-cp39-abi3-manylinux_2_28_x86_64.whl'
+# FLASHINFER_SHA256='028be27687629f1e46e3b5da5625e315b0d4612386b019e53a7f2da1e5473315'
 export INFINI_RT_ROOT="$INFINI_ROOT"
 mkdir artifacts
 cd artifacts
-curl -fL -o 'flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl' \
-  'https://github.com/flashinfer-ai/flashinfer/releases/download/v0.6.7/flashinfer_jit_cache-0.6.7%2Bcu128-cp39-abi3-manylinux_2_28_x86_64.whl'
+curl -fL -o "$FLASHINFER_WHEEL" "$FLASHINFER_URL"
 curl -fL -O 'https://files.pythonhosted.org/packages/50/6f/23740f06829030704e6f8f1f7093a06b7a68f904baa40053a5f594705bae/apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl'
 curl -fL -o cutlass.tar.gz 'https://github.com/NVIDIA/cutlass/archive/087c84df83d254b5fb295a7a408f1a1d554085cf.tar.gz'
+echo "$FLASHINFER_SHA256  $FLASHINFER_WHEEL" | sha256sum -c -
 sha256sum -c <<'SHA256'
-40139f1aab5435d9cb5ac0261883bf26740ba26680a9e2c9d7703168a6b4648d  flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl
 73d478395a8625dd92fde7b7fd92b4719f18f480b78336e422cb66cc7985213d  apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
 99340f7a8c87f5295b91aecf8295df6693ad954807672c3869a7fb3d0084f709  cutlass.tar.gz
 SHA256
@@ -85,7 +93,7 @@ python3.12 -m venv build-env
 source build-env/bin/activate
 python -m pip install cmake ninja libclang numpy packaging scikit-build-core pybind11 pyyaml jinja2
 python -m pip install --no-index --no-deps --target "$INFINI_ROOT/python" \
-  "$INFERENCE_ARTIFACTS/flashinfer_jit_cache-0.6.7+cu128-cp39-abi3-manylinux_2_28_x86_64.whl" \
+  "$INFERENCE_ARTIFACTS/$FLASHINFER_WHEEL" \
   "$INFERENCE_ARTIFACTS/apache_tvm_ffi-0.1.10-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
 install -d "$INFINI_ROOT/lib"
 install -m644 "$INFINI_ROOT/python/flashinfer_jit_cache/jit_cache/sampling/sampling.so" "$INFINI_ROOT/lib/"
