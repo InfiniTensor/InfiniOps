@@ -53,7 +53,7 @@ class CudaReshapeAndCacheFlash : public ReshapeAndCacheFlash {
                   reinterpret_cast<const T*>(key.data()),
                   reinterpret_cast<const T*>(value.data()),
                   reinterpret_cast<const int64_t*>(slot_mapping.data()),
-                  head_size_, block_size_, key_token_stride_,
+                  head_size_, value_head_size_, block_size_, key_token_stride_,
                   value_token_stride_, key_head_stride_, value_head_stride_,
                   key_cache_block_stride_, value_cache_block_stride_,
                   key_cache_head_stride_, value_cache_head_stride_,

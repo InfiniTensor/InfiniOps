@@ -81,23 +81,37 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
           block_table, alibi_slopes, softmax_lse})
       if (tensor && !metadata(*tensor)) return false;
     if (q.ndim() != 4 || k_cache.ndim() != 4 || v_cache.ndim() != 4 ||
-        out.shape() != q.shape() || k_cache.shape() != v_cache.shape() ||
+        out.ndim() != 4 ||
+        !(out.size(0) == q.size(0) && out.size(1) == q.size(1) &&
+          out.size(2) == q.size(2) && out.size(3) == v_cache.size(3)) ||
+        (!(k_cache.shape() == v_cache.shape()) &&
+         !(k_cache.size(3) == q.size(3) && q.size(3) != v_cache.size(3) &&
+           k_cache.size(0) == v_cache.size(0) &&
+           k_cache.size(1) == v_cache.size(1) &&
+           k_cache.size(2) == v_cache.size(2))) ||
         (q.dtype() != DataType::kFloat16 && q.dtype() != DataType::kBFloat16) ||
         k_cache.dtype() != q.dtype() || v_cache.dtype() != q.dtype() ||
         out.dtype() != q.dtype() || q.size(0) == 0 || q.size(1) == 0 ||
         q.size(2) == 0 || k_cache.size(0) == 0 || k_cache.size(1) == 0 ||
         k_cache.size(2) == 0 || q.size(2) % k_cache.size(2) != 0 ||
-        q.size(3) == 0 || q.size(3) > 256 || q.size(3) != k_cache.size(3) ||
-        q.stride(-1) != 1 || k_cache.stride(-1) != 1 ||
-        v_cache.stride(-1) != 1 || out.stride(-1) != 1 ||
-        k.has_value() != v.has_value() ||
+        q.size(3) == 0 || q.size(3) != k_cache.size(3) ||
+        // The 256 caps cover the pinned kernels; an MLA packed q/k head dim
+        // (576 for 021) with its 512 value latent is admitted and served by
+        // the MLA provider.
+        q.size(3) > (q.size(3) != v_cache.size(3) ? 576 : 256) ||
+        v_cache.size(3) == 0 ||
+        v_cache.size(3) > (q.size(3) != v_cache.size(3) ? q.size(3) : 256) ||
+        v_cache.size(3) % 8 != 0 || q.stride(-1) != 1 ||
+        k_cache.stride(-1) != 1 || v_cache.stride(-1) != 1 ||
+        out.stride(-1) != 1 || k.has_value() != v.has_value() ||
         rotary_cos.has_value() != rotary_sin.has_value() ||
         return_softmax_lse != softmax_lse.has_value() ||
         window_size.size() != 2 || window_size[0] < -1 || window_size[1] < -1 ||
         !(softcap >= 0.0) || num_splits < 0)
       return false;
     if (k &&
-        (k->ndim() != 4 || k->shape() != v->shape() ||
+        ((!(k->shape() == v->shape()) ||
+          !(k_cache.shape() == v_cache.shape())) ||
          k->size(0) != q.size(0) || k->size(2) != k_cache.size(2) ||
          k->size(3) != q.size(3) || k->dtype() != q.dtype() ||
          v->dtype() != q.dtype() || k->stride(-1) != 1 || v->stride(-1) != 1))
@@ -332,8 +346,13 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
     assert(q.ndim() == 4 && k_cache.ndim() == 4 && v_cache.ndim() == 4 &&
            "`FlashAttnWithKvcache` requires 4D `q`, `k_cache`, and "
            "`v_cache`");
-    assert(k_cache.shape() == v_cache.shape() &&
-           "`FlashAttnWithKvcache` requires matching K/V cache shapes");
+    assert((k_cache.shape() == v_cache.shape() ||
+            (k_cache.size(3) == q.size(3) && q.size(3) != v_cache.size(3) &&
+             k_cache.size(0) == v_cache.size(0) &&
+             k_cache.size(1) == v_cache.size(1) &&
+             k_cache.size(2) == v_cache.size(2))) &&
+           "`FlashAttnWithKvcache` requires matching K/V cache shapes, or "
+           "MLA caches at differing key/value head dims");
     assert(
         (q_dtype_ == DataType::kFloat16 || q_dtype_ == DataType::kBFloat16) &&
         q_dtype_ == k_cache_dtype_ && q_dtype_ == v_cache_dtype_ &&
@@ -346,11 +365,19 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
            "dimensions");
     assert(q.size(2) % k_cache.size(2) == 0 && q.size(3) == k_cache.size(3) &&
            "`FlashAttnWithKvcache` requires compatible Q and KV heads");
-    assert(head_size_ > 0 && head_size_ <= 256 &&
+    assert(head_size_ > 0 &&
+           head_size_ <= (q.size(3) != v_cache.size(3) ? 576 : 256) &&
            "`FlashAttnWithKvcache` requires a head dimension no greater than "
-           "256");
-    assert(out.shape() == q.shape() &&
-           "`FlashAttnWithKvcache` output must have the same shape as Q");
+           "256, or the MLA packed cap of 576");
+    assert(v_cache.size(3) > 0 &&
+           v_cache.size(3) <=
+               (q.size(3) != v_cache.size(3) ? q.size(3) : 256) &&
+           "`FlashAttnWithKvcache` requires a value head dimension no greater "
+           "than 256, or the packed q/k head dim for MLA");
+    assert((out.shape() ==
+            Tensor::Shape{q.size(0), q.size(1), q.size(2), v_cache.size(3)}) &&
+           "`FlashAttnWithKvcache` output must match Q at the value head "
+           "dim");
     assert(return_softmax_lse == has_softmax_lse_ &&
            "`FlashAttnWithKvcache` requires `softmax_lse` exactly when "
            "`return_softmax_lse` is true");
@@ -368,8 +395,8 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
            "`FlashAttnWithKvcache` requires `k` and `v` together");
     if (has_k_) {
       assert(k->ndim() == 4 && k->shape() == v->shape() &&
-             k->size(0) == batch_size_ && k->size(2) == k_cache.size(2) &&
-             k->size(3) == head_size_ &&
+             k_cache.shape() == v_cache.shape() && k->size(0) == batch_size_ &&
+             k->size(2) == k_cache.size(2) && k->size(3) == head_size_ &&
              "`FlashAttnWithKvcache` received incompatible new K/V shapes");
       assert(k_dtype_ == q_dtype_ && v_dtype_ == q_dtype_ &&
              "`FlashAttnWithKvcache` requires matching new K/V dtypes");

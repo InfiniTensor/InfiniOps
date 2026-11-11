@@ -21,15 +21,18 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
     if (key.ndim() != 3 || value.ndim() != 3 || slots.ndim() != 1 ||
         key_cache.ndim() != 4 || value_cache.ndim() != 4)
       return false;
-    return key.shape() == value.shape() && key.dtype() == value.dtype() &&
+    return key.dtype() == value.dtype() &&
            (key.dtype() == DataType::kFloat16 ||
             key.dtype() == DataType::kBFloat16 ||
             key.dtype() == DataType::kFloat32) &&
            slots.dtype() == DataType::kInt64 && slots.stride(0) == 1 &&
            slots.size(0) <= key.size(0) && key.size(1) > 0 && key.size(2) > 0 &&
-           key_cache.shape() == value_cache.shape() && key_cache.size(1) > 0 &&
+           value.size(2) > 0 && key_cache.size(0) == value_cache.size(0) &&
+           key_cache.size(1) == value_cache.size(1) &&
+           key_cache.size(2) == value_cache.size(2) && key_cache.size(1) > 0 &&
            key_cache.size(2) == key.size(1) &&
-           key_cache.size(3) == key.size(2) && key.stride(2) == 1 &&
+           key_cache.size(3) == key.size(2) &&
+           value_cache.size(3) == value.size(2) && key.stride(2) == 1 &&
            value.stride(2) == 1 && key_cache.stride(3) == 1 &&
            value_cache.stride(3) == 1 && mode == "auto" &&
            key_cache.dtype() == key.dtype() &&
@@ -49,6 +52,7 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
         num_tokens_{slot_mapping.size(0)},
         num_heads_{key.size(1)},
         head_size_{key.size(2)},
+        value_head_size_{value.size(2)},
         block_size_{key_cache.size(1)},
         key_token_stride_{key.stride(0)},
         value_token_stride_{value.stride(0)},
@@ -74,13 +78,21 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
            "`ReshapeAndCacheFlash` requires contiguous int64 `slot_mapping`");
     assert(num_tokens_ <= key.size(0) &&
            "`ReshapeAndCacheFlash` requires enough `key` and `value` rows");
-    assert(num_heads_ > 0 && head_size_ > 0 &&
+    assert(num_heads_ > 0 && head_size_ > 0 && value_head_size_ > 0 &&
            "`ReshapeAndCacheFlash` requires non-empty head dimensions");
+    // MLA caches a 576-dim latent key with a 512-dim value latent;
+    // otherwise key and value share one head dimension.
+    assert(value_head_size_ == head_size_ ||
+           (head_size_ == 576 && value_head_size_ == 512));
     assert(key_cache.ndim() == 4 && value_cache.ndim() == 4 &&
-           key_cache.shape() == value_cache.shape() &&
-           "`ReshapeAndCacheFlash` requires matching 4D caches");
+           key_cache.size(0) == value_cache.size(0) &&
+           key_cache.size(1) == value_cache.size(1) &&
+           key_cache.size(2) == value_cache.size(2) &&
+           "`ReshapeAndCacheFlash` requires matching 4D cache "
+           "batch/page/head layout");
     assert(block_size_ > 0 && key_cache.size(2) == num_heads_ &&
            key_cache.size(3) == head_size_ &&
+           value_cache.size(3) == value_head_size_ &&
            "`ReshapeAndCacheFlash` cache shape must be "
            "[`num_blocks`, `block_size`, `num_heads`, `head_size`]");
     assert(key.stride(2) == 1 && value.stride(2) == 1 &&
@@ -120,6 +132,8 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
   std::size_t num_heads_{0};
 
   std::size_t head_size_{0};
+
+  std::size_t value_head_size_{0};
 
   std::size_t block_size_{0};
 

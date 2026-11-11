@@ -27,9 +27,12 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
       const std::vector<int64_t> window_size, const double softcap,
       const bool deterministic, const bool return_attn_probs, Tensor out,
       std::optional<Tensor> softmax_lse, std::optional<Tensor> s_dmask) {
+    // MLA packs q/k at kv_lora_rank + rope head dim (576 for 021) while the
+    // value latent stays at kv_lora_rank (512); otherwise K, V, and out share
+    // Q's head dimension. The output always carries the value head size.
+    const bool mla_layout = k.shape() != v.shape();
     if (q.ndim() != 3 || k.ndim() != (block_table ? 4 : 3) ||
-        v.ndim() != k.ndim() || k.shape() != v.shape() ||
-        out.shape() != q.shape() ||
+        v.ndim() != k.ndim() || out.size(2) != v.size(-1) ||
         (q.dtype() != DataType::kFloat16 && q.dtype() != DataType::kBFloat16) ||
         k.dtype() != q.dtype() || v.dtype() != q.dtype() ||
         out.dtype() != q.dtype() || cu_seqlens_q.ndim() != 1 ||
@@ -59,11 +62,23 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
     for (const auto& tensor : {alibi_slopes, block_table, softmax_lse, s_dmask})
       if (tensor && !metadata(*tensor)) return false;
     // Span validation above establishes stride cardinality before axis access.
+    // The 256 cap applies to the pinned kernels' head dimension; an MLA
+    // packed q/k head dim (576 for 021) is admitted through the MLA layout
+    // checks below and served by the MLA provider.
     if (q.size(1) == 0 || k.size(-2) == 0 || q.size(1) % k.size(-2) != 0 ||
-        q.size(2) == 0 || q.size(2) > 256 || q.size(2) % 8 != 0 ||
-        q.size(2) != k.size(-1) || q.stride(-1) != 1 || k.stride(-1) != 1 ||
-        v.stride(-1) != 1 || out.stride(-1) != 1 ||
-        !cu_seqlens_q.IsContiguous() || !cu_seqlens_k.IsContiguous())
+        q.size(2) == 0 || q.size(2) % 8 != 0 ||
+        (!mla_layout && (q.size(2) > 256 || q.size(2) != k.size(-1))) ||
+        (mla_layout && (q.size(2) > 576 || q.size(2) != k.size(-1))) ||
+        q.stride(-1) != 1 || k.stride(-1) != 1 || v.stride(-1) != 1 ||
+        out.stride(-1) != 1 || !cu_seqlens_q.IsContiguous() ||
+        !cu_seqlens_k.IsContiguous())
+      return false;
+    if (mla_layout &&
+        (k.size(-2) != v.size(-2) || v.size(-1) > q.size(2) ||
+         v.size(-1) % 8 != 0 || q.size(2) != k.size(-1) ||
+         out.shape() != Tensor::Shape{q.size(0), q.size(1), v.size(-1)} ||
+         (block_table && (k.size(1) != v.size(1) || k.size(2) != v.size(2))) ||
+         (!block_table && (k.size(0) != v.size(0) || k.size(0) != q.size(0)))))
       return false;
     if (softmax_lse &&
         (softmax_lse->shape() != Tensor::Shape{q.size(1), q.size(0)} ||
@@ -182,16 +197,26 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
             (block_table.has_value() && k.ndim() == 4 && v.ndim() == 4)) &&
            "`FlashAttnVarlenFunc` requires packed 3D Q and either packed 3D "
            "or paged 4D K and V tensors");
-    assert(k.shape() == v.shape() &&
-           "`FlashAttnVarlenFunc` requires K and V to have the same shape");
+    const bool constructor_mla_layout = k.shape() != v.shape();
+    assert((k.shape() == v.shape() ||
+            (constructor_mla_layout && q.size(2) == k.size(-1) &&
+             k.size(-2) == v.size(-2) &&
+             (!block_table.has_value() || k.size(1) == v.size(1)) &&
+             (block_table.has_value() || k.size(0) == q.size(0)))) &&
+           "`FlashAttnVarlenFunc` requires K and V to have the same shape, "
+           "or MLA K at the packed q/k head dim with V at the value head "
+           "dim");
     assert(q.size(1) > 0 && k.size(-2) > 0 && q.size(2) == k.size(-1) &&
            q.size(1) % k.size(-2) == 0 &&
            "`FlashAttnVarlenFunc` requires compatible Q and KV heads");
-    assert(q.size(2) > 0 && q.size(2) <= 256 && q.size(2) % 8 == 0 &&
+    assert(q.size(2) > 0 && q.size(2) <= (constructor_mla_layout ? 576 : 256) &&
+           q.size(2) % 8 == 0 &&
            "`FlashAttnVarlenFunc` requires a head dimension divisible by 8 "
-           "and no greater than 256");
-    assert(out.shape() == q.shape() &&
-           "`FlashAttnVarlenFunc` output must have the same shape as Q");
+           "and no greater than the layout's cap");
+    assert((out.size(0) == q.size(0) && out.size(1) == q.size(1) &&
+            out.size(2) == v.size(-1)) &&
+           "`FlashAttnVarlenFunc` output must match Q outside the MLA value "
+           "head dim");
     assert(softmax_lse.has_value() == s_dmask.has_value() &&
            "`FlashAttnVarlenFunc` auxiliary outputs must be provided "
            "together");
