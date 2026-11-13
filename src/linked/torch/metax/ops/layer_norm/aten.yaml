@@ -1,0 +1,6 @@
+library: mcoplib
+operator_schema: >-
+  aten::native_layer_norm(Tensor input, SymInt[] normalized_shape,
+  Tensor? weight, Tensor? bias, float eps) -> (Tensor, Tensor,
+  Tensor)
+dispatch_key: CUDA
