@@ -2043,14 +2043,15 @@ def _get_all_ops(
     impl_headers_by_operator = _index_impl_headers(impl_roots, scan_dirs)
     excluded_headers = set()
     if not with_native_flash:
+        # The pinned FA2 and MLA providers under these two directories are
+        # compiled only into the `infiniops_native_flash` object library
+        # (`cmake/NativeFlashAttention.cmake`, gated by
+        # `BUILD_NVIDIA_FLASH_INFERENCE`). Filter by directory so every
+        # provider header added there stays coupled to its compiled target.
         excluded_headers.update(
             {
-                (
-                    _SRC_DIR / "native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h"
-                ).resolve(),
-                (
-                    _SRC_DIR / "native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h"
-                ).resolve(),
+                (_SRC_DIR / "native/cuda/nvidia/ops/flash_attn_with_kvcache").resolve(),
+                (_SRC_DIR / "native/cuda/nvidia/ops/flash_attn_varlen_func").resolve(),
             }
         )
     if not with_native_w4:
@@ -2063,7 +2064,10 @@ def _get_all_ops(
             impl_headers_by_operator[name] = [
                 header
                 for header in headers
-                if header.path.resolve() not in excluded_headers
+                if not any(
+                    header.path.resolve().is_relative_to(excluded)
+                    for excluded in excluded_headers
+                )
             ]
 
     for base_dir in base_dirs:

@@ -1038,3 +1038,89 @@ def _attention_mask(q_len, k_len, causal, window_size, device):
         mask &= key_positions <= aligned_query_positions + right
 
     return mask
+
+
+@pytest.mark.parametrize(
+    ("q_lens_k_lens", "dtype", "rtol", "atol"),
+    (
+        (((2, 3), (130, 300)), torch.float16, 2e-2, 2e-2),
+        (((2, 3), (130, 300)), torch.bfloat16, 2e-2, 2e-2),
+        (((1,), (1,)), torch.float16, 2e-2, 2e-2),
+    ),
+)
+def test_flash_attn_varlen_func_mla_latent_prefill(
+    q_lens_k_lens,
+    dtype,
+    rtol,
+    atol,
+    device,
+    implementation_index,
+):
+    q_lens, k_lens = q_lens_k_lens
+    """MLA latent prefill through the index-1 provider: packed q/k head
+    dim 576 (kv_lora_rank 512 + rope 64) over a paged latent cache whose
+    value rows are 512 wide, with K and V as narrow views of one fused
+    cache and a non-trivial block table (rows cross physical blocks)."""
+    if device != "cuda" or implementation_index != 1:
+        pytest.skip("MLA latent prefill is served by the NVIDIA index-1 provider")
+
+    torch.manual_seed(11)
+    num_heads, page_size = 16, 256
+    k_dim, v_dim = 576, 512
+    max_blocks = max((length + page_size - 1) // page_size for length in k_lens)
+    block_rows = []
+    num_blocks = 0
+    for length in k_lens:
+        blocks = (length + page_size - 1) // page_size
+        row = list(range(num_blocks, num_blocks + blocks))
+        row.extend([0] * (max_blocks - blocks))
+        block_rows.append(row)
+        num_blocks += blocks
+
+    fused = torch.randn(
+        (num_blocks, page_size, 1, k_dim + v_dim), dtype=dtype, device=device
+    )
+    k = fused[:, :, :, :k_dim]
+    v = fused[:, :, :, k_dim:]
+    block_table = torch.tensor(block_rows, dtype=torch.int32, device=device)
+    q = torch.randn((sum(q_lens), num_heads, k_dim), dtype=dtype, device=device)
+    cu_seqlens_q = _cumulative_lengths(q_lens, device)
+    cu_seqlens_k = _cumulative_lengths(k_lens, device)
+    out = torch.empty((sum(q_lens), num_heads, v_dim), dtype=dtype, device=device)
+
+    infini.ops.flash_attn_varlen_func(
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        None,
+        block_table,
+        max(q_lens),
+        max(k_lens),
+        0.0,
+        None,
+        True,
+        (-1, -1),
+        0.0,
+        False,
+        False,
+        out,
+        None,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    expected = _reference_varlen_attention(
+        q,
+        k,
+        v,
+        q_lens,
+        k_lens,
+        None,
+        True,
+        (-1, -1),
+        block_table,
+    )
+    torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
