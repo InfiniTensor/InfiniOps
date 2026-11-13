@@ -6,16 +6,17 @@ from tests.utils import Payload, get_stream
 
 
 _TEST_CASES = (
-    pytest.param((1, 2, 7), (4, 2, 3), id="1d"),
-    pytest.param((1, 2, 5, 6), (3, 2, 3, 3), id="2d"),
-    pytest.param((1, 2, 4, 5, 6), (3, 2, 3, 3, 3), id="3d"),
+    pytest.param((1, 2, 7), (4, 2, 3), 1, id="1d"),
+    pytest.param((1, 2, 5, 6), (3, 2, 3, 3), 1, id="2d"),
+    pytest.param((1, 2, 4, 5, 6), (3, 2, 3, 3, 3), 1, id="3d"),
+    pytest.param((1, 4, 5, 6), (4, 2, 3, 3), 2, id="2d-groups"),
 )
 
 
 @pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize("input_shape, weight_shape", _TEST_CASES)
+@pytest.mark.parametrize("input_shape, weight_shape, groups", _TEST_CASES)
 @pytest.mark.parametrize("has_bias", (False, True))
-def test_convolution(input_shape, weight_shape, has_bias, device):
+def test_convolution(input_shape, weight_shape, groups, has_bias, device):
     input = torch.randn(input_shape, device=device) * 0.01
     weight = torch.randn(weight_shape, device=device) * 0.01
     bias = torch.randn(weight_shape[0], device=device) * 0.01 if has_bias else None
@@ -24,7 +25,6 @@ def test_convolution(input_shape, weight_shape, has_bias, device):
     padding = (1,) * spatial_ndim
     dilation = (1,) * spatial_ndim
     output_padding = (0,) * spatial_ndim
-    groups = 1
     expected = torch.convolution(
         input,
         weight,
