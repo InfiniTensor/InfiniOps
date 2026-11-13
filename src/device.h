@@ -16,7 +16,12 @@ using AllDeviceTypes =
     List<Device::Type::kCpu, Device::Type::kNvidia, Device::Type::kCambricon,
          Device::Type::kAscend, Device::Type::kMetax, Device::Type::kMoore,
          Device::Type::kIluvatar, Device::Type::kHygon, Device::Type::kMars,
-         Device::Type::kThead, Device::Type::kQy>;
+         Device::Type::kThead
+#ifdef WITH_QY
+         ,
+         Device::Type::kQy
+#endif
+         >;
 
 template <typename>
 struct ActiveDevicesImpl {
