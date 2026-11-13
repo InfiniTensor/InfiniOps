@@ -14,7 +14,26 @@ _OPS_DIR = Path(__file__).resolve().parent.parent / "ops"
 
 _DRIVER_BACKENDS = {
     "cuda": "nvidia",
+    "hip": "amd",
 }
+
+
+def get_hygon_target(device_id):
+    """Read the compiler target from the active DTK Triton driver."""
+    driver = triton.runtime.driver.active
+    previous = driver.get_current_device()
+    try:
+        driver.set_current_device(device_id)
+        target = driver.get_current_target()
+        if target.backend != "hip":
+            raise RuntimeError("Hygon JIT requires a HIP Triton target.")
+        return {
+            "backend": target.backend,
+            "architecture": target.arch,
+            "warp_size": target.warp_size,
+        }
+    finally:
+        driver.set_current_device(previous)
 
 
 def _cache_directory():
@@ -211,7 +230,13 @@ def _use_device(target, device_id, stream):
     previous_driver = triton.runtime.driver.active
     previous_device = previous_driver.get_current_device()
     driver_backend = _DRIVER_BACKENDS[target["backend"]]
-    active_driver = triton.backends.backends[driver_backend].driver()
+    if target["backend"] == "hip":
+        # DTK supplies a vendor driver with its own device-property ABI.
+        active_driver = previous_driver
+        if active_driver.get_current_target().backend != "hip":
+            raise RuntimeError("HIP auto-tuning requires the active HIP driver.")
+    else:
+        active_driver = triton.backends.backends[driver_backend].driver()
 
     try:
         triton.runtime.driver.set_active(active_driver)
@@ -312,8 +337,12 @@ def _write_artifacts(compiled_kernel, target, output_prefix, cache_identity):
         "num_warps": compiled_kernel.metadata.num_warps,
         "binary_ext": binary_extension,
         "shared": compiled_kernel.metadata.shared,
-        "global_scratch_size": compiled_kernel.metadata.global_scratch_size,
-        "profile_scratch_size": compiled_kernel.metadata.profile_scratch_size,
+        "global_scratch_size": getattr(
+            compiled_kernel.metadata, "global_scratch_size", 0
+        ),
+        "profile_scratch_size": getattr(
+            compiled_kernel.metadata, "profile_scratch_size", 0
+        ),
         "cache_identity": cache_identity,
     }
     temporary_paths = []

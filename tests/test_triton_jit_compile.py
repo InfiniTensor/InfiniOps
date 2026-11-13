@@ -360,3 +360,27 @@ def test_auto_tuning_cache_rejects_zero_compile_options(monkeypatch, tmp_path, f
     module.write_auto_tuning_config(identity, config)
 
     assert module.read_auto_tuning_config(identity) is None
+
+
+def test_hip_target_keeps_gfx_architecture(monkeypatch):
+    module, _ = _load_compile_module(monkeypatch)
+    target = module._create_target(
+        {"backend": "hip", "architecture": "gfx936", "warp_size": 64}
+    )
+    assert (target.backend, target.arch, target.warp_size) == ("hip", "gfx936", 64)
+
+
+def test_hip_artifacts_without_cuda_scratch_fields(monkeypatch, tmp_path):
+    module, fake_triton = _load_compile_module(monkeypatch)
+    fake_triton.compiler.make_backend = lambda target: types.SimpleNamespace(
+        binary_ext="hsaco"
+    )
+    compiled = types.SimpleNamespace(
+        metadata=types.SimpleNamespace(name="hip_kernel", num_warps=4, shared=0),
+        asm={"hsaco": b"hip-binary"},
+    )
+    prefix = tmp_path / "kernel"
+    module._write_artifacts(compiled, object(), prefix, "hip-identity")
+    artifact = module.read_kernel_artifact(prefix, "hip-identity")
+    assert artifact["binary"] == b"hip-binary"
+    assert artifact["global_scratch_size"] == artifact["profile_scratch_size"] == 0

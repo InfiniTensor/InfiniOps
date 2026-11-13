@@ -142,6 +142,23 @@ py::list BuildArguments(const std::vector<Argument>& arguments) {
 
 }  // namespace
 
+Target HygonTarget(int device_id) {
+  static thread_local std::unordered_map<int, Target> targets;
+  const auto cached = targets.find(device_id);
+  if (cached != targets.end()) return cached->second;
+  const auto target = RunPython<Target>("Hygon target lookup", [&] {
+    const auto value = CompilerFunction("get_hygon_target")(device_id);
+    return Target{value["backend"].cast<std::string>(),
+                  value["architecture"].cast<std::string>(),
+                  value["warp_size"].cast<int>()};
+  });
+  assert(target.has_value() &&
+         "Triton JIT failed to identify the Hygon target.");
+  if (!target) return {};
+  targets.emplace(device_id, *target);
+  return *target;
+}
+
 std::string CompilationFingerprint(const std::string& op_name) {
   static std::mutex cache_mutex;
   static std::unordered_map<std::string, std::string> cache;
