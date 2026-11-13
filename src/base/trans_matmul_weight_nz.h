@@ -7,6 +7,10 @@
 
 namespace infini::ops {
 
+// Temporary compatibility operator for InfiniLM's Ascend NZ weight conversion.
+// It is intentionally C++-only. Once TensorView distinguishes ND and NZ
+// distributions, migrate this behavior to the general transpose-matmul path and
+// remove this class.
 class TransMatmulWeightNz : public Operator<TransMatmulWeightNz> {
  public:
   TransMatmulWeightNz(const Tensor input, Tensor output)

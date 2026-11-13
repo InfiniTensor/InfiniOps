@@ -7,6 +7,10 @@
 
 namespace infini::ops {
 
+// Temporary compatibility operator for InfiniLM's Ascend NZ weight path. It is
+// intentionally C++-only. Once TensorView distinguishes ND and NZ
+// distributions, migrate this behavior to the general Matmul operator and
+// remove this class.
 class MatmulWeightNz : public Operator<MatmulWeightNz> {
  public:
   MatmulWeightNz(const Tensor input, const Tensor weight, Tensor out)

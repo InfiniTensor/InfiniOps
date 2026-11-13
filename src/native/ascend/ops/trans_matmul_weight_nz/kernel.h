@@ -30,6 +30,8 @@ inline aclTensor* MakeContiguousTensor(const Tensor& tensor) {
 
 }  // namespace ascend_trans_matmul_weight_nz_detail
 
+// Short-term C++-only operator; migrate to the general transpose-matmul path
+// after TensorView models NZ as a distinct distribution.
 template <>
 class Operator<TransMatmulWeightNz, Device::Type::kAscend>
     : public TransMatmulWeightNz {
@@ -56,8 +58,6 @@ class Operator<TransMatmulWeightNz, Device::Type::kAscend>
     ascend::CheckAcl(
         aclnnTransMatmulWeight(arena.buf, workspace_size, executor, stream),
         "TransMatmulWeightNz execution");
-    ascend::CheckAcl(aclrtSynchronizeStream(stream),
-                     "TransMatmulWeightNz synchronize");
   }
 };
 

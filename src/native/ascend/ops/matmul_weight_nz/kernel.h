@@ -43,6 +43,8 @@ inline aclTensor* MakeNzWeight(const Tensor& weight) {
 
 }  // namespace ascend_matmul_weight_nz_detail
 
+// Short-term C++-only operator; migrate to Matmul after TensorView models NZ
+// as a distinct distribution.
 template <>
 class Operator<MatmulWeightNz, Device::Type::kAscend> : public MatmulWeightNz {
  public:
