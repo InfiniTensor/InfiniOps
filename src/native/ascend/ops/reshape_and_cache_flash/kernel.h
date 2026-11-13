@@ -128,24 +128,46 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
   void RunStridedKernel(const Tensor key, const Tensor value,
                         const Tensor slot_mapping, Tensor key_cache,
                         Tensor value_cache, aclrtStream stream) const {
-    auto ret = aclrtlaunch_reshape_and_cache_flash_strided(
-        1, stream, const_cast<void*>(key.data()),
-        const_cast<void*>(value.data()), const_cast<void*>(slot_mapping.data()),
-        key_cache.data(), value_cache.data(), static_cast<int64_t>(num_tokens_),
-        static_cast<int64_t>(num_heads_), static_cast<int64_t>(head_size_),
-        static_cast<int64_t>(block_size_), static_cast<int64_t>(num_blocks_),
-        static_cast<int64_t>(key_token_stride_),
-        static_cast<int64_t>(key_head_stride_),
-        static_cast<int64_t>(value_token_stride_),
-        static_cast<int64_t>(value_head_stride_),
-        static_cast<int64_t>(key_cache_block_stride_),
-        static_cast<int64_t>(key_cache_page_stride_),
-        static_cast<int64_t>(key_cache_head_stride_),
-        static_cast<int64_t>(value_cache_block_stride_),
-        static_cast<int64_t>(value_cache_page_stride_),
-        static_cast<int64_t>(value_cache_head_stride_),
-        static_cast<int64_t>(element_size_));
-    ascend::CheckAcl(ret, "ReshapeAndCacheFlash strided execution");
+    constexpr uint32_t kMaxCacheWriteBlocks = 64;
+    constexpr int64_t kMaxCacheWriteTokensPerLaunch = 4096;
+    auto* key_bytes = static_cast<uint8_t*>(const_cast<void*>(key.data()));
+    auto* value_bytes = static_cast<uint8_t*>(const_cast<void*>(value.data()));
+    auto* slot_bytes =
+        static_cast<int64_t*>(const_cast<void*>(slot_mapping.data()));
+
+    for (int64_t token_offset = 0;
+         token_offset < static_cast<int64_t>(num_tokens_);
+         token_offset += kMaxCacheWriteTokensPerLaunch) {
+      const auto remaining = static_cast<int64_t>(num_tokens_) - token_offset;
+      const auto token_count = remaining < kMaxCacheWriteTokensPerLaunch
+                                   ? remaining
+                                   : kMaxCacheWriteTokensPerLaunch;
+      const auto requested_work_items =
+          static_cast<uint32_t>(token_count * num_heads_);
+      const auto work_items = requested_work_items < kMaxCacheWriteBlocks
+                                  ? requested_work_items
+                                  : kMaxCacheWriteBlocks;
+      auto ret = aclrtlaunch_reshape_and_cache_flash_strided(
+          work_items, stream,
+          key_bytes + token_offset * key_token_stride_ * element_size_,
+          value_bytes + token_offset * value_token_stride_ * element_size_,
+          slot_bytes + token_offset, key_cache.data(), value_cache.data(),
+          token_count, static_cast<int64_t>(num_heads_),
+          static_cast<int64_t>(head_size_), static_cast<int64_t>(block_size_),
+          static_cast<int64_t>(num_blocks_),
+          static_cast<int64_t>(key_token_stride_),
+          static_cast<int64_t>(key_head_stride_),
+          static_cast<int64_t>(value_token_stride_),
+          static_cast<int64_t>(value_head_stride_),
+          static_cast<int64_t>(key_cache_block_stride_),
+          static_cast<int64_t>(key_cache_page_stride_),
+          static_cast<int64_t>(key_cache_head_stride_),
+          static_cast<int64_t>(value_cache_block_stride_),
+          static_cast<int64_t>(value_cache_page_stride_),
+          static_cast<int64_t>(value_cache_head_stride_),
+          static_cast<int64_t>(element_size_));
+      ascend::CheckAcl(ret, "ReshapeAndCacheFlash strided execution");
+    }
   }
 #endif
 

@@ -43,52 +43,41 @@ class KernelReshapeAndCacheFlashStrided {
   }
 
   __aicore__ inline void Process() {
-#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-    AscendC::DataCacheCleanAndInvalid<int64_t,
-                                      AscendC::CacheLine::ENTIRE_DATA_CACHE>(
-        slot_mapping_);
-#endif
+    const int64_t block_index = AscendC::GetBlockIdx();
+    const int64_t block_count = AscendC::GetBlockNum();
+    const int64_t work_count = num_tokens_ * num_heads_;
     auto local = copy_buffer_.Get<uint8_t>();
     AscendC::DataCopyExtParams copy_params{
         1, static_cast<uint32_t>(head_bytes_), 0, 0, 0};
     AscendC::DataCopyPadExtParams<uint8_t> pad_params{false, 0, 0, 0};
 
-    for (int64_t token = 0; token < num_tokens_; ++token) {
-      int64_t slot = slot_mapping_.GetValue(token);
-      if (slot < 0 || slot >= num_blocks_ * block_size_) {
-        continue;
-      }
+    for (int64_t work = block_index; work < work_count; work += block_count) {
+      const int64_t token = work / num_heads_;
+      const int64_t head = work % num_heads_;
+      const int64_t slot = slot_mapping_.GetValue(token);
+      if (slot < 0 || slot >= num_blocks_ * block_size_) continue;
 
-      int64_t block = slot / block_size_;
-      int64_t page = slot % block_size_;
+      const int64_t block = slot / block_size_;
+      const int64_t page = slot % block_size_;
+      const int64_t key_offset =
+          (token * key_token_stride_ + head * key_head_stride_) * element_size_;
+      const int64_t key_cache_offset =
+          (block * key_cache_block_stride_ + page * key_cache_page_stride_ +
+           head * key_cache_head_stride_) *
+          element_size_;
+      Copy(key_, key_offset, key_cache_, key_cache_offset, local, copy_params,
+           pad_params);
 
-      for (int64_t head = 0; head < num_heads_; ++head) {
-        int64_t key_offset =
-            (token * key_token_stride_ + head * key_head_stride_) *
-            element_size_;
-        int64_t key_cache_offset =
-            (block * key_cache_block_stride_ + page * key_cache_page_stride_ +
-             head * key_cache_head_stride_) *
-            element_size_;
-        Copy(key_, key_offset, key_cache_, key_cache_offset, local, copy_params,
-             pad_params);
-
-        int64_t value_offset =
-            (token * value_token_stride_ + head * value_head_stride_) *
-            element_size_;
-        int64_t value_cache_offset = (block * value_cache_block_stride_ +
-                                      page * value_cache_page_stride_ +
-                                      head * value_cache_head_stride_) *
-                                     element_size_;
-        Copy(value_, value_offset, value_cache_, value_cache_offset, local,
-             copy_params, pad_params);
-      }
+      const int64_t value_offset =
+          (token * value_token_stride_ + head * value_head_stride_) *
+          element_size_;
+      const int64_t value_cache_offset =
+          (block * value_cache_block_stride_ + page * value_cache_page_stride_ +
+           head * value_cache_head_stride_) *
+          element_size_;
+      Copy(value_, value_offset, value_cache_, value_cache_offset, local,
+           copy_params, pad_params);
     }
-#if defined(__CCE_AICORE__) && __CCE_AICORE__ == 200
-    AscendC::DataCacheCleanAndInvalid<uint8_t,
-                                      AscendC::CacheLine::ENTIRE_DATA_CACHE>(
-        key_cache_);
-#endif
   }
 
  private:

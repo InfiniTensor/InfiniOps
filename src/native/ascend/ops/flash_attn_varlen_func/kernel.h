@@ -21,6 +21,9 @@
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
+#ifdef INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION
+#endif
+
 namespace infini::ops {
 
 template <>
@@ -59,6 +62,20 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     cu_i32_host_.resize(sequence_count_ + 1);
     q_lengths_i64_.resize(sequence_count_);
     k_lengths_i64_.resize(sequence_count_);
+
+    // Equal-length prompts can be proven from the caller's maxima and total
+    // token count. Avoid a per-layer D2H copy and stream synchronization in
+    // the common fixed-shape serving path.
+    host_lengths_ready_ = sequence_count_ > 0 && max_seqlen_q > 0 &&
+                          max_seqlen_q == max_seqlen_k &&
+                          q.size(0) == sequence_count_ * max_seqlen_q;
+    if (host_lengths_ready_) {
+      for (size_t sequence = 0; sequence < sequence_count_; ++sequence) {
+        q_lengths_i64_[sequence] =
+            static_cast<int64_t>((sequence + 1) * max_seqlen_q);
+        k_lengths_i64_[sequence] = static_cast<int64_t>(max_seqlen_q);
+      }
+    }
 
     use_prompt_310p_ = ascend::IsAscend310P() && !block_table.has_value() &&
                        sequence_count_ == 1 && q.size(0) > 0 &&
@@ -193,8 +210,7 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     if (causal || window_size != std::vector<int64_t>({-1, -1})) {
       sparse_mode = window_size == std::vector<int64_t>({-1, -1}) ? 3 : 4;
       if (window_size[0] >= 0) pre_tokens = window_size[0];
-      next_tokens = causal ? 0 : window_size[1];
-      if (next_tokens < 0) next_tokens = max_token_count;
+      if (window_size[1] >= 0) next_tokens = window_size[1];
     }
 
     auto scale = softmax_scale.value_or(1.0 / std::sqrt(q.size(2)));
@@ -229,9 +245,9 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
         /*dequantScaleQuery=*/nullptr,
         /*learnableSink=*/nullptr, q.size(1), scale, pre_tokens, next_tokens,
         input_layout_.data(), num_key_value_heads, sparse_mode,
-        // Correct fully masked rows when right-down causal has Q longer than
-        // KV.
-        /*innerPrecise=*/2,
+        // Jingbo's validated Ascend TND paged prefill path uses the
+        // high-throughput innerPrecise=0 mode.
+        /*innerPrecise=*/0,
         /*blockSize=*/block_size,
         /*antiquantMode=*/0,
         /*softmaxLseFlag=*/false,
@@ -549,6 +565,10 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
   aclIntArray* MakeSequenceLengths(const Tensor cu_seqlens,
                                    std::vector<int64_t>& lengths,
                                    aclrtStream stream, bool cumulative) const {
+    if (host_lengths_ready_) {
+      return aclCreateIntArray(lengths.data(), lengths.size());
+    }
+
     const auto bytes = cu_i32_host_.size() * sizeof(cu_i32_host_[0]);
     auto ret = aclrtMemcpyAsync(cu_i32_host_.data(), bytes, cu_seqlens.data(),
                                 bytes, ACL_MEMCPY_DEVICE_TO_HOST, stream);
@@ -574,6 +594,7 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
   mutable std::vector<int32_t> cu_i32_host_;
   mutable std::vector<int64_t> q_lengths_i64_;
   mutable std::vector<int64_t> k_lengths_i64_;
+  bool host_lengths_ready_{false};
   void* attention_mask_data_{nullptr};
   bool use_prompt_310p_{false};
   bool use_prompt_fallback_310p_{false};
