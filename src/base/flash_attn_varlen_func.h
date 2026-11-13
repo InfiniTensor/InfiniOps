@@ -32,7 +32,7 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
     // Q's head dimension. The output always carries the value head size.
     const bool mla_layout = k.shape() != v.shape();
     if (q.ndim() != 3 || k.ndim() != (block_table ? 4 : 3) ||
-        v.ndim() != k.ndim() || out.size(2) != v.size(-1) ||
+        v.ndim() != k.ndim() || out.ndim() != 3 ||
         (q.dtype() != DataType::kFloat16 && q.dtype() != DataType::kBFloat16) ||
         k.dtype() != q.dtype() || v.dtype() != q.dtype() ||
         out.dtype() != q.dtype() || cu_seqlens_q.ndim() != 1 ||
@@ -68,15 +68,20 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
     if (q.size(1) == 0 || k.size(-2) == 0 || q.size(1) % k.size(-2) != 0 ||
         q.size(2) == 0 || q.size(2) % 8 != 0 ||
         (!mla_layout && (q.size(2) > 256 || q.size(2) != k.size(-1))) ||
-        (mla_layout && (q.size(2) > 576 || q.size(2) != k.size(-1))) ||
+        // The MLA layout covers exactly the packed latent pair the MLA
+        // provider serves (576/512 for 021); any other differing k/v head
+        // dims stay rejected, since every provider here reads K, V, and O
+        // through one head dimension.
+        (mla_layout && (q.size(2) != 576 || v.size(-1) != 512)) ||
         q.stride(-1) != 1 || k.stride(-1) != 1 || v.stride(-1) != 1 ||
         out.stride(-1) != 1 || !cu_seqlens_q.IsContiguous() ||
-        !cu_seqlens_k.IsContiguous())
+        !cu_seqlens_k.IsContiguous() ||
+        // The output always carries the value head size.
+        out.size(0) != q.size(0) || out.size(1) != q.size(1) ||
+        out.size(2) != v.size(-1))
       return false;
     if (mla_layout &&
-        (k.size(-2) != v.size(-2) || v.size(-1) > q.size(2) ||
-         v.size(-1) % 8 != 0 || q.size(2) != k.size(-1) ||
-         out.shape() != Tensor::Shape{q.size(0), q.size(1), v.size(-1)} ||
+        (k.size(-2) != v.size(-2) ||
          (block_table && (k.size(1) != v.size(1) || k.size(2) != v.size(2))) ||
          (!block_table && (k.size(0) != v.size(0) || k.size(0) != q.size(0)))))
       return false;
@@ -211,8 +216,10 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
            "`FlashAttnVarlenFunc` requires compatible Q and KV heads");
     assert(q.size(2) > 0 && q.size(2) <= (constructor_mla_layout ? 576 : 256) &&
            q.size(2) % 8 == 0 &&
-           "`FlashAttnVarlenFunc` requires a head dimension divisible by 8 "
-           "and no greater than the layout's cap");
+           (!constructor_mla_layout || v_shape_.back() == 512) &&
+           "`FlashAttnVarlenFunc` requires a head dimension divisible by 8, "
+           "no greater than the layout's cap, and for the MLA layout the "
+           "exact 576/512 latent pair");
     assert((out.size(0) == q.size(0) && out.size(1) == q.size(1) &&
             out.size(2) == v.size(-1)) &&
            "`FlashAttnVarlenFunc` output must match Q outside the MLA value "

@@ -22,6 +22,19 @@ class CudaReshapeAndCacheFlash : public ReshapeAndCacheFlash {
  public:
   using ReshapeAndCacheFlash::ReshapeAndCacheFlash;
 
+  // The CUDA kernel copies value with its own head size, so unlike the base
+  // kernels (one shared `head_size`, which would overrun the value rows) it
+  // also accepts the MLA latent pair. Inherited by every CUDA-family vendor
+  // specialization; other backends keep the base `supports`.
+  static bool supports(const Tensor& key, const Tensor& value,
+                       const Tensor& slots, const Tensor& k_scale,
+                       const Tensor& v_scale, const std::string& mode,
+                       const Tensor& key_cache, const Tensor& value_cache) {
+    return SupportsCommon(key, value, slots, k_scale, v_scale, mode, key_cache,
+                          value_cache) &&
+           (key.shape() == value.shape() || MlaLatentPair(key, value));
+  }
+
   void operator()(const Tensor key, const Tensor value,
                   const Tensor slot_mapping, const Tensor /*k_scale*/,
                   const Tensor /*v_scale*/,

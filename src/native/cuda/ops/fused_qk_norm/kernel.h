@@ -26,8 +26,8 @@ class CudaFusedQkNorm : public FusedQkNorm {
     const int block_size =
         RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
 
-    DispatchFunc<ReducedFloatTypes>(
-        {static_cast<int64_t>(qkv.dtype())},
+    DispatchFunc<ReducedFloatTypes, AllCudaBlockSizes>(
+        {static_cast<int64_t>(qkv.dtype()), static_cast<int64_t>(block_size)},
         [&](auto list_tag) {
           using T = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           using TAcc = float;
@@ -37,92 +37,17 @@ class CudaFusedQkNorm : public FusedQkNorm {
               static_cast<unsigned>(num_heads_q_ + num_heads_k_ + num_heads_v_);
           const dim3 grid(total_heads,
                           static_cast<unsigned>(qkv_shape_.front()));
-          switch (block_size) {
-            case 128:
-              FusedQkNormKernel<128, Backend::kDeviceType, T, TAcc>
-                  <<<grid, 128, 0, cuda_stream>>>(
-                      reinterpret_cast<T*>(qkv.data()),
-                      static_cast<int64_t>(head_dim_),
-                      static_cast<int64_t>(
-                          (num_heads_q_ + num_heads_k_ + num_heads_v_) *
-                          head_dim_),
-                      reinterpret_cast<const T*>(q_weight.data()),
-                      reinterpret_cast<const T*>(k_weight.data()),
-                      static_cast<unsigned>(num_heads_q_),
-                      static_cast<unsigned>(num_heads_k_),
-                      static_cast<unsigned>(head_dim_), eps_);
-              break;
-            case 256:
-              FusedQkNormKernel<256, Backend::kDeviceType, T, TAcc>
-                  <<<grid, 256, 0, cuda_stream>>>(
-                      reinterpret_cast<T*>(qkv.data()),
-                      static_cast<int64_t>(head_dim_),
-                      static_cast<int64_t>(
-                          (num_heads_q_ + num_heads_k_ + num_heads_v_) *
-                          head_dim_),
-                      reinterpret_cast<const T*>(q_weight.data()),
-                      reinterpret_cast<const T*>(k_weight.data()),
-                      static_cast<unsigned>(num_heads_q_),
-                      static_cast<unsigned>(num_heads_k_),
-                      static_cast<unsigned>(head_dim_), eps_);
-              break;
-            case 512:
-              FusedQkNormKernel<512, Backend::kDeviceType, T, TAcc>
-                  <<<grid, 512, 0, cuda_stream>>>(
-                      reinterpret_cast<T*>(qkv.data()),
-                      static_cast<int64_t>(head_dim_),
-                      static_cast<int64_t>(
-                          (num_heads_q_ + num_heads_k_ + num_heads_v_) *
-                          head_dim_),
-                      reinterpret_cast<const T*>(q_weight.data()),
-                      reinterpret_cast<const T*>(k_weight.data()),
-                      static_cast<unsigned>(num_heads_q_),
-                      static_cast<unsigned>(num_heads_k_),
-                      static_cast<unsigned>(head_dim_), eps_);
-              break;
-            case 1024:
-              FusedQkNormKernel<1024, Backend::kDeviceType, T, TAcc>
-                  <<<grid, 1024, 0, cuda_stream>>>(
-                      reinterpret_cast<T*>(qkv.data()),
-                      static_cast<int64_t>(head_dim_),
-                      static_cast<int64_t>(
-                          (num_heads_q_ + num_heads_k_ + num_heads_v_) *
-                          head_dim_),
-                      reinterpret_cast<const T*>(q_weight.data()),
-                      reinterpret_cast<const T*>(k_weight.data()),
-                      static_cast<unsigned>(num_heads_q_),
-                      static_cast<unsigned>(num_heads_k_),
-                      static_cast<unsigned>(head_dim_), eps_);
-              break;
-            case 2048:
-              FusedQkNormKernel<2048, Backend::kDeviceType, T, TAcc>
-                  <<<grid, 2048, 0, cuda_stream>>>(
-                      reinterpret_cast<T*>(qkv.data()),
-                      static_cast<int64_t>(head_dim_),
-                      static_cast<int64_t>(
-                          (num_heads_q_ + num_heads_k_ + num_heads_v_) *
-                          head_dim_),
-                      reinterpret_cast<const T*>(q_weight.data()),
-                      reinterpret_cast<const T*>(k_weight.data()),
-                      static_cast<unsigned>(num_heads_q_),
-                      static_cast<unsigned>(num_heads_k_),
-                      static_cast<unsigned>(head_dim_), eps_);
-              break;
-            default:
-              FusedQkNormKernel<128, Backend::kDeviceType, T, TAcc>
-                  <<<grid, 128, 0, cuda_stream>>>(
-                      reinterpret_cast<T*>(qkv.data()),
-                      static_cast<int64_t>(head_dim_),
-                      static_cast<int64_t>(
-                          (num_heads_q_ + num_heads_k_ + num_heads_v_) *
-                          head_dim_),
-                      reinterpret_cast<const T*>(q_weight.data()),
-                      reinterpret_cast<const T*>(k_weight.data()),
-                      static_cast<unsigned>(num_heads_q_),
-                      static_cast<unsigned>(num_heads_k_),
-                      static_cast<unsigned>(head_dim_), eps_);
-              break;
-          }
+          constexpr int kBlockSize = ListGet<1>(list_tag);
+          FusedQkNormKernel<kBlockSize, Backend::kDeviceType, T, TAcc>
+              <<<grid, kBlockSize, 0, cuda_stream>>>(
+                  reinterpret_cast<T*>(qkv.data()),
+                  static_cast<int64_t>(head_dim_),
+                  static_cast<int64_t>(qkv.stride(0)),
+                  reinterpret_cast<const T*>(q_weight.data()),
+                  reinterpret_cast<const T*>(k_weight.data()),
+                  static_cast<unsigned>(num_heads_q_),
+                  static_cast<unsigned>(num_heads_k_),
+                  static_cast<unsigned>(head_dim_), eps_);
         },
         "CudaFusedQkNorm::operator()");
   }

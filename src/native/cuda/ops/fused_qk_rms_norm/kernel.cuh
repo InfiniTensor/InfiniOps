@@ -20,8 +20,10 @@ __global__ void FusedQkRmsNormKernel(
     const TData* __restrict__ weight_q, const TData* __restrict__ weight_kv,
     TData* __restrict__ q_output, TData* __restrict__ kv_output, float eps,
     unsigned int q_heads, unsigned int kv_heads, unsigned int head_dim,
-    int64_t q_token_stride, int64_t kv_token_stride,
-    int64_t q_output_token_stride, int64_t kv_output_token_stride) {
+    unsigned int kv_head_dim, int64_t q_token_stride, int64_t kv_token_stride,
+    int64_t q_head_stride, int64_t kv_head_stride,
+    int64_t q_output_token_stride, int64_t kv_output_token_stride,
+    int64_t q_output_head_stride, int64_t kv_output_head_stride) {
   const auto token = static_cast<int64_t>(blockIdx.y);
   const auto is_q = blockIdx.z == 0;
   const auto head = blockIdx.x;
@@ -31,6 +33,8 @@ __global__ void FusedQkRmsNormKernel(
   TData* output;
   int64_t token_stride;
   int64_t output_token_stride;
+  int64_t head_stride;
+  int64_t output_head_stride;
   if (is_q) {
     if (head >= q_heads) {
       return;
@@ -40,6 +44,8 @@ __global__ void FusedQkRmsNormKernel(
     output = q_output;
     token_stride = q_token_stride;
     output_token_stride = q_output_token_stride;
+    head_stride = q_head_stride;
+    output_head_stride = q_output_head_stride;
   } else {
     if (head >= kv_heads) {
       return;
@@ -49,12 +55,14 @@ __global__ void FusedQkRmsNormKernel(
     output = kv_output;
     token_stride = kv_token_stride;
     output_token_stride = kv_output_token_stride;
+    head_stride = kv_head_stride;
+    output_head_stride = kv_output_head_stride;
+    head_dim = kv_head_dim;
   }
 
-  const TData* row_ptr =
-      input + token * token_stride + static_cast<int64_t>(head) * head_dim;
-  TData* out_ptr = output + token * output_token_stride +
-                   static_cast<int64_t>(head) * head_dim;
+  const TData* row_ptr = input + token * token_stride + head * head_stride;
+  TData* out_ptr =
+      output + token * output_token_stride + head * output_head_stride;
   // q_weight/kv_weight are single [head_dim] vectors shared by all heads.
   const TData* weight_ptr = weight;
 

@@ -95,12 +95,14 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
         q.size(2) == 0 || k_cache.size(0) == 0 || k_cache.size(1) == 0 ||
         k_cache.size(2) == 0 || q.size(2) % k_cache.size(2) != 0 ||
         q.size(3) == 0 || q.size(3) != k_cache.size(3) ||
-        // The 256 caps cover the pinned kernels; an MLA packed q/k head dim
-        // (576 for 021) with its 512 value latent is admitted and served by
-        // the MLA provider.
-        q.size(3) > (q.size(3) != v_cache.size(3) ? 576 : 256) ||
+        // The 256 caps cover the pinned kernels; the MLA layout is exactly
+        // the packed latent pair the MLA provider serves (576/512 for 021),
+        // since every provider here reads K, V, and O through one head
+        // dimension and any other differing k/v head dims stay rejected.
+        (q.size(3) == v_cache.size(3) && q.size(3) > 256) ||
         v_cache.size(3) == 0 ||
-        v_cache.size(3) > (q.size(3) != v_cache.size(3) ? q.size(3) : 256) ||
+        (q.size(3) != v_cache.size(3) &&
+         (q.size(3) != 576 || v_cache.size(3) != 512)) ||
         v_cache.size(3) % 8 != 0 || q.stride(-1) != 1 ||
         k_cache.stride(-1) != 1 || v_cache.stride(-1) != 1 ||
         out.stride(-1) != 1 || k.has_value() != v.has_value() ||
@@ -366,14 +368,13 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
     assert(q.size(2) % k_cache.size(2) == 0 && q.size(3) == k_cache.size(3) &&
            "`FlashAttnWithKvcache` requires compatible Q and KV heads");
     assert(head_size_ > 0 &&
-           head_size_ <= (q.size(3) != v_cache.size(3) ? 576 : 256) &&
+           (q.size(3) == v_cache.size(3)
+                ? head_size_ <= 256
+                : (head_size_ == 576 && v_cache.size(3) == 512)) &&
            "`FlashAttnWithKvcache` requires a head dimension no greater than "
-           "256, or the MLA packed cap of 576");
+           "256, or the exact packed latent pair (576/512)");
     assert(v_cache.size(3) > 0 &&
-           v_cache.size(3) <=
-               (q.size(3) != v_cache.size(3) ? q.size(3) : 256) &&
-           "`FlashAttnWithKvcache` requires a value head dimension no greater "
-           "than 256, or the packed q/k head dim for MLA");
+           "`FlashAttnWithKvcache` requires a non-empty value head dimension");
     assert((out.shape() ==
             Tensor::Shape{q.size(0), q.size(1), q.size(2), v_cache.size(3)}) &&
            "`FlashAttnWithKvcache` output must match Q at the value head "

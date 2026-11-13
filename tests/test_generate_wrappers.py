@@ -1299,6 +1299,47 @@ def test_optional_provider_flags_with_absolute_source_root(monkeypatch):
         assert on[name]
 
 
+def test_native_flash_directory_filter_covers_every_provider_header(monkeypatch):
+    """Every provider header under the native-flash op directories must be
+    registered only when `--with-native-flash` matches the compiled
+    `infiniops_native_flash` target, or a disabled build links against
+    symbols its object library never compiled (e.g. the MLA providers)."""
+    module = _load_generator_module()
+    source = pathlib.Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.setattr(module, "_SRC_DIR", source)
+    monkeypatch.setattr(module, "_BASE_DIR", source / "base")
+    off = module._get_all_ops(["nvidia"])
+    on = module._get_all_ops(["nvidia"], with_native_flash=True)
+
+    provider_dirs = (
+        source / "native/cuda/nvidia/ops/flash_attn_with_kvcache",
+        source / "native/cuda/nvidia/ops/flash_attn_varlen_func",
+    )
+    provider_headers = sorted(
+        path.resolve() for directory in provider_dirs for path in directory.glob("*.h")
+    )
+    assert {str(path.relative_to(source.resolve())) for path in provider_headers} >= {
+        "native/cuda/nvidia/ops/flash_attn_with_kvcache/kernel.h",
+        "native/cuda/nvidia/ops/flash_attn_with_kvcache/mla_kernel.h",
+        "native/cuda/nvidia/ops/flash_attn_varlen_func/kernel.h",
+        "native/cuda/nvidia/ops/flash_attn_varlen_func/mla_kernel.h",
+    }
+
+    off_paths = {
+        str(implementation.path.resolve())
+        for headers in off.values()
+        for implementation in headers
+    }
+    on_paths = {
+        str(implementation.path.resolve())
+        for headers in on.values()
+        for implementation in headers
+    }
+    for path in provider_headers:
+        assert str(path) not in off_paths, f"{path} leaked into a disabled build"
+        assert str(path) in on_paths, f"{path} missing from a native-flash build"
+
+
 def test_w4_public_api_selection_is_explicit(tmp_path):
     module = _load_generator_module()
     name = "w4_marlin_gemm"

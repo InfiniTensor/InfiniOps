@@ -53,13 +53,14 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 1>
       if (!FlashAttnWithKvcache::supports(INFINI_NATIVE_KVCACHE_MLA_VALUES))
         return false;
       if (!is_mla_layout(k_cache, v_cache)) return false;
+      // The kernel reads per-sequence lengths unconditionally.
+      if (!cache_seqlens) return false;
       if (k || v || rotary_cos || rotary_sin || cache_batch_idx ||
           cache_leftpad || alibi_slopes)
         return false;
       if (softcap != 0.0 || num_splits != 0 || return_softmax_lse) return false;
-      if (!(window_size[0] == -1 && window_size[1] == -1) &&
-          !(window_size[0] >= 0 && window_size[1] == 0))
-        return false;
+      // Full causal only: the MLA warp kernels have no sliding-window path.
+      if (!(window_size[0] == -1 && window_size[1] == -1)) return false;
       if (!causal) return false;
       if (!block_table || q.size(1) != 1) return false;
       if (q.size(3) != 576 || v_cache.size(3) != 512) return false;
@@ -80,8 +81,6 @@ class Operator<FlashAttnWithKvcache, Device::Type::kNvidia, 1>
         return false;
       // Dim 1 is the singleton token axis (enforced above), and unsqueezed
       // views carry a meaningless zero stride there, so it is not checked.
-      if (q.stride(2) != q.size(3) || out.stride(2) != out.size(3))
-        return false;
       if (q.stride(2) != q.size(3) || out.stride(2) != out.size(3))
         return false;
       return true;

@@ -51,14 +51,15 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kNvidia, 1>
     if (dropout_p != 0.0 || softcap != 0.0 || deterministic ||
         return_attn_probs || alibi_slopes)
       return false;
-    if (!(window_size[0] == -1 && window_size[1] == -1) &&
-        !(window_size[0] >= 0 && window_size[1] == 0))
-      return false;
+    // Full causal only: the MLA warp kernels have no sliding-window path.
+    if (!(window_size[0] == -1 && window_size[1] == -1)) return false;
     // Causal prefill only; non-causal dense attention stays with the
     // pinned provider family.
     if (!causal) return false;
     if (!paged) return false;  // MLA prefill always reads the paged cache.
     if (q.size(2) != 576 || v.size(-1) != 512) return false;
+    // grid.y carries the packed query tokens; CUDA caps it at 65535.
+    if (q.size(0) > 65535) return false;
     if (k.size(1) != v.size(1) || k.size(2) != v.size(2)) return false;
     // The fused MLA cache packs k|v in one 1088-wide row; K and V are
     // narrow views of it, so token strides are shared and only the head
