@@ -14,7 +14,7 @@ __nram__ char mul_nram_buffer[NRAM_MAX_SIZE] __attribute__((aligned(128)));
 template <typename T>
 __mlu_device__ void Multiply(const T* input, const T* other, T* out,
                              std::size_t count) {
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_mul(reinterpret_cast<half*>(out),
                reinterpret_cast<const half*>(input),
                reinterpret_cast<const half*>(other), count);
@@ -136,7 +136,9 @@ void MulUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
                             int, bool, bool)
 
 INSTANTIATE_MUL(Float16);
+#if INFINIOPS_CAMBRICON_BANG_BF16
 INSTANTIATE_MUL(BFloat16);
+#endif
 INSTANTIATE_MUL(float);
 INSTANTIATE_MUL(int16_t);
 INSTANTIATE_MUL(int32_t);
