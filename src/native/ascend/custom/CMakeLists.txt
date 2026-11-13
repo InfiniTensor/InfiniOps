@@ -63,6 +63,8 @@ ascendc_library(no_workspace_kernel STATIC
     rms_norm/op_kernel/rms_norm.cpp
     add_rms_norm/op_kernel/add_rms_norm.cpp
     reshape_and_cache_flash/op_kernel/reshape_and_cache_flash.cpp
+    paged_attention/op_kernel/paged_attention.cpp
+    paged_attention/op_kernel/paged_attention_fai.cpp
 )
 
 # `CANN 8.5.1` installs host objects under `objects-<CONFIG>/`, while
@@ -80,9 +82,17 @@ endif()
 # enum.  `ascendc_library` forwards the interface target's `INCLUDES`
 # property to the nested `ExternalProject_Add` (see
 # `${ASCEND_HOME_PATH}/tools/tikcpp/ascendc_kernel_cmake/legacy_modules/function.cmake`),
-# so append the main `src/` dir here.
-set_property(TARGET no_workspace_kernel_interface APPEND PROPERTY
-    INCLUDES ${MAIN_SRC_DIR})
+# so register the main `src/` dir and repository root here. Resolve the
+# repository root through the symlinked source directory used by the outer
+# build. Resolve the symlink before appending `..`; CMake otherwise
+# normalizes those components lexically.
+get_filename_component(CUSTOM_SOURCE_DIR "${PROJECT_SOURCE_DIR}" REALPATH)
+get_filename_component(INFINIOPS_ROOT
+    "${CUSTOM_SOURCE_DIR}/../../../.." REALPATH)
+ascendc_include_directories(no_workspace_kernel INTERFACE
+    ${MAIN_SRC_DIR}
+    ${INFINIOPS_ROOT}
+)
 
 # Create the shared library `libascend_kernel.so`.
 add_library(${OP_PLUGIN_NAME} SHARED ${OP_SRCS})

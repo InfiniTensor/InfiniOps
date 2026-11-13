@@ -579,6 +579,12 @@ if(WITH_ASCEND)
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/*.cmake"
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/CMakeLists.txt"
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/build.sh")
+        set(_ops_transformer_fai_dir
+            "${PROJECT_SOURCE_DIR}/third_party/ops-transformer/attention/fused_infer_attention_score/op_kernel")
+        file(GLOB_RECURSE _ops_transformer_fai_srcs CONFIGURE_DEPENDS
+            "${_ops_transformer_fai_dir}/*.h"
+            "${_ops_transformer_fai_dir}/*.hpp"
+            "${_ops_transformer_fai_dir}/*.cpp")
 
         # Scrub env inherited from the outer `scikit-build-core` invocation
         # before handing control to `build.sh`: `CMAKE_GENERATOR` /
@@ -606,7 +612,7 @@ if(WITH_ASCEND)
                     "MAIN_SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
                     bash ${_custom_source_dir}/build.sh ${SOC_VERSION}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom
-            DEPENDS ${_custom_srcs}
+            DEPENDS ${_custom_srcs} ${_ops_transformer_fai_srcs}
             COMMENT "Building custom AscendC kernels (SOC_VERSION=${SOC_VERSION})"
             VERBATIM)
 
@@ -621,6 +627,7 @@ if(WITH_ASCEND)
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
         # them via the generated launch functions.
         target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
+        target_compile_definitions(infiniops PUBLIC INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION=1)
         target_include_directories(infiniops PRIVATE
             "${_custom_build_dir}/include/no_workspace_kernel")
         target_link_libraries(infiniops PRIVATE
