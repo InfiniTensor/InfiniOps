@@ -268,12 +268,15 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
                    : OptionalTensorView{};
       };
 
+  const mate::detail::TvmAllocatorGuard allocator_guard{
+      state.runtime_.Allocator()};
+
   auto result = tvm::ffi::Function::InvokeExternC(
       nullptr, state.runtime_.Forward().Entry(),
       tvm::ffi::TensorView(dl_q.Get()), tvm::ffi::TensorView(dl_k_cache.Get()),
       tvm::ffi::TensorView(dl_v_cache.Get()), optional_view(dl_k),
       optional_view(dl_v), OptionalTensorView{}, OptionalTensorView{},
-      OptionalTensorView{}, OptionalTensorView{},
+      OptionalTensorView{}, OptionalTensorView{}, OptionalTensorView{},
       optional_view(dl_cache_seqlens), tvm::ffi::Optional<int>{max_seqlen_q},
       tvm::ffi::Optional<int>{}, optional_view(dl_block_table),
       optional_view(dl_cache_batch_idx), optional_view(dl_cache_leftpad),
@@ -286,7 +289,7 @@ void Operator<FlashAttnWithKvcache, Device::Type::kMoore, 16>::Run(
       static_cast<float>(softcap), int{0}, int{num_splits},
       OptionalTensorView{}, OptionalTensorView{},
       tvm::ffi::TensorView(dl_out.Get()), tvm::ffi::TensorView(dl_lse.Get()),
-      int{1}, int{0}, OptionalTensorView{}, false);
+      int{1}, int{0}, OptionalTensorView{});
 
   const auto outputs = result.cast<tvm::ffi::Array<tvm::ffi::Any>>();
   const auto accumulators =
