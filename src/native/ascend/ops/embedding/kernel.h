@@ -40,9 +40,9 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
 
   /// \deprecated Use the overload that also accepts `max_norm` and
   /// `norm_type` instead.
-  [[deprecated("Use the PyTorch-compatible overload instead.")]]
-  Operator(const Tensor input, const Tensor weight, const int64_t padding_idx,
-           const bool scale_grad_by_freq, const bool sparse, Tensor out)
+  [[deprecated("Use the PyTorch-compatible overload instead.")]] Operator(
+      const Tensor input, const Tensor weight, const int64_t padding_idx,
+      const bool scale_grad_by_freq, const bool sparse, Tensor out)
       : Operator(input, weight, padding_idx, std::nullopt, 2.0,
                  scale_grad_by_freq, sparse, out) {}
 
@@ -53,6 +53,8 @@ class Operator<Embedding, Device::Type::kAscend> : public Embedding {
     weight_cache_.release();
     out_cache_.release();
   }
+
+  bool capture_safe() const override { return true; }
 
   void operator()(const Tensor input, const Tensor weight,
                   const std::optional<int64_t> /*padding_idx*/,

@@ -17,7 +17,41 @@
 #include "native/ascend/workspace_pool_.h"
 #include "operator.h"
 
+#ifdef INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION
+#include "aclrtlaunch_infinilm_paged_attention_bf16_i32.h"
+#include "aclrtlaunch_infinilm_paged_attention_f16_i32.h"
+#include "aclrtlaunch_infinilm_paged_attention_fai_bf16_i32.h"
+#endif
+
 namespace infini::ops {
+namespace {
+struct InfinilmFaiTiling {
+  uint64_t mm1OutSize;
+  uint64_t smOnlineOutSize;
+  uint64_t mm2OutSize;
+  uint32_t batch;
+  uint32_t numHeads;
+  uint32_t kvHeads;
+  uint32_t embeddingSize;
+  uint32_t embeddingSizeV;
+  uint32_t blockSize;
+  uint32_t maxNumBlocksPerBatch;
+  uint32_t firstBatchTaskNum;
+  uint32_t totalTaskNum;
+  uint32_t mainLoopTaskNum;
+  uint32_t tailLoopTaskNum;
+  uint32_t tailStartBatch;
+  uint32_t tailStartN2;
+  uint32_t tailKvNBlockTile;
+  uint32_t maskType;
+  float scaleValue;
+  uint32_t sparseMode;
+  int64_t preToken;
+  int64_t nextToken;
+  uint64_t qStride;
+  uint64_t oStride;
+};
+}  // namespace
 
 template <>
 class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
@@ -80,6 +114,15 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
 
   using FlashAttnWithKvcache::operator();
 
+  bool capture_safe() const override { return true; }
+
+  ~Operator() override {
+    if (fai_tiling_ != nullptr && ascend::IsAclRuntimeAlive()) {
+      (void)aclrtFree(fai_tiling_);
+      fai_tiling_ = nullptr;
+    }
+  }
+
   void operator()(const Tensor q, Tensor k_cache, Tensor v_cache,
                   const std::optional<Tensor> k, const std::optional<Tensor> v,
                   const std::optional<Tensor> rotary_cos,
@@ -136,6 +179,15 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
                   tensor.device(), strides};
   }
 
+  static Tensor SqueezeSequenceView(const Tensor tensor) {
+    auto shape = Tensor::Shape{tensor.shape()};
+    auto strides = Tensor::Strides{tensor.strides()};
+    Tensor::Shape squeezed_shape{shape[0], shape[2], shape[3]};
+    Tensor::Strides squeezed_strides{strides[0], strides[2], strides[3]};
+    return Tensor{const_cast<void*>(tensor.data()), squeezed_shape,
+                  tensor.dtype(), tensor.device(), squeezed_strides};
+  }
+
   void Initialize(const Tensor q, const Tensor k_cache, const Tensor v_cache,
                   const std::optional<Tensor>& k,
                   const std::optional<Tensor>& v,
@@ -171,6 +223,14 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     if (paged_) block_table_cache_ = ascend::AclTensorCache(*block_table);
     seq_i32_host_.resize(batch_size_);
     seq_i64_host_.resize(batch_size_);
+    if (paged_ && q.dtype() == DataType::kBFloat16 &&
+        q.size(2) == k_cache.size(2) && q.size(3) == k_cache.size(3) &&
+        block_table->IsContiguous() && k_cache.IsContiguous() &&
+        v_cache.IsContiguous()) {
+      ascend::CheckAcl(aclrtMalloc(&fai_tiling_, sizeof(InfinilmFaiTiling),
+                                   ACL_MEM_MALLOC_HUGE_FIRST),
+                       "FAI paged attention tiling allocation");
+    }
   }
 
   void Run(const Tensor q, const Tensor k_cache, const Tensor v_cache,
@@ -181,6 +241,26 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     auto stream = static_cast<aclrtStream>(stream_);
     assert(block_table.has_value() == paged_ &&
            "Ascend `FlashAttnWithKvcache` cache mode changed between calls");
+#ifdef INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION
+    const Tensor custom_q =
+        paged_ && q.ndim() == 4 && q.size(1) == 1 ? SqueezeSequenceView(q) : q;
+    const Tensor custom_out = paged_ && out.ndim() == 4 && out.size(1) == 1
+                                  ? SqueezeSequenceView(out)
+                                  : out;
+    if (fai_tiling_ != nullptr &&
+        CanRunFai(custom_q, k_cache, v_cache, cache_seqlens,
+                  scalar_cache_seqlens, block_table, custom_out)) {
+      RunFai(custom_q, k_cache, v_cache, *cache_seqlens, *block_table,
+             softmax_scale, custom_out, stream);
+      return;
+    }
+    if (CanRunPagedCustom(custom_q, k_cache, v_cache, cache_seqlens,
+                          scalar_cache_seqlens, block_table, custom_out)) {
+      RunPagedCustom(custom_q, k_cache, v_cache, *cache_seqlens, *block_table,
+                     softmax_scale, custom_out, stream);
+      return;
+    }
+#endif
     auto actual_seq_lengths =
         MakeSeqLengths(cache_seqlens, scalar_cache_seqlens, stream);
     assert(!paged_ || actual_seq_lengths != nullptr &&
@@ -243,6 +323,148 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     if (actual_seq_lengths) aclDestroyIntArray(actual_seq_lengths);
   }
 
+#ifdef INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION
+  bool CanRunFai(const Tensor q, const Tensor k_cache, const Tensor v_cache,
+                 const std::optional<Tensor>& cache_seqlens,
+                 const std::optional<int64_t>& scalar_cache_seqlens,
+                 const std::optional<Tensor>& block_table,
+                 const Tensor out) const {
+    return !scalar_cache_seqlens.has_value() && cache_seqlens.has_value() &&
+           block_table.has_value() && q.dtype() == DataType::kBFloat16 &&
+           q.size(1) == k_cache.size(2) &&
+           cache_seqlens->dtype() == DataType::kInt32 &&
+           cache_seqlens->IsContiguous() && block_table->IsContiguous() &&
+           q.stride(1) == q.size(2) && q.stride(2) == 1 &&
+           out.stride(1) == out.size(2) && out.stride(2) == 1 &&
+           k_cache.IsContiguous() && v_cache.IsContiguous() &&
+           q.dtype() == k_cache.dtype() && q.dtype() == v_cache.dtype();
+  }
+
+  void RunFai(const Tensor q, const Tensor k_cache, const Tensor v_cache,
+              const Tensor cache_seqlens, const Tensor block_table,
+              const std::optional<double> softmax_scale, Tensor out,
+              aclrtStream stream) const {
+    constexpr uint64_t kSegmentBytes = uint64_t{64} << 20;
+    constexpr uint32_t kAtlasA2BlockCount = 20;
+    InfinilmFaiTiling tiling{};
+    tiling.mm1OutSize = kSegmentBytes;
+    tiling.smOnlineOutSize = kSegmentBytes;
+    tiling.mm2OutSize = kSegmentBytes;
+    tiling.batch = static_cast<uint32_t>(q.size(0));
+    tiling.numHeads = static_cast<uint32_t>(q.size(1));
+    tiling.kvHeads = static_cast<uint32_t>(k_cache.size(2));
+    tiling.embeddingSize = static_cast<uint32_t>(q.size(2));
+    tiling.embeddingSizeV = static_cast<uint32_t>(out.size(2));
+    tiling.blockSize = static_cast<uint32_t>(k_cache.size(1));
+    tiling.maxNumBlocksPerBatch = static_cast<uint32_t>(block_table.size(1));
+    tiling.firstBatchTaskNum = tiling.batch <= 4 ? tiling.kvHeads : 1;
+    tiling.totalTaskNum = tiling.batch * tiling.firstBatchTaskNum;
+    tiling.scaleValue = static_cast<float>(
+        softmax_scale.value_or(1.0 / std::sqrt(double(q.size(2)))));
+    tiling.preToken = std::numeric_limits<int64_t>::max();
+    tiling.nextToken = std::numeric_limits<int64_t>::max();
+    tiling.qStride = static_cast<uint64_t>(q.stride(0));
+    tiling.oStride = static_cast<uint64_t>(out.stride(0));
+    ascend::CheckAcl(aclrtMemcpy(fai_tiling_, sizeof(tiling), &tiling,
+                                 sizeof(tiling), ACL_MEMCPY_HOST_TO_DEVICE),
+                     "FAI paged attention tiling upload");
+    auto& arena = ascend::GetWorkspacePool().Ensure(stream, kSegmentBytes * 4,
+                                                    "fai_paged_decode");
+    const auto ret = aclrtlaunch_infinilm_paged_attention_fai_bf16_i32(
+        kAtlasA2BlockCount, stream, out.data(), const_cast<void*>(q.data()),
+        const_cast<void*>(k_cache.data()), const_cast<void*>(v_cache.data()),
+        const_cast<void*>(block_table.data()),
+        const_cast<void*>(cache_seqlens.data()), tiling.scaleValue,
+        size_t(q.size(1)), size_t(q.size(0)), size_t(k_cache.size(2)),
+        size_t(q.size(2)), size_t(block_table.size(1)), size_t(k_cache.size(1)),
+        q.stride(0), out.stride(0), arena.buf, fai_tiling_);
+    ascend::CheckAcl(ret, "FAI paged attention execution");
+  }
+
+  bool CanRunPagedCustom(const Tensor q, const Tensor k_cache,
+                         const Tensor v_cache,
+                         const std::optional<Tensor>& cache_seqlens,
+                         const std::optional<int64_t>& scalar_cache_seqlens,
+                         const std::optional<Tensor>& block_table,
+                         const Tensor out) const {
+    return !scalar_cache_seqlens.has_value() && cache_seqlens.has_value() &&
+           block_table.has_value() && !has_alibi_slopes_ &&
+           cache_seqlens->dtype() == DataType::kInt32 &&
+           cache_seqlens->IsContiguous() && q.ndim() == 3 && out.ndim() == 3 &&
+           q.stride(1) == q.size(2) && q.stride(2) == 1 &&
+           out.stride(1) == out.size(2) && out.stride(2) == 1 &&
+           k_cache.IsContiguous() && v_cache.IsContiguous() &&
+           (q.dtype() == DataType::kFloat16 ||
+            q.dtype() == DataType::kBFloat16) &&
+           q.dtype() == k_cache.dtype() && q.dtype() == v_cache.dtype();
+  }
+
+  static void RunPagedCustom(const Tensor q, const Tensor k_cache,
+                             const Tensor v_cache, const Tensor cache_seqlens,
+                             const Tensor block_table,
+                             const std::optional<double> softmax_scale,
+                             Tensor out, aclrtStream stream) {
+    const int64_t num_seqs = static_cast<int64_t>(q.size(0));
+    const int64_t num_heads = static_cast<int64_t>(q.size(1));
+    const int64_t num_kv_heads = static_cast<int64_t>(k_cache.size(2));
+    const int64_t head_size = static_cast<int64_t>(q.size(2));
+    const int64_t max_blocks = static_cast<int64_t>(block_table.size(1));
+    const int64_t page_size = static_cast<int64_t>(k_cache.size(1));
+    const double default_scale =
+        1.0 / std::sqrt(static_cast<double>(head_size));
+    const auto scale =
+        static_cast<float>(softmax_scale.value_or(default_scale));
+    const int64_t block_num = num_seqs * num_heads;
+    const auto ret =
+        q.dtype() == DataType::kBFloat16
+            ? aclrtlaunch_infinilm_paged_attention_bf16_i32(
+                  static_cast<uint32_t>(block_num), stream, out.data(),
+                  const_cast<void*>(q.data()),
+                  const_cast<void*>(k_cache.data()),
+                  const_cast<void*>(v_cache.data()),
+                  const_cast<void*>(block_table.data()),
+                  const_cast<void*>(cache_seqlens.data()), nullptr, false,
+                  static_cast<size_t>(num_heads), static_cast<size_t>(num_seqs),
+                  static_cast<size_t>(num_kv_heads),
+                  static_cast<size_t>(head_size), scale,
+                  static_cast<size_t>(max_blocks),
+                  static_cast<size_t>(page_size),
+                  static_cast<int64_t>(q.stride(0)),
+                  static_cast<int64_t>(k_cache.stride(0)),
+                  static_cast<int64_t>(k_cache.stride(1)),
+                  static_cast<int64_t>(k_cache.stride(2)),
+                  static_cast<int64_t>(v_cache.stride(0)),
+                  static_cast<int64_t>(v_cache.stride(1)),
+                  static_cast<int64_t>(v_cache.stride(2)),
+                  static_cast<int64_t>(out.stride(0)),
+                  static_cast<int64_t>(block_table.stride(0)),
+                  static_cast<int64_t>(cache_seqlens.stride(0)))
+            : aclrtlaunch_infinilm_paged_attention_f16_i32(
+                  static_cast<uint32_t>(block_num), stream, out.data(),
+                  const_cast<void*>(q.data()),
+                  const_cast<void*>(k_cache.data()),
+                  const_cast<void*>(v_cache.data()),
+                  const_cast<void*>(block_table.data()),
+                  const_cast<void*>(cache_seqlens.data()), nullptr, false,
+                  static_cast<size_t>(num_heads), static_cast<size_t>(num_seqs),
+                  static_cast<size_t>(num_kv_heads),
+                  static_cast<size_t>(head_size), scale,
+                  static_cast<size_t>(max_blocks),
+                  static_cast<size_t>(page_size),
+                  static_cast<int64_t>(q.stride(0)),
+                  static_cast<int64_t>(k_cache.stride(0)),
+                  static_cast<int64_t>(k_cache.stride(1)),
+                  static_cast<int64_t>(k_cache.stride(2)),
+                  static_cast<int64_t>(v_cache.stride(0)),
+                  static_cast<int64_t>(v_cache.stride(1)),
+                  static_cast<int64_t>(v_cache.stride(2)),
+                  static_cast<int64_t>(out.stride(0)),
+                  static_cast<int64_t>(block_table.stride(0)),
+                  static_cast<int64_t>(cache_seqlens.stride(0)));
+    ascend::CheckAcl(ret, "Ascend custom paged attention execution");
+  }
+#endif
+
   aclIntArray* MakeSeqLengths(
       const std::optional<Tensor>& cache_seqlens,
       const std::optional<int64_t>& scalar_cache_seqlens,
@@ -294,6 +516,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
   mutable ascend::AclTensorCache query_cache_;
   mutable ascend::AclTensorCache out_cache_;
   mutable ascend::AclTensorCache block_table_cache_;
+  void* fai_tiling_ = nullptr;
   mutable std::vector<int32_t> seq_i32_host_;
   mutable std::vector<int64_t> seq_i64_host_;
   mutable std::array<char, 5> bsnd_layout_{'B', 'S', 'N', 'D', '\0'};

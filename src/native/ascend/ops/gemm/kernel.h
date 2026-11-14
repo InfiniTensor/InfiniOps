@@ -55,6 +55,8 @@ class Operator<Gemm, Device::Type::kAscend> : public Gemm {
     if (beta_scalar_) aclDestroyScalar(beta_scalar_);
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor a, const Tensor b, const std::optional<Tensor> c,
                   std::optional<float> alpha, std::optional<float> beta,
                   std::optional<int> trans_a, std::optional<int> trans_b,

@@ -40,6 +40,8 @@ class Operator<SiluAndMul, Device::Type::kAscend> : public SiluAndMul {
     if (out_staging_cache_) out_staging_cache_->release();
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, Tensor out) const override {
     auto t_input = input_cache_.get(const_cast<void*>(input.data()));
     auto t_out = out_cache_.get(out.data());

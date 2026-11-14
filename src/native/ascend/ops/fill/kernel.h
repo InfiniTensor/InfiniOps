@@ -43,6 +43,8 @@ class Operator<Fill, Device::Type::kAscend> : public Fill {
     }
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const double /*value*/,
                   Tensor out) const override {
     (void)input;

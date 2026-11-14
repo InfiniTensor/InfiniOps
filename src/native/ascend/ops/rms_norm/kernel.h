@@ -123,6 +123,8 @@ class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
     // `rstd_tensor_` leaks with the executor at shutdown (see `64c367c`).
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);

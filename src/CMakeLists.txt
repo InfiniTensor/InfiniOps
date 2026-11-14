@@ -621,6 +621,7 @@ if(WITH_ASCEND)
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
         # them via the generated launch functions.
         target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
+        target_compile_definitions(infiniops PUBLIC INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION=1)
         target_include_directories(infiniops PRIVATE
             "${_custom_build_dir}/include/no_workspace_kernel")
         target_link_libraries(infiniops PRIVATE

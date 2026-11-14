@@ -63,6 +63,8 @@ ascendc_library(no_workspace_kernel STATIC
     rms_norm/op_kernel/rms_norm.cpp
     add_rms_norm/op_kernel/add_rms_norm.cpp
     reshape_and_cache_flash/op_kernel/reshape_and_cache_flash.cpp
+    paged_attention/op_kernel/paged_attention.cpp
+    paged_attention/op_kernel/paged_attention_fai.cpp
 )
 
 # `CANN 8.5.1` installs host objects under `objects-<CONFIG>/`, while
