@@ -1,0 +1,21 @@
+{
+  "cpu_pytest": [
+    "288",
+    "19"
+  ],
+  "checkpoint_suite_passed": true,
+  "native_contract_passed": true,
+  "runtime_source_files_compared": 1359,
+  "changed_runtime_sources": [
+    "src/native/cpu/ops/cast/cast.h"
+  ],
+  "cpu_cast_source_sha256": "fc6ddd93364a005afc747b19ac5889b3b6889306a3f7e1e9364872ed70b288fc",
+  "patched_ops_library_sha256": "8cc6f0a240c9ab43baea1c39074bebd2e66178a8455d7b14a6b0e2d703a2723b",
+  "model": {
+    "status": "passed",
+    "case": "batch 4 / input 512 / output 8",
+    "requests": 5,
+    "output_sha256": "7eba3cabb315d31924d287a733c2790296ddcf070e61e7c03d7e2b9bf7c3f4ef",
+    "output_matches_prior_r5": true
+  }
+}

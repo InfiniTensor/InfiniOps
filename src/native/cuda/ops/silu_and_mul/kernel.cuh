@@ -28,6 +28,37 @@ __device__ __forceinline__ T SiluAndMulSigmoid(const T& x) {
 
 }  // namespace detail
 
+template <Device::Type kDev, typename T>
+__device__ __forceinline__ T SiluAndMulValue(T gate, T up) {
+  if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
+    float gatef = Caster<kDev>::template Cast<float>(gate);
+    float upf = Caster<kDev>::template Cast<float>(up);
+    float sigf = __frcp_rn(__fadd_rn(1.0f, __expf(-gatef)));
+    return Caster<kDev>::template Cast<T>(
+        __fmul_rn(__fmul_rn(gatef, sigf), upf));
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __fmul_rn(__fmul_rn(gate, detail::SiluAndMulSigmoid<kDev>(gate)),
+                     up);
+  } else {
+    return gate * detail::SiluAndMulSigmoid<kDev>(gate) * up;
+  }
+}
+
+template <Device::Type kDev, typename T>
+__global__ void SiluAndMulRowsKernel(T* out, const T* input, size_t columns) {
+  const size_t row = blockIdx.y;
+  const size_t first = size_t{blockIdx.x} * 1024 + threadIdx.x;
+#pragma unroll
+  for (unsigned lane = 0; lane < 4; ++lane) {
+    const size_t column = first + lane * 256;
+    if (column < columns) {
+      const size_t gate_index = row * 2 * columns + column;
+      out[row * columns + column] =
+          SiluAndMulValue<kDev>(input[gate_index], input[gate_index + columns]);
+    }
+  }
+}
+
 template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
 __global__ void SiluAndMulKernel(T* __restrict__ out,
                                  const T* __restrict__ input,
@@ -65,18 +96,7 @@ __global__ void SiluAndMulKernel(T* __restrict__ out,
     T gate = input[gate_idx];
     T up = input[up_idx];
 
-    if constexpr (IsFP16<kDev, T> || IsBFloat16<kDev, T>) {
-      float gatef = Caster<kDev>::template Cast<float>(gate);
-      float upf = Caster<kDev>::template Cast<float>(up);
-      float sigf = __frcp_rn(__fadd_rn(1.0f, __expf(-gatef)));
-      out[out_idx] = Caster<kDev>::template Cast<T>(
-          __fmul_rn(__fmul_rn(gatef, sigf), upf));
-    } else if constexpr (std::is_same_v<T, float>) {
-      out[out_idx] =
-          __fmul_rn(__fmul_rn(gate, detail::SiluAndMulSigmoid<kDev>(gate)), up);
-    } else {
-      out[out_idx] = gate * detail::SiluAndMulSigmoid<kDev>(gate) * up;
-    }
+    out[out_idx] = SiluAndMulValue<kDev>(gate, up);
   }
 }
 
