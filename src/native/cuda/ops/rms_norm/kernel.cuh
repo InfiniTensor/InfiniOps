@@ -53,9 +53,15 @@ __global__ void RmsNormKernel(TData* __restrict__ y, int64_t stride_y_batch,
   __syncthreads();
 
   for (size_t i = threadIdx.x; i < dim; i += block_size) {
+    if constexpr (kDev == Device::Type::kHygon) {
+      const float normalized = __fmul_rn(Caster<kDev>::template Cast<float>(x_ptr[i]), rms);
+      y_ptr[i] = Caster<kDev>::template Cast<TData>(
+          __fmul_rn(normalized, Caster<kDev>::template Cast<float>(w_ptr[i])));
+    } else {
     y_ptr[i] = Caster<kDev>::template Cast<TData>(
         Caster<kDev>::template Cast<TCompute>(x_ptr[i]) *
         Caster<kDev>::template Cast<TCompute>(w_ptr[i]) * rms);
+    }
   }
 }
 
