@@ -434,9 +434,23 @@ if(WITH_CAMBRICON)
     if(CNCC_COMPILER)
         message(STATUS "Found cncc: ${CNCC_COMPILER}")
         separate_arguments(INFINI_MLU_HOST_ABI_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS}")
+        set(INFINIOPS_CAMBRICON_MLU_ARCH "mtp_592" CACHE STRING "BANG target architecture")
+        option(INFINIOPS_CAMBRICON_BANG_BF16 "Enable BF16 in native BANG kernels" ON)
+        target_compile_definitions(infiniops PRIVATE
+            INFINIOPS_CAMBRICON_BANG_BF16=$<BOOL:${INFINIOPS_CAMBRICON_BANG_BF16}>)
+        set(_cncc_host_includes "")
+        foreach(_dir IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
+            if(_dir MATCHES "/c[+][+]/")
+                list(APPEND _cncc_host_includes -isystem "${_dir}")
+            endif()
+        endforeach()
         set(MLU_COMPILE_OPTS
-            -c --bang-mlu-arch=mtp_592 -O3 -fPIC -Wall -Werror -std=c++17 -pthread
+            --bang-mlu-arch=${INFINIOPS_CAMBRICON_MLU_ARCH}
+            -DINFINIOPS_CAMBRICON_NATIVE=1
+            -DINFINIOPS_CAMBRICON_BANG_BF16=$<BOOL:${INFINIOPS_CAMBRICON_BANG_BF16}>
+            -O3 -fPIC -Wall -Werror -Wno-error=return-type -std=c++17 -pthread
             -I${CMAKE_CURRENT_SOURCE_DIR} -I${NEUWARE_HOME}/include
+            ${_cncc_host_includes}
             ${INFINI_RT_INCLUDE_FLAGS}
             ${INFINI_MLU_HOST_ABI_FLAGS}
             -idirafter /usr/local/neuware/lib/clang/11.1.0/include
@@ -1490,6 +1504,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
             set_source_files_properties(${ILUVATAR_OPERATOR_DISPATCH_OBJECTS}
                 PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
             target_sources(infiniops PRIVATE ${ILUVATAR_OPERATOR_DISPATCH_OBJECTS})
+        elseif(WITH_CAMBRICON AND NOT GENERATE_PYTHON_BINDINGS)
+            # C++ consumers need dispatch entry points without the Python extension.
+            target_sources(infiniops PRIVATE ${OPERATOR_DISPATCH_SOURCES})
         endif()
     endif()
 endif()

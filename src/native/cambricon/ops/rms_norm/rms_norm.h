@@ -7,9 +7,12 @@
 
 #include "base/rms_norm.h"
 #include "native/cambricon/common.h"
+#include "native/cambricon/cnrt_utils.h"
 #include "native/cambricon/data_type_.h"
 
 namespace infini::ops {
+
+inline constexpr int kRmsNormInlineRank = 8;
 
 // TODO: Remove forward declaration.
 template <typename T, typename Tw>
@@ -31,13 +34,14 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
       : RmsNorm{input, weight, eps, out} {
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster,
                                 &cluster_count);
-    cnrtMalloc(&default_workspace_, workspace_size_in_bytes());
+    default_workspace_ = cnrt_utils::AllocateDeviceBuffer(workspace_size_in_bytes());
   }
 
   void operator()(const Tensor input, const Tensor weight, float eps,
                   Tensor out) const override {
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
-    auto workspace{workspace_ ? workspace_ : default_workspace_};
+    auto workspace{workspace_ && workspace_size_in_bytes_ >= workspace_size_in_bytes()
+                       ? workspace_ : default_workspace_.get()};
 
     DispatchFunc<
         Device::Type::kCambricon,
@@ -56,13 +60,13 @@ class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
         "CambriconRmsNorm::operator() - output dispatch");
   }
 
-  ~Operator() { cnrtFree(default_workspace_); }
-
   std::size_t workspace_size_in_bytes() const override {
+    if (ndim_ <= kRmsNormInlineRank) return 0;
     return ndim_ * (sizeof(size_t) + 2 * sizeof(ptrdiff_t));
   }
 
-  void* default_workspace_{nullptr};
+ private:
+  cnrt_utils::DeviceBuffer default_workspace_;
   int core_per_cluster = 0;
   int cluster_count = 0;
 };

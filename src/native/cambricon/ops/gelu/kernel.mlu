@@ -24,7 +24,7 @@ __mlu_device__ ptrdiff_t LogicalToOffset(size_t logical_index, int ndim,
 template <typename T>
 __mlu_device__ void ComputeGelu(const T* input, T* output, float* values,
                                 size_t count, bool approximate) {
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_half2float(values, reinterpret_cast<half*>(const_cast<T*>(input)),
                       count);
   } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
@@ -46,7 +46,7 @@ __mlu_device__ void ComputeGelu(const T* input, T* output, float* values,
     }
   }
 
-  if constexpr (std::is_same_v<T, __half>) {
+  if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     __bang_float2half(reinterpret_cast<half*>(output), values, count);
   } else if constexpr (std::is_same_v<T, __bang_bfloat16>) {
     __bang_float2bfloat16(output, values, count);

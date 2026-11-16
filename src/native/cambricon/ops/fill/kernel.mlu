@@ -136,7 +136,7 @@ void FillUnion(void* workspace, cnrtQueue_t queue, int core_per_cluster,
                                  static_cast<unsigned int>(cluster_count), 1};
   T converted_host_value{};
   if (device_value == nullptr) {
-    if constexpr (std::is_same_v<T, __half> ||
+    if constexpr (std::is_same_v<T, cambricon::NativeHalf> ||
                   std::is_same_v<T, __bang_bfloat16>) {
       converted_host_value = static_cast<T>(static_cast<float>(host_value));
     } else {

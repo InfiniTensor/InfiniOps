@@ -9,6 +9,7 @@
 #include "native/cambricon/cnrt_utils.h"
 #include "native/cambricon/common.h"
 #include "native/cambricon/data_type_.h"
+#include "native/cambricon/op_tensor.h"
 
 namespace infini::ops {
 
@@ -24,9 +25,16 @@ template <>
 class Operator<Mul, Device::Type::kCambricon> : public Mul {
  public:
   Operator(const Tensor input, const Tensor other, Tensor out)
-      : Mul{input, other, out},
-        default_workspace_{
-            cnrt_utils::AllocateDeviceBuffer(workspace_size_in_bytes())} {
+      : Mul{input, other, out} {
+    if (!output_size_) return;
+    if ((out_type_ == DataType::kFloat32 || out_type_ == DataType::kFloat16) &&
+        input.dtype() == out_type_ && other.dtype() == out_type_ &&
+        input.device() == out.device() && other.device() == out.device() &&
+        input.IsContiguous() && other.IsContiguous() && out.IsContiguous()) {
+      cnnl_ = std::make_unique<cnnl_utils::OpTensor>(CNNL_OP_TENSOR_MUL, input, other, out);
+      return;
+    }
+    default_workspace_ = cnrt_utils::AllocateDeviceBuffer(workspace_size_in_bytes());
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster_,
                                 &cluster_count_);
   }
@@ -41,10 +49,14 @@ class Operator<Mul, Device::Type::kCambricon> : public Mul {
                            is_out_contiguous_ && input.shape() == out.shape() &&
                            other.shape() == out.shape();
     auto queue = static_cast<cnrtQueue_t>(stream_ ? stream_ : 0);
+    if (cnnl_) {
+      cnnl_->Run(input, other, out, 1.0f, queue, workspace_, workspace_size_in_bytes_);
+      return;
+    }
     void* workspace = workspace_ ? workspace_ : default_workspace_.get();
 
     using SupportedTypes =
-        List<DataType::kFloat16, DataType::kBFloat16, DataType::kFloat32,
+        CambriconBangFloatTypes<
              DataType::kInt16, DataType::kInt32, DataType::kInt64,
              DataType::kUInt16, DataType::kUInt32, DataType::kUInt64>;
     DispatchFunc<Device::Type::kCambricon, SupportedTypes>(
@@ -63,10 +75,13 @@ class Operator<Mul, Device::Type::kCambricon> : public Mul {
   }
 
   std::size_t workspace_size_in_bytes() const override {
+    if (cnnl_) return cnnl_->WorkspaceSize();
+    if (!output_size_) return 0;
     return ndim_ * (sizeof(std::size_t) + 3 * sizeof(ptrdiff_t));
   }
 
  private:
+  std::unique_ptr<cnnl_utils::OpTensor> cnnl_;
   cnrt_utils::DeviceBuffer default_workspace_{};
 
   int core_per_cluster_{0};
