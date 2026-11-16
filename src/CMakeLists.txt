@@ -280,6 +280,23 @@ if(WITH_ILUVATAR)
     # Iluvatar backend uses the runtime and BLAS APIs directly.
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
 
+    option(INFINI_OPS_ILUVATAR_CUDNN "Enable the Iluvatar convolution library" ON)
+    if(INFINI_OPS_ILUVATAR_CUDNN)
+        find_path(ILUVATAR_CUDNN_INCLUDE_DIR cudnn.h
+            HINTS ${CUDAToolkit_INCLUDE_DIRS} "$ENV{COREX_HOME}/include")
+        find_library(ILUVATAR_CUDNN_LIBRARY NAMES cudnn ixDNN
+            HINTS ${CUDAToolkit_LIBRARY_DIR} "$ENV{COREX_HOME}/lib64")
+        if(ILUVATAR_CUDNN_INCLUDE_DIR AND ILUVATAR_CUDNN_LIBRARY)
+            if(NOT ILUVATAR_CUDNN_INCLUDE_DIR IN_LIST CUDAToolkit_INCLUDE_DIRS)
+                target_include_directories(infiniops SYSTEM PRIVATE ${ILUVATAR_CUDNN_INCLUDE_DIR})
+                list(APPEND ILUVATAR_CUDA_FLAGS "-isystem${ILUVATAR_CUDNN_INCLUDE_DIR}")
+            endif()
+            target_link_libraries(infiniops PRIVATE ${ILUVATAR_CUDNN_LIBRARY})
+            target_compile_definitions(infiniops PRIVATE WITH_ILUVATAR_CUDNN=1)
+            list(APPEND ILUVATAR_CUDA_FLAGS -DWITH_ILUVATAR_CUDNN=1)
+        endif()
+    endif()
+
     list(APPEND DEVICE_LIST "iluvatar")
 endif()
 
