@@ -13,6 +13,7 @@
 #include "native/cuda/device_buffer.h"
 #include "native/cuda/kernel_commons.cuh"
 #include "native/cuda/ops/add/kernel.cuh"
+#include "native/cuda/ops/add/linear_layout.h"
 #include "native/cuda/runtime_utils.h"
 
 namespace infini::ops {
@@ -23,6 +24,15 @@ class CudaAdd : public Add {
   CudaAdd(const Tensor input, const Tensor other, const double alpha,
           Tensor out)
       : Add{input, other, alpha, out} {
+    if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
+      if (out_type_ == DataType::kFloat32 && is_out_contiguous_ &&
+          add_linear::Classify(out_shape_, input_strides_, input_layout_) &&
+          add_linear::Classify(out_shape_, other_strides_, other_layout_)) {
+        linear_fp32_ = true;
+        return;
+      }
+    }
+
     const size_t shape_size = ndim_ * sizeof(*d_input_shape_);
     const size_t strides_size = ndim_ * sizeof(*d_input_strides_);
     const size_t metadata_size = 3 * (shape_size + strides_size);
@@ -72,6 +82,21 @@ class CudaAdd : public Add {
     [[maybe_unused]] HostRangeScope host_range_backend_submit{
         HostRangeLayer::kBackendSubmit};
 
+    if (linear_fp32_) {
+      constexpr uint32_t block = 256;
+      auto stream =
+          static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
+      AddLinearFp32Kernel<Backend::kDeviceType>
+          <<<utils::CeilDiv(output_size_, static_cast<Tensor::Size>(block)),
+             block, 0, stream>>>(static_cast<const float*>(input.data()),
+                                 static_cast<const float*>(other.data()),
+                                 static_cast<uint32_t>(output_size_),
+                                 input_layout_.mode, input_layout_.inner,
+                                 input_layout_.channels, other_layout_.mode,
+                                 other_layout_.inner, other_layout_.channels,
+                                 alpha, static_cast<float*>(out.data()));
+      return;
+    }
     DispatchFunc<AllTypes, AllCudaBlockSizes>(
         {static_cast<int64_t>(out_type_), block_size_},
         [&](auto list_tag) {
@@ -99,6 +124,12 @@ class CudaAdd : public Add {
   }
 
  private:
+  bool linear_fp32_{false};
+
+  add_linear::Layout input_layout_;
+
+  add_linear::Layout other_layout_;
+
   const int block_size_ =
       RuntimeUtils<Backend::kDeviceType>::GetOptimalBlockSize();
   CudaDeviceBuffer<Backend> metadata_;
