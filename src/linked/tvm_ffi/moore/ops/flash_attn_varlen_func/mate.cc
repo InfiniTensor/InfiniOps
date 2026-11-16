@@ -204,6 +204,9 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
       dl_q.Get()->device,
       C10<Device::Type::kMoore>::GetStreamFromExternal(stream_, device_index_)};
 
+  const mate::detail::TvmAllocatorGuard allocator_guard{
+      state.runtime_.Allocator()};
+
   auto result = tvm::ffi::Function::InvokeExternC(
       nullptr, state.runtime_.Forward().Entry(),
       tvm::ffi::TensorView(dl_q.Get()), tvm::ffi::TensorView(dl_k.Get()),
@@ -224,14 +227,13 @@ void Operator<FlashAttnVarlenFunc, Device::Type::kMoore, 16>::Call(
           : OptionalTensorView{},
       OptionalTensorView{}, OptionalTensorView{}, OptionalTensorView{},
       OptionalTensorView{}, OptionalTensorView{}, OptionalTensorView{},
-      OptionalTensorView{}, OptionalTensorView{}, OptionalTensorView{},
+      OptionalTensorView{}, OptionalTensorView{},
       static_cast<float>(softmax_scale.value_or(
           1.0 / std::sqrt(static_cast<double>(q_shape_[2])))),
       causal, int{window_size[0]}, int{window_size[1]}, int{0},
       static_cast<float>(softcap), int{0}, int{0}, OptionalTensorView{},
       OptionalTensorView{}, tvm::ffi::TensorView(dl_out.Get()),
-      tvm::ffi::TensorView(dl_lse.Get()), int{1}, int{0}, OptionalTensorView{},
-      false);
+      tvm::ffi::TensorView(dl_lse.Get()), int{1}, int{0}, OptionalTensorView{});
 
   const auto outputs = result.cast<tvm::ffi::Array<tvm::ffi::Any>>();
   const auto accumulators =

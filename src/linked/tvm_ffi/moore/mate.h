@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace infini::ops::linked::tvm_ffi::moore {
 
@@ -85,13 +86,18 @@ class DlSymbol {
 class DlPackTensor {
  public:
   explicit DlPackTensor(const at::Tensor& tensor)
-      : managed_(at::toDLPack(tensor)) {}
+      : strides_(tensor.strides().begin(), tensor.strides().end()),
+        managed_(at::toDLPack(tensor)),
+        original_strides_(managed_->dl_tensor.strides) {
+    managed_->dl_tensor.strides = strides_.data();
+  }
 
   DlPackTensor(const DlPackTensor&) = delete;
   DlPackTensor& operator=(const DlPackTensor&) = delete;
 
   ~DlPackTensor() {
     if (managed_ != nullptr && managed_->deleter != nullptr) {
+      managed_->dl_tensor.strides = original_strides_;
       managed_->deleter(managed_);
     }
   }
@@ -99,7 +105,9 @@ class DlPackTensor {
   const DLTensor* Get() const { return &managed_->dl_tensor; }
 
  private:
+  std::vector<int64_t> strides_;
   DLManagedTensor* managed_;
+  decltype(DLTensor::strides) original_strides_;
 };
 
 class TvmStreamGuard {
@@ -128,6 +136,29 @@ class TvmStreamGuard {
  private:
   DLDevice device_;
   TVMFFIStreamHandle previous_stream_{nullptr};
+};
+
+class TvmAllocatorGuard {
+ public:
+  explicit TvmAllocatorGuard(DLPackManagedTensorAllocator allocator) {
+    if (allocator == nullptr || TVMFFIEnvSetDLPackManagedTensorAllocator(
+                                    allocator, 0, &previous_) != 0) {
+      throw std::runtime_error("MATE failed to select the tensor allocator");
+    }
+  }
+
+  TvmAllocatorGuard(const TvmAllocatorGuard&) = delete;
+  TvmAllocatorGuard& operator=(const TvmAllocatorGuard&) = delete;
+
+  ~TvmAllocatorGuard() {
+    if (TVMFFIEnvSetDLPackManagedTensorAllocator(previous_, 0, nullptr) != 0) {
+      std::fprintf(stderr,
+                   "[InfiniOps] MATE failed to restore tensor allocator\n");
+    }
+  }
+
+ private:
+  DLPackManagedTensorAllocator previous_{nullptr};
 };
 
 class ModuleRecorder {
@@ -208,9 +239,22 @@ class MateFmhaRuntime {
  public:
   void Load(const std::string& forward_name,
             const std::optional<std::string>& combine_name) {
+    const auto capsule = py::module_::import("torch").attr("Tensor").attr(
+        "__dlpack_c_exchange_api__");
+    const auto* api = static_cast<const DLPackExchangeAPI*>(
+        PyCapsule_GetPointer(capsule.ptr(), "dlpack_exchange_api"));
+    if (api == nullptr) throw py::error_already_set();
+    if (api->header.version.major != DLPACK_MAJOR_VERSION ||
+        api->managed_tensor_allocator == nullptr) {
+      throw std::runtime_error(
+          "MATE requires a compatible Torch DLPack allocator");
+    }
+    allocator_ = api->managed_tensor_allocator;
     forward_.Load(forward_name);
     if (combine_name.has_value()) combine_.Load(*combine_name);
   }
+
+  DLPackManagedTensorAllocator Allocator() const { return allocator_; }
 
   detail::DlSymbol& Forward() { return forward_; }
 
@@ -219,6 +263,7 @@ class MateFmhaRuntime {
   }
 
  private:
+  DLPackManagedTensorAllocator allocator_{nullptr};
   detail::DlSymbol forward_;
   detail::DlSymbol combine_;
 };
