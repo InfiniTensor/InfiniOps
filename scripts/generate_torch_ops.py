@@ -1364,10 +1364,13 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
             if use_mutable_data
             else f"const_cast<void*>({api_name}.data())"
         )
+        metadata_prefix = f"metadata_.{api_name}" if name == "convolution" else api_name
+        metadata_suffix = "" if name == "convolution" else "_"
         conversion_lines.append(
             f"  auto at_{param.name} = ToAtenTensor<kDev>(\n"
-            f"      {data_expr}, {api_name}_shape_, {api_name}_strides_,\n"
-            f"      {api_name}_type_, device_index);"
+            f"      {data_expr}, {metadata_prefix}_shape{metadata_suffix}, "
+            f"{metadata_prefix}_strides{metadata_suffix},\n"
+            f"      {metadata_prefix}_type{metadata_suffix}, device_index);"
         )
 
     if op.explicit_inplace_out is not None:
@@ -1430,6 +1433,20 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         ]
         rendered_args = ", ".join(_render_arg(index, p) for index, p in arg_order)
         aten_call = f"at::{op.aten_name}_out({rendered_args})"
+        if op.aten_name == "convolution":
+            direct_args = ", ".join(
+                _render_arg(index, p)
+                for index, p in enumerate(op.params)
+                if not p.is_out
+            )
+            direct_out = ", ".join(
+                _render_arg(index, p) for index, p in enumerate(op.params) if p.is_out
+            )
+            aten_call = (
+                "if constexpr (kDev == Device::Type::kIluvatar) {\n"
+                f"    if (torch_conv_detail::TryDirectOutput({direct_args}, {direct_out})) return;\n"
+                "  }\n  " + aten_call
+            )
 
     return _TORCH_METHOD_TEMPLATE.format(
         op_type=op_type,
@@ -1446,12 +1463,15 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     op_type = _op_cpp_type(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
-    return _TORCH_SOURCE_TEMPLATE.format(
+    source = _TORCH_SOURCE_TEMPLATE.format(
         name=name,
         methods=methods,
         op_type=op_type,
         slot=_PYTORCH_SLOT,
     )
+    if name == "convolution":
+        source = '#include "torch/ops/convolution/direct_output.h"\n\n' + source
+    return source
 
 
 _BASE_TEMPLATE = """\
