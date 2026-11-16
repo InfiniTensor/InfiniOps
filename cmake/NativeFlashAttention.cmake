@@ -53,8 +53,10 @@ function(infiniops_add_native_flash target)
         endforeach()
     endforeach()
     add_library(${target} OBJECT "${_provider}/kernel.cc"
+        "${_provider}/mla_kernel.cc"
         "${_source}/src/native/cuda/nvidia/ops/flash_common.cc"
-        "${_varlen_provider}/kernel.cc" ${_launches})
+        "${_varlen_provider}/kernel.cc"
+        "${_varlen_provider}/mla_kernel.cc" ${_launches})
     set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON CUDA_STANDARD 17)
     target_compile_features(${target} PRIVATE cxx_std_17)
     target_compile_definitions(${target} PRIVATE
