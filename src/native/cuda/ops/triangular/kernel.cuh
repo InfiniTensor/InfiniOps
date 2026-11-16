@@ -1,8 +1,6 @@
 #ifndef INFINI_OPS_CUDA_TRIANGULAR_KERNEL_CUH_
 #define INFINI_OPS_CUDA_TRIANGULAR_KERNEL_CUH_
 
-#include <cuda_runtime.h>
-
 #include <cstddef>
 #include <cstdint>
 
