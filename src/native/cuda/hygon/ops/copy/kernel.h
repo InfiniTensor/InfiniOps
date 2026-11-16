@@ -12,6 +12,8 @@ class Operator<Copy, Device::Type::kHygon>
     : public CudaCopy<Runtime<Device::Type::kHygon>> {
  public:
   using CudaCopy<Runtime<Device::Type::kHygon>>::CudaCopy;
+
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

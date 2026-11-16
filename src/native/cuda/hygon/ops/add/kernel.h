@@ -12,6 +12,8 @@ class Operator<Add, Device::Type::kHygon>
     : public CudaAdd<Runtime<Device::Type::kHygon>> {
  public:
   using CudaAdd<Runtime<Device::Type::kHygon>>::CudaAdd;
+
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

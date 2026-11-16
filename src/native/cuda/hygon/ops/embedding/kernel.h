@@ -12,6 +12,8 @@ class Operator<Embedding, Device::Type::kHygon>
     : public CudaEmbedding<Runtime<Device::Type::kHygon>> {
  public:
   using CudaEmbedding<Runtime<Device::Type::kHygon>>::CudaEmbedding;
+
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops

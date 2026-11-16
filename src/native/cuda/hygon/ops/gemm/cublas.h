@@ -10,7 +10,17 @@ template <>
 class Operator<Gemm, Device::Type::kHygon>
     : public BlasGemm<Blas<Device::Type::kHygon>> {
  public:
-  using BlasGemm<Blas<Device::Type::kHygon>>::BlasGemm;
+  using Base = BlasGemm<Blas<Device::Type::kHygon>>;
+  Operator(Tensor a, Tensor b, const std::optional<Tensor> c,
+           std::optional<float> alpha, std::optional<float> beta,
+           std::optional<int> trans_a, std::optional<int> trans_b, Tensor y)
+      : Base(a,b,c,alpha,beta,trans_a,trans_b,y) {
+    // Make runs before stream capture; initialize the rank's BLAS handle here.
+    (void)this->GetHandle();
+  }
+  Operator(Tensor a, Tensor b, Tensor y)
+      : Operator(a,b,std::nullopt,std::nullopt,std::nullopt,std::nullopt,std::nullopt,y) {}
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops
