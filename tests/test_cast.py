@@ -205,3 +205,72 @@ def test_encoder_cast_nondefault_stream(device):
         stream.synchronize()
 
     torch.testing.assert_close(out, x.float())
+
+
+@pytest.mark.parametrize("strided", [False, True])
+def test_metax_bf16_fp32_encoding_round_trip(device, strided):
+    if not infini.ops.Cast.active_implementation_indices("metax"):
+        pytest.skip("MetaX native Cast is not enabled")
+    if torch.device(device).type == "cpu":
+        pytest.skip("MetaX Cast requires the device backend")
+    values = torch.arange(65536, dtype=torch.int32).to(torch.int16).view(torch.bfloat16)
+    source = values.to(device)
+    strides = (2,) if strided else None
+    destination = empty_strided(
+        source.shape, strides, dtype=torch.float32, device=device
+    )
+    restored = empty_strided(source.shape, strides, dtype=torch.bfloat16, device=device)
+    _cast(source, destination, implementation_index=0)
+    _cast(destination, restored, implementation_index=0)
+    actual = destination.cpu()
+    expected = values.float()
+    finite = ~torch.isnan(expected)
+    assert torch.equal(torch.isnan(actual), torch.isnan(expected))
+    assert torch.equal(
+        actual[finite].view(torch.int32), expected[finite].view(torch.int32)
+    )
+    assert torch.equal(
+        restored.cpu()[finite].view(torch.int16), values[finite].view(torch.int16)
+    )
+
+
+@pytest.mark.parametrize("strided", [False, True])
+def test_metax_fp32_bf16_rounding_bits(device, strided):
+    if not infini.ops.Cast.active_implementation_indices("metax"):
+        pytest.skip("MetaX native Cast is not enabled")
+    if torch.device(device).type == "cpu":
+        pytest.skip("MetaX Cast requires the device backend")
+    generator = torch.Generator().manual_seed(20261115)
+    random_bits = torch.randint(
+        -(2**31), 2**31 - 1, (265530,), generator=generator, dtype=torch.int32
+    )
+    boundary_bits = torch.tensor(
+        [
+            0,
+            -2147483648,
+            1,
+            -2147483647,
+            0x7F800000,
+            -8388608,
+            0x7FC00001,
+            0x3F808000,
+            0x3F818000,
+            0x00008000,
+            0x00018000,
+            0x7F7FFFFF,
+        ],
+        dtype=torch.int32,
+    )
+    values = torch.cat([random_bits, boundary_bits]).view(torch.float32)
+    source = values.to(device)
+    destination = empty_strided(
+        source.shape, (2,) if strided else None, dtype=torch.bfloat16, device=device
+    )
+    _cast(source, destination, implementation_index=0)
+    actual = destination.cpu()
+    expected = values.to(torch.bfloat16)
+    finite = ~torch.isnan(expected)
+    assert torch.equal(torch.isnan(actual), torch.isnan(expected))
+    assert torch.equal(
+        actual[finite].view(torch.int16), expected[finite].view(torch.int16)
+    )
