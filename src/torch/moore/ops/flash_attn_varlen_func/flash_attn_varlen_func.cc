@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 
 #include "native/cuda/moore/ops/flash_attn_varlen_func/paged.h"
 #include "torch/moore/c10.h"
@@ -10,6 +11,21 @@
 namespace infini::ops {
 
 namespace detail {
+
+namespace {
+
+bool SameLengthView(const at::Tensor& query, const at::Tensor& key) {
+  const char* flag = std::getenv("INFINILM_MOORE_PREFILL_METADATA_REUSE");
+  return flag && flag[0] == '1' && flag[1] == '\0' && query.defined() &&
+         key.defined() && query.scalar_type() == at::kInt &&
+         key.scalar_type() == at::kInt && query.device() == key.device() &&
+         query.device().is_privateuseone() && query.dim() == 1 &&
+         key.dim() == 1 && query.numel() >= 2 && query.sizes() == key.sizes() &&
+         query.stride(0) == 1 && key.stride(0) == 1 &&
+         query.data_ptr() == key.data_ptr();
+}
+
+}  // namespace
 
 template <>
 struct AtenFlashAttnVarlenPolicy<Device::Type::kMoore> {
@@ -21,7 +37,8 @@ struct AtenFlashAttnVarlenPolicy<Device::Type::kMoore> {
   static AtenFlashAttnVarlenOptions MakeOptions(
       bool causal, const std::vector<int64_t>&, const at::Tensor& cu_seqlens_q,
       const at::Tensor& cu_seqlens_k) {
-    assert((!causal || at::equal(cu_seqlens_q, cu_seqlens_k)) &&
+    assert((!causal || SameLengthView(cu_seqlens_q, cu_seqlens_k) ||
+            at::equal(cu_seqlens_q, cu_seqlens_k)) &&
            "TorchMusa causal FlashAttention requires matching query and "
            "key sequence lengths");
 
