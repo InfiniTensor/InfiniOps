@@ -26,6 +26,27 @@ class CudaRotaryEmbedding : public RotaryEmbedding {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
+    bool head_blocks = false;
+    if constexpr (Backend::kDeviceType == Device::Type::kIluvatar) {
+      if (key && query_type_ == DataType::kBFloat16 &&
+          cos_sin_cache_type_ == DataType::kBFloat16 && num_heads_ == 28 &&
+          num_kv_heads_ == 28 && rot_dim_ == 128 && rope_dim_offset_ == 0 &&
+          num_tokens_ <= 32768 && query_head_stride_ == 128 &&
+          key_head_stride_ == 128 &&
+          (query_token_stride_ == 3584 || query_token_stride_ == 10752) &&
+          (key_token_stride_ == 3584 || key_token_stride_ == 10752)) {
+        const auto q = reinterpret_cast<uintptr_t>(query.data());
+        const auto k = reinterpret_cast<uintptr_t>(key->data());
+        const auto q_span =
+            ((num_tokens_ - 1) * query_token_stride_ + 3584) * 2;
+        const auto k_span = ((num_tokens_ - 1) * key_token_stride_ + 3584) * 2;
+        const bool disjoint = q <= k ? k - q >= q_span : q - k >= k_span;
+        const bool packed_qkv = query_token_stride_ == 10752 &&
+                                key_token_stride_ == 10752 && q <= k &&
+                                k - q == 7168;
+        head_blocks = disjoint || packed_qkv;
+      }
+    }
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>,
                  ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>>(
         {static_cast<int64_t>(query_type_),
@@ -38,6 +59,19 @@ class CudaRotaryEmbedding : public RotaryEmbedding {
               key.has_value() ? reinterpret_cast<T*>(key->data()) : nullptr;
           auto launch = [&](auto neox_tag) {
             constexpr bool kIsNeox = decltype(neox_tag)::value;
+            if (head_blocks) {
+              RotaryEmbeddingKernel<Backend::kDeviceType, T, TCache, kIsNeox,
+                                    true>
+                  <<<dim3(num_tokens_, num_heads_), 64, 0, cuda_stream>>>(
+                      reinterpret_cast<const int64_t*>(positions.data()),
+                      reinterpret_cast<T*>(query.data()), key_data,
+                      reinterpret_cast<const TCache*>(cos_sin_cache.data()),
+                      cos_sin_cache_strides_[0], query_token_stride_,
+                      key_token_stride_, query_head_stride_, key_head_stride_,
+                      num_heads_, num_kv_heads_, rot_dim_, rope_dim_offset_,
+                      inverse_);
+              return;
+            }
             RotaryEmbeddingKernel<Backend::kDeviceType, T, TCache, kIsNeox>
                 <<<static_cast<uint32_t>(num_tokens_), 256, 0, cuda_stream>>>(
                     reinterpret_cast<const int64_t*>(positions.data()),
