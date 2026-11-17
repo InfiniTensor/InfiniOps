@@ -53,6 +53,13 @@ class CloverLocalMemory : public ::infini::ops::CloverLocalMemory {
 namespace infini::ops {
 
 template <>
+class Operator<CloverLocalMemory, Device::Type::kNvidia, 10>
+    : public triton::jit::CloverLocalMemory<Device::Type::kNvidia> {
+ public:
+  using triton::jit::CloverLocalMemory<Device::Type::kNvidia>::CloverLocalMemory;
+};
+
+template <>
 class Operator<CloverLocalMemory, Device::Type::kHygon, 10>
     : public triton::jit::CloverLocalMemory<Device::Type::kHygon> {
  public:

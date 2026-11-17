@@ -84,6 +84,13 @@ class MoeFusedDense : public ::infini::ops::MoeFusedDense {
 namespace infini::ops {
 
 template <>
+class Operator<MoeFusedDense, Device::Type::kNvidia, 10>
+    : public triton::jit::MoeFusedDense<Device::Type::kNvidia> {
+ public:
+  using triton::jit::MoeFusedDense<Device::Type::kNvidia>::MoeFusedDense;
+};
+
+template <>
 class Operator<MoeFusedDense, Device::Type::kHygon, 10>
     : public triton::jit::MoeFusedDense<Device::Type::kHygon> {
  public:

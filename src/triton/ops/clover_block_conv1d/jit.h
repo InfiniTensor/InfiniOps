@@ -47,6 +47,13 @@ class CloverBlockConv1d : public ::infini::ops::CloverBlockConv1d {
 namespace infini::ops {
 
 template <>
+class Operator<CloverBlockConv1d, Device::Type::kNvidia, 10>
+    : public triton::jit::CloverBlockConv1d<Device::Type::kNvidia> {
+ public:
+  using triton::jit::CloverBlockConv1d<Device::Type::kNvidia>::CloverBlockConv1d;
+};
+
+template <>
 class Operator<CloverBlockConv1d, Device::Type::kHygon, 10>
     : public triton::jit::CloverBlockConv1d<Device::Type::kHygon> {
  public:

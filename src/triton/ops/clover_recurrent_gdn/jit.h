@@ -41,6 +41,14 @@ class CloverRecurrentGdn : public ::infini::ops::CloverRecurrentGdn {
 namespace infini::ops {
 
 template <>
+class Operator<CloverRecurrentGdn, Device::Type::kNvidia, 10>
+    : public triton::jit::CloverRecurrentGdn<Device::Type::kNvidia> {
+ public:
+  using triton::jit::CloverRecurrentGdn<
+      Device::Type::kNvidia>::CloverRecurrentGdn;
+};
+
+template <>
 class Operator<CloverRecurrentGdn, Device::Type::kHygon, 10>
     : public triton::jit::CloverRecurrentGdn<Device::Type::kHygon> {
  public:

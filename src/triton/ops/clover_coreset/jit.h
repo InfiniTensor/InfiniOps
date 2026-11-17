@@ -3,13 +3,13 @@
 #include "base/clover_coreset.h"
 #include "triton/jit/jit.h"
 
-namespace infini::ops {
+namespace infini::ops::triton::jit {
 
-template <>
-class Operator<CloverCoreset, Device::Type::kHygon, 10> : public CloverCoreset {
+template <Device::Type kDev>
+class CloverCoreset : public ::infini::ops::CloverCoreset {
  public:
-  Operator(const Tensor logits, size_t block_size, double top_p, Tensor out)
-      : CloverCoreset(logits, block_size, top_p, out),
+  CloverCoreset(const Tensor logits, size_t block_size, double top_p, Tensor out)
+      : ::infini::ops::CloverCoreset(logits, block_size, top_p, out),
         blocks_(logits.size(0) / block_size) {}
 
   size_t workspace_size_in_bytes() const override { return blocks_ * 256 * 5; }
@@ -26,13 +26,14 @@ class Operator<CloverCoreset, Device::Type::kHygon, 10> : public CloverCoreset {
                  DataType::kInt8,
                  logits.device()};
     for (int stage = 0; stage < 3; ++stage) {
-      const triton::jit::Config config{
+      const Config config{
           4u, 1u, {{"WIDTH", block_size}, {"STAGE", stage}}};
-      triton::jit::Launch<Device::Type::kHygon>(
-          "clover_coreset", logits.device().index(), stream_, nullptr, config,
+      Launch<kDev>(
+          "clover_coreset", logits.device().index(), this->stream_,
+          this->config_ptr_.get(), config,
           {},
-          [&](const triton::jit::Config&) -> std::optional<triton::jit::Grid> {
-            return triton::jit::Grid{
+          [&](const Config&) -> std::optional<Grid> {
+            return Grid{
                 static_cast<unsigned>(stage == 2 ? logits.size(0) : blocks_)};
           },
           logits, mass, allow, out, static_cast<float>(top_p));
@@ -41,6 +42,24 @@ class Operator<CloverCoreset, Device::Type::kHygon, 10> : public CloverCoreset {
 
  private:
   size_t blocks_;
+};
+
+}  // namespace infini::ops::triton::jit
+
+namespace infini::ops {
+
+template <>
+class Operator<CloverCoreset, Device::Type::kNvidia, 10>
+    : public triton::jit::CloverCoreset<Device::Type::kNvidia> {
+ public:
+  using triton::jit::CloverCoreset<Device::Type::kNvidia>::CloverCoreset;
+};
+
+template <>
+class Operator<CloverCoreset, Device::Type::kHygon, 10>
+    : public triton::jit::CloverCoreset<Device::Type::kHygon> {
+ public:
+  using triton::jit::CloverCoreset<Device::Type::kHygon>::CloverCoreset;
 };
 
 }  // namespace infini::ops

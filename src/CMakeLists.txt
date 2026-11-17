@@ -158,6 +158,11 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    # The recursive top-level `native/cuda/*.cu` pattern also matches sibling
+    # vendor subtrees (hygon/iluvatar/metax/moore); drop them so their symbols
+    # are not defined twice when those backends are also enabled.
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|metax|moore|thead|cambricon|ascend)/.*")
     # Optional pinned kernels have their own include closure and CUDA TUs.
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
