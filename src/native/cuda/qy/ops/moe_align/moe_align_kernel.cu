@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "native/cuda/qy/moe_align_kernel.h"
+#include "native/cuda/qy/ops/moe_align/moe_align_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -70,7 +70,7 @@ __global__ void moeAlignScan(const int32_t *__restrict__ counts,
                              int32_t *__restrict__ total_out,
                              int32_t num_experts, int32_t block_size,
                              int32_t expert_ids_capacity) {
-  // Serial scan on thread 0 — E is modest (MiniCPM5 typically <= 256).
+  // Serial scan on thread 0 â E is modest (MiniCPM5 typically <= 256).
   if (threadIdx.x != 0 || blockIdx.x != 0) {
     return;
   }

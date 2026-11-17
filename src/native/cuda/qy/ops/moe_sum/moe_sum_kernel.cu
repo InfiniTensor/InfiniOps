@@ -5,7 +5,7 @@
 #include <string>
 
 #include "native/cuda/qy/data_type_.h"
-#include "native/cuda/qy/moe_sum_kernel.h"
+#include "native/cuda/qy/ops/moe_sum/moe_sum_kernel.h"
 
 namespace infini::ops::qy {
 namespace {

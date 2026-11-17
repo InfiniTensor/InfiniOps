@@ -7,7 +7,7 @@
 #include <string>
 
 #include "native/cuda/qy/data_type_.h"
-#include "native/cuda/qy/moe_topk_sigmoid_kernel.h"
+#include "native/cuda/qy/ops/moe_topk_sigmoid/moe_topk_sigmoid_kernel.h"
 
 namespace infini::ops::qy {
 namespace {

@@ -6,7 +6,7 @@
 #include <string>
 
 #include "native/cuda/qy/data_type_.h"
-#include "native/cuda/qy/silu_and_mul_kernel.h"
+#include "native/cuda/qy/ops/silu_and_mul/silu_and_mul_kernel.h"
 
 namespace infini::ops::qy {
 namespace {

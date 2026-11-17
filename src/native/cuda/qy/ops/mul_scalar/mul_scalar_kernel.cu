@@ -5,7 +5,7 @@
 #include <string>
 
 #include "native/cuda/qy/data_type_.h"
-#include "native/cuda/qy/mul_scalar_kernel.h"
+#include "native/cuda/qy/ops/mul_scalar/mul_scalar_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -17,13 +17,14 @@ __device__ __forceinline__ T mulScalarValue(T value, double alpha) {
 
 template <>
 __device__ __forceinline__ half mulScalarValue<half>(half value, double alpha) {
-  return __hmul(value, __float2half(static_cast<float>(alpha)));
+  // Multiply in float so large alpha (e.g. 1e5) does not overflow half first.
+  return __float2half(__half2float(value) * static_cast<float>(alpha));
 }
 
 template <>
 __device__ __forceinline__ cuda_bfloat16
 mulScalarValue<cuda_bfloat16>(cuda_bfloat16 value, double alpha) {
-  return __hmul(value, __float2bfloat16_rn(static_cast<float>(alpha)));
+  return __float2bfloat16(__bfloat162float(value) * static_cast<float>(alpha));
 }
 
 template <typename T>

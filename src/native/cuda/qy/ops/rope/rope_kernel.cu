@@ -6,7 +6,7 @@
 #include <string>
 
 #include "native/cuda/qy/data_type_.h"
-#include "native/cuda/qy/rope_kernel.h"
+#include "native/cuda/qy/ops/rope/rope_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -47,7 +47,7 @@ __device__ __forceinline__ cuda_bfloat16 fromFloat<cuda_bfloat16>(float v) {
   return __float2bfloat16(v);
 }
 
-// Flattened over (token, head, rotary_pair). Avoids seqlen×nhead 2D/3D grids.
+// Flattened over (token, head, rotary_pair). Avoids seqlenÃnhead 2D/3D grids.
 template <typename T, bool IsGptJ>
 __global__ void ropeFlatKernel(T *y, const T *x,
                                const int64_t *__restrict__ pos_ids,

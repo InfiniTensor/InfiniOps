@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "native/cuda/qy/rope_pack_kernel.h"
+#include "native/cuda/qy/ops/rope_pack/rope_pack_kernel.h"
 
 namespace infini::ops::qy {
 namespace {
@@ -21,11 +21,13 @@ __global__ void packVecKernel(T *dst, const T *src, size_t n_vecs, size_t dim,
     size_t token = idx / heads;
     const T *row = src + token * s0 + head * s1;
     T *out = dst + idx * dim;
-    // Vectorize 8-byte chunks when dim and alignment allow (bf16/fp16 dim=128).
+    // Vectorize 8-byte chunks; step by elems that fit in uint64_t (2 for f32).
+    constexpr size_t elems_per_u64 = sizeof(uint64_t) / sizeof(T);
     size_t d = 0;
-    if (dim >= 4 && (reinterpret_cast<uintptr_t>(row) % 8) == 0 &&
+    if (dim >= elems_per_u64 &&
+        (reinterpret_cast<uintptr_t>(row) % 8) == 0 &&
         (reinterpret_cast<uintptr_t>(out) % 8) == 0) {
-      for (; d + 4 <= dim; d += 4) {
+      for (; d + elems_per_u64 <= dim; d += elems_per_u64) {
         *reinterpret_cast<uint64_t *>(out + d) =
             *reinterpret_cast<const uint64_t *>(row + d);
       }
@@ -46,10 +48,12 @@ __global__ void unpackVecKernel(T *dst, const T *src, size_t n_vecs, size_t dim,
     size_t token = idx / heads;
     T *row = dst + token * s0 + head * s1;
     const T *in = src + idx * dim;
+    constexpr size_t elems_per_u64 = sizeof(uint64_t) / sizeof(T);
     size_t d = 0;
-    if (dim >= 4 && (reinterpret_cast<uintptr_t>(row) % 8) == 0 &&
+    if (dim >= elems_per_u64 &&
+        (reinterpret_cast<uintptr_t>(row) % 8) == 0 &&
         (reinterpret_cast<uintptr_t>(in) % 8) == 0) {
-      for (; d + 4 <= dim; d += 4) {
+      for (; d + elems_per_u64 <= dim; d += elems_per_u64) {
         *reinterpret_cast<uint64_t *>(row + d) =
             *reinterpret_cast<const uint64_t *>(in + d);
       }
