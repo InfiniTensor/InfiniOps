@@ -12,9 +12,6 @@ class Operator<MaskedFillBackward, kDev, 1> : public MaskedFillBackward {
 
   void operator()(const Tensor grad_output, const Tensor mask,
                   Tensor grad_input) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops

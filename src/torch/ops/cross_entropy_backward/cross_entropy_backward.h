@@ -9,10 +9,13 @@ template <Device::Type kDev>
 class Operator<CrossEntropyBackward, kDev, 1> : public CrossEntropyBackward {
  public:
   Operator(const Tensor input, const Tensor target, const Tensor grad_output,
-           Tensor grad_input);
+           std::optional<Tensor> weight, int64_t ignore_index,
+           std::string reduction, double label_smoothing, Tensor grad_input);
 
   void operator()(const Tensor input, const Tensor target,
-                  const Tensor grad_output, Tensor grad_input) const override;
+                  const Tensor grad_output, std::optional<Tensor> weight,
+                  int64_t ignore_index, std::string reduction,
+                  double label_smoothing, Tensor grad_input) const override;
 };
 
 }  // namespace infini::ops

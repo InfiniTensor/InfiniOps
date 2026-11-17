@@ -5,151 +5,88 @@ import torch
 from tests.utils import Payload, empty_strided, get_stream, randn_strided
 
 
-_TEST_CASES = (
-    pytest.param(
-        (17,),
-        (5,),
-        None,
-        None,
-        (1,),
-        (16,),
-        (3,),
-        id="one-dimensional",
-    ),
-    pytest.param(
-        (6, 9),
-        (3, 3),
-        (12, 1),
-        (5, 1),
-        (1, 0),
-        (6, 9),
-        (2, 3),
-        id="strided-two-dimensional",
-    ),
-    pytest.param(
-        (4, 6, 7),
-        (2, 3, 3),
-        (60, 9, 1),
-        (20, 5, 1),
-        (-4, 1, 0),
-        (-1, 6, 7),
-        (2, 2, 3),
-        id="negative-indices",
-    ),
-    pytest.param(
-        (2, 3, 4, 5),
-        (2, 2, 3, 3),
-        (80, 25, 6, 1),
-        None,
-        (0, 0, 1, 0),
-        (2, 3, 4, 5),
-        (1, 2, 1, 2),
-        id="four-dimensional",
-    ),
-    pytest.param(
-        (5, 7),
-        (0, 7),
-        None,
-        None,
-        (3, 0),
-        (3, 7),
-        (1, 1),
-        id="empty-slice",
-    ),
+_CASES = (
+    ((17,), None, 0, 1, 16, 3),
+    ((6, 9), (12, 1), 0, 1, 6, 2),
+    ((6, 9), (12, 1), 1, 0, 9, 3),
+    ((4, 6, 7), (60, 9, 1), -2, -5, 6, 2),
+    ((2, 3, 4, 5), None, 3, 0, 5, 2),
+    ((5, 7), None, 0, 3, 3, 1),
+    ((3, 5), None, -1, -100, 100, 2),
 )
 
 
 @pytest.mark.auto_act_and_assert
-@pytest.mark.parametrize(
-    (
-        "grad_input_shape",
-        "grad_output_shape",
-        "grad_input_strides",
-        "grad_output_strides",
-        "starts",
-        "ends",
-        "steps",
-    ),
-    _TEST_CASES,
-)
-@pytest.mark.parametrize(
-    ("dtype", "rtol", "atol"),
-    (
-        (torch.float32, 0, 0),
-        (torch.float16, 0, 0),
-        (torch.bfloat16, 0, 0),
-    ),
-)
+@pytest.mark.parametrize("shape,strides,dim,start,end,step", _CASES)
+@pytest.mark.parametrize("strided_upstream", (False, True))
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
 def test_slice_backward(
-    grad_input_shape,
-    grad_output_shape,
-    grad_input_strides,
-    grad_output_strides,
-    starts,
-    ends,
-    steps,
-    implementation_index,
+    shape,
+    strides,
+    dim,
+    start,
+    end,
+    step,
+    strided_upstream,
     dtype,
     device,
-    rtol,
-    atol,
+    implementation_index,
 ):
-    grad_output = randn_strided(
-        grad_output_shape,
-        grad_output_strides,
-        dtype=dtype,
-        device=device,
+    grad_input = empty_strided(shape, strides, dtype=dtype, device=device)
+    index = [slice(None)] * len(shape)
+    index[dim] = slice(start, end, step)
+    output_shape = grad_input[tuple(index)].shape
+    output_strides = (
+        tuple(stride * 2 for stride in torch.empty(output_shape).stride())
+        if strided_upstream
+        else None
     )
-    grad_input = empty_strided(
-        grad_input_shape,
-        grad_input_strides,
-        dtype=dtype,
-        device=device,
+    grad_output = randn_strided(
+        output_shape, output_strides, dtype=dtype, device=device
     )
     grad_input.fill_(17)
 
-    return Payload(
-        lambda *args: _slice_backward(*args, implementation_index=implementation_index),
-        _torch_slice_backward,
-        (grad_output, starts, ends, steps, grad_input),
-        {},
-        rtol=rtol,
-        atol=atol,
-    )
+    def actual(grad_output, grad_input):
+        infini.ops.slice_backward(
+            grad_output,
+            shape,
+            dim,
+            start,
+            end,
+            step,
+            grad_input,
+            stream=get_stream(device),
+            implementation_index=implementation_index,
+        )
+        return grad_input
+
+    def reference(grad_output, grad_input):
+        x = torch.zeros(shape, dtype=dtype, device=device, requires_grad=True)
+        with torch.enable_grad():
+            result = x[tuple(index)]
+            gradient = torch.autograd.grad(result, x, grad_output)[0]
+        grad_input.copy_(gradient)
+        return grad_input
+
+    return Payload(actual, reference, (grad_output, grad_input), {}, rtol=0, atol=0)
 
 
-def _slice_backward(
-    grad_output,
-    starts,
-    ends,
-    steps,
-    grad_input,
-    *,
-    implementation_index,
-):
+@pytest.mark.parametrize("offset", (0, 2))
+def test_slice_backward_alias(offset, device, implementation_index):
+    backing = torch.arange(32, dtype=torch.float32, device=device)
+    grad_output = backing[offset : offset + 6].reshape(3, 2)
+    out = backing[:12].reshape(3, 4)
+    expected = torch.zeros_like(out)
+    expected[:, ::2] = grad_output.clone()
     infini.ops.slice_backward(
         grad_output,
-        starts,
-        ends,
-        steps,
-        grad_input,
-        stream=get_stream(grad_output.device),
+        (3, 4),
+        1,
+        0,
+        4,
+        2,
+        out,
+        stream=get_stream(device),
         implementation_index=implementation_index,
     )
-
-    return grad_input
-
-
-def _torch_slice_backward(grad_output, starts, ends, steps, grad_input):
-    grad_input.zero_()
-    grad_input[_slice_index(starts, ends, steps)] = grad_output
-
-    return grad_input
-
-
-def _slice_index(starts, ends, steps):
-    assert len(starts) == len(ends) == len(steps)
-
-    return tuple(
-        slice(start, end, step) for start, end, step in zip(starts, ends, steps)
-    )
+    torch.testing.assert_close(out, expected, rtol=0, atol=0)

@@ -2,8 +2,8 @@
 #define INFINI_OPS_BASE_ACCUMULATE_GRAD_H_
 
 #include <cassert>
-#include <initializer_list>
 
+#include "base/validation.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -19,36 +19,34 @@ class AccumulateGrad : public Operator<AccumulateGrad> {
         tensor_type_{tensor.dtype()},
         rate_{rate},
         device_index_{tensor.device().index()} {
-    AssertTrainingDevices({gradient, tensor});
+    validation::AssertSameDevice({gradient, tensor});
+    assert(validation::IsFloatingPoint(tensor_type_) &&
+           "`AccumulateGrad` requires floating-point tensors.");
     assert(gradient.shape() == tensor.shape() &&
            "`AccumulateGrad` requires `gradient` and `tensor` to share shape");
     assert(gradient_type_ == tensor_type_ &&
            "`AccumulateGrad` requires `gradient` and `tensor` to share dtype");
-    assert(
-        gradient.device() == tensor.device() &&
-        "`AccumulateGrad` requires `gradient` and `tensor` on the same device");
   }
 
+  // Gradient and tensor may overlap, including partial external storage spans.
   virtual void operator()(const Tensor gradient, const double rate,
                           Tensor tensor) const = 0;
 
  protected:
-  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
-    if (tensors.size() == 0) return;
-    const auto device = tensors.begin()->device();
-    for (const auto& tensor : tensors) {
-      assert(tensor.device() == device &&
-             "Training tensors must share a device type and index.");
-    }
-  }
-
   Tensor::Shape gradient_shape_;
+
   Tensor::Strides gradient_strides_;
+
   DataType gradient_type_;
+
   Tensor::Shape tensor_shape_;
+
   Tensor::Strides tensor_strides_;
+
   DataType tensor_type_;
+
   double rate_{1.0};
+
   int device_index_{0};
 };
 

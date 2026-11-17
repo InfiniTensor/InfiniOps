@@ -13,9 +13,6 @@ class Operator<RepeatInterleaveBackward, kDev, 1>
 
   void operator()(const Tensor grad_output, const int64_t dim,
                   Tensor grad_input) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops

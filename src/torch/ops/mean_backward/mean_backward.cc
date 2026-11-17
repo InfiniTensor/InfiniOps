@@ -8,16 +8,14 @@ namespace infini::ops {
 
 template <Device::Type kDev>
 Operator<MeanBackward, kDev, 1>::Operator(const Tensor grad_output,
-                                          const int64_t dim,
-                                          const bool keep_dim,
+                                          const int64_t dim, const bool keepdim,
                                           Tensor grad_input)
-    : MeanBackward{grad_output, dim, keep_dim, grad_input},
-      device_index_{grad_input.device().index()} {}
+    : MeanBackward{grad_output, dim, keepdim, grad_input} {}
 
 template <Device::Type kDev>
 void Operator<MeanBackward, kDev, 1>::operator()(const Tensor grad_output,
                                                  const int64_t dim,
-                                                 const bool keep_dim,
+                                                 const bool keepdim,
                                                  Tensor grad_input) const {
   const TorchStreamGuard<kDev> guard{stream_, device_index_};
   auto at_grad_output = ToAtenTensor<kDev>(
@@ -32,7 +30,7 @@ void Operator<MeanBackward, kDev, 1>::operator()(const Tensor grad_output,
   }
 
   auto at_g = at_grad_output;
-  if (!keep_dim_) {
+  if (!keepdim_) {
     at_g = at_g.unsqueeze(dim_);
   }
 

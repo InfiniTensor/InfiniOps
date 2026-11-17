@@ -12,8 +12,7 @@ Operator<PowBackward, kDev, 1>::Operator(const Tensor grad_output,
                                          const double scalar,
                                          const bool scalar_is_base,
                                          Tensor grad_input)
-    : PowBackward{grad_output, input, scalar, scalar_is_base, grad_input},
-      device_index_{grad_input.device().index()} {}
+    : PowBackward{grad_output, input, scalar, scalar_is_base, grad_input} {}
 
 template <Device::Type kDev>
 void Operator<PowBackward, kDev, 1>::operator()(const Tensor grad_output,
@@ -34,12 +33,25 @@ void Operator<PowBackward, kDev, 1>::operator()(const Tensor grad_output,
 
   if (!scalar_is_base_ && scalar_ == 0.0) {
     at_grad_input.zero_();
-  } else if (scalar_is_base_) {
-    auto at_y = at::pow(scalar_, at_input);
-    at_grad_input.copy_(at_grad_output * at_y * std::log(scalar_));
+    return;
+  }
+  auto at_compute_input = at_input;
+  auto at_compute_grad_output = at_grad_output;
+  if (at_input.scalar_type() == at::kHalf ||
+      at_input.scalar_type() == at::kBFloat16) {
+    at_compute_input = at_input.to(at::kFloat);
+  }
+  if (at_grad_output.scalar_type() == at::kHalf ||
+      at_grad_output.scalar_type() == at::kBFloat16) {
+    at_compute_grad_output = at_grad_output.to(at::kFloat);
+  }
+
+  if (scalar_is_base_) {
+    auto at_local_grad = at::pow(scalar_, at_compute_input) * std::log(scalar_);
+    at_grad_input.copy_(at_compute_grad_output * at_local_grad);
   } else {
-    at_grad_input.copy_(at_grad_output * scalar_ *
-                        at::pow(at_input, scalar_ - 1.0));
+    auto at_local_grad = scalar_ * at::pow(at_compute_input, scalar_ - 1.0);
+    at_grad_input.copy_(at_compute_grad_output * at_local_grad);
   }
 }
 

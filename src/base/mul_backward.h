@@ -2,87 +2,88 @@
 #define INFINI_OPS_BASE_MUL_BACKWARD_H_
 
 #include <cassert>
-#include <initializer_list>
 
+#include "base/validation.h"
 #include "operator.h"
 
 namespace infini::ops {
 
 class MulBackward : public Operator<MulBackward> {
  public:
-  MulBackward(const Tensor grad_output, const Tensor a, const Tensor b,
-              Tensor grad_a, Tensor grad_b)
+  MulBackward(const Tensor grad_output, const Tensor input, const Tensor other,
+              Tensor grad_input, Tensor grad_other)
       : grad_output_shape_{grad_output.shape()},
         grad_output_strides_{grad_output.strides()},
         grad_output_type_{grad_output.dtype()},
-        a_shape_{a.shape()},
-        a_strides_{a.strides()},
-        a_type_{a.dtype()},
-        b_shape_{b.shape()},
-        b_strides_{b.strides()},
-        b_type_{b.dtype()},
-        grad_a_shape_{grad_a.shape()},
-        grad_a_strides_{grad_a.strides()},
-        grad_a_type_{grad_a.dtype()},
-        grad_b_shape_{grad_b.shape()},
-        grad_b_strides_{grad_b.strides()},
-        grad_b_type_{grad_b.dtype()},
-        device_index_{grad_a.device().index()} {
-    AssertTrainingDevices({grad_output, a, b, grad_a, grad_b});
-    assert(grad_output_type_ == grad_a_type_ && grad_a_type_ == grad_b_type_ &&
+        input_shape_{input.shape()},
+        input_strides_{input.strides()},
+        input_type_{input.dtype()},
+        other_shape_{other.shape()},
+        other_strides_{other.strides()},
+        other_type_{other.dtype()},
+        grad_input_shape_{grad_input.shape()},
+        grad_input_strides_{grad_input.strides()},
+        grad_input_type_{grad_input.dtype()},
+        grad_other_shape_{grad_other.shape()},
+        grad_other_strides_{grad_other.strides()},
+        grad_other_type_{grad_other.dtype()},
+        device_index_{grad_input.device().index()} {
+    validation::AssertSameDevice(
+        {grad_output, input, other, grad_input, grad_other});
+    assert(grad_output_type_ == grad_input_type_ &&
+           grad_input_type_ == grad_other_type_ &&
            "`MulBackward` requires matching grad dtypes");
-    assert(a_type_ == grad_output_type_ && b_type_ == grad_output_type_ &&
-           "`MulBackward` requires a/b dtype to match grad_output dtype");
-    assert(grad_output.device() == a.device() && a.device() == b.device() &&
-           "`MulBackward` requires all tensors on the same device");
-    assert(grad_a.shape() == a.shape() && grad_b.shape() == b.shape() &&
+    assert(
+        input_type_ == grad_output_type_ && other_type_ == grad_output_type_ &&
+        "`MulBackward` requires input/other dtype to match grad_output dtype");
+
+    assert(grad_input.shape() == input.shape() &&
+           grad_other.shape() == other.shape() &&
            "Multiplication gradients must match their input shapes.");
-    ValidateBroadcast(a, grad_output);
-    ValidateBroadcast(b, grad_output);
-    ValidateBroadcast(grad_a, grad_output);
-    ValidateBroadcast(grad_b, grad_output);
+
+    validation::AssertBroadcastsTo(input, grad_output);
+
+    validation::AssertBroadcastsTo(other, grad_output);
   }
 
-  virtual void operator()(const Tensor grad_output, const Tensor a,
-                          const Tensor b, Tensor grad_a,
-                          Tensor grad_b) const = 0;
+  // Aliasing: inputs may overlap each other and either output.
+  // The storage byte spans of grad_input and grad_other must not overlap,
+  // including gaps in non-contiguous layouts.
+  virtual void operator()(const Tensor grad_output, const Tensor input,
+                          const Tensor other, Tensor grad_input,
+                          Tensor grad_other) const = 0;
 
  protected:
-  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
-    if (tensors.size() == 0) return;
-    const auto device = tensors.begin()->device();
-    for (const auto& tensor : tensors) {
-      assert(tensor.device() == device &&
-             "Training tensors must share a device type and index.");
-    }
-  }
-
-  static void ValidateBroadcast(const Tensor input, const Tensor out) {
-    assert(input.ndim() <= out.ndim() &&
-           "`MulBackward` input rank must not exceed grad_output rank");
-    const auto offset = out.ndim() - input.ndim();
-    for (Tensor::Size i = 0; i < input.ndim(); ++i) {
-      assert(
-          (input.size(i) == 1 || input.size(i) == out.size(i + offset)) &&
-          "`MulBackward` input must broadcast (right-aligned) to grad_output");
-    }
-  }
-
   Tensor::Shape grad_output_shape_;
+
   Tensor::Strides grad_output_strides_;
+
   DataType grad_output_type_;
-  Tensor::Shape a_shape_;
-  Tensor::Strides a_strides_;
-  DataType a_type_;
-  Tensor::Shape b_shape_;
-  Tensor::Strides b_strides_;
-  DataType b_type_;
-  Tensor::Shape grad_a_shape_;
-  Tensor::Strides grad_a_strides_;
-  DataType grad_a_type_;
-  Tensor::Shape grad_b_shape_;
-  Tensor::Strides grad_b_strides_;
-  DataType grad_b_type_;
+
+  Tensor::Shape input_shape_;
+
+  Tensor::Strides input_strides_;
+
+  DataType input_type_;
+
+  Tensor::Shape other_shape_;
+
+  Tensor::Strides other_strides_;
+
+  DataType other_type_;
+
+  Tensor::Shape grad_input_shape_;
+
+  Tensor::Strides grad_input_strides_;
+
+  DataType grad_input_type_;
+
+  Tensor::Shape grad_other_shape_;
+
+  Tensor::Strides grad_other_strides_;
+
+  DataType grad_other_type_;
+
   int device_index_{0};
 };
 

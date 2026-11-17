@@ -10,8 +10,7 @@ template <Device::Type kDev>
 Operator<RsqrtBackward, kDev, 1>::Operator(const Tensor grad_output,
                                            const Tensor input,
                                            Tensor grad_input)
-    : RsqrtBackward{grad_output, input, grad_input},
-      device_index_{grad_input.device().index()} {}
+    : RsqrtBackward{grad_output, input, grad_input} {}
 
 template <Device::Type kDev>
 void Operator<RsqrtBackward, kDev, 1>::operator()(const Tensor grad_output,
@@ -28,8 +27,13 @@ void Operator<RsqrtBackward, kDev, 1>::operator()(const Tensor grad_output,
       ToAtenTensor<kDev>(grad_input.data(), grad_input_shape_,
                          grad_input_strides_, grad_input_type_, device_index_);
 
-  at_grad_input.copy_(at_grad_output * (-0.5) *
-                      at::pow(at::rsqrt(at_input), 3));
+  const auto compute_type =
+      at_input.scalar_type() == at::kDouble ? at::kDouble : at::kFloat;
+  const auto input_value = at_input.to(compute_type);
+  const auto upstream = at_grad_output.to(compute_type);
+  // Avoid cubing rsqrt before a small upstream gradient can scale it down.
+  const auto result = upstream * (-0.5) * at::rsqrt(input_value) / input_value;
+  at_grad_input.copy_(result);
 }
 
 INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(RsqrtBackward, 1)

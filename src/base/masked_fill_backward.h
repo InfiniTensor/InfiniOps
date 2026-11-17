@@ -2,9 +2,10 @@
 #define INFINI_OPS_BASE_MASKED_FILL_BACKWARD_H_
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 
+#include "base/validation.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -23,45 +24,47 @@ class MaskedFillBackward : public Operator<MaskedFillBackward> {
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
         device_index_{grad_input.device().index()} {
-    AssertTrainingDevices({grad_output, mask, grad_input});
-    assert(
-        grad_output.shape() == grad_input.shape() &&
-        "`MaskedFillBackward` requires grad_output/grad_input to share shape");
+    validation::AssertSameDevice({grad_output, mask, grad_input});
     assert(
         grad_output_type_ == grad_input_type_ &&
         "`MaskedFillBackward` requires grad_output/grad_input dtype to match");
     assert(mask_type_ == DataType::kBool &&
            "`MaskedFillBackward` requires a bool `mask`");
-    assert(mask.ndim() <= grad_output.ndim() &&
-           "`MaskedFillBackward` mask rank must not exceed tensor rank");
-
-    tail_aligned_ = AlignsAt(mask, grad_output, /*tail=*/true);
-    if (!tail_aligned_) {
-      assert(
-          AlignsAt(mask, grad_output, /*tail=*/false) &&
-          "`MaskedFillBackward` mask must align to leading or trailing dims");
-    }
+    assert(IsValidBroadcastShape(grad_input_shape_, mask_shape_,
+                                 grad_output_shape_) &&
+           "`MaskedFillBackward` requires grad_output shape to equal the "
+           "broadcast shape of grad_input and mask");
   }
 
   virtual void operator()(const Tensor grad_output, const Tensor mask,
                           Tensor grad_input) const = 0;
 
  protected:
-  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
-    if (tensors.size() == 0) return;
-    const auto device = tensors.begin()->device();
-    for (const auto& tensor : tensors) {
-      assert(tensor.device() == device &&
-             "Training tensors must share a device type and index.");
+  static bool IsValidBroadcastShape(const Tensor::Shape& input_shape,
+                                    const Tensor::Shape& mask_shape,
+                                    const Tensor::Shape& output_shape) {
+    const auto ndim = input_shape.size() > mask_shape.size()
+                          ? input_shape.size()
+                          : mask_shape.size();
+    if (output_shape.size() != ndim) {
+      return false;
     }
-  }
 
-  static bool AlignsAt(const Tensor mask, const Tensor tensor,
-                       const bool tail) {
-    const auto offset = tail ? tensor.ndim() - mask.ndim() : 0;
-    for (Tensor::Size i = 0; i < mask.ndim(); ++i) {
-      const auto dim = tensor.size(i + offset);
-      if (mask.size(i) != 1 && mask.size(i) != dim) {
+    const auto input_offset = ndim - input_shape.size();
+
+    const auto mask_offset = ndim - mask_shape.size();
+
+    for (std::size_t i = 0; i < ndim; ++i) {
+      const auto input_dim =
+          i < input_offset ? 1 : input_shape[i - input_offset];
+      const auto mask_dim = i < mask_offset ? 1 : mask_shape[i - mask_offset];
+
+      if (input_dim != mask_dim && input_dim != 1 && mask_dim != 1) {
+        return false;
+      }
+
+      const auto output_dim = input_dim == 1 ? mask_dim : input_dim;
+      if (output_shape[i] != output_dim) {
         return false;
       }
     }
@@ -69,15 +72,23 @@ class MaskedFillBackward : public Operator<MaskedFillBackward> {
   }
 
   Tensor::Shape grad_output_shape_;
+
   Tensor::Strides grad_output_strides_;
+
   DataType grad_output_type_;
+
   Tensor::Shape mask_shape_;
+
   Tensor::Strides mask_strides_;
+
   DataType mask_type_;
+
   Tensor::Shape grad_input_shape_;
+
   Tensor::Strides grad_input_strides_;
+
   DataType grad_input_type_;
-  bool tail_aligned_{true};
+
   int device_index_{0};
 };
 

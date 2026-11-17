@@ -12,9 +12,6 @@ class Operator<AccumulateGrad, kDev, 1> : public AccumulateGrad {
 
   void operator()(const Tensor gradient, const double rate,
                   Tensor tensor) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops

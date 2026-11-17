@@ -100,6 +100,7 @@
 - dstack
 - elu
 - elu_backward
+- embedding_dense_backward
 - empty
 - eq
 - erf
@@ -363,6 +364,8 @@
 - sin
 - sinc
 - sinh
+- slice_backward
+- slice_copy
 - slogdet
 - slow_conv3d
 - slow_conv3d_forward
@@ -454,6 +457,7 @@
 - threshold
 - threshold_backward
 - topk
+- transpose_copy
 - triangular_solve
 - tril
 - triu

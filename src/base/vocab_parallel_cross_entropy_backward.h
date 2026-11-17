@@ -3,8 +3,8 @@
 
 #include <cassert>
 #include <cstdint>
-#include <initializer_list>
 
+#include "base/validation.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -40,9 +40,9 @@ class VocabParallelCrossEntropyBackward
         vocab_size_original_{vocab_size_original},
         label_smoothing_{label_smoothing},
         device_index_{grad_input.device().index()} {
-    AssertTrainingDevices({grad_output, softmax_local, target_mask,
-                           masked_target, valid_mask_local, grad_input});
-    assert(IsTrainingFloat(grad_input_type_) &&
+    validation::AssertSameDevice({grad_output, softmax_local, target_mask,
+                                  masked_target, valid_mask_local, grad_input});
+    assert(validation::IsFloatingPoint(grad_input_type_) &&
            grad_input_type_ == softmax_type_ &&
            grad_output_type_ == grad_input_type_ &&
            "Loss gradients require matching floating dtypes.");
@@ -63,47 +63,48 @@ class VocabParallelCrossEntropyBackward
                           Tensor grad_input) const = 0;
 
  protected:
-  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
-    if (tensors.size() == 0) return;
-    const auto device = tensors.begin()->device();
-    for (const auto& tensor : tensors) {
-      assert(tensor.device() == device &&
-             "Training tensors must share a device type and index.");
-    }
-  }
-
-  static bool IsTrainingFloat(DataType dtype) {
-    return dtype == DataType::kFloat16 || dtype == DataType::kBFloat16 ||
-           dtype == DataType::kFloat32 || dtype == DataType::kFloat64;
-  }
-
   Tensor::Shape grad_output_shape_;
+
   Tensor::Strides grad_output_strides_;
+
   DataType grad_output_type_;
 
   Tensor::Shape softmax_shape_;
+
   Tensor::Strides softmax_strides_;
+
   DataType softmax_type_;
 
   Tensor::Shape target_mask_shape_;
+
   Tensor::Strides target_mask_strides_;
+
   DataType target_mask_type_;
 
   Tensor::Shape masked_target_shape_;
+
   Tensor::Strides masked_target_strides_;
+
   DataType masked_target_type_;
 
   Tensor::Shape valid_mask_shape_;
+
   Tensor::Strides valid_mask_strides_;
+
   DataType valid_mask_type_;
 
   Tensor::Shape grad_input_shape_;
+
   Tensor::Strides grad_input_strides_;
+
   DataType grad_input_type_;
 
   int64_t vocab_size_local_{0};
+
   int64_t vocab_size_original_{0};
+
   double label_smoothing_{0.0};
+
   int device_index_{0};
 };
 

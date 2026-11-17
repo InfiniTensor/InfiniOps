@@ -9,13 +9,10 @@ template <Device::Type kDev>
 class Operator<StackBackward, kDev, 1> : public StackBackward {
  public:
   Operator(const Tensor grad_output, const int64_t dim,
-           std::vector<Tensor> outs);
+           std::vector<Tensor> grad_inputs);
 
   void operator()(const Tensor grad_output, const int64_t dim,
-                  std::vector<Tensor> outs) const override;
-
- private:
-  int device_index_{0};
+                  std::vector<Tensor> grad_inputs) const override;
 };
 
 }  // namespace infini::ops

@@ -1,8 +1,69 @@
+import json
+import subprocess
+import sys
+
 import infini.ops
 import pytest
 import torch
 
 from tests.utils import Payload, empty_strided, get_stream, randn_strided
+
+
+def test_stack_backward_alias(device, implementation_index):
+    grad_output = torch.arange(12, dtype=torch.float32, device=device).reshape(2, 2, 3)
+    expected = grad_output.clone()
+    outputs = [grad_output[1], grad_output[0]]
+    infini.ops.stack_backward(
+        grad_output,
+        0,
+        outputs,
+        stream=get_stream(device),
+        implementation_index=implementation_index,
+    )
+    torch.testing.assert_close(outputs[0], expected[0], rtol=0, atol=0)
+    torch.testing.assert_close(outputs[1], expected[1], rtol=0, atol=0)
+
+
+def test_stack_backward_rejects_output_overlap(device, implementation_index):
+    setup = f"device = torch.device({str(device)!r})\nx = torch.ones((2, 2, 3), device=device)\n"
+    probe = setup + (
+        "bad = torch.empty((2, 3), dtype=torch.int32, device=device)\n"
+        "infini.ops.StackBackward(x, 0, [bad, bad])\n"
+    )
+    source = (
+        setup
+        + f"infini.ops.stack_backward(x, 0, [x[0], x[0]], stream=get_stream(device), implementation_index={implementation_index})\n"
+    )
+    # Run the constructor probe first; isolate C++ assertions from pytest.
+    prelude = (
+        f"import sys; sys.path[:] = {json.dumps(sys.path)}\n"
+        "import infini.ops\nimport torch\n"
+        "from tests.utils import get_stream\n"
+    )
+
+    for code, expected_message in (
+        (probe, None),
+        (source, "Output storage must not overlap"),
+    ):
+        result = subprocess.run(
+            [sys.executable, "-c", prelude + code],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=60,
+        )
+        diagnostic = result.stdout + result.stderr
+
+        if expected_message is None:
+            if result.returncode == 0:
+                pytest.skip(
+                    "descriptor validation requires an assertions-enabled build"
+                )
+
+            assert "assert" in diagnostic.lower(), diagnostic
+        else:
+            assert result.returncode != 0, "Invalid parameters were accepted"
+            assert expected_message in diagnostic, diagnostic
 
 
 # Format: (input_shape, num_inputs, dim, grad_output_strides, grad_input_strides)

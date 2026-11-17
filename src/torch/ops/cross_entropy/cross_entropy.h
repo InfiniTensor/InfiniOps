@@ -8,15 +8,16 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<CrossEntropy, kDev, 1> : public CrossEntropy {
  public:
-  Operator(const Tensor input, const Tensor target, Tensor out);
+  Operator(const Tensor input, const Tensor target,
+           std::optional<Tensor> weight, int64_t ignore_index,
+           std::string reduction, double label_smoothing, Tensor out);
 
   void operator()(const Tensor input, const Tensor target,
+                  std::optional<Tensor> weight, int64_t ignore_index,
+                  std::string reduction, double label_smoothing,
                   Tensor out) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops
 
-#endif
+#endif  // INFINI_OPS_TORCH_CROSS_ENTROPY_H_

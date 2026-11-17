@@ -5,7 +5,7 @@ import torch
 from tests.utils import Payload, empty_strided, get_stream, randn_strided
 
 
-# Format: (input_shape, dim, keep_dim, grad_output_strides, grad_input_strides)
+# Format: (input_shape, dim, keepdim, grad_output_strides, grad_input_strides)
 _TEST_CASES = (
     pytest.param(
         (5,),
@@ -68,7 +68,7 @@ _TEST_CASES = (
 
 @pytest.mark.auto_act_and_assert
 @pytest.mark.parametrize(
-    "input_shape, dim, keep_dim, grad_output_strides, grad_input_strides",
+    "input_shape, dim, keepdim, grad_output_strides, grad_input_strides",
     _TEST_CASES,
 )
 @pytest.mark.parametrize(
@@ -82,7 +82,7 @@ _TEST_CASES = (
 def test_mean_backward(
     input_shape,
     dim,
-    keep_dim,
+    keepdim,
     grad_output_strides,
     grad_input_strides,
     implementation_index,
@@ -93,7 +93,7 @@ def test_mean_backward(
 ):
     normalized_dim = dim % len(input_shape)
     grad_output_shape = list(input_shape)
-    if keep_dim:
+    if keepdim:
         grad_output_shape[normalized_dim] = 1
     else:
         del grad_output_shape[normalized_dim]
@@ -118,7 +118,7 @@ def test_mean_backward(
             implementation_index=implementation_index,
         ),
         _torch_mean_backward,
-        (grad_output, dim, keep_dim, grad_input),
+        (grad_output, dim, keepdim, grad_input),
         {},
         rtol=rtol,
         atol=atol,
@@ -128,7 +128,7 @@ def test_mean_backward(
 def _mean_backward(
     grad_output,
     dim,
-    keep_dim,
+    keepdim,
     grad_input,
     *,
     implementation_index,
@@ -136,7 +136,7 @@ def _mean_backward(
     infini.ops.mean_backward(
         grad_output,
         dim,
-        keep_dim,
+        keepdim,
         grad_input,
         stream=get_stream(grad_output.device),
         implementation_index=implementation_index,
@@ -145,12 +145,12 @@ def _mean_backward(
     return grad_input
 
 
-def _torch_mean_backward(grad_output, dim, keep_dim, grad_input):
+def _torch_mean_backward(grad_output, dim, keepdim, grad_input):
     normalized_dim = dim % grad_input.ndim
     reduce_size = grad_input.shape[normalized_dim]
     expanded_grad = grad_output
 
-    if not keep_dim:
+    if not keepdim:
         expanded_grad = expanded_grad.unsqueeze(normalized_dim)
 
     grad_input.copy_(expanded_grad.expand_as(grad_input) / reduce_size)

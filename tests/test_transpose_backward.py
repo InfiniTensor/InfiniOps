@@ -139,3 +139,18 @@ def _torch_transpose_backward(grad_output, dim0, dim1, grad_input):
     grad_input.copy_(torch.transpose(grad_output, dim0, dim1))
 
     return grad_input
+
+
+@pytest.mark.parametrize("layout", ("contiguous", "strided"))
+@pytest.mark.parametrize("offsets", ((0, 0), (0, 2), (2, 0)))
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
+def test_transpose_backward_alias(layout, offsets, dtype, device, implementation_index):
+    backing = torch.arange(64, dtype=torch.float32, device=device).to(dtype)
+    strides = (6, 2) if layout == "strided" else (3, 1)
+    grad_output = backing.as_strided((3, 3), strides, offsets[0])
+    grad_input = backing.as_strided((3, 3), strides, offsets[1])
+    expected = grad_output.transpose(0, 1).clone()
+    _transpose_backward(
+        grad_output, 0, 1, grad_input, implementation_index=implementation_index
+    )
+    torch.testing.assert_close(grad_input, expected, rtol=0, atol=0)

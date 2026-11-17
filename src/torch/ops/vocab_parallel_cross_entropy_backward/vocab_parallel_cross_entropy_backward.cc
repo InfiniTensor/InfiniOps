@@ -64,31 +64,33 @@ void Operator<VocabParallelCrossEntropyBackward, kDev, 1>::operator()(
   assert((at_grad_output.numel() == 1 || at_grad_output.numel() == rows) &&
          "grad_output must be scalar or one value per row");
 
-  auto softmax_2d = at_softmax.reshape({rows, vocab_size_local})
-                        .to(at_grad_input.scalar_type());
-  auto target_mask_1d =
-      at_target_mask.reshape({rows}).to(at_grad_input.scalar_type());
+  const auto compute_type =
+      at_grad_input.scalar_type() == at::kDouble ? at::kDouble : at::kFloat;
+  auto softmax_2d =
+      at_softmax.reshape({rows, vocab_size_local}).to(compute_type);
+  auto target_mask_1d = at_target_mask.reshape({rows}).to(compute_type);
   auto target_1d = at_masked_target.reshape({rows}).to(at::kLong);
-  auto valid_1d =
-      at_valid_mask.reshape({vocab_size_local}).to(at_grad_input.scalar_type());
+  auto valid_1d = at_valid_mask.reshape({vocab_size_local}).to(compute_type);
 
-  auto dloss = at_grad_output.reshape({-1}).to(at_grad_input.scalar_type());
+  auto dloss = at_grad_output.reshape({-1}).to(compute_type);
   if (dloss.numel() == 1) {
     dloss = dloss.expand({rows});
   }
 
-  auto gradient = softmax_2d * dloss.reshape({rows, 1});
   const auto valid_rows = 1.0 - target_mask_1d;
-  const auto row_scale = dloss * (1.0 - label_smoothing) * valid_rows;
 
-  auto target_one_hot = at::zeros_like(gradient);
+  auto target_one_hot = at::zeros_like(softmax_2d);
   target_one_hot.scatter_(1, target_1d.reshape({rows, 1}), 1.0);
-  gradient.sub_(target_one_hot * row_scale.reshape({rows, 1}));
+  const auto local_target = target_one_hot * valid_rows.reshape({rows, 1});
+  // Preserve small smoothing corrections before scaling by the upstream
+  // gradient.
+  auto gradient = softmax_2d - local_target;
+  gradient.add_(local_target * label_smoothing);
 
   const auto smoothing_term =
       label_smoothing / static_cast<double>(vocab_size_original);
-  gradient.sub_(dloss.reshape({rows, 1}) * smoothing_term *
-                valid_1d.reshape({1, vocab_size_local}));
+  gradient.sub_(smoothing_term * valid_1d.reshape({1, vocab_size_local}));
+  gradient.mul_(dloss.reshape({rows, 1}));
   gradient.mul_(valid_1d.reshape({1, vocab_size_local}));
 
   at_grad_input.copy_(gradient.reshape(at_grad_input.sizes()));

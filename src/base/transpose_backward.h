@@ -3,8 +3,8 @@
 
 #include <cassert>
 #include <cstdint>
-#include <initializer_list>
 
+#include "base/validation.h"
 #include "operator.h"
 
 namespace infini::ops {
@@ -19,10 +19,10 @@ class TransposeBackward : public Operator<TransposeBackward> {
         grad_input_shape_{grad_input.shape()},
         grad_input_strides_{grad_input.strides()},
         grad_input_type_{grad_input.dtype()},
-        dim0_{NormalizeDim(dim0, grad_output.ndim())},
-        dim1_{NormalizeDim(dim1, grad_output.ndim())},
+        dim0_{validation::NormalizeDim(dim0, grad_output.ndim())},
+        dim1_{validation::NormalizeDim(dim1, grad_output.ndim())},
         device_index_{grad_input.device().index()} {
-    AssertTrainingDevices({grad_output, grad_input});
+    validation::AssertSameDevice({grad_output, grad_input});
     assert(grad_output.ndim() >= 1 && "Transpose requires a non-scalar input.");
     assert(grad_input.ndim() == grad_output.ndim() &&
            "Transpose ranks must match.");
@@ -42,32 +42,22 @@ class TransposeBackward : public Operator<TransposeBackward> {
                           const int64_t dim1, Tensor grad_input) const = 0;
 
  protected:
-  static void AssertTrainingDevices(std::initializer_list<Tensor> tensors) {
-    if (tensors.size() == 0) return;
-    const auto device = tensors.begin()->device();
-    for (const auto& tensor : tensors) {
-      assert(tensor.device() == device &&
-             "Training tensors must share a device type and index.");
-    }
-  }
-
-  static int64_t NormalizeDim(const int64_t dim, const Tensor::Size ndim) {
-    const auto rank = static_cast<int64_t>(ndim);
-    assert(rank > 0 && "Training dimension requires a non-scalar tensor.");
-    assert(dim >= -rank && dim < rank && "Training dimension is out of range.");
-    return dim < 0 ? dim + rank : dim;
-  }
-
   Tensor::Shape grad_output_shape_;
+
   Tensor::Strides grad_output_strides_;
+
   DataType grad_output_type_;
 
   Tensor::Shape grad_input_shape_;
+
   Tensor::Strides grad_input_strides_;
+
   DataType grad_input_type_;
 
   int64_t dim0_{0};
+
   int64_t dim1_{0};
+
   int device_index_{0};
 };
 

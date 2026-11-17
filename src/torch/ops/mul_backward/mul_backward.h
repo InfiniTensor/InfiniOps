@@ -8,14 +8,12 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<MulBackward, kDev, 1> : public MulBackward {
  public:
-  Operator(const Tensor grad_output, const Tensor a, const Tensor b,
-           Tensor grad_a, Tensor grad_b);
+  Operator(const Tensor grad_output, const Tensor input, const Tensor other,
+           Tensor grad_input, Tensor grad_other);
 
-  void operator()(const Tensor grad_output, const Tensor a, const Tensor b,
-                  Tensor grad_a, Tensor grad_b) const override;
-
- private:
-  int device_index_{0};
+  void operator()(const Tensor grad_output, const Tensor input,
+                  const Tensor other, Tensor grad_input,
+                  Tensor grad_other) const override;
 };
 
 }  // namespace infini::ops

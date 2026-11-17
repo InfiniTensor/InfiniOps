@@ -8,13 +8,11 @@ namespace infini::ops {
 template <Device::Type kDev>
 class Operator<AddBackward, kDev, 1> : public AddBackward {
  public:
-  Operator(const Tensor grad_output, Tensor grad_a, Tensor grad_b);
+  Operator(const Tensor grad_output, const double alpha, Tensor grad_input,
+           Tensor grad_other);
 
-  void operator()(const Tensor grad_output, Tensor grad_a,
-                  Tensor grad_b) const override;
-
- private:
-  int device_index_{0};
+  void operator()(const Tensor grad_output, const double alpha,
+                  Tensor grad_input, Tensor grad_other) const override;
 };
 
 }  // namespace infini::ops

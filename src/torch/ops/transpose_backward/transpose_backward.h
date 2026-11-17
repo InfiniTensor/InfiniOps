@@ -13,9 +13,6 @@ class Operator<TransposeBackward, kDev, 1> : public TransposeBackward {
 
   void operator()(const Tensor grad_output, const int64_t dim0,
                   const int64_t dim1, Tensor grad_input) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops

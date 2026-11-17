@@ -12,9 +12,6 @@ class Operator<RsqrtBackward, kDev, 1> : public RsqrtBackward {
 
   void operator()(const Tensor grad_output, const Tensor input,
                   Tensor grad_input) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops

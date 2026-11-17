@@ -11,8 +11,7 @@ Operator<TransposeBackward, kDev, 1>::Operator(const Tensor grad_output,
                                                const int64_t dim0,
                                                const int64_t dim1,
                                                Tensor grad_input)
-    : TransposeBackward{grad_output, dim0, dim1, grad_input},
-      device_index_{grad_input.device().index()} {}
+    : TransposeBackward{grad_output, dim0, dim1, grad_input} {}
 
 template <Device::Type kDev>
 void Operator<TransposeBackward, kDev, 1>::operator()(const Tensor grad_output,
@@ -28,7 +27,7 @@ void Operator<TransposeBackward, kDev, 1>::operator()(const Tensor grad_output,
       ToAtenTensor<kDev>(grad_input.data(), grad_input_shape_,
                          grad_input_strides_, grad_input_type_, device_index_);
 
-  at_grad_input.copy_(at_grad_output.transpose(dim0_, dim1_));
+  at_grad_input.copy_(at_grad_output.transpose(dim0_, dim1_).clone());
 }
 
 INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(TransposeBackward, 1)

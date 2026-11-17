@@ -173,25 +173,67 @@ def _torch_vocab_parallel_cross_entropy_backward(
     label_smoothing,
     grad_input,
 ):
-    rows = softmax_local.shape[0]
-    dloss = grad_output.reshape(-1)
+    probabilities = softmax_local.detach().to(device="cpu", dtype=torch.float64)
+    rows = probabilities.shape[0]
+    dloss = grad_output.detach().to(device="cpu", dtype=torch.float64).reshape(-1)
     if dloss.numel() == 1:
         dloss = dloss.expand(rows)
 
-    gradient = softmax_local * dloss.reshape(rows, 1)
-    valid_rows = 1 - target_mask
-    row_scale = dloss * (1 - label_smoothing) * valid_rows
-    target_one_hot = torch.zeros_like(gradient)
-    target_one_hot.scatter_(1, masked_target.reshape(rows, 1), 1)
-    gradient = gradient - target_one_hot * row_scale.reshape(rows, 1)
-
-    smoothing_term = label_smoothing / vocab_size_original
-    gradient = gradient - (
-        dloss.reshape(rows, 1)
-        * smoothing_term
-        * valid_mask_local.reshape(1, vocab_size_local)
+    valid_rows = 1 - target_mask.detach().to(device="cpu", dtype=torch.float64)
+    valid_columns = (
+        valid_mask_local.detach()
+        .to(device="cpu", dtype=torch.float64)
+        .reshape(1, vocab_size_local)
     )
-    gradient = gradient * valid_mask_local.reshape(1, vocab_size_local)
+    distribution = (label_smoothing / vocab_size_original) * valid_columns.expand_as(
+        probabilities
+    ).clone()
+    target = masked_target.detach().to(device="cpu", dtype=torch.int64).reshape(rows, 1)
+    distribution.scatter_add_(
+        1, target, ((1 - label_smoothing) * valid_rows).reshape(rows, 1)
+    )
+    gradient = (probabilities - distribution) * dloss.reshape(rows, 1) * valid_columns
     grad_input.copy_(gradient)
 
     return grad_input
+
+
+@pytest.mark.parametrize(
+    "dtype", (torch.float16, torch.bfloat16, torch.float32, torch.float64)
+)
+@pytest.mark.parametrize("smoothing", (1e-4, 1e-8))
+@pytest.mark.parametrize("alias", (False, True))
+def test_vocab_parallel_cross_entropy_backward_small_smoothing(
+    dtype, smoothing, alias, device, implementation_index
+):
+    probabilities = torch.tensor([[1.0, 0.0]], dtype=dtype, device=device)
+    upstream = torch.tensor(60000.0, dtype=dtype, device=device)
+    target_mask = torch.zeros(1, dtype=dtype, device=device)
+    target = torch.zeros(1, dtype=torch.int64, device=device)
+    valid = torch.ones(2, dtype=dtype, device=device)
+    output = probabilities if alias else torch.empty_like(probabilities)
+    expected = torch.empty_like(probabilities)
+    _torch_vocab_parallel_cross_entropy_backward(
+        upstream, probabilities, target_mask, target, valid, 2, 2, smoothing, expected
+    )
+    _vocab_parallel_cross_entropy_backward(
+        upstream,
+        probabilities,
+        target_mask,
+        target,
+        valid,
+        2,
+        2,
+        smoothing,
+        output,
+        implementation_index=implementation_index,
+    )
+    assert output[0, 0].item() > 0
+    assert output[0, 1].item() < 0
+    tolerance = {
+        torch.float16: 1e-3,
+        torch.bfloat16: 1e-2,
+        torch.float32: 1e-6,
+        torch.float64: 1e-7,
+    }[dtype]
+    torch.testing.assert_close(output, expected, rtol=tolerance, atol=0)

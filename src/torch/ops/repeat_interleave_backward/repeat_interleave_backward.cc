@@ -10,8 +10,7 @@ template <Device::Type kDev>
 Operator<RepeatInterleaveBackward, kDev, 1>::Operator(const Tensor grad_output,
                                                       const int64_t dim,
                                                       Tensor grad_input)
-    : RepeatInterleaveBackward{grad_output, dim, grad_input},
-      device_index_{grad_input.device().index()} {}
+    : RepeatInterleaveBackward{grad_output, dim, grad_input} {}
 
 template <Device::Type kDev>
 void Operator<RepeatInterleaveBackward, kDev, 1>::operator()(

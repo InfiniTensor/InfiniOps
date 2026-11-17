@@ -272,7 +272,7 @@ def _parse_operator_header(op_name):
     constructors = [
         _ParsedFunction(_parse_parameter_list(params))
         for params in _find_signature_parameters(
-            class_body, rf"(?:explicit\s+)?{class_name}\s*\("
+            class_body, rf"\b(?:explicit\s+)?{class_name}\s*\("
         )
     ]
     calls = [

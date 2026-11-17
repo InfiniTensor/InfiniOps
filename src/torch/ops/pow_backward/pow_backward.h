@@ -14,9 +14,6 @@ class Operator<PowBackward, kDev, 1> : public PowBackward {
   void operator()(const Tensor grad_output, const Tensor input,
                   const double scalar, const bool scalar_is_base,
                   Tensor grad_input) const override;
-
- private:
-  int device_index_{0};
 };
 
 }  // namespace infini::ops

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "torch/instantiate.h"
+#include "torch/storage_overlap.h"
 #include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
@@ -14,15 +15,7 @@ Operator<AdamAccumulateGrad, kDev, 1>::Operator(
     const double beta2, const double eps, const int64_t step, Tensor param,
     Tensor m, Tensor v)
     : AdamAccumulateGrad{grad, learning_rate, beta1, beta2, eps,
-                         step, param,         m,     v},
-      device_index_{param.device().index()} {}
-
-template <Device::Type kDev>
-Operator<AdamAccumulateGrad, kDev, 1>::Operator(
-    const Tensor grad, Tensor param, Tensor m, Tensor v,
-    const double learning_rate, const double beta1, const double beta2,
-    const double eps, const int64_t step)
-    : Operator{grad, learning_rate, beta1, beta2, eps, step, param, m, v} {}
+                         step, param,         m,     v} {}
 
 template <Device::Type kDev>
 void Operator<AdamAccumulateGrad, kDev, 1>::operator()(
@@ -39,18 +32,22 @@ void Operator<AdamAccumulateGrad, kDev, 1>::operator()(
   auto at_v = ToAtenTensor<kDev>(v.data(), v_shape_, v_strides_, v_type_,
                                  device_index_);
 
+  assert(!StorageSpansOverlap(at_param, at_m) &&
+         !StorageSpansOverlap(at_param, at_v) &&
+         !StorageSpansOverlap(at_m, at_v) &&
+         "`AdamAccumulateGrad` output storage must not overlap.");
+
   const auto compute_type =
       at_param.scalar_type() == at::kDouble ? at::kDouble : at::kFloat;
   const auto gradient = at_grad.to(compute_type);
-  const auto next_m =
-      at_m.to(compute_type) * beta1_ + gradient * (1.0 - beta1_);
-  const auto next_v =
-      at_v.to(compute_type) * beta2_ + gradient.square() * (1.0 - beta2_);
+  const auto next_m = at::lerp(at_m.to(compute_type), gradient, 1.0 - beta1_);
+  auto next_v = at_v.to(compute_type) * beta2_;
+  next_v.addcmul_(gradient, gradient, 1.0 - beta2_);
   const double bcm = 1.0 - std::pow(beta1_, static_cast<double>(step_));
   const double bcv = 1.0 - std::pow(beta2_, static_cast<double>(step_));
-  const auto update =
-      learning_rate_ * (next_m / bcm) / (at::sqrt(next_v / bcv) + eps_);
-  const auto next_param = at_param.to(compute_type) - update;
+  const auto denominator = at::sqrt(next_v) / std::sqrt(bcv) + eps_;
+  const auto next_param = at::addcdiv(at_param.to(compute_type), next_m,
+                                      denominator, -learning_rate_ / bcm);
   at_param.copy_(next_param);
   at_m.copy_(next_m);
   at_v.copy_(next_v);
