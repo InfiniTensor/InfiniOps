@@ -49,12 +49,12 @@ class CudaPagedCachingInfinilm : public PagedCachingInfinilm {
                   reinterpret_cast<const T*>(k.data()),
                   reinterpret_cast<const T*>(v.data()),
                   reinterpret_cast<const int64_t*>(slot_mapping.data()),
-                  head_size_, block_size_, k_src_stride_, v_src_stride_,
-                  static_cast<Tensor::Stride>(head_size_),
-                  static_cast<Tensor::Stride>(head_size_),
-                  k_cache_block_stride_, v_cache_block_stride_,
-                  k_cache_head_stride_, v_cache_head_stride_,
-                  k_cache_slot_stride_, v_cache_slot_stride_);
+                  head_size_, v.size(2), block_size_, k_src_stride_,
+                  v_src_stride_, static_cast<Tensor::Stride>(head_size_),
+                  static_cast<Tensor::Stride>(v.size(2)), k_cache_block_stride_,
+                  v_cache_block_stride_, k_cache_head_stride_,
+                  v_cache_head_stride_, k_cache_slot_stride_,
+                  v_cache_slot_stride_);
         },
         "CudaPagedCachingInfinilm::operator()");
   }

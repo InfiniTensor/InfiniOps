@@ -11,12 +11,12 @@ __global__ void ReshapeAndCacheFlashKernel(
     Tdata* __restrict__ k_cache, Tdata* __restrict__ v_cache,
     const Tdata* __restrict__ k, const Tdata* __restrict__ v,
     const int64_t* __restrict__ slot_mapping, std::size_t head_size,
-    std::size_t cache_block_size, std::ptrdiff_t k_src_stride,
-    std::ptrdiff_t v_src_stride, std::ptrdiff_t k_src_head_stride,
-    std::ptrdiff_t v_src_head_stride, std::ptrdiff_t k_cache_block_stride,
-    std::ptrdiff_t v_cache_block_stride, std::ptrdiff_t k_cache_head_stride,
-    std::ptrdiff_t v_cache_head_stride, std::ptrdiff_t k_cache_slot_stride,
-    std::ptrdiff_t v_cache_slot_stride) {
+    std::size_t v_head_size, std::size_t cache_block_size,
+    std::ptrdiff_t k_src_stride, std::ptrdiff_t v_src_stride,
+    std::ptrdiff_t k_src_head_stride, std::ptrdiff_t v_src_head_stride,
+    std::ptrdiff_t k_cache_block_stride, std::ptrdiff_t v_cache_block_stride,
+    std::ptrdiff_t k_cache_head_stride, std::ptrdiff_t v_cache_head_stride,
+    std::ptrdiff_t k_cache_slot_stride, std::ptrdiff_t v_cache_slot_stride) {
   auto head_idx = static_cast<std::size_t>(blockIdx.x);
   auto token_idx = static_cast<std::size_t>(blockIdx.y);
   int64_t slot = slot_mapping[token_idx];
@@ -41,6 +41,8 @@ __global__ void ReshapeAndCacheFlashKernel(
 
   for (std::size_t i = threadIdx.x; i < head_size; i += kBlockSize) {
     k_dst[i] = k_src[i];
+  }
+  for (std::size_t i = threadIdx.x; i < v_head_size; i += kBlockSize) {
     v_dst[i] = v_src[i];
   }
 }

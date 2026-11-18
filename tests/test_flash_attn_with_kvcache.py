@@ -815,3 +815,136 @@ def _attention_mask(q_len, k_len, causal, window_size, device):
     if right >= 0:
         mask &= key_positions <= aligned_query_positions + right
     return mask
+
+
+@pytest.mark.parametrize(
+    ("cache_seqlens", "dtype", "rtol", "atol"),
+    (
+        ((130, 300), torch.float16, 2e-2, 2e-2),
+        ((130, 300), torch.bfloat16, 2e-2, 2e-2),
+        # A length tensor must carry >= 2 entries: a single-entry tensor is
+        # accepted by the `int64_t cache_seqlens` binding overload (scalar
+        # metadata path), which the device-lengths provider rejects by design.
+        ((130, 1), torch.float16, 2e-2, 2e-2),
+    ),
+)
+def test_flash_attn_with_kvcache_mla_latent_decode(
+    cache_seqlens,
+    dtype,
+    rtol,
+    atol,
+    device,
+    implementation_index,
+):
+    """MLA latent decode through the index-1 provider: 4D unsqueezed
+    q/out over a paged fused latent cache (K = first 576 columns, V =
+    last 512, narrow views of one allocation) with a non-trivial block
+    table spanning physical blocks."""
+    if device != "cuda" or implementation_index != 1:
+        pytest.skip("MLA latent decode is served by the NVIDIA index-1 provider")
+
+    torch.manual_seed(13)
+    batch_size, page_size = len(cache_seqlens), 256
+    num_heads = 16
+    k_dim, v_dim = 576, 512
+    max_blocks = max((length + page_size - 1) // page_size for length in cache_seqlens)
+    block_rows = []
+    num_blocks = 0
+    for length in cache_seqlens:
+        blocks = (length + page_size - 1) // page_size
+        row = list(range(num_blocks, num_blocks + blocks))
+        row.extend([0] * (max_blocks - blocks))
+        block_rows.append(row)
+        num_blocks += blocks
+
+    fused = torch.randn(
+        (num_blocks, page_size, 1, k_dim + v_dim), dtype=dtype, device=device
+    )
+    k_cache = fused[:, :, :, :k_dim]
+    v_cache = fused[:, :, :, k_dim:]
+    block_table = torch.tensor(block_rows, dtype=torch.int32, device=device)
+    cache_seqlens = torch.tensor(cache_seqlens, dtype=torch.int32, device=device)
+    q = torch.randn((batch_size, 1, num_heads, k_dim), dtype=dtype, device=device)
+    out = torch.empty((batch_size, 1, num_heads, v_dim), dtype=dtype, device=device)
+
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        None,
+        None,
+        None,
+        None,
+        cache_seqlens,
+        None,
+        None,
+        block_table,
+        None,
+        None,
+        True,
+        (-1, -1),
+        0.0,
+        True,
+        0,
+        False,
+        out,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    expected = _reference_flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        cache_seqlens=cache_seqlens,
+        block_table=block_table,
+        causal=True,
+    )[0]
+    torch.testing.assert_close(out, expected, rtol=rtol, atol=atol)
+
+
+def test_flash_attn_with_kvcache_mla_decode_requires_seqlens(
+    device,
+    implementation_index,
+):
+    """The MLA warp kernel reads per-sequence lengths unconditionally, so
+    an absent `cache_seqlens` must be rejected by the provider rather
+    than dereferenced (a None or scalar path would read a null device
+    pointer)."""
+    if device != "cuda" or implementation_index != 1:
+        pytest.skip("MLA latent decode is served by the NVIDIA index-1 provider")
+
+    fused = torch.randn((2, 256, 1, 1088), dtype=torch.float16, device=device)
+    k_cache = fused[:, :, :, :576]
+    v_cache = fused[:, :, :, 576:]
+    block_table = torch.tensor(((0, 1), (0, 1)), dtype=torch.int32, device=device)
+    q = torch.randn((2, 1, 16, 576), dtype=torch.float16, device=device)
+    out = torch.empty((2, 1, 16, 512), dtype=torch.float16, device=device)
+
+    with pytest.raises(ValueError, match="does not support these parameters"):
+        infini.ops.flash_attn_with_kvcache(
+            q,
+            k_cache,
+            v_cache,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            block_table,
+            None,
+            None,
+            True,
+            (-1, -1),
+            0.0,
+            True,
+            0,
+            False,
+            out,
+            None,
+            stream=get_stream(q.device),
+            implementation_index=implementation_index,
+        )

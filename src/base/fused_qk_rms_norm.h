@@ -26,12 +26,16 @@ class FusedQkRmsNorm : public Operator<FusedQkRmsNorm> {
            "`FusedQkRmsNorm` requires rank-3 `kv` with a contiguous last dim");
     assert(q.size(0) == kv.size(0) &&
            "`FusedQkRmsNorm` requires matching token counts");
+    // The kernel walks the outputs with their own token and head strides
+    // too, so only the last dim must be contiguous.
     assert(q_output.ndim() == 3 && q_output.shape() == q.shape() &&
-           q_output.IsContiguous() &&
-           "`FusedQkRmsNorm` requires a contiguous matching `q_output`");
+           q_output.stride(2) == 1 &&
+           "`FusedQkRmsNorm` requires a rank-3 `q_output` matching `q` with a "
+           "contiguous last dim");
     assert(kv_output.ndim() == 3 && kv_output.shape() == kv.shape() &&
-           kv_output.IsContiguous() &&
-           "`FusedQkRmsNorm` requires a contiguous matching `kv_output`");
+           kv_output.stride(2) == 1 &&
+           "`FusedQkRmsNorm` requires a rank-3 `kv_output` matching `kv` with "
+           "a contiguous last dim");
     assert(q_weight.ndim() == 1 && q_weight.size(0) == q.size(2) &&
            q_weight.stride(0) == 1 &&
            "`FusedQkRmsNorm` requires contiguous `q_weight[head_dim]`");
