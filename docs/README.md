@@ -39,6 +39,8 @@ Start with these pages:
   installed third-party shared libraries.
 - [Compatibility](compatibility.md): public API boundary, generated files, and
   internal implementation headers.
+- [AI PR Review](ai-pr-review.md): run the on-demand `/ai-pr-review` workflow
+  on pull requests.
 
 The API reference can be generated locally with Doxygen. The Documentation Pages
 workflow validates that generated HTML for pull requests and publishes `master`
