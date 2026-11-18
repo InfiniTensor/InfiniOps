@@ -2,6 +2,7 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 #include "base/deepseek_v4_mhc_post.h"
+#include "residual_mix.cuh"
 
 namespace infini::ops {
 namespace v4_mhc_post {
@@ -37,11 +38,22 @@ class Operator<DeepseekV4MhcPost,Device::Type::kHygon> : public DeepseekV4MhcPos
   }
   void operator()(Tensor x,Tensor r,Tensor p,Tensor m,Tensor y) const override {
     if(!supports(x,r,p,m,y)) throw std::invalid_argument("Invalid DeepSeek V4 mHC post");
-    v4_mhc_post::mix<<<static_cast<unsigned>(std::min<size_t>((y.numel()-1)/128+1,65535)),128,0,
-                       static_cast<cudaStream_t>(stream_)>>>(
-        static_cast<const __nv_bfloat16*>(x.data()),static_cast<const __nv_bfloat16*>(r.data()),
-        static_cast<const float*>(p.data()),static_cast<const float*>(m.data()),
-        static_cast<__nv_bfloat16*>(y.data()),y.numel(),r.size(2));
+    // Reuse inputs across streams for prefill. M<4 retains the original kernel:
+    // the extra occupancy is faster for the small decode shape on BW/gfx936.
+    if (r.size(2) == 4096 && r.size(0) >= 4) {
+      const auto elements = r.size(0) * r.size(2);
+      v4_mhc_post_opt::mix_reuse<<<static_cast<unsigned>(std::min<size_t>((elements-1)/256+1,65535)),256,0,
+                                 static_cast<cudaStream_t>(stream_)>>>(
+          static_cast<const __nv_bfloat16*>(x.data()),static_cast<const __nv_bfloat16*>(r.data()),
+          static_cast<const float*>(p.data()),static_cast<const float*>(m.data()),
+          static_cast<__nv_bfloat16*>(y.data()),r.size(0),r.size(2));
+    } else {
+      v4_mhc_post::mix<<<static_cast<unsigned>(std::min<size_t>((y.numel()-1)/128+1,65535)),128,0,
+                         static_cast<cudaStream_t>(stream_)>>>(
+          static_cast<const __nv_bfloat16*>(x.data()),static_cast<const __nv_bfloat16*>(r.data()),
+          static_cast<const float*>(p.data()),static_cast<const float*>(m.data()),
+          static_cast<__nv_bfloat16*>(y.data()),y.numel(),r.size(2));
+    }
     if(cudaGetLastError()!=cudaSuccess) throw std::runtime_error("DeepSeek V4 mHC post launch failed");
   }
 };
