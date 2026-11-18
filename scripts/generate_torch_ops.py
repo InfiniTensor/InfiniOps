@@ -1483,6 +1483,9 @@ _TORCH_HEADER_TEMPLATE = """\
 #define INFINI_OPS_TORCH_{name_uc}_H_
 
 #include "base/{name}.h"
+#include "torch/device_.h"
+
+#include <type_traits>
 
 namespace infini::ops {{
 

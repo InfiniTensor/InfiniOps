@@ -1,5 +1,5 @@
-#ifndef INFINI_OPS_TORCH_ADD_H_
-#define INFINI_OPS_TORCH_ADD_H_
+#ifndef INFINI_OPS_TORCH_HAND_ADD_H_
+#define INFINI_OPS_TORCH_HAND_ADD_H_
 
 #include "base/add.h"
 

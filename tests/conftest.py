@@ -199,6 +199,7 @@ _PLATFORM_TO_TORCH_DEVICE = {
     "moore": "musa",
     "cambricon": "mlu",
     "ascend": "npu",
+    "kunlun": "cuda",
 }
 
 

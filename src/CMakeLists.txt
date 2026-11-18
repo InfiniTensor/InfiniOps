@@ -109,6 +109,106 @@ if(WITH_CPU)
     list(APPEND DEVICE_LIST "cpu")
 endif()
 
+if(WITH_KUNLUN)
+    file(GLOB_RECURSE KUNLUN_SOURCES CONFIGURE_DEPENDS
+        "native/kunlun/*.cc"
+        "native/kunlun/*.cpp"
+    )
+    target_compile_definitions(infiniops PUBLIC WITH_KUNLUN=1)
+    target_sources(infiniops PRIVATE ${KUNLUN_SOURCES})
+
+    # XRE runtime (host side) and xBLAS.
+    if(NOT DEFINED KUNLUN_XBLAS_ROOT)
+        if(EXISTS "${KUNLUN_HOME}/xhpc/xblas/include/cublas_v2.h")
+            set(KUNLUN_XBLAS_ROOT "${KUNLUN_HOME}/xhpc/xblas")
+        else()
+            set(KUNLUN_XBLAS_ROOT "")
+        endif()
+    endif()
+    find_library(KUNLUN_RUNTIME_LIB NAMES xpurt
+        HINTS "${KUNLUN_XRE_ROOT}/so" "${KUNLUN_XRE_ROOT}/lib" "${KUNLUN_XRE_ROOT}/lib64"
+        REQUIRED)
+    find_library(KUNLUN_BLAS_LIB NAMES xpu_blas
+        HINTS "${KUNLUN_HOME}" "${KUNLUN_HOME}/lib" "${KUNLUN_HOME}/so"
+              "${KUNLUN_XBLAS_ROOT}/so" "${KUNLUN_XBLAS_ROOT}/cmake"
+        REQUIRED)
+    # Vendor attention/KV-cache kernel libraries. `libapiinfer.so` (paged
+    # KV-cache scatter) ships in the vLLM-XPU wheel (`vllm_xpu/so/`); the
+    # flash-attention kernels live in `libxpu_flash_attention.so` and the
+    # vendor runtime context in `libxpuapi.so`, both in the torch_xmlir
+    # package. All are optional: without them the kunlun backend builds with
+    # the static-attention path only.
+    # `xpu/refactor/context/context.h` (baidu::xpu::api::Context) ships under
+    # the XHPC subtree, one level above `xre/include`. PUBLIC: the
+    # Python-extension `ops` target (generated dispatch/bindings) also
+    # compiles these wrapper headers and inherits includes only through the
+    # `infiniops` link.
+    target_include_directories(infiniops PUBLIC "${KUNLUN_HOME}/include"
+                                                "${KUNLUN_HOME}/xhpc/xdnn/include")
+    # vLLM-XPU wheel root (sibling of torch_xmlir) for `libapiinfer.so`.
+    get_filename_component(KUNLUN_SITE_PKGS "${KUNLUN_HOME}" DIRECTORY)
+    find_library(KUNLUN_APIINFER_LIB NAMES apiinfer
+        HINTS "${KUNLUN_HOME}" "${KUNLUN_HOME}/so" "${KUNLUN_HOME}/lib"
+              "${KUNLUN_HOME}/xre/so" "${KUNLUN_SITE_PKGS}/vllm_xpu/so")
+    find_library(KUNLUN_FLASHATTN_LIB NAMES xpu_flash_attention
+        HINTS "${KUNLUN_HOME}" "${KUNLUN_HOME}/lib" "${KUNLUN_HOME}/so")
+    find_library(KUNLUN_XPUAPI_LIB NAMES xpuapi
+        HINTS "${KUNLUN_HOME}" "${KUNLUN_HOME}/lib" "${KUNLUN_HOME}/so")
+    target_link_libraries(infiniops PUBLIC
+        "${KUNLUN_RUNTIME_LIB}"
+        "${KUNLUN_BLAS_LIB}")
+    if(KUNLUN_APIINFER_LIB)
+        target_link_libraries(infiniops PUBLIC "${KUNLUN_APIINFER_LIB}")
+    endif()
+    if(KUNLUN_FLASHATTN_LIB)
+        target_link_libraries(infiniops PUBLIC "${KUNLUN_FLASHATTN_LIB}")
+    endif()
+    if(KUNLUN_XPUAPI_LIB)
+        target_link_libraries(infiniops PUBLIC "${KUNLUN_XPUAPI_LIB}")
+    endif()
+
+    # Device code: `native/kunlun/kernels.cu` is compiled with the XTDK
+    # clang++ (`--xpu-arch=xpu3`, driver mode via the `.xpu` extension) into
+    # a static library linked into `infiniops`. The generated dispatch TUs
+    # for kunlun are plain C++ because the kunlun `Operator` specializations
+    # only launch the pre-compiled kernels through host launchers.
+    # The XTDK driver enables XPU mode based on the source-file extension,
+    # so stage the kernel source as `kernels.xpu` before compiling.
+    set(KUNLUN_KERNEL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/native/kunlun/kernels.cu")
+    set(KUNLUN_KERNEL_XPU "${CMAKE_CURRENT_BINARY_DIR}/kunlun_kernels.xpu")
+    set(KUNLUN_KERNEL_OBJ "${CMAKE_CURRENT_BINARY_DIR}/kunlun_kernels.o")
+    add_custom_command(
+        OUTPUT "${KUNLUN_KERNEL_OBJ}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${KUNLUN_KERNEL_SRC}" "${KUNLUN_KERNEL_XPU}"
+        COMMAND "${KUNLUN_XTDK_ROOT}/bin/clang++"
+            --sysroot=/
+            --target=${CMAKE_SYSTEM_PROCESSOR}-linux-gnu
+            -fPIC
+            --xpu-arch=${KUNLUN_XPU_ARCH}
+            # XTDK's own numeric_limits<__half> uses narrowing brace init that
+            # trips -Wc++11-narrowing as an error under -O2; silence it - the
+            # constants are correct _Float16 bit patterns.
+            -Wno-narrowing -Wno-c++11-narrowing
+            -std=c++17 -O2 -fno-builtin
+            -I${PROJECT_SOURCE_DIR}
+            -I${KUNLUN_XRE_ROOT}/include
+            -c ${KUNLUN_KERNEL_XPU}
+            -o ${KUNLUN_KERNEL_OBJ}
+        DEPENDS "${KUNLUN_KERNEL_SRC}"
+        COMMENT "Compiling Kunlun XPU kernels (${KUNLUN_XPU_ARCH})"
+        VERBATIM
+    )
+    set_source_files_properties("${KUNLUN_KERNEL_OBJ}" PROPERTIES
+        EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    target_sources(infiniops PRIVATE "${KUNLUN_KERNEL_OBJ}")
+    target_include_directories(infiniops PUBLIC
+        "${KUNLUN_XRE_ROOT}/include"
+        ${KUNLUN_XBLAS_ROOT}/include)
+
+    list(APPEND DEVICE_LIST "kunlun")
+endif()
+
 if(WITH_NVIDIA)
     if(NOT TARGET nvidia::cutlass::cutlass)
         find_package(NvidiaCutlass 4.4.1 EXACT CONFIG QUIET)

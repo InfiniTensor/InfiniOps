@@ -791,10 +791,22 @@ constexpr std::size_t kMaxImplementations = 32;
 // while the unspecialized primary template inherits only from `OperatorBase`.
 // `std::is_base_of` distinguishes the two at compile time, eliminating the
 // need for manual `registry.h` files.
+//
+// ATen (torch) backend slots on Kunlun are never active: the device-generic
+// `Operator<Op, kDev, N>` templates in generated/torch and src/torch/ops
+// derive from the op base for every device, but no Kunlun instantiation
+// exists, so slot N>0 would register an implementation whose constructor and
+// operator() are undefined. Restricting Kunlun to slot 0 (its native
+// specializations) keeps the dispatcher honest and the library linkable.
 template <typename Key, Device::Type kDev, std::size_t N,
           bool = std::is_base_of_v<Key, Operator<Key, kDev, N>>>
 struct ActiveImplementationsImpl {
   using type = List<>;
+};
+
+template <typename Key, std::size_t N>
+struct ActiveImplementationsImpl<Key, Device::Type::kKunlun, N, true> {
+  using type = std::conditional_t<N == 0, List<N>, List<>>;
 };
 
 template <typename Key, Device::Type kDev, std::size_t N>

@@ -2,6 +2,7 @@
 #define INFINI_OPS_TORCH_DEVICE__H_
 
 #include <string_view>
+#include <type_traits>
 
 #include "device.h"
 
@@ -57,6 +58,11 @@ struct TorchDeviceName<Device::Type::kMars> {
 
 template <>
 struct TorchDeviceName<Device::Type::kThead> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+
+template <>
+struct TorchDeviceName<Device::Type::kKunlun> {
   static constexpr std::string_view kValue{"cuda"};
 };
 

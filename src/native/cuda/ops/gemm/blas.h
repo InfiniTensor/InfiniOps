@@ -109,6 +109,10 @@ class BlasGemm : public Gemm {
   }
 
  protected:
+  bool a_is_col_major() const { return a_is_col_major_; }
+  bool b_is_col_major() const { return b_is_col_major_; }
+  bool swaps_a_and_b() const { return swap_a_and_b_; }
+
   virtual typename Backend::BlasHandle GetHandle() const {
     thread_local typename Backend::BlasHandle handle = []() {
       typename Backend::BlasHandle h{};
