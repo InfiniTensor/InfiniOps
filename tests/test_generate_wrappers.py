@@ -19,6 +19,30 @@ def _load_generator_module():
     return module
 
 
+def test_shared_validation_calls_are_not_parsed_as_constructors(monkeypatch, tmp_path):
+    module = _load_generator_module()
+    header = tmp_path / "cross_entropy.h"
+    header.write_text(
+        """
+class CrossEntropy : public Operator<CrossEntropy> {
+ public:
+  explicit CrossEntropy(const Tensor input, Tensor out) {
+    ValidateCrossEntropy(input, out);
+  }
+  virtual void operator()(const Tensor input, Tensor out) const = 0;
+};
+"""
+    )
+    monkeypatch.setattr(module, "_find_base_header", lambda _: header)
+    parsed = module._parse_operator_header("cross_entropy")
+    assert len(parsed.constructors) == 1
+    assert len(parsed.calls) == 1
+    assert [arg.spelling for arg in parsed.constructors[0].get_arguments()] == [
+        "input",
+        "out",
+    ]
+
+
 def test_generated_dispatch_keeps_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):

@@ -146,6 +146,32 @@ def test_torch_source_uses_existing_c10_stream_guards():
     assert '#include "torch/nvidia/c10.h"' not in source
 
 
+def test_embedding_dense_backward_handles_empty_inputs_before_aten():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "embedding_dense_backward.out(Tensor grad_output, Tensor indices, "
+        "SymInt num_weights, SymInt padding_idx, bool scale_grad_by_freq, "
+        "*, Tensor(a!) out) -> Tensor(a!)"
+    )
+    source = module._generate_torch_source("embedding_dense_backward", [op])
+    guard = source.index("if (at_indices.numel() == 0 || embedding_dim == 0)")
+    zero = source.index("at_out.zero_();", guard)
+    early_return = source.index("return;", zero)
+    call = source.index("at::embedding_dense_backward_out(")
+    assert guard < zero < early_return < call
+    assert source.index("at_out.size(1) == embedding_dim") < guard
+
+
+def test_copy_guards_do_not_change_unrelated_generated_ops():
+    module = _load_generator_module()
+    op = module._parse_func("abs.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+    source = module._generate_torch_source("abs", [op])
+    assert "at::abs_out(at_out, at_self)" in source
+    assert "StorageSpansOverlap" not in source
+    assert "embedding_dim" not in source
+    assert '#include "torch/storage_overlap.h"' not in source
+
+
 def test_optional_tensor_params_are_exposed_and_forwarded_to_aten():
     module = _load_generator_module()
     op = module._parse_func(
