@@ -91,7 +91,7 @@ def _transpose_copy(input, dim0, dim1, out, *, implementation_index):
 
 
 def _torch_transpose_copy(input, dim0, dim1, out):
-    result = input.transpose_copy(dim0, dim1).clone()
+    result = torch.transpose_copy(input, dim0, dim1).clone()
     out.copy_(result)
     return out
 
@@ -160,7 +160,7 @@ def _run_alias_case(
     output_metadata = (tuple(out.shape), out.stride(), out.data_ptr())
 
     for _ in range(repeats):
-        expected = input.detach().clone().transpose_copy(dim0, dim1).clone()
+        expected = torch.transpose_copy(input.detach().clone(), dim0, dim1).clone()
         expected_backing = backing.clone()
         expected_backing.as_strided(
             out.shape,

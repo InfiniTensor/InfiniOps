@@ -42,7 +42,7 @@ void Operator<AdamAccumulateGrad, kDev, 1>::operator()(
   const auto gradient = at_grad.to(compute_type);
   const auto next_m = at::lerp(at_m.to(compute_type), gradient, 1.0 - beta1_);
   auto next_v = at_v.to(compute_type) * beta2_;
-  next_v.addcmul_(gradient, gradient, 1.0 - beta2_);
+  next_v.addcmul_(gradient * (1.0 - beta2_), gradient);
   const double bcm = 1.0 - std::pow(beta1_, static_cast<double>(step_));
   const double bcv = 1.0 - std::pow(beta2_, static_cast<double>(step_));
   const auto denominator = at::sqrt(next_v) / std::sqrt(bcv) + eps_;
