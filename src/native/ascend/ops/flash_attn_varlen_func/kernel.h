@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <optional>
 #include <vector>
@@ -120,19 +121,39 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
   // CANN paged attention consumes a BnBsH cache. InfiniOps exposes the same
   // storage as BnBsND, so flatten the head dimensions in the ACL descriptor.
   static aclTensor* BuildPagedCacheAclTensor(const Tensor& tensor) {
+    // TND paged prefill accepts the ACLNN-native BnNBsD cache directly.
+    if (tensor.size(1) < tensor.size(2)) {
+      return ascend::BuildAclTensor(tensor);
+    }
+    // ACLNN prefill consumes BnBsH.  The ACLNN-native cache is BnNBsD, so
+    // expose its page/head axes as a strided BnBsH view without copying.
+    const bool aclnn_cache_layout = tensor.size(1) < tensor.size(2);
     const std::vector<int64_t> shape{
         static_cast<int64_t>(tensor.size(0)),
-        static_cast<int64_t>(tensor.size(1)),
-        static_cast<int64_t>(tensor.size(2) * tensor.size(3)),
+        static_cast<int64_t>(aclnn_cache_layout ? tensor.size(2)
+                                                : tensor.size(1)),
+        static_cast<int64_t>(
+            (aclnn_cache_layout ? tensor.size(1) : tensor.size(2)) *
+            tensor.size(3)),
     };
     std::vector<int64_t> strides(shape.size());
-    int64_t stride = 1;
-    for (int64_t index = static_cast<int64_t>(shape.size()) - 1; index >= 0;
-         --index) {
-      strides[index] = stride;
-      stride *= shape[index];
+    if (aclnn_cache_layout) {
+      strides = {static_cast<int64_t>(tensor.stride(0)),
+                 static_cast<int64_t>(tensor.stride(2)),
+                 static_cast<int64_t>(tensor.stride(1))};
+    } else {
+      int64_t stride = 1;
+      for (int64_t index = static_cast<int64_t>(shape.size()) - 1; index >= 0;
+           --index) {
+        strides[index] = stride;
+        stride *= shape[index];
+      }
     }
-    const std::vector<int64_t> storage_shape{stride};
+    int64_t storage_elems = 1;
+    for (std::size_t index = 0; index < shape.size(); ++index) {
+      storage_elems += (shape[index] - 1) * strides[index];
+    }
+    const std::vector<int64_t> storage_shape{storage_elems};
     return aclCreateTensor(shape.data(), static_cast<int64_t>(shape.size()),
                            ascend::ToAclDtype(tensor.dtype()), strides.data(),
                            /*storageOffset=*/0, ACL_FORMAT_ND,
@@ -211,10 +232,24 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     }
 
     auto scale = softmax_scale.value_or(1.0 / std::sqrt(q.size(2)));
-    const auto num_key_value_heads = paged ? k.size(2) : k.size(1);
-    const auto block_size = paged ? k.size(1) : 0;
+    const bool aclnn_cache_layout = paged && k.size(1) < k.size(2);
+    const auto num_key_value_heads =
+        paged ? (aclnn_cache_layout ? k.size(1) : k.size(2)) : k.size(1);
+    const auto block_size =
+        paged ? (aclnn_cache_layout ? k.size(2) : k.size(1)) : 0;
     uint64_t workspace_size = 0;
     aclOpExecutor* executor = nullptr;
+    static int fia_prefill_debug_calls = 0;
+    if (fia_prefill_debug_calls < 20) {
+      ++fia_prefill_debug_calls;
+      std::fprintf(
+          stderr,
+          "[FIA-DEBUG] prefill call=%d q=%ldx%ldx%ld k=%ldx%ldx%ldx%ld "
+          "layout=%s heads=%ld kv_heads=%ld block=%ld seqs=%zu\\n",
+          fia_prefill_debug_calls, q.size(0), q.size(1), q.size(2), k.size(0),
+          k.size(1), k.size(2), k.size(3), input_layout_.data(), q.size(1),
+          num_key_value_heads, block_size, sequence_count_);
+    }
     auto ret = aclnnFusedInferAttentionScoreV4GetWorkspaceSize(
         t_q, key_list, value_list,
         /*pseShift=*/nullptr, t_attention_mask, actual_seq_lengths,
@@ -255,6 +290,8 @@ class Operator<FlashAttnVarlenFunc, Device::Type::kAscend>
     assert(ret == ACL_SUCCESS &&
            "Ascend `FlashAttnVarlenFunc` workspace query failed");
 
+    std::fprintf(stderr, "[FIA-DEBUG] prefill workspace query ok size=%lu\n",
+                 static_cast<unsigned long>(workspace_size));
     auto& arena = ascend::GetWorkspacePool().Ensure(
         stream, workspace_size, "flash_attn_varlen_func_workspace");
     ret = aclnnFusedInferAttentionScoreV4(arena.buf, workspace_size, executor,

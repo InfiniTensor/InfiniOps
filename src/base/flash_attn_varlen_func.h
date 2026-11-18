@@ -65,8 +65,11 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
     // The 256 cap applies to the pinned kernels' head dimension; an MLA
     // packed q/k head dim (576 for 021) is admitted through the MLA layout
     // checks below and served by the MLA provider.
-    if (q.size(1) == 0 || k.size(-2) == 0 || q.size(1) % k.size(-2) != 0 ||
-        q.size(2) == 0 || q.size(2) % 8 != 0 ||
+    const size_t paged_kv_heads =
+        k.ndim() == 4 && k.size(1) < k.size(2) ? k.size(1) : k.size(-2);
+    if (q.size(1) == 0 || paged_kv_heads == 0 ||
+        q.size(1) % paged_kv_heads != 0 || q.size(2) == 0 ||
+        q.size(2) % 8 != 0 ||
         (!mla_layout && (q.size(2) > 256 || q.size(2) != k.size(-1))) ||
         // The MLA layout covers exactly the packed latent pair the MLA
         // provider serves (576/512 for 021); any other differing k/v head
@@ -89,8 +92,11 @@ class FlashAttnVarlenFunc : public Operator<FlashAttnVarlenFunc> {
         (softmax_lse->shape() != Tensor::Shape{q.size(1), q.size(0)} ||
          s_dmask->shape() != Tensor::Shape{0}))
       return false;
-    if (block_table && (block_table->size(0) != cu_seqlens_q.size(0) - 1 ||
-                        !block_table->IsContiguous() || k.size(1) % 256 != 0))
+    const size_t paged_block_size =
+        k.ndim() == 4 && k.size(1) < k.size(2) ? k.size(2) : k.size(1);
+    if (block_table &&
+        (block_table->size(0) != cu_seqlens_q.size(0) - 1 ||
+         !block_table->IsContiguous() || paged_block_size % 256 != 0))
       return false;
     if (alibi_slopes &&
         (!alibi_slopes->IsContiguous() ||

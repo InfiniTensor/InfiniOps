@@ -36,17 +36,24 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
         num_heads_{key.size(1)},
         head_size_{key.size(2)},
         value_head_size_{value.size(2)},
-        block_size_{key_cache.size(1)},
+        aclnn_cache_layout_{key_cache.size(1) == key.size(1) &&
+                            key_cache.size(2) != key.size(1)},
+        block_size_{aclnn_cache_layout_ ? key_cache.size(2)
+                                        : key_cache.size(1)},
         key_token_stride_{key.stride(0)},
         value_token_stride_{value.stride(0)},
         key_head_stride_{key.stride(1)},
         value_head_stride_{value.stride(1)},
         key_cache_block_stride_{key_cache.stride(0)},
         value_cache_block_stride_{value_cache.stride(0)},
-        key_cache_page_stride_{key_cache.stride(1)},
-        value_cache_page_stride_{value_cache.stride(1)},
-        key_cache_head_stride_{key_cache.stride(2)},
-        value_cache_head_stride_{value_cache.stride(2)} {
+        key_cache_page_stride_{aclnn_cache_layout_ ? key_cache.stride(2)
+                                                   : key_cache.stride(1)},
+        value_cache_page_stride_{aclnn_cache_layout_ ? value_cache.stride(2)
+                                                     : value_cache.stride(1)},
+        key_cache_head_stride_{aclnn_cache_layout_ ? key_cache.stride(1)
+                                                   : key_cache.stride(2)},
+        value_cache_head_stride_{aclnn_cache_layout_ ? value_cache.stride(1)
+                                                     : value_cache.stride(2)} {
     assert(key.ndim() == 3 && value.ndim() == 3 &&
            "`ReshapeAndCacheFlash` requires 3D `key` and `value`");
     assert((key.shape() == value.shape() ||
@@ -78,11 +85,14 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
            key_cache.size(2) == value_cache.size(2) &&
            "`ReshapeAndCacheFlash` requires matching 4D cache "
            "batch/page/head layout");
-    assert(block_size_ > 0 && key_cache.size(2) == num_heads_ &&
+    assert(block_size_ > 0 &&
+           (aclnn_cache_layout_ ? key_cache.size(1) : key_cache.size(2)) ==
+               num_heads_ &&
            key_cache.size(3) == head_size_ &&
            value_cache.size(3) == value_head_size_ &&
            "`ReshapeAndCacheFlash` cache shape must be "
-           "[`num_blocks`, `block_size`, `num_heads`, `head_size`]");
+           "[`num_blocks`, `block_size`, `num_heads`, `head_size`] or ACLNN "
+           "[`num_blocks`, `num_heads`, `block_size`, `head_size`]");
     assert(key.stride(2) == 1 && value.stride(2) == 1 &&
            key_cache.stride(3) == 1 && value_cache.stride(3) == 1 &&
            "`ReshapeAndCacheFlash` requires contiguous head dimensions");
@@ -142,7 +152,8 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
            key_cache.size(0) == value_cache.size(0) &&
            key_cache.size(1) == value_cache.size(1) &&
            key_cache.size(2) == value_cache.size(2) && key_cache.size(1) > 0 &&
-           key_cache.size(2) == key.size(1) &&
+           (key_cache.size(1) == key.size(1) ||
+            key_cache.size(2) == key.size(1)) &&
            key_cache.size(3) == key.size(2) &&
            value_cache.size(3) == value.size(2) && key.stride(2) == 1 &&
            value.stride(2) == 1 && key_cache.stride(3) == 1 &&
@@ -165,6 +176,8 @@ class ReshapeAndCacheFlash : public Operator<ReshapeAndCacheFlash> {
   std::size_t head_size_{0};
 
   std::size_t value_head_size_{0};
+
+  bool aclnn_cache_layout_{false};
 
   std::size_t block_size_{0};
 

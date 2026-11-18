@@ -93,7 +93,10 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
         k_cache.dtype() != q.dtype() || v_cache.dtype() != q.dtype() ||
         out.dtype() != q.dtype() || q.size(0) == 0 || q.size(1) == 0 ||
         q.size(2) == 0 || k_cache.size(0) == 0 || k_cache.size(1) == 0 ||
-        k_cache.size(2) == 0 || q.size(2) % k_cache.size(2) != 0 ||
+        k_cache.size(2) == 0 ||
+        q.size(2) % (k_cache.size(1) == q.size(2) ? k_cache.size(1)
+                                                  : k_cache.size(2)) !=
+            0 ||
         q.size(3) == 0 || q.size(3) != k_cache.size(3) ||
         // The 256 caps cover the pinned kernels; the MLA layout is exactly
         // the packed latent pair the MLA provider serves (576/512 for 021),
@@ -134,9 +137,11 @@ class FlashAttnWithKvcache : public Operator<FlashAttnWithKvcache> {
         !index_vector(cache_leftpad))
       return false;
     if (block_table) {
+      const size_t cache_block_size =
+          k_cache.size(1) == q.size(2) ? k_cache.size(2) : k_cache.size(1);
       if (block_table->ndim() != 2 || block_table->size(0) != q.size(0) ||
           block_table->dtype() != DataType::kInt32 ||
-          !block_table->IsContiguous() || k_cache.size(1) % 256 != 0)
+          !block_table->IsContiguous() || cache_block_size % 256 != 0)
         return false;
     } else if (!cache_batch_idx && k_cache.size(0) < q.size(0))
       return false;

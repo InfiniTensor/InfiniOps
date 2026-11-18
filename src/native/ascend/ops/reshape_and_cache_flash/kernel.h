@@ -51,6 +51,8 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
         slot_mapping_host_(num_tokens_),
         indices_host_(num_tokens_ * 2) {
     use_copy_fallback_ = ascend::IsAscend310P();
+    // ScatterPaKvCache still expects the legacy BnBsND physical layout.
+    use_fast_path_ = use_fast_path_ && !aclnn_cache_layout_;
     if (!use_fast_path_ && !use_copy_fallback_ && num_tokens_ > 0) {
       auto ret = aclrtMalloc(&indices_device_,
                              indices_host_.size() * sizeof(indices_host_[0]),

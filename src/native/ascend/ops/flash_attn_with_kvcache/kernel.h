@@ -6,12 +6,13 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <optional>
 #include <vector>
 
 #include "acl/acl.h"
 #include "aclnn/aclnn_base.h"
-#include "aclnnop/aclnn_incre_flash_attention_v4.h"
+#include "aclnnop/aclnn_fused_infer_attention_score_v4.h"
 #include "base/flash_attn_with_kvcache.h"
 #include "native/ascend/common.h"
 #include "native/ascend/workspace_pool_.h"
@@ -223,7 +224,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     if (paged_) block_table_cache_ = ascend::AclTensorCache(*block_table);
     seq_i32_host_.resize(batch_size_);
     seq_i64_host_.resize(batch_size_);
-    if (paged_ && q.dtype() == DataType::kBFloat16 &&
+    if (false && paged_ && q.dtype() == DataType::kBFloat16 &&
         q.size(2) == k_cache.size(2) && q.size(3) == k_cache.size(3) &&
         block_table->IsContiguous() && k_cache.IsContiguous() &&
         v_cache.IsContiguous()) {
@@ -247,7 +248,7 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     const Tensor custom_out = paged_ && out.ndim() == 4 && out.size(1) == 1
                                   ? SqueezeSequenceView(out)
                                   : out;
-    if (fai_tiling_ != nullptr &&
+    if (false && fai_tiling_ != nullptr &&
         CanRunFai(custom_q, k_cache, v_cache, cache_seqlens,
                   scalar_cache_seqlens, block_table, custom_out)) {
       RunFai(custom_q, k_cache, v_cache, *cache_seqlens, *block_table,
@@ -266,8 +267,11 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     assert(!paged_ || actual_seq_lengths != nullptr &&
                           "Ascend paged attention requires sequence lengths");
 
+    const bool aclnn_cache_layout = paged_ && k_cache.size(2) > k_cache.size(1);
+    const auto cache_block_size =
+        aclnn_cache_layout ? k_cache.size(2) : k_cache.size(1);
     auto max_cache_length = static_cast<int64_t>(
-        paged_ ? block_table->size(1) * k_cache.size(1) : k_cache.size(1));
+        paged_ ? block_table->size(1) * cache_block_size : k_cache.size(1));
     assert(std::all_of(seq_i64_host_.begin(), seq_i64_host_.end(),
                        [&](int64_t length) {
                          return length >= 0 && length <= max_cache_length;
@@ -275,8 +279,9 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
            "Ascend `FlashAttnWithKvcache` received invalid sequence lengths");
 
     auto query_view = paged_ ? BnsdView(q) : q;
-    auto key_view = paged_ ? BnsdView(k_cache) : k_cache;
-    auto value_view = paged_ ? BnsdView(v_cache) : v_cache;
+    auto key_view = paged_ && !aclnn_cache_layout ? BnsdView(k_cache) : k_cache;
+    auto value_view =
+        paged_ && !aclnn_cache_layout ? BnsdView(v_cache) : v_cache;
     auto out_view = paged_ ? BnsdView(out) : out;
     auto t_query = query_cache_.get(const_cast<void*>(query_view.data()));
     auto t_key = ascend::BuildAclTensor(key_view);
@@ -298,25 +303,53 @@ class Operator<FlashAttnWithKvcache, Device::Type::kAscend>
     auto scale = softmax_scale.value_or(
         1.0 / std::sqrt(static_cast<double>(head_size_)));
     auto num_heads = static_cast<int64_t>(q.size(2));
-    auto num_kv_heads = static_cast<int64_t>(k_cache.size(2));
-    auto block_size = paged_ ? static_cast<int64_t>(k_cache.size(1)) : 0;
+    auto num_kv_heads = static_cast<int64_t>(
+        aclnn_cache_layout ? k_cache.size(1) : k_cache.size(2));
+    auto block_size = paged_ ? static_cast<int64_t>(cache_block_size) : 0;
     auto* layout = paged_ ? bnsd_layout_.data() : bsnd_layout_.data();
 
     aclOpExecutor* executor = nullptr;
     uint64_t workspace_size = 0;
-    auto ret = aclnnIncreFlashAttentionV4GetWorkspaceSize(
-        t_query, key_list, value_list, nullptr, nullptr, actual_seq_lengths,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        t_block_table, nullptr, num_heads, scale, layout, num_kv_heads,
-        block_size, 0, t_out, &workspace_size, &executor);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `FlashAttnWithKvcache` workspace query failed");
+    const int64_t lse_shape[] = {0};
+    const int64_t lse_strides[] = {1};
+    const int64_t lse_storage[] = {0};
+    aclTensor* t_softmax_lse =
+        aclCreateTensor(lse_shape, 1, ACL_BF16, lse_strides, 0, ACL_FORMAT_ND,
+                        lse_storage, 1, nullptr);
+    assert(t_softmax_lse != nullptr &&
+           "Ascend FIA failed to create softmax LSE descriptor");
 
+    static int fia_debug_calls = 0;
+    if (fia_debug_calls < 20) {
+      ++fia_debug_calls;
+      std::fprintf(stderr,
+                   "[FIA-DEBUG] decode call=%d q=%ldx%ldx%ldx%ld "
+                   "key=%ldx%ldx%ldx%ld layout=%s heads=%ld kv_heads=%ld "
+                   "block=%ld seqs=%ld\n",
+                   fia_debug_calls, q.size(0), q.size(1), q.size(2), q.size(3),
+                   k_cache.size(0), k_cache.size(1), k_cache.size(2),
+                   k_cache.size(3), layout, num_heads, num_kv_heads, block_size,
+                   static_cast<long>(seq_i64_host_.size()));
+    }
+    auto ret = aclnnFusedInferAttentionScoreV4GetWorkspaceSize(
+        t_query, key_list, value_list, nullptr, nullptr, nullptr,
+        actual_seq_lengths, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, t_block_table, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, num_heads, scale, std::numeric_limits<int64_t>::max(),
+        std::numeric_limits<int64_t>::max(), layout, num_kv_heads, 0, 1,
+        block_size, 0, false, 0, 0, 0, t_out, t_softmax_lse, &workspace_size,
+        &executor);
+    assert(ret == ACL_SUCCESS && "Ascend FIA workspace query failed");
+
+    std::fprintf(stderr, "[FIA-DEBUG] decode workspace query ok size=%lu\n",
+                 static_cast<unsigned long>(workspace_size));
     auto& arena = ascend::GetWorkspacePool().Ensure(stream, workspace_size);
-    ret =
-        aclnnIncreFlashAttentionV4(arena.buf, workspace_size, executor, stream);
-    assert(ret == ACL_SUCCESS &&
-           "Ascend `FlashAttnWithKvcache` execution failed");
+    ret = aclnnFusedInferAttentionScoreV4(arena.buf, workspace_size, executor,
+                                          stream);
+    std::fprintf(stderr, "[FIA-DEBUG] decode execute ret=%d\n", ret);
+    assert(ret == ACL_SUCCESS && "Ascend FIA execution failed");
+    aclDestroyTensor(t_softmax_lse);
 
     aclDestroyTensorList(key_list);
     aclDestroyTensorList(value_list);
