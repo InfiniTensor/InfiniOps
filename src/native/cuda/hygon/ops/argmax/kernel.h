@@ -12,6 +12,10 @@ class Operator<Argmax, Device::Type::kHygon>
     : public CudaArgmax<Runtime<Device::Type::kHygon>> {
  public:
   using CudaArgmax<Runtime<Device::Type::kHygon>>::CudaArgmax;
+
+  // Construction and workspace preparation happen before stream capture.
+  // Launch only enqueues CUB's reduction and the index store on the supplied stream.
+  bool capture_safe() const override { return true; }
 };
 
 }  // namespace infini::ops
