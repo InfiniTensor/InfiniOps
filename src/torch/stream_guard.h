@@ -39,6 +39,10 @@
 #include "torch/mars/c10.h"
 #endif
 
+#ifdef WITH_QY
+#include "torch/qy/c10.h"
+#endif
+
 namespace infini::ops {
 
 template <Device::Type kDev>

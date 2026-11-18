@@ -73,6 +73,13 @@
 #define INFINI_OPS_TORCH_INSTANTIATE_MARS(Op, Index)
 #endif
 
+#ifdef WITH_QY
+#define INFINI_OPS_TORCH_INSTANTIATE_QY(Op, Index) \
+  template class Operator<Op, Device::Type::kQy, Index>;
+#else
+#define INFINI_OPS_TORCH_INSTANTIATE_QY(Op, Index)
+#endif
+
 #define INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(Op, Index) \
   INFINI_OPS_TORCH_INSTANTIATE_CPU(Op, Index)            \
   INFINI_OPS_TORCH_INSTANTIATE_NVIDIA(Op, Index)         \
@@ -83,6 +90,7 @@
   INFINI_OPS_TORCH_INSTANTIATE_ILUVATAR(Op, Index)       \
   INFINI_OPS_TORCH_INSTANTIATE_HYGON(Op, Index)          \
   INFINI_OPS_TORCH_INSTANTIATE_THEAD(Op, Index)          \
-  INFINI_OPS_TORCH_INSTANTIATE_MARS(Op, Index)
+  INFINI_OPS_TORCH_INSTANTIATE_MARS(Op, Index)           \
+  INFINI_OPS_TORCH_INSTANTIATE_QY(Op, Index)
 
 #endif  // INFINI_OPS_TORCH_INSTANTIATE_H_
