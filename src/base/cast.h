@@ -7,6 +7,8 @@ namespace infini::ops {
 
 class Cast : public Operator<Cast> {
  public:
+  static constexpr bool kAutomaticDefault = true;
+
   Cast(const Tensor input, Tensor out)
       : ndim_{out.ndim()},
         output_size_{out.numel()},

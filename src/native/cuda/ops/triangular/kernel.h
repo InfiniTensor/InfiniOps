@@ -1,8 +1,6 @@
 #ifndef INFINI_OPS_CUDA_TRIANGULAR_KERNEL_H_
 #define INFINI_OPS_CUDA_TRIANGULAR_KERNEL_H_
 
-#include <cuda_runtime.h>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -141,9 +139,8 @@ Metadata Validate(const Tensor& input, std::int64_t diagonal,
   return meta;
 }
 
-template <typename T, bool kUpper>
-void Launch(const Tensor& input, Tensor output, Metadata meta,
-            cudaStream_t stream) {
+template <typename T, bool kUpper, typename Stream>
+void Launch(const Tensor& input, Tensor output, Metadata meta, Stream stream) {
   constexpr unsigned kThreads = 256;
   const std::size_t blocks = 1 + (meta.elements - 1) / kThreads;
   const unsigned grid =
@@ -151,10 +148,6 @@ void Launch(const Tensor& input, Tensor output, Metadata meta,
   TriangularKernel<T, kUpper>
       <<<grid, kThreads, 0, stream>>>(static_cast<const T*>(input.data()),
                                       static_cast<T*>(output.data()), meta);
-  const auto status = cudaPeekAtLastError();
-  if (status != cudaSuccess) {
-    throw std::runtime_error(cudaGetErrorString(status));
-  }
 }
 
 template <typename Backend, typename Key, bool kUpper>

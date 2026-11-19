@@ -48,12 +48,17 @@ InfiniOps extension so `import infini.ops` can load its runtime dependency.
 | `-DWITH_MOORE=[ON\|OFF]` | Compile the Moore implementation | OFF |
 | `-DWITH_CAMBRICON=[ON\|OFF]` | Compile the Cambricon implementation | OFF |
 | `-DWITH_ASCEND=[ON\|OFF]` | Compile the Ascend implementation | OFF |
+| `-DWITH_NINETOOTHED=[ON\|OFF]` | Compile NineToothed-generated NVIDIA kernels; also requires `-DWITH_NVIDIA=ON` and Python packages `ninetoothed` and `ntops` | OFF |
 | `-DWITH_TORCH=[ON\|OFF]` | Compile generated PyTorch ATen-backed operators | OFF |
 | `-DBUILD_NVIDIA_W4_MARLIN=[ON\|OFF]` | Build AWQ/GPTQ Marlin providers; requires CUDA >= 12.3 and C++20 | OFF |
 | `-DAUTO_DETECT_DEVICES=[ON\|OFF]` | Auto-detect available platforms | ON |
 | `-DINFINI_RT_ROOT=<path>` | InfiniRT install prefix containing `include/` and `lib/` | `$INFINI_RT_ROOT` |
 
 If no accelerator options are provided and auto-detection finds nothing, `WITH_CPU` is enabled by default.
+
+For NineToothed builds, install `ninetoothed` and `ntops` from the exact Git
+revisions pinned in `.github/ci_config.yml`. Equivalent Python package version
+numbers do not guarantee the same source tree.
 
 For Hygon builds, set `DTK_ROOT` to the DTK installation root if it is not installed at `/opt/dtk`. You can override the default DCU arch with `-DHYGON_ARCH=<arch>` when configuring CMake.
 

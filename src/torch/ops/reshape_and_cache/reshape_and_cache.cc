@@ -1,5 +1,7 @@
 #include "torch/ops/reshape_and_cache/reshape_and_cache.h"
 
+#include "torch/instantiate.h"
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {
@@ -31,6 +33,7 @@ void Operator<ReshapeAndCache, kDev, 1>::operator()(
     const Tensor key, const Tensor value, Tensor key_cache, Tensor value_cache,
     const Tensor slot_mapping, const Tensor k_scale, const Tensor v_scale,
     const std::string kv_cache_dtype) const {
+  const TorchStreamGuard<kDev> guard{stream_, device_index_};
   auto at_key = ToAtenTensor<kDev>(const_cast<void*>(key.data()), key_shape_,
                                    key_strides_, key_type_, device_index_);
   auto at_value =
@@ -77,14 +80,6 @@ void Operator<ReshapeAndCache, kDev, 1>::operator()(
                             value_values);
 }
 
-template class Operator<ReshapeAndCache, Device::Type::kCpu, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kNvidia, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kCambricon, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kAscend, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kMetax, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kMoore, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kIluvatar, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kHygon, 1>;
-template class Operator<ReshapeAndCache, Device::Type::kMars, 1>;
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR(ReshapeAndCache, 1)
 
 }  // namespace infini::ops

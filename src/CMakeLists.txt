@@ -648,8 +648,16 @@ set(_infini_ops_smoke_ops
     causal_softmax causal_softmax_infinilm abs clamp exp)
 set(_infini_ops_smoke_torch_ops abs clamp exp relu)
 
+if(WITH_TORCH)
+    list(APPEND _infini_ops_smoke_ops reshape_and_cache scaled_dot_product_attention)
+endif()
+
 if(WITH_NVIDIA)
     list(APPEND _infini_ops_smoke_ops cutlass_scaled_mm moe_sum)
+endif()
+
+if(WITH_NVIDIA AND WITH_NINETOOTHED)
+    list(APPEND _infini_ops_smoke_ops fused_add_rms_norm)
 endif()
 
 if(((WITH_NVIDIA OR WITH_MOORE) AND WITH_TORCH) OR WITH_ILUVATAR)
@@ -850,6 +858,11 @@ if(WITH_TORCH)
     # The script writes into `${PROJECT_SOURCE_DIR}/generated/` (gitignored),
     # which we then glob below alongside any hand-written torch sources.
     find_package(Python COMPONENTS Interpreter REQUIRED)
+    if(WITH_ASCEND)
+        find_package(Python COMPONENTS Interpreter Development.Embed REQUIRED)
+        list(APPEND TORCH_INCLUDE_DIRS ${Python_INCLUDE_DIRS})
+        list(APPEND TORCH_LIBRARIES Python::Python)
+    endif()
 
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/scripts/generate_torch_ops.py"
@@ -1447,6 +1460,8 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS)
         "${PROJECT_SOURCE_DIR}/generated/bindings/generated_dispatch_*.cc")
 
     if(OPERATOR_DISPATCH_SOURCES)
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/operator.h"
+            "${PROJECT_SOURCE_DIR}/generated/bindings/operator.h" COPYONLY)
         target_include_directories(infiniops PRIVATE "${PROJECT_SOURCE_DIR}")
         if(WITH_NVIDIA OR WITH_HYGON OR WITH_THEAD)
             set_source_files_properties(${OPERATOR_DISPATCH_SOURCES}
@@ -1562,6 +1577,7 @@ if(GENERATE_PYTHON_BINDINGS)
         set(_iluvatar_dispatch_include_flags
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
             "-I${PROJECT_SOURCE_DIR}"
+            "-I${PROJECT_SOURCE_DIR}/include"
             "-I${PROJECT_SOURCE_DIR}/generated"
             "-I${PROJECT_SOURCE_DIR}/generated/include"
             ${INFINI_RT_INCLUDE_FLAGS})

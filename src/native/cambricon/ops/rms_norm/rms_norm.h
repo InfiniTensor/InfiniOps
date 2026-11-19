@@ -21,6 +21,12 @@ void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
 template <>
 class Operator<RmsNorm, Device::Type::kCambricon> : public RmsNorm {
  public:
+  static bool supports(const Tensor input, const Tensor weight, float,
+                       const Tensor out) {
+    return Valid(input, weight, out) && input.strides().back() == 1 &&
+           out.strides().back() == 1 && weight.strides().back() == 1;
+  }
+
   Operator(const Tensor input, const Tensor weight, float eps, Tensor out)
       : RmsNorm{input, weight, eps, out} {
     cnrt_utils::GetLaunchConfig(input.device(), &core_per_cluster,

@@ -20,6 +20,12 @@ namespace infini::ops {
 template <>
 class Operator<RmsNorm, Device::Type::kAscend> : public RmsNorm {
  public:
+  static bool supports(const Tensor input, const Tensor weight, float,
+                       const Tensor out) {
+    return Valid(input, weight, out) && input.ndim() >= 2 &&
+           input.strides().back() == 1 && out.strides().back() == 1;
+  }
+
   Operator(const Tensor input, const Tensor weight, float eps, Tensor out)
       : RmsNorm(input, weight, eps, out), weight_cache_(weight) {
     assert(ndim_ >= 2 && "`RmsNorm` Ascend path requires rank >= 2");

@@ -55,6 +55,62 @@ def test_rms_norm(
     )
 
 
+@pytest.mark.auto_act_and_assert
+@pytest.mark.parametrize(
+    "shape, eps, input_fill, input_scale",
+    (
+        ((32, 512), 1e-12, None, 1.0),
+        ((32, 512), 1e-2, None, 1.0),
+        ((16, 1024), 1e-6, 0.0, 1.0),
+        ((16, 1024), 1e-6, 1.0, 1.0),
+        ((16, 1024), 1e-6, None, 100.0),
+        ((16, 1024), 1e-6, None, 1e-4),
+    ),
+    ids=("eps_small", "eps_large", "zeros", "ones", "large_values", "small_values"),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-4, 1e-4),
+        (torch.float16, 1e-2, 1e-2),
+    ),
+)
+def test_rms_norm_boundary(
+    shape,
+    eps,
+    input_fill,
+    input_scale,
+    implementation_index,
+    dtype,
+    device,
+    rtol,
+    atol,
+):
+    if device != "npu":
+        pytest.skip("Ascend RMSNorm boundary regression")
+
+    if input_fill is None:
+        input = randn_strided(shape, None, dtype=dtype, device=device)
+        if input_scale != 1.0:
+            input = input * input_scale
+    else:
+        input = torch.full(shape, input_fill, dtype=dtype, device=device)
+
+    weight = randn_strided((shape[-1],), None, dtype=dtype, device=device)
+    out = empty_strided(shape, None, dtype=dtype, device=device)
+
+    return Payload(
+        lambda *args, **kwargs: _rms_norm(
+            *args, **kwargs, implementation_index=implementation_index
+        ),
+        _torch_rms_norm,
+        (input, weight),
+        {"eps": eps, "out": out},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
 def test_rms_norm_non_default_stream(device, implementation_index):
     if device == "cuda":
         accelerator = torch.cuda

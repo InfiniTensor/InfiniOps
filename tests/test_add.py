@@ -275,3 +275,70 @@ def _torch_add(input, other, out, *, alpha):
     out.copy_(res.to(out.dtype))
 
     return out
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize("queue", [1, 2])
+def test_aten_to_native_submission_order(device, queue):
+    if device != "npu":
+        pytest.skip("Requires Ascend host task queues")
+    if not {0, 1}.issubset(infini.ops.Add.active_implementation_indices(device)):
+        pytest.skip("Requires both native and ATen Add providers")
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
+    source = textwrap.dedent(r"""
+        import ctypes, sys
+        from pathlib import Path
+        import torch, torch_npu
+        import infini.ops as ops
+        lib = ctypes.CDLL(str(Path(torch_npu.__file__).parent/'lib/libtorch_npu.so'))
+        name = 'OpApiGetTaskQueueEnable'
+        query = getattr(lib, '_Z'+str(len(name))+name+'v')
+        query.restype = ctypes.c_uint32
+        assert query() == int(sys.argv[1])
+        x = torch.ones(4096, device='npu')
+        tmp = torch.zeros_like(x)
+        out = torch.empty_like(x)
+        stream = torch.npu.Stream()
+        for managed in (False, True):
+            context = torch.npu.stream(stream) if managed else torch.npu.device(0)
+            with context:
+                raw = torch.npu.current_stream().npu_stream
+                ops.add(x, x, tmp, implementation_index=1, stream=raw)
+                ops.add(tmp, x, out, implementation_index=0, stream=raw)
+                torch.npu.synchronize()
+                for _ in range(30):
+                    tmp.zero_()
+                    torch.npu.synchronize()
+                    for _ in range(64):
+                        ops.add(tmp, x, tmp, implementation_index=1, stream=raw)
+                    # No stream property read or synchronization between providers.
+                    ops.add(tmp, x, out, implementation_index=0, stream=raw)
+                    torch.npu.synchronize()
+                    assert torch.all(out.cpu() == 65), out.cpu().tolist()[:8]
+        out.fill_(-123)
+        torch.npu.synchronize()
+        raw = stream.npu_stream
+        try:
+            ops.add(x, x, out, implementation_index=1, stream=raw)
+        except RuntimeError as error:
+            assert 'external streams require TASK_QUEUE_ENABLE=0' in str(error)
+        else:
+            raise AssertionError('A non-current raw stream must reject an active queue')
+        torch.npu.synchronize()
+        assert torch.all(out.cpu() == -123)
+        print('ATen to native ordering passed with queue='+sys.argv[1])
+    """)
+    environment = dict(os.environ, TASK_QUEUE_ENABLE=str(queue))
+    environment.pop("ASCEND_LAUNCH_BLOCKING", None)
+    child = subprocess.run(
+        [sys.executable, "-c", source, str(queue)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert child.returncode == 0, child.stdout + child.stderr

@@ -74,10 +74,9 @@ class CudaEmbedding : public Embedding {
 
   /// \deprecated Use the overload that also accepts `max_norm` and
   /// `norm_type` instead.
-  [[deprecated("Use the PyTorch-compatible overload instead.")]]
-  CudaEmbedding(const Tensor input, const Tensor weight,
-                const int64_t padding_idx, const bool scale_grad_by_freq,
-                const bool sparse, Tensor out)
+  [[deprecated("Use the PyTorch-compatible overload instead.")]] CudaEmbedding(
+      const Tensor input, const Tensor weight, const int64_t padding_idx,
+      const bool scale_grad_by_freq, const bool sparse, Tensor out)
       : CudaEmbedding(input, weight, padding_idx, std::nullopt, 2.0,
                       scale_grad_by_freq, sparse, out) {}
 
@@ -123,6 +122,19 @@ class CudaEmbedding : public Embedding {
                     num_indices_, input_ndim_, d_input_shape_, d_input_strides_,
                     weight_row_stride_, weight_col_stride_, embedding_dim_,
                     vocab_size_, is_input_contiguous_, *max_norm, norm_type);
+          }
+
+          if (is_input_contiguous_ && is_out_contiguous_ &&
+              weight_col_stride_ == 1) {
+            const size_t row_block_size =
+                embedding_dim_ <= 64 ? 64 : (embedding_dim_ <= 128 ? 128 : 256);
+            EmbeddingContiguousKernel<Backend::kDeviceType, T, IndexT>
+                <<<num_indices_, row_block_size, 0, cuda_stream>>>(
+                    reinterpret_cast<T*>(out.data()),
+                    reinterpret_cast<const IndexT*>(input.data()),
+                    reinterpret_cast<const T*>(weight.data()), num_indices_,
+                    weight_row_stride_, embedding_dim_, vocab_size_);
+            return;
           }
 
           EmbeddingKernel<Backend::kDeviceType, T, IndexT>

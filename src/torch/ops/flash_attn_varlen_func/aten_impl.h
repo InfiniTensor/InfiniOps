@@ -7,8 +7,8 @@
 #include <cassert>
 #include <tuple>
 
-#include "torch/c10.h"
 #include "torch/ops/flash_attn_varlen_func/flash_attn_varlen_func.h"
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {

@@ -64,32 +64,6 @@ _ENUM_DEFAULTS = {
 # from installed `torchgen/packaged/ATen/native/native_functions.yaml`.
 _DEFAULT_PYTORCH_VERSION = "v2.4.0"
 
-# Order matches the device list in existing hand-written torch backends
-# (see `src/torch/add/add.cc`).
-_DEVICE_TYPES = (
-    "kCpu",
-    "kNvidia",
-    "kCambricon",
-    "kAscend",
-    "kMetax",
-    "kMoore",
-    "kIluvatar",
-    "kHygon",
-    "kThead",
-    "kMars",
-)
-
-_C10_DEVICE_TYPES = (
-    "kNvidia",
-    "kCambricon",
-    "kAscend",
-    "kMetax",
-    "kMoore",
-    "kIluvatar",
-    "kThead",
-    "kMars",
-)
-
 # YAML scalar-type tokens → C++ types. Reference types (e.g. `const Scalar&`)
 # are not used so the generated signatures match the existing hand-written
 # ones, which pass by value to keep pybind11 binding generation simple.
@@ -1462,9 +1436,6 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         op_call_signature=_format_signature(op),
         tensor_conversions="\n".join(conversion_lines),
         out_device_index=out_device_index,
-        c10_condition=" ||\n      ".join(
-            f"kDev == Device::Type::{dev}" for dev in _C10_DEVICE_TYPES
-        ),
         # The generated call expression resolves the right kernel via C++
         # overload resolution from the argument types we pass.
         aten_call=aten_call,
@@ -1475,29 +1446,11 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     op_type = _op_cpp_type(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
-    c10_includes = "\n".join(
-        f"#ifdef WITH_{dev.removeprefix('k').upper()}\n"
-        f'#include "torch/{dev.removeprefix("k").lower()}/c10.h"\n'
-        f"#endif"
-        for dev in _C10_DEVICE_TYPES
-    )
-    # Guard each explicit instantiation by the matching `WITH_<DEV>` macro
-    # so a build that only enables a subset of devices does not pay the
-    # ATen template-instantiation cost (and memory pressure) for the
-    # devices it does not link against. Each macro is set by
-    # `target_compile_definitions` in `src/CMakeLists.txt`.
-    instantiations = "\n".join(
-        f"#ifdef WITH_{dev.removeprefix('k').upper()}\n"
-        f"template class Operator<{op_type}, Device::Type::{dev}, {_PYTORCH_SLOT}>;\n"
-        f"#endif"
-        for dev in _DEVICE_TYPES
-    )
-
     return _TORCH_SOURCE_TEMPLATE.format(
         name=name,
         methods=methods,
-        c10_includes=c10_includes,
-        instantiations=instantiations,
+        op_type=op_type,
+        slot=_PYTORCH_SLOT,
     )
 
 
@@ -1551,20 +1504,10 @@ _TORCH_METHOD_TEMPLATE = """\
 template <Device::Type kDev>
 void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
   const auto device_index = {out_device_index};
-  const auto run = [&] {{
+  const TorchStreamGuard<kDev> stream_guard{{stream_, device_index}};
 {tensor_conversions}
 
-    {aten_call};
-  }};
-
-  if constexpr ({c10_condition}) {{
-    const typename C10<kDev>::StreamGuard stream_guard{{
-        C10<kDev>::GetStreamFromExternal(stream_, device_index)}};
-    run();
-    return;
-  }}
-
-  run();
+  {aten_call};
 }}
 """
 
@@ -1572,15 +1515,15 @@ void Operator<{op_type}, kDev, {slot}>::operator()({op_call_signature}) const {{
 _TORCH_SOURCE_TEMPLATE = """\
 #include "torch/{name}/{name}.h"
 
-#include "torch/c10.h"
-{c10_includes}
+#include "torch/instantiate.h"
+#include "torch/stream_guard.h"
 #include "torch/tensor_.h"
 
 namespace infini::ops {{
 
 {methods}
 
-{instantiations}
+INFINI_OPS_INSTANTIATE_TORCH_OPERATOR({op_type}, {slot})
 
 }}  // namespace infini::ops
 """

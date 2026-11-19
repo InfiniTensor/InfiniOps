@@ -1,5 +1,3 @@
-#include "native/cuda/nvidia/ops/quick_gelu/kernel.h"
-
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -8,6 +6,8 @@
 #include <cmath>
 #include <stdexcept>
 #include <type_traits>
+
+#include "native/cuda/nvidia/ops/quick_gelu/kernel.h"
 
 namespace infini::ops::nvidia_quick_gelu_detail {
 namespace {
@@ -18,7 +18,12 @@ __device__ __forceinline__ T Apply(T x) {
   constexpr float alpha = 1.702f;
   if constexpr (std::is_same_v<T, __half>) {
     const __half ax = __hmul(__float2half(alpha), x);
-    const __half denominator = __hadd(__float2half(1.0f), hexp(__hneg(ax)));
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 530
+    const __half exp_ax = __float2half(__expf(-__half2float(ax)));
+#else
+    const __half exp_ax = hexp(__hneg(ax));
+#endif
+    const __half denominator = __hadd(__float2half(1.0f), exp_ax);
     const __half sigmoid = hrcp(denominator);
     return __hmul(x, sigmoid);
   } else if constexpr (std::is_same_v<T, __nv_bfloat16>) {
@@ -44,8 +49,9 @@ template <typename T>
 __global__ void QuickGeluKernel(const T* input, T* out, Layout layout,
                                 std::size_t count) {
   const std::size_t step = static_cast<std::size_t>(blockDim.x) * gridDim.x;
-  for (std::size_t index = static_cast<std::size_t>(blockIdx.x) * blockDim.x +
-           threadIdx.x; index < count; index += step) {
+  for (std::size_t index =
+           static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < count; index += step) {
     std::size_t remainder = index, input_offset = 0, out_offset = 0;
     for (unsigned axis = layout.rank; axis > 0; --axis) {
       const auto coordinate = remainder % layout.shape[axis - 1];
@@ -71,12 +77,20 @@ void Submit(const void* input, void* out, Layout layout, std::size_t count,
 void Launch(const void* input, void* out, DataType dtype, Layout layout,
             std::size_t count, cudaStream_t stream) {
   switch (dtype) {
-    case DataType::kFloat16: Submit<__half>(input, out, layout, count, stream); break;
-    case DataType::kBFloat16: Submit<__nv_bfloat16>(input, out, layout, count, stream); break;
-    case DataType::kFloat32: Submit<float>(input, out, layout, count, stream); break;
-    default: throw std::invalid_argument("NVIDIA QuickGelu unsupported dtype");
+    case DataType::kFloat16:
+      Submit<__half>(input, out, layout, count, stream);
+      break;
+    case DataType::kBFloat16:
+      Submit<__nv_bfloat16>(input, out, layout, count, stream);
+      break;
+    case DataType::kFloat32:
+      Submit<float>(input, out, layout, count, stream);
+      break;
+    default:
+      throw std::invalid_argument("NVIDIA QuickGelu unsupported dtype");
   }
   const auto status = cudaPeekAtLastError();
-  if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
+  if (status != cudaSuccess)
+    throw std::runtime_error(cudaGetErrorString(status));
 }
 }  // namespace infini::ops::nvidia_quick_gelu_detail

@@ -698,7 +698,7 @@ class Operator : public OperatorBase {
   template <typename Selected, typename... Args>
   static bool SelectWithDevice(const Config& config,
                                Device::Type dispatch_device_type, bool strict,
-                               Selected&& selected, Args&&... args) {
+                               Selected&& selected, Args&&... call_args) {
     bool matched = false;
 
     if (!detail::ListContains(dispatch_device_type, ActiveDevices<Key>{})) {
@@ -710,7 +710,7 @@ class Operator : public OperatorBase {
 
     DispatchFunc<ActiveDevices<Key>>(
         dispatch_device_type,
-        [&](auto device_tag) {
+        [&](auto device_tag, auto&&... dispatched_args) {
           constexpr Device::Type kDev = decltype(device_tag)::value;
           using Implementations =
               typename ActiveImplementations<Key, kDev>::type;
@@ -728,10 +728,11 @@ class Operator : public OperatorBase {
                           std::is_constructible_v<Provider, Args...>) {
               bool supported = false;
               if constexpr (kConfigAware) {
-                supported = Provider::supports(config, std::as_const(args)...);
+                supported = Provider::supports(
+                    config, std::as_const(dispatched_args)...);
               } else if (!config.requires_config_aware_provider()) {
                 supported = detail::ProviderSupports<Provider>(
-                    0, std::as_const(args)...);
+                    0, std::as_const(dispatched_args)...);
               }
               if (!supported) {
                 if (automatic) return;
@@ -744,7 +745,8 @@ class Operator : public OperatorBase {
               }
               matched = true;
               selected(device_tag, implementation_tag,
-                       std::bool_constant<kConfigConstructor>{}, args...);
+                       std::bool_constant<kConfigConstructor>{},
+                       dispatched_args...);
             } else {
               if (!automatic && strict) {
                 throw std::invalid_argument(
@@ -772,7 +774,7 @@ class Operator : public OperatorBase {
                 "Operator::Make(implementation_index)", Implementations{});
           }
         },
-        "Operator::Make");
+        "Operator::Make", call_args...);
 
     return matched;
   }
