@@ -19,7 +19,10 @@ class CudaDeviceBuffer {
 
   std::byte* Allocate(std::size_t bytes) {
     if (!bytes) return nullptr;
-    if (data_) throw std::logic_error("device buffer already allocated");
+    if (data_) {
+      if (bytes <= bytes_) return static_cast<std::byte*>(data_);
+      throw std::logic_error("device buffer already allocated");
+    }
     if (Backend::GetDevice(&owner_device_) != Backend::kSuccess)
       throw std::runtime_error("cannot query allocation owner device");
     void* allocation = nullptr;
@@ -30,6 +33,7 @@ class CudaDeviceBuffer {
       throw std::bad_alloc();
     }
     data_ = allocation;
+    bytes_ = bytes;
     return static_cast<std::byte*>(data_);
   }
 
@@ -48,6 +52,7 @@ class CudaDeviceBuffer {
 
  private:
   void* data_{nullptr};
+  std::size_t bytes_{0};
   int owner_device_{-1};
 };
 
