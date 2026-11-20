@@ -158,6 +158,11 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    # The recursive top-level `native/cuda/*.cu` pattern also matches sibling
+    # vendor subtrees (hygon/iluvatar/metax/moore); drop them so their symbols
+    # are not defined twice when those backends are also enabled.
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|metax|moore|thead|cambricon|ascend)/.*")
     # Optional pinned kernels have their own include closure and CUDA TUs.
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
@@ -247,6 +252,11 @@ if(WITH_TRITON OR GENERATE_PYTHON_BINDINGS)
     endif()
 
     find_package(pybind11 CONFIG REQUIRED)
+endif()
+
+if(WITH_TRITON AND WITH_HYGON)
+    target_link_directories(infiniops PRIVATE "${HYGON_CUDA_ROOT}/lib64")
+    target_link_libraries(infiniops PRIVATE cuda)
 endif()
 
 if(WITH_TRITON)
@@ -1303,6 +1313,9 @@ if(GENERATE_OPERATOR_CALL_INSTANTIATIONS OR GENERATE_PYTHON_BINDINGS)
     # failures.
 
     set(GENERATOR_ARGS --devices ${DEVICE_LIST})
+    if(INFINI_OPS_DECLARATIONS)
+        list(APPEND GENERATOR_ARGS --declarations ${INFINI_OPS_DECLARATIONS})
+    endif()
     if(_infini_ops_ops_config)
         list(APPEND GENERATOR_ARGS
             --ops-config "${_infini_ops_ops_config}")
