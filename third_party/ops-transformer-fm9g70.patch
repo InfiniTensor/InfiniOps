@@ -1,0 +1,51 @@
+--- a/attention/fused_infer_attention_score/op_kernel/flash_attention_regular_decode.h
++++ b/attention/fused_infer_attention_score/op_kernel/flash_attention_regular_decode.h
+@@ -97,10 +97,8 @@
+             int64_t nextToken = fATilingData->nextToken;
+             AscendC::GlobalTensor<ElementQ> gQ;
+             gQ.SetGlobalBuffer((__gm__ ElementQ *)params.q);
+-            AscendC::ListTensorDesc keyListTensorDescInit((__gm__ void*)params.k);
+-            AscendC::ListTensorDesc valueListTensorDescInit((__gm__ void*)params.v);
+-            __gm__ uint8_t* currentKey = (__gm__ uint8_t*)keyListTensorDescInit.GetDataPtr<__gm__ uint8_t>(0);
+-            __gm__ uint8_t* currentValue = (__gm__ uint8_t*)valueListTensorDescInit.GetDataPtr<__gm__ uint8_t>(0);
++            __gm__ uint8_t* currentKey = (__gm__ uint8_t*)params.k;
++            __gm__ uint8_t* currentValue = (__gm__ uint8_t*)params.v;
+             AscendC::GlobalTensor<ElementK> gK;
+             gK.SetGlobalBuffer((__gm__ ElementK *)currentKey);
+             AscendC::GlobalTensor<ElementK> gV;
+@@ -109,10 +107,10 @@
+             gMask.SetGlobalBuffer((__gm__ ElementMask *)params.mask);
+             AscendC::GlobalTensor<int32_t> gBlockTable;
+             gBlockTable.SetGlobalBuffer((__gm__ int32_t *)(params.blockTables));
+-            AscendC::GlobalTensor<int64_t> gActualQseqlen;
+-            gActualQseqlen.SetGlobalBuffer((__gm__ int64_t *)params.actualQseqlen);
+-            AscendC::GlobalTensor<int64_t> gActualKvseqlen;
+-            gActualKvseqlen.SetGlobalBuffer((__gm__ int64_t *)params.actualKvseqlen);
++            AscendC::GlobalTensor<int32_t> gActualQseqlen;
++            gActualQseqlen.SetGlobalBuffer((__gm__ int32_t *)params.actualQseqlen);
++            AscendC::GlobalTensor<int32_t> gActualKvseqlen;
++            gActualKvseqlen.SetGlobalBuffer((__gm__ int32_t *)params.actualKvseqlen);
+             AscendC::GlobalTensor<ElementO> gO;
+             gO.SetGlobalBuffer((__gm__ ElementO *)params.o);
+             AscendC::GlobalTensor<ElementLse> gLse;
+@@ -192,16 +190,16 @@
+ 
+             coreIdx = AscendC::GetBlockIdx() / AscendC::GetSubBlockNum();
+ #endif
+-            uint64_t strideQ = static_cast<uint64_t>(qHeads * embed);
+-            uint64_t strideO = static_cast<uint64_t>(qHeads * embedV);
++            uint64_t strideQ = fATilingData->qStride;
++            uint64_t strideO = fATilingData->oStride;
+             uint64_t strideK = static_cast<uint64_t>(kvHeads * embed);
+             uint64_t strideV = static_cast<uint64_t>(kvHeads * embedV);
+             uint32_t embedRound = NpuArch::Detail::Alignment::RoundUp(embed, FaiKernel::BLOCK_SIZE);
+             uint32_t embedRoundV = NpuArch::Detail::Alignment::RoundUp(embedV, FaiKernel::BLOCK_SIZE);
+             uint32_t groupSize = qHeads / kvHeads;
+ 
+-            uint32_t totalQTokens = static_cast<uint32_t>(gActualQseqlen.GetValue(batch - 1));
+-            uint32_t curKvNBlockTile = GetKvNBlockTile(groupSize, kvHeads);
++            uint32_t totalQTokens = batch;
++            uint32_t curKvNBlockTile = batch <= 4 ? 1 : GetKvNBlockTile(groupSize, kvHeads);
+             uint32_t curKvNBlockNum = firstBatchTaskNum;
+             uint32_t rowNumConst = groupSize;
+             uint32_t rowNumRoundConst = NpuArch::Detail::Alignment::RoundUp(rowNumConst, FaiKernel::BLOCK_SIZE);
