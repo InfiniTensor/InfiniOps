@@ -1,5 +1,5 @@
 #pragma once
-#include "nsa_videonsa_common.h"
+#include "common/op_utils/nsa_videonsa_common.h"
 namespace infini::ops {
 class NsaVideonsaPrefill:public Operator<NsaVideonsaPrefill>{
  public:
