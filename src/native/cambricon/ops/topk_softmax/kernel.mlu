@@ -175,12 +175,12 @@ void TopkSoftmaxUnion(cnrtQueue_t queue, int core_per_cluster,
       cnrtQueue_t, int, int, const T*, const float*, const uint8_t*, float*, \
       INDEX*, int32_t*, int32_t, int32_t, int32_t, bool)
 
-INSTANTIATE_TOPK_SOFTMAX(__half, int32_t);
-INSTANTIATE_TOPK_SOFTMAX(__half, uint32_t);
-INSTANTIATE_TOPK_SOFTMAX(__half, int64_t);
-INSTANTIATE_TOPK_SOFTMAX(__bang_bfloat16, int32_t);
-INSTANTIATE_TOPK_SOFTMAX(__bang_bfloat16, uint32_t);
-INSTANTIATE_TOPK_SOFTMAX(__bang_bfloat16, int64_t);
+INSTANTIATE_TOPK_SOFTMAX(infini::rt::Float16, int32_t);
+INSTANTIATE_TOPK_SOFTMAX(infini::rt::Float16, uint32_t);
+INSTANTIATE_TOPK_SOFTMAX(infini::rt::Float16, int64_t);
+INSTANTIATE_TOPK_SOFTMAX(infini::rt::BFloat16, int32_t);
+INSTANTIATE_TOPK_SOFTMAX(infini::rt::BFloat16, uint32_t);
+INSTANTIATE_TOPK_SOFTMAX(infini::rt::BFloat16, int64_t);
 INSTANTIATE_TOPK_SOFTMAX(float, int32_t);
 INSTANTIATE_TOPK_SOFTMAX(float, uint32_t);
 INSTANTIATE_TOPK_SOFTMAX(float, int64_t);
