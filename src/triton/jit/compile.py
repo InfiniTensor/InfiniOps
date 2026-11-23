@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -17,7 +18,23 @@ _DRIVER_BACKENDS = {
     "hip": "amd",
 }
 
+# Callers reach the JIT from several threads at once, and the native target
+# lookup is cached per thread, so concurrent first launches all initialize
+# Triton's driver together. Observed hanging inside `triton.runtime.driver`.
+# Serialize every entry point before it touches `triton`.
+_JIT_LOCK = threading.RLock()
 
+
+def _serialized(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _JIT_LOCK:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+@_serialized
 def get_hygon_target(device_id):
     """Read the compiler target from the active DTK Triton driver."""
     driver = triton.runtime.driver.active
@@ -183,6 +200,7 @@ def _get_kernel_source_path(op_name):
     return source_path
 
 
+@_serialized
 def get_compilation_fingerprint(op_name):
     kernel = _load_kernel(op_name)
     digest = hashlib.sha256()
@@ -369,6 +387,7 @@ def _write_artifacts(compiled_kernel, target, output_prefix, cache_identity):
             temporary_path.unlink(missing_ok=True)
 
 
+@_serialized
 def compile_kernel(op_name, output_prefix, signature, config, target, cache_identity):
     kernel = _load_kernel(op_name)
     compilation_target = _create_target(target)
@@ -424,6 +443,7 @@ def _benchmark_candidate(
     )
 
 
+@_serialized
 def auto_tune(
     op_name,
     candidates,
