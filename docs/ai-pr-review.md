@@ -123,18 +123,6 @@ for publishing the review comment.
 
 The setting **Allow GitHub Actions to create and approve pull requests** is not needed. The workflow only creates comments and reactions; it does not open or approve pull requests.
 
-## Temporary-branch testing limitation
-
-An `issue_comment` workflow is loaded from the repository default branch, not from the PR branch.
-
-Therefore, after putting this workflow on a temporary feature branch:
-
-- a comment of `/ai-pr-review` on that feature-branch PR normally does **not** run the new workflow version;
-- the slash command becomes available only after the workflow is merged into the default branch;
-- after merging, test it on an existing open PR.
-
-If needed, the temporary-branch PR can still validate Python formatting, workflow lint, YAML syntax, and the normal repository CI before merge.
-
 ## Security boundary
 
 - The workflow, collector, and prompt come from the trusted default branch.
