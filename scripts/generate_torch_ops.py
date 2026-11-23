@@ -1431,6 +1431,21 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
         rendered_args = ", ".join(_render_arg(index, p) for index, p in arg_order)
         aten_call = f"at::{op.aten_name}_out({rendered_args})"
 
+    if op.aten_name == "embedding_dense_backward":
+        conversion_lines.append(
+            "  assert(at_grad_output.dim() >= 1);\n"
+            "  const auto embedding_dim = at_grad_output.size(-1);\n"
+            "  assert(at_grad_output.numel() == at_indices.numel() * embedding_dim);\n"
+            "  assert(at_out.dim() == 2 && at_out.size(0) == num_weights &&\n"
+            "         at_out.size(1) == embedding_dim &&\n"
+            "         at_out.scalar_type() == at_grad_output.scalar_type());\n"
+            "  // Avoid CUDA kernels with empty indices or zero feature width.\n"
+            "  if (at_indices.numel() == 0 || embedding_dim == 0) {\n"
+            "    at_out.zero_();\n"
+            "    return;\n"
+            "  }"
+        )
+
     return _TORCH_METHOD_TEMPLATE.format(
         op_type=op_type,
         op_call_signature=_format_signature(op),
@@ -1446,12 +1461,20 @@ def _generate_torch_method_source(name: str, op: Op) -> str:
 def _generate_torch_source(name: str, ops: list[Op]) -> str:
     op_type = _op_cpp_type(name)
     methods = "\n\n".join(_generate_torch_method_source(name, op) for op in ops)
-    return _TORCH_SOURCE_TEMPLATE.format(
+    source = _TORCH_SOURCE_TEMPLATE.format(
         name=name,
         methods=methods,
         op_type=op_type,
         slot=_PYTORCH_SLOT,
     )
+
+    if any(op.aten_name == "embedding_dense_backward" for op in ops):
+        source = source.replace(
+            '#include "torch/instantiate.h"',
+            '#include <cassert>\n\n#include "torch/instantiate.h"',
+        )
+
+    return source
 
 
 _BASE_TEMPLATE = """\
