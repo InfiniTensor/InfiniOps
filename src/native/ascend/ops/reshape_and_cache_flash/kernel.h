@@ -63,6 +63,8 @@ class Operator<ReshapeAndCacheFlash, Device::Type::kAscend>
     if (indices_device_) aclrtFree(indices_device_);
   }
 
+  bool capture_safe() const override { return use_fast_path_; }
+
   void operator()(const Tensor key, const Tensor value,
                   const Tensor slot_mapping, const Tensor /*k_scale*/,
                   const Tensor /*v_scale*/,

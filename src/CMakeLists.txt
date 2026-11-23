@@ -526,6 +526,33 @@ if(WITH_ASCEND)
         "${ASCEND_HOME}/lib64/libopapi.so"
         "${ASCEND_HAL_LIB}")
 
+    # Optional high-performance custom transformer operators. The root must
+    # point at a CANN vendor directory containing op_api/include and op_api/lib.
+    set(ASCEND_CUSTOM_TRANSFORMER_ROOT
+        "$ENV{INFINI_ASCEND_CUSTOM_OPAPI_ROOT}")
+    if(ASCEND_CUSTOM_TRANSFORMER_ROOT)
+        set(ASCEND_CUSTOM_TRANSFORMER_INCLUDE
+            "${ASCEND_CUSTOM_TRANSFORMER_ROOT}/op_api/include")
+        set(ASCEND_CUSTOM_TRANSFORMER_LIBRARY
+            "${ASCEND_CUSTOM_TRANSFORMER_ROOT}/op_api/lib/libcust_opapi.so")
+        if(NOT EXISTS
+           "${ASCEND_CUSTOM_TRANSFORMER_INCLUDE}/aclnnop/aclnn_hc_pre.h" OR
+           NOT EXISTS "${ASCEND_CUSTOM_TRANSFORMER_LIBRARY}")
+            message(FATAL_ERROR
+                "Invalid INFINI_ASCEND_CUSTOM_OPAPI_ROOT: "
+                "${ASCEND_CUSTOM_TRANSFORMER_ROOT}")
+        endif()
+        message(STATUS
+            "Ascend custom transformer operators: "
+            "${ASCEND_CUSTOM_TRANSFORMER_ROOT}")
+        target_compile_definitions(
+            infiniops PUBLIC INFINI_HAS_ASCEND_CUSTOM_TRANSFORMER=1)
+        target_include_directories(
+            infiniops PUBLIC "${ASCEND_CUSTOM_TRANSFORMER_INCLUDE}")
+        target_link_libraries(
+            infiniops PUBLIC "${ASCEND_CUSTOM_TRANSFORMER_LIBRARY}")
+    endif()
+
     # ATB (Ascend Transformer Boost) — provides fused operators like
     # `PagedAttention` and `ReshapeAndCache` that are graph-capture safe.
     set(ATB_HOME_DIR "$ENV{ATB_HOME_PATH}")

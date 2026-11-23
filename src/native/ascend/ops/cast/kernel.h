@@ -28,6 +28,8 @@ class Operator<Cast, Device::Type::kAscend> : public Cast {
     out_cache_.release();
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);
     auto t_in = in_cache_.get(const_cast<void*>(input.data()));

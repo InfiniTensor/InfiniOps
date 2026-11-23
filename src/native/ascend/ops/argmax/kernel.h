@@ -26,22 +26,28 @@ class Operator<Argmax, Device::Type::kAscend> : public Argmax {
         input_cache_(input),
         out_cache_(out),
         use_cast_(input.dtype() == DataType::kBFloat16) {
-    assert(input.ndim() == 1 && input.numel() > 0 && input.IsContiguous() &&
-           !dim.has_value() && !keepdim && out.ndim() == 0 &&
-           out.numel() == 1 && out.dtype() == DataType::kInt64 &&
+    const bool one_row = input.ndim() == 1 && !dim.has_value();
+    const bool batched_rows = input.ndim() == 2 && dim.has_value() &&
+                              (*dim == 1 || *dim == -1);
+    assert((one_row || batched_rows) && input.numel() > 0 &&
+           input.IsContiguous() && !keepdim &&
+           (one_row ? (out.ndim() == 0 && out.numel() == 1)
+                    : (out.ndim() == 1 && out.numel() == input.size(0))) &&
+           out.dtype() == DataType::kInt64 &&
            (input.dtype() == DataType::kFloat16 ||
             input.dtype() == DataType::kBFloat16 ||
             input.dtype() == DataType::kFloat32) &&
-           "Ascend `Argmax` provider 0 supports contiguous 1D float logits, "
-           "no dim, keepdim=false, and a scalar int64 output");
+           "Ascend `Argmax` provider supports contiguous float rows");
+    reduction_dim_ = one_row ? 0 : static_cast<int64_t>(input.ndim() - 1);
 
     if (use_cast_) {
+      std::vector<int64_t> cast_shape(input.shape().begin(), input.shape().end());
       const auto bytes = input.numel() * sizeof(float);
       auto ret = aclrtMalloc(&cast_data_, bytes, ACL_MEM_MALLOC_NORMAL_ONLY);
       assert(ret == ACL_SUCCESS &&
              "Ascend `Argmax` failed to allocate BF16 promotion buffer");
       cast_cache_ = ascend::AclTensorCache(
-          {static_cast<int64_t>(input.numel())}, ACL_FLOAT, cast_data_);
+          std::move(cast_shape), ACL_FLOAT, cast_data_);
     }
   }
 
@@ -83,7 +89,8 @@ class Operator<Argmax, Device::Type::kAscend> : public Argmax {
 
     if (!argmax_executor_) {
       auto ret = aclnnArgMaxGetWorkspaceSize(
-          t_arg_input, 0, false, t_out, &argmax_ws_size_, &argmax_executor_);
+            t_arg_input, reduction_dim_, false, t_out, &argmax_ws_size_,
+            &argmax_executor_);
       assert(ret == ACL_SUCCESS && "Ascend `Argmax` workspace query failed");
       aclSetAclOpExecutorRepeatable(argmax_executor_);
     } else {
@@ -110,6 +117,7 @@ class Operator<Argmax, Device::Type::kAscend> : public Argmax {
   mutable ascend::AclTensorCache cast_cache_;
   bool use_cast_{false};
   void* cast_data_{nullptr};
+  int64_t reduction_dim_{0};
   mutable aclOpExecutor* cast_executor_{nullptr};
   mutable uint64_t cast_ws_size_{0};
   mutable aclOpExecutor* argmax_executor_{nullptr};

@@ -94,8 +94,11 @@ class AclTensorCache {
     }
   }
 
-  explicit AclTensorCache(const Tensor& t, bool transpose_last2 = false)
-      : dtype_{ToAclDtype(t.dtype())} {
+    explicit AclTensorCache(const Tensor& t, bool transpose_last2 = false,
+                            std::vector<int64_t> storage_shape = {},
+                            aclFormat storage_format = ACL_FORMAT_ND)
+        : dtype_{ToAclDtype(t.dtype())},
+          storage_format_{storage_format} {
     shape_.assign(t.shape().begin(), t.shape().end());
     strides_.assign(t.strides().begin(), t.strides().end());
 
@@ -105,7 +108,10 @@ class AclTensorCache {
       std::swap(strides_[n - 2], strides_[n - 1]);
     }
 
-    int64_t storage_elems = 1;
+      if (!storage_shape.empty()) {
+        storage_shape_ = std::move(storage_shape);
+      } else {
+        int64_t storage_elems = 1;
     for (size_t i = 0; i < shape_.size(); ++i) {
       if (shape_[i] == 0) {
         storage_elems = 0;
@@ -116,6 +122,7 @@ class AclTensorCache {
       }
     }
     storage_shape_ = {storage_elems};
+      }
   }
 
   ~AclTensorCache() {
@@ -133,7 +140,8 @@ class AclTensorCache {
         strides_(std::move(o.strides_)),
         storage_shape_(std::move(o.storage_shape_)),
         dtype_(o.dtype_),
-        tensor_(o.tensor_) {
+          storage_format_(o.storage_format_),
+          tensor_(o.tensor_) {
     o.tensor_ = nullptr;
   }
 
@@ -146,7 +154,8 @@ class AclTensorCache {
       strides_ = std::move(o.strides_);
       storage_shape_ = std::move(o.storage_shape_);
       dtype_ = o.dtype_;
-      tensor_ = o.tensor_;
+        storage_format_ = o.storage_format_;
+        tensor_ = o.tensor_;
       o.tensor_ = nullptr;
     }
 
@@ -185,7 +194,7 @@ class AclTensorCache {
     tensor_ = aclCreateTensor(
         shape_.data(), static_cast<int64_t>(shape_.size()), dtype_,
         strides_.data(),
-        /*storageOffset=*/0, ACL_FORMAT_ND, storage_shape_.data(),
+          /*storageOffset=*/0, storage_format_, storage_shape_.data(),
         static_cast<int64_t>(storage_shape_.size()), data);
 
     return tensor_;
@@ -199,6 +208,8 @@ class AclTensorCache {
   std::vector<int64_t> storage_shape_;
 
   aclDataType dtype_{ACL_DT_UNDEFINED};
+
+  aclFormat storage_format_{ACL_FORMAT_ND};
 
   mutable aclTensor* tensor_ = nullptr;
 };
