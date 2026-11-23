@@ -7,10 +7,10 @@
 namespace infini::ops {
 
 template <>
-class Operator<CloverLiveMask, Device::Type::kHYGON>
-    : public CudaCloverLiveMask<Runtime<Device::Type::kHYGON>> {
+class Operator<CloverLiveMask, Device::Type::kHygon>
+    : public CudaCloverLiveMask<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaCloverLiveMask<Runtime<Device::Type::kHYGON>>::CudaCloverLiveMask;
+  using CudaCloverLiveMask<Runtime<Device::Type::kHygon>>::CudaCloverLiveMask;
 };
 
 }  // namespace infini::ops

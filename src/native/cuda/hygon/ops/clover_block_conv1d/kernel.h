@@ -7,11 +7,11 @@
 namespace infini::ops {
 
 template <>
-class Operator<CloverBlockConv1d, Device::Type::kHYGON>
-    : public CudaCloverBlockConv1d<Runtime<Device::Type::kHYGON>> {
+class Operator<CloverBlockConv1d, Device::Type::kHygon>
+    : public CudaCloverBlockConv1d<Runtime<Device::Type::kHygon>> {
  public:
   using CudaCloverBlockConv1d<
-      Runtime<Device::Type::kHYGON>>::CudaCloverBlockConv1d;
+      Runtime<Device::Type::kHygon>>::CudaCloverBlockConv1d;
 };
 
 }  // namespace infini::ops

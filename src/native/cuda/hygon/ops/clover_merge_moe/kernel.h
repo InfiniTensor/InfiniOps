@@ -7,10 +7,10 @@
 namespace infini::ops {
 
 template <>
-class Operator<CloverMergeMoe, Device::Type::kHYGON>
-    : public CudaCloverMergeMoe<Runtime<Device::Type::kHYGON>> {
+class Operator<CloverMergeMoe, Device::Type::kHygon>
+    : public CudaCloverMergeMoe<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaCloverMergeMoe<Runtime<Device::Type::kHYGON>>::CudaCloverMergeMoe;
+  using CudaCloverMergeMoe<Runtime<Device::Type::kHygon>>::CudaCloverMergeMoe;
 };
 
 }  // namespace infini::ops

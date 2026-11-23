@@ -7,10 +7,10 @@
 namespace infini::ops {
 
 template <>
-class Operator<CloverMaskRoutes, Device::Type::kHYGON>
-    : public CudaCloverMaskRoutes<Runtime<Device::Type::kHYGON>> {
+class Operator<CloverMaskRoutes, Device::Type::kHygon>
+    : public CudaCloverMaskRoutes<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaCloverMaskRoutes<Runtime<Device::Type::kHYGON>>::CudaCloverMaskRoutes;
+  using CudaCloverMaskRoutes<Runtime<Device::Type::kHygon>>::CudaCloverMaskRoutes;
 };
 
 }  // namespace infini::ops
