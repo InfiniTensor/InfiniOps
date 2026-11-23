@@ -150,3 +150,74 @@ def _torch_mul(input, other, out):
     out.copy_(res.to(out.dtype))
 
     return out
+
+
+# ---------------------------------------------------------------------------
+# Scalar multiplier overload: `mul(input, alpha, out)`. The generated bindings
+# register the `double` overload on every platform, but providers opt in
+# individually (cpu, nvidia and metax ship scalar kernels; others reject the
+# dispatch), so probe per case and skip where unsupported.
+# ---------------------------------------------------------------------------
+
+
+def _scalar_mul_supported(device) -> bool:
+    try:
+        input = torch.zeros((2,), dtype=torch.float32, device=device)
+        out = torch.empty_like(input)
+        infini.ops.mul(input, 1.0, out, stream=get_stream(input.device))
+        if input.is_cuda:
+            torch.cuda.synchronize()
+        return bool((out == 0.0).all())
+    except (RuntimeError, ValueError):
+        return False
+
+
+@pytest.mark.parametrize("alpha", (2.5, -0.5))
+@pytest.mark.parametrize(
+    "shape, input_strides",
+    (((13, 4), None), ((13, 4), (10, 1)), ((16, 5632), None)),
+)
+@pytest.mark.parametrize(
+    ("dtype", "rtol", "atol"),
+    (
+        (torch.float32, 1e-7, 1e-7),
+        (torch.float64, 1e-12, 1e-12),
+        (torch.float16, 1e-3, 1e-3),
+        (torch.bfloat16, 1e-2, 5e-3),
+    ),
+)
+@pytest.mark.auto_act_and_assert
+def test_mul_scalar(alpha, shape, input_strides, dtype, device, rtol, atol):
+    if not _scalar_mul_supported(device):
+        pytest.skip("scalar `mul` has no provider on this platform")
+
+    if input_strides is not None and device == "cpu":
+        pytest.skip("cpu scalar `mul` requires contiguous input")
+
+    if input_strides is None:
+        input = torch.randn(shape, dtype=dtype, device=device)
+    else:
+        input = randn_strided(shape, input_strides, dtype=dtype, device=device)
+    out = torch.empty(shape, dtype=dtype, device=device)
+
+    return Payload(
+        _mul_scalar,
+        _torch_mul_scalar,
+        (input, out),
+        {"alpha": alpha},
+        rtol=rtol,
+        atol=atol,
+    )
+
+
+def _mul_scalar(input, out, *, alpha):
+    infini.ops.mul(input, alpha, out, stream=get_stream(input.device))
+
+    return out
+
+
+def _torch_mul_scalar(input, out, *, alpha):
+    res = torch.mul(input, alpha)
+    out.copy_(res.to(out.dtype))
+
+    return out
