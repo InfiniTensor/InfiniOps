@@ -19,6 +19,14 @@ def _load_generator_module():
     return module
 
 
+def test_temporary_nz_matmul_operators_are_cpp_only():
+    module = _load_generator_module()
+
+    assert not module._generates_public_api("matmul_weight_nz")
+    assert not module._generates_public_api("trans_matmul_weight_nz")
+    assert module._generates_public_api("matmul")
+
+
 def test_generated_dispatch_keeps_scalar_and_optional_tensor_overloads_distinct(
     monkeypatch, tmp_path
 ):

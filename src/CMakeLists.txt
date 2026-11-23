@@ -551,6 +551,51 @@ if(WITH_ASCEND)
 
     # Custom `AscendC` kernels (PyTorch extension, requires `torch_npu`).
     if(BUILD_ASCEND_CUSTOM)
+        set(_ops_transformer_root
+            "${PROJECT_SOURCE_DIR}/third_party/ops-transformer")
+        option(INFINIOPS_FETCH_OPS_TRANSFORMER
+               "Fetch and pin the official Ascend ops-transformer submodule" ON)
+        if(INFINIOPS_FETCH_OPS_TRANSFORMER)
+            execute_process(
+                COMMAND bash "${PROJECT_SOURCE_DIR}/scripts/fetch-ops-transformer.sh"
+                RESULT_VARIABLE _ops_transformer_fetch_result)
+            if(NOT _ops_transformer_fetch_result EQUAL 0)
+                message(FATAL_ERROR "Failed to fetch the pinned ops-transformer submodule")
+            endif()
+        endif()
+
+        if(NOT EXISTS "${_ops_transformer_root}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "ops-transformer is missing; run scripts/fetch-ops-transformer.sh")
+        endif()
+
+        # Keep the submodule pinned to an official commit and apply only the
+        # small FM9G70 decode ABI patch after checkout.
+        find_package(Git REQUIRED)
+        set(_ops_transformer_patch
+            "${PROJECT_SOURCE_DIR}/third_party/ops-transformer-fm9g70.patch")
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} -c safe.directory=* -C "${_ops_transformer_root}" apply
+                    --check -p1 "${_ops_transformer_patch}"
+            RESULT_VARIABLE _ops_transformer_patch_status)
+        if(_ops_transformer_patch_status EQUAL 0)
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} -c safe.directory=* -C "${_ops_transformer_root}" apply
+                        -p1 "${_ops_transformer_patch}"
+                RESULT_VARIABLE _ops_transformer_patch_result)
+            if(NOT _ops_transformer_patch_result EQUAL 0)
+                message(FATAL_ERROR "Failed to patch ops-transformer for FM9G70")
+            endif()
+        else()
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} -c safe.directory=* -C "${_ops_transformer_root}" apply
+                        --check --reverse -p1 "${_ops_transformer_patch}"
+                RESULT_VARIABLE _ops_transformer_reverse_status)
+            if(NOT _ops_transformer_reverse_status EQUAL 0)
+                message(FATAL_ERROR
+                    "ops-transformer has incompatible local changes")
+            endif()
+        endif()
         # In-tree `ascendc_library()` trips the `CANN` `extract_host_stub.py`
         # path-handling bug under `scikit-build-core`'s temp-dir builds
         # (`KeyError` on `/./workspace/...` paths in `$<TARGET_OBJECTS>`).
@@ -579,6 +624,12 @@ if(WITH_ASCEND)
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/*.cmake"
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/CMakeLists.txt"
             "${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom/build.sh")
+        set(_ops_transformer_fai_dir
+            "${_ops_transformer_root}/attention/fused_infer_attention_score/op_kernel")
+        file(GLOB_RECURSE _ops_transformer_fai_srcs CONFIGURE_DEPENDS
+            "${_ops_transformer_fai_dir}/*.h"
+            "${_ops_transformer_fai_dir}/*.hpp"
+            "${_ops_transformer_fai_dir}/*.cpp")
 
         # Scrub env inherited from the outer `scikit-build-core` invocation
         # before handing control to `build.sh`: `CMAKE_GENERATOR` /
@@ -604,9 +655,10 @@ if(WITH_ASCEND)
                     --unset=CMAKE_BUILD_PARALLEL_LEVEL
                     "BUILD_DIR=${_custom_build_dir}"
                     "MAIN_SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+                    "OPS_TRANSFORMER_ROOT=${_ops_transformer_root}"
                     bash ${_custom_source_dir}/build.sh ${SOC_VERSION}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/native/ascend/custom
-            DEPENDS ${_custom_srcs}
+            DEPENDS ${_custom_srcs} ${_ops_transformer_fai_srcs}
             COMMENT "Building custom AscendC kernels (SOC_VERSION=${SOC_VERSION})"
             VERBATIM)
 
@@ -621,6 +673,7 @@ if(WITH_ASCEND)
         # custom kernel implementations (e.g. `RmsNorm` index 1) can call
         # them via the generated launch functions.
         target_compile_definitions(infiniops PUBLIC INFINI_HAS_CUSTOM_KERNELS=1)
+        target_compile_definitions(infiniops PUBLIC INFINILM_ENABLE_CUSTOM_PAGED_ATTENTION=1)
         target_include_directories(infiniops PRIVATE
             "${_custom_build_dir}/include/no_workspace_kernel")
         target_link_libraries(infiniops PRIVATE
