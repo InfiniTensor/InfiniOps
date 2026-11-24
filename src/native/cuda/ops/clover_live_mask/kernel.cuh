@@ -17,12 +17,12 @@ __global__ void CloverLiveMaskKernel(const Index* __restrict__ ids,
   const int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x +
                     static_cast<int64_t>(threadIdx.x);
   if (i >= n) return;
+  const Index mask = static_cast<Index>(mask_id);
   const Index current = ids[i];
-  const Index prev = refresh ? static_cast<Index>(mask_id) : previous[i];
-  live[i] = (current == static_cast<Index>(mask_id)) ||
-                    (prev == static_cast<Index>(mask_id)) || refresh
-                ? 1
-                : 0;
+  // The snapshot is read whatever `refresh` says: a load that waits for
+  // the flag would cost a second memory latency.
+  const Index prev = previous[i];
+  live[i] = (refresh != 0) | (current == mask) | (prev == mask);
   previous[i] = current;
 }
 

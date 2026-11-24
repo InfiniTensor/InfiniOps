@@ -20,7 +20,7 @@ class CudaCloverLiveMask : public CloverLiveMask {
     if (n == 0) return;
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
-    constexpr unsigned int kThreads = 256;
+    constexpr unsigned int kThreads = 128;
     const auto blocks = utils::CeilDiv(n, static_cast<Tensor::Size>(kThreads));
 
     DispatchFunc<List<DataType::kInt32, DataType::kInt64>>(

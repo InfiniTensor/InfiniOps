@@ -21,6 +21,15 @@ constexpr auto CeilDiv(const X& x, const Y& y) {
   return (x + y - 1) / y;
 }
 
+// log2 of x when x is a power of two, else -1.
+template <typename X>
+constexpr int Log2IfPowerOfTwo(const X& x) {
+  if (x <= 0 || (x & (x - 1)) != 0) return -1;
+  int shift = 0;
+  for (X bit = 1; bit != x; bit <<= 1) ++shift;
+  return shift;
+}
+
 }  // namespace infini::ops::utils
 
 #endif

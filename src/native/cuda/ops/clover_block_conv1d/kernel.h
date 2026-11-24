@@ -28,9 +28,9 @@ class CudaCloverBlockConv1d : public CloverBlockConv1d {
     constexpr unsigned int kThreads = 128;
     const unsigned int ch_blocks =
         static_cast<unsigned int>((channels + kThreads - 1) / kThreads);
-    const int tile_t = 4;
+    constexpr int kTileTokens = 4;
     const int num_tiles =
-        static_cast<int>((block_size + tile_t - 1) / tile_t);
+        static_cast<int>((block_size + kTileTokens - 1) / kTileTokens);
     const unsigned int programs =
         static_cast<unsigned int>(requests * num_tiles);
 
@@ -40,7 +40,8 @@ class CudaCloverBlockConv1d : public CloverBlockConv1d {
         [&](auto list_tag) {
           using Data = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           using Index = TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
-          CloverBlockConv1dKernel<Backend::kDeviceType, Data, Index>
+          CloverBlockConv1dKernel<Backend::kDeviceType, Data, Index,
+                                  kTileTokens>
               <<<dim3(ch_blocks, programs), kThreads, 0, cuda_stream>>>(
                   reinterpret_cast<const Data*>(input.data()),
                   reinterpret_cast<const Data*>(state.data()),
@@ -62,7 +63,7 @@ class CudaCloverBlockConv1d : public CloverBlockConv1d {
                   static_cast<int64_t>(right_weight.stride(0)),
                   static_cast<int64_t>(right_weight.stride(2)),
                   static_cast<int64_t>(out.stride(0)),
-                  static_cast<int64_t>(out.stride(1)), tile_t, num_tiles);
+                  static_cast<int64_t>(out.stride(1)), num_tiles);
         },
         "CudaCloverBlockConv1d::operator()");
   }
