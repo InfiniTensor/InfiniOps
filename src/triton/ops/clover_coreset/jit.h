@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/clover_coreset.h"
+#include "native/cuda/device_buffer.h"
 #include "triton/jit/jit.h"
 
 namespace infini::ops::triton::jit {
@@ -17,11 +18,14 @@ class CloverCoreset : public ::infini::ops::CloverCoreset {
   void operator()(const Tensor logits, size_t block_size, double top_p,
                   Tensor out) const override {
     if (!blocks_) return;
-    if (!workspace_ || workspace_size_in_bytes_ < workspace_size_in_bytes())
-      throw std::invalid_argument("CloverCoreset: missing workspace.");
-    Tensor mass{
-        workspace_, {blocks_, 256}, DataType::kFloat32, logits.device()};
-    Tensor allow{static_cast<char*>(workspace_) + blocks_ * 256 * 4,
+    // The Python bindings call without a handle: use the caller's workspace
+    // when it is large enough, else a buffer owned by this operator.
+    void* scratch = workspace_ &&
+                            workspace_size_in_bytes_ >= workspace_size_in_bytes()
+                        ? workspace_
+                        : fallback_.Allocate(workspace_size_in_bytes());
+    Tensor mass{scratch, {blocks_, 256}, DataType::kFloat32, logits.device()};
+    Tensor allow{static_cast<char*>(scratch) + blocks_ * 256 * 4,
                  {blocks_, 256},
                  DataType::kInt8,
                  logits.device()};
@@ -42,6 +46,8 @@ class CloverCoreset : public ::infini::ops::CloverCoreset {
 
  private:
   size_t blocks_;
+
+  mutable CudaDeviceBuffer<Runtime<kDev>> fallback_;
 };
 
 }  // namespace infini::ops::triton::jit

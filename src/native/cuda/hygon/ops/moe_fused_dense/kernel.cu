@@ -124,7 +124,8 @@ bool HasNativeKernels() {
 void Operator<MoeFusedDense, Device::Type::kHygon, 0>::Run(
     Tensor output, const Tensor hidden, const Tensor w13, const Tensor w2,
     const Tensor weights, const Tensor ids, const Tensor sorted,
-    const Tensor experts, const Tensor total, size_t block_size) const {
+    const Tensor experts, const Tensor total, size_t block_size,
+    void* scratch) const {
   DeviceGuard device_guard{device_index_};
 
   const auto stream = static_cast<cudaStream_t>(stream_);
@@ -134,11 +135,11 @@ void Operator<MoeFusedDense, Device::Type::kHygon, 0>::Run(
              slots = static_cast<int>(sorted.numel() / block_size);
   // The workspace holds act[pairs, i] in the element type, then the fp32 expert outputs
   // [pairs, h].
-  moe_detail::Workspace(workspace_, workspace_size_in_bytes_,
+  moe_detail::Workspace(scratch, workspace_size_in_bytes(),
                         workspace_size_in_bytes(),
                         {output, hidden, w13, w2, weights, ids, sorted, experts,
                          total});
-  auto* act = static_cast<uint16_t*>(workspace_);
+  auto* act = static_cast<uint16_t*>(scratch);
   auto* pair_out =
       reinterpret_cast<float*>(act + static_cast<size_t>(tokens) * topk * i);
 
@@ -170,7 +171,8 @@ void Operator<MoeFusedDense, Device::Type::kHygon, 0>::Run(
 // Never reached: NativeSupports is false without the matrix instructions.
 void Operator<MoeFusedDense, Device::Type::kHygon, 0>::Run(
     Tensor, const Tensor, const Tensor, const Tensor, const Tensor,
-    const Tensor, const Tensor, const Tensor, const Tensor, size_t) const {
+    const Tensor, const Tensor, const Tensor, const Tensor, size_t,
+    void*) const {
   throw std::logic_error(
       "`MoeFusedDense` native kernels need a Hygon architecture with matrix "
       "instructions");

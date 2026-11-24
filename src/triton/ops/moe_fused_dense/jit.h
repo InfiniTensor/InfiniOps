@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/moe_fused_dense.h"
+#include "native/cuda/device_buffer.h"
 #include "triton/jit/jit.h"
 
 namespace infini::ops::triton::jit {
@@ -38,15 +39,18 @@ class MoeFusedDense : public ::infini::ops::MoeFusedDense {
     if (bias1 || bias2)
       throw std::invalid_argument(
           "Hygon Triton MoE does not support expert biases.");
-    if (!workspace_ || workspace_size_in_bytes_ < workspace_size_in_bytes())
-      throw std::invalid_argument(
-          "Hygon Triton MoE requires its declared workspace.");
+    // The Python bindings call without a handle: use the caller's workspace
+    // when it is large enough, else a buffer owned by this operator.
+    void* scratch = workspace_ &&
+                            workspace_size_in_bytes_ >= workspace_size_in_bytes()
+                        ? workspace_
+                        : fallback_.Allocate(workspace_size_in_bytes());
     const auto n = hidden.size(0), h = hidden.size(1), i = w2.size(2),
                topk = ids.size(1);
     const auto pairs = n * topk;
-    Tensor mid{workspace_, {pairs, 2 * i}, hidden.dtype(), hidden.device()};
+    Tensor mid{scratch, {pairs, 2 * i}, hidden.dtype(), hidden.device()};
     Tensor pair_output{
-        static_cast<char*>(workspace_) + pairs * 2 * i * hidden.element_size(),
+        static_cast<char*>(scratch) + pairs * 2 * i * hidden.element_size(),
         {pairs, h},
         hidden.dtype(),
         hidden.device()};
@@ -77,6 +81,9 @@ class MoeFusedDense : public ::infini::ops::MoeFusedDense {
           pair_output, output);
     }
   }
+
+ private:
+  mutable CudaDeviceBuffer<Runtime<kDev>> fallback_;
 };
 
 }  // namespace infini::ops::triton::jit
