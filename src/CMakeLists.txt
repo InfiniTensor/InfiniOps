@@ -260,6 +260,7 @@ if(WITH_TRITON AND WITH_HYGON)
 endif()
 
 if(WITH_TRITON)
+    target_compile_definitions(infiniops PUBLIC WITH_TRITON=1)
     target_link_libraries(infiniops PRIVATE
         Python::Python
         pybind11::headers)
@@ -310,6 +311,10 @@ if(WITH_HYGON)
     enable_language(CUDA)
 
     target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
+    if(HYGON_ARCH STREQUAL "gfx936")
+        # The native fused-MoE expert kernels use the matrix instructions of gfx936.
+        target_compile_definitions(infiniops PRIVATE INFINI_OPS_HYGON_MMAC=1)
+    endif()
     target_sources(infiniops PRIVATE ${HYGON_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)
