@@ -1,0 +1,240 @@
+name: AI PR Review
+
+# Slash-command review for InfiniOps.
+#
+# Trigger model:
+#   /ai-pr-review             -> review the PR head at trigger time
+#   /ai-pr-review --recheck   -> rerun after a false-positive correction
+#
+# The workflow runs from the repository default branch. Pull-request content is
+# collected through the REST API and treated strictly as untrusted data. This
+# job never executes contributor code and never evaluates PR text in a shell.
+on:
+  issue_comment:
+    types: [created]
+
+# Keep all permissions at zero by default. Each job grants only what it uses.
+permissions: {}
+
+env:
+  REVIEW_COMMAND: "/ai-pr-review"
+
+jobs:
+  capture:
+    name: Capture PR context
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      checks: read
+    # Put concurrency on the job, not the workflow: a workflow-level group is
+    # acquired before this condition is evaluated and an unrelated comment
+    # could otherwise cancel an active review.
+    concurrency:
+      group: ai-pr-review-capture-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.author_association != 'NONE' &&
+      (github.event.comment.body == '/ai-pr-review' || github.event.comment.body == '/ai-pr-review --recheck')
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      pr_url: ${{ steps.pr.outputs.url }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      authorized: ${{ steps.guard.outputs.authorized }}
+      comment_id: ${{ github.event.comment.id }}
+    steps:
+      - name: Guard command and actor
+        id: guard
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ASSOCIATION: ${{ github.event.comment.author_association }}
+          ACTOR: ${{ github.actor }}
+          COMMAND: ${{ env.REVIEW_COMMAND }}
+        run: |
+          set -euo pipefail
+          # All expanded values are GitHub-generated scalars. PR-controlled text
+          # is passed only as an environment variable and compared as data.
+          case "$ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "::error::Only repository maintainers/collaborators may run ${COMMAND}."
+              exit 1
+              ;;
+          esac
+          normalized="$(printf '%s' "$COMMENT_BODY" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          if [ "$normalized" != "$COMMAND" ] && [ "$normalized" != "${COMMAND} --recheck" ]; then
+            echo "::error::Unsupported review command."
+            exit 1
+          fi
+
+          echo "authorized=true" >> "$GITHUB_OUTPUT"
+
+      - name: Add in-progress reaction
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data '{"content":"eyes"}' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions"
+
+      - name: Resolve pull request
+        id: pr
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          response="$(
+            curl --fail --silent --show-error --request GET \
+              --header "Authorization: Bearer $GITHUB_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$ISSUE_NUMBER"
+          )"
+          number="$(printf '%s' "$response" | jq -e '.number')"
+          url="$(printf '%s' "$response" | jq -r -e '.html_url')"
+          sha="$(printf '%s' "$response" | jq -r -e '.head.sha')"
+          case "$number" in ''|*[!0-9]*) echo "::error::Invalid PR number"; exit 1;; esac
+          case "$sha" in ''|*[!0-9A-Fa-f]*) echo "::error::Invalid head SHA"; exit 1;; esac
+          {
+            echo "number=$number"
+            echo "url=$url"
+            echo "head_sha=$sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out trusted review policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Collect read-only PR context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          OUTPUT_DIR: context
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/scripts/ai_pr_review/collect_context.py" \
+            --owner "${GITHUB_REPOSITORY%%/*}" \
+            --repo "${GITHUB_REPOSITORY##*/}" \
+            --pr "$PR_NUMBER" \
+            --output "$OUTPUT_DIR"
+
+      - name: Store immutable snapshot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ai-pr-review-context-${{ github.event.issue.number }}-${{ steps.pr.outputs.head_sha }}
+          path: context
+          retention-days: 7
+          if-no-files-found: error
+
+  review:
+    name: Run advisory review
+    needs: capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    concurrency:
+      group: ai-pr-review-${{ needs.capture.outputs.pr_number }}
+      cancel-in-progress: true
+    steps:
+      - name: Check out trusted review policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Download PR snapshot
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ai-pr-review-context-${{ needs.capture.outputs.pr_number }}-${{ needs.capture.outputs.head_sha }}
+          path: context
+
+      - name: Check out PR head for read-only inspection
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.3.0
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/pull/${{ needs.capture.outputs.pr_number }}/head
+          path: pr-head
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+
+      - name: Verify immutable PR head
+        env:
+          HEAD_SHA: ${{ needs.capture.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          case "$HEAD_SHA" in ''|*[!0-9A-Fa-f]*) echo "::error::Invalid head SHA"; exit 1;; esac
+          test "$(git -C pr-head rev-parse HEAD)" = "$HEAD_SHA"
+          printf '%s\n' "$HEAD_SHA" > context/head.sha
+
+      - name: Run Codex review
+        uses: openai/codex-action@306c6a196a99dcc6582530c396a19d2672d5e9ec # v1.14.0
+        with:
+          openai-api-key: ${{ secrets.INFINIPLAN_API_KEY }}
+          responses-api-endpoint: ${{ vars.INFINIPLAN_RESPONSES_ENDPOINT }}
+          model: ${{ vars.INFINIPLAN_MODEL }}
+          permission-profile: ":read-only"
+          working-directory: ${{ github.workspace }}
+          prompt-file: scripts/ai_pr_review/prompt.md
+          output-file: review.md
+          safety-strategy: drop-sudo
+          effort: ${{ vars.INFINIPLAN_EFFORT || 'high' }}
+
+      - name: Publish review comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.capture.outputs.pr_number }}
+          PR_URL: ${{ needs.capture.outputs.pr_url }}
+          COMMENT_ID: ${{ needs.capture.outputs.comment_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s review.md
+          printf '\nReviewed PR: %s\n' "$PR_URL" >> review.md
+
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body-file review.md
+
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data '{"content":"rocket"}' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions"
+
+  report_failure:
+    name: Report review failure
+    needs: [capture, review]
+    if: failure() && needs.capture.outputs.authorized == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Comment on PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.capture.outputs.pr_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "AI PR Review failed. See $RUN_URL . This is an infrastructure failure, not a code review conclusion."

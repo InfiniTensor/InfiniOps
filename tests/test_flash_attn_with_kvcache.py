@@ -6,7 +6,6 @@ import torch
 
 from tests.utils import get_stream
 
-
 if not hasattr(infini.ops, "FlashAttnWithKvcache"):
     pytest.skip(
         "`FlashAttnWithKvcache` is not available on this platform",
@@ -152,6 +151,61 @@ def test_flash_attn_with_kvcache_ascend_paged(device, implementation_index):
     )
 
     torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+
+def test_flash_attn_with_kvcache_ascend_paged_bf16_mha(device, implementation_index):
+    if device != "npu":
+        pytest.skip("this test covers the Ascend provider")
+
+    batch_size, page_size = 2, 256
+    num_heads = num_kv_heads = 4
+    head_size = 64
+    q = torch.randn(
+        (batch_size, 1, num_heads, head_size),
+        dtype=torch.bfloat16,
+        device=device,
+    )
+    k_cache = torch.randn(
+        (4, page_size, num_kv_heads, head_size),
+        dtype=torch.bfloat16,
+        device=device,
+    )
+    v_cache = torch.randn_like(k_cache)
+    lengths = (130, 300)
+    cache_seqlens = torch.tensor(lengths, dtype=torch.int32, device=device)
+    block_table = torch.tensor(((0, 1), (2, 3)), dtype=torch.int32, device=device)
+    expected = _reference_decode(
+        q, k_cache, v_cache, lengths, block_table=block_table, scale=0.125
+    )
+    actual = torch.empty_like(q)
+
+    infini.ops.flash_attn_with_kvcache(
+        q,
+        k_cache,
+        v_cache,
+        None,
+        None,
+        None,
+        None,
+        cache_seqlens,
+        None,
+        None,
+        block_table,
+        None,
+        0.125,
+        True,
+        (-1, -1),
+        0.0,
+        True,
+        0,
+        False,
+        actual,
+        None,
+        stream=get_stream(q.device),
+        implementation_index=implementation_index,
+    )
+
+    torch.testing.assert_close(actual, expected, rtol=2e-2, atol=2e-2)
 
 
 def test_flash_attn_with_kvcache_ascend_non_default_stream(

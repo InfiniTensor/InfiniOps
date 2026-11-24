@@ -1,3 +1,5 @@
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
 // Copied from InfiniCore 1ab85ef1d3c2bce49edf1fc73a5b48becaf7552e:
 // src/infiniop/ops/recurrent_gated_delta_rule/cuda/kernel.cuh.
 // Modified for InfiniOps: retain the scalar, single-token decode path.
@@ -31,9 +33,11 @@ struct ScalarGatedDeltaRulePolicy {
           static_cast<ptrdiff_t>(token_idx) * beta_s1 +
           static_cast<ptrdiff_t>(value_head_idx) * beta_s2;
       decay[0] = expf(static_cast<Tcompute>(
-          op::recurrent_gated_delta_rule::cuda::loadAsFloat(g, gate_offset)));
+          infini::ops::recurrent_gated_delta_rule_detail::loadAsFloat(
+              g, gate_offset)));
       beta_out[0] = static_cast<Tcompute>(
-          op::recurrent_gated_delta_rule::cuda::loadAsFloat(beta, beta_offset));
+          infini::ops::recurrent_gated_delta_rule_detail::loadAsFloat(
+              beta, beta_offset));
     }
     __syncthreads();
     const Tcompute scalar_decay = decay[0];
@@ -64,15 +68,16 @@ __device__ void recurrentGatedDeltaRuleIndexedPoolWarpKernel(
   const ScalarGatedDeltaRulePolicy<Tgate, Tcompute, Dk> gate_policy{
       g, beta, g_s0, g_s1, g_s2, beta_s0, beta_s1, beta_s2,
   };
-  op::recurrent_gated_delta_rule::cuda::recurrentDeltaRuleWarpSequence<
-      Tdata, Tcompute, Dk, Dv, WARPS_PER_BLOCK>(
-      out, initial_state, final_state, q, k, v, initial_state_indices,
-      final_state_indices, initial_state_indices_i64, final_state_indices_i64,
-      use_qk_l2norm, indexed_state_pool, pool_size, num_key_heads,
-      value_heads_per_key_head, rsqrtf(static_cast<Tcompute>(Dk)), out_s0,
-      out_s1, out_s2, initial_s0, initial_s1, initial_s2, initial_s3, final_s0,
-      final_s1, final_s2, final_s3, q_s0, q_s1, q_s2, k_s0, k_s1, k_s2, v_s0,
-      v_s1, v_s2, gate_policy, shared);
+  infini::ops::recurrent_gated_delta_rule_detail::
+      recurrentDeltaRuleWarpSequence<Tdata, Tcompute, Dk, Dv, WARPS_PER_BLOCK>(
+          out, initial_state, final_state, q, k, v, initial_state_indices,
+          final_state_indices, initial_state_indices_i64,
+          final_state_indices_i64, use_qk_l2norm, indexed_state_pool, pool_size,
+          num_key_heads, value_heads_per_key_head,
+          rsqrtf(static_cast<Tcompute>(Dk)), out_s0, out_s1, out_s2, initial_s0,
+          initial_s1, initial_s2, initial_s3, final_s0, final_s1, final_s2,
+          final_s3, q_s0, q_s1, q_s2, k_s0, k_s1, k_s2, v_s0, v_s1, v_s2,
+          gate_policy, shared);
 }
 
 #endif  // __RECURRENT_GATED_DELTA_RULE_KERNEL_CUH__

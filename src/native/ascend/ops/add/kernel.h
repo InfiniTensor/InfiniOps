@@ -53,6 +53,8 @@ class Operator<Add, Device::Type::kAscend> : public Add {
     if (alpha_) aclDestroyScalar(alpha_);
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const Tensor other,
                   const double /*alpha*/, Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);

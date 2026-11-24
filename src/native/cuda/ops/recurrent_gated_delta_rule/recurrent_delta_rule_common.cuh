@@ -8,11 +8,16 @@
 #include <cmath>
 #include <cstdint>
 
+// cuda_fp16.h / cuda_bf16.h come from the CUDA runtime on NVIDIA and from
+// the MACA cu-bridge on MetaX, where __nv_bfloat16 aliases __maca_bfloat16.
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
+
 // Retain the original NVIDIA warp width.
 #define INFINIOP_RECURRENT_DELTA_RULE_WARP_SIZE 32
 #define INFINIOP_RECURRENT_DELTA_RULE_FULL_MASK 0xffffffffU
 
-namespace op::recurrent_gated_delta_rule::cuda {
+namespace infini::ops::recurrent_gated_delta_rule_detail {
 
 template <typename T>
 __device__ inline float loadAsFloat(const T* ptr, ptrdiff_t offset) {
@@ -260,6 +265,6 @@ __device__ void recurrentDeltaRuleWarpSequence(
   }
 }
 
-}  // namespace op::recurrent_gated_delta_rule::cuda
+}  // namespace infini::ops::recurrent_gated_delta_rule_detail
 
 #endif  // __RECURRENT_DELTA_RULE_COMMON_CUH__

@@ -3,6 +3,7 @@
 
 #include <utility>
 
+#include "native/cuda/metax/caster.cuh"
 #include "native/cuda/metax/runtime_.h"
 #include "native/cuda/ops/mrope/kernel.h"
 

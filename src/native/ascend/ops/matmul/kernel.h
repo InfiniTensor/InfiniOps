@@ -29,6 +29,8 @@ class Operator<Matmul, Device::Type::kAscend> : public Matmul {
     out_cache_.release();
   }
 
+  bool capture_safe() const override { return true; }
+
   void operator()(const Tensor input, const Tensor other,
                   Tensor out) const override {
     auto stream = static_cast<aclrtStream>(stream_);

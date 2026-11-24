@@ -15,7 +15,7 @@ std::vector<at::Tensor> mha_varlen_fwd(
     float dropout_p, float softmax_scale, bool zero_tensors, bool causal,
     int window_size_left, int window_size_right, float softcap,
     bool return_softmax, std::optional<at::Generator> generator,
-    std::optional<at::Tensor>& flash_attn_mars_ext);
+    std::optional<at::Tensor>& flash_attn_mars_ext, bool return_max_logit);
 
 namespace infini::ops::linked::torch::metax {
 
@@ -36,7 +36,8 @@ struct FlashAttnVarlen : C10<Device::Type::kMetax> {
                             max_seqlen_k, dropout_p, softmax_scale,
                             zero_tensors, causal, window_size_left,
                             window_size_right, softcap, return_softmax,
-                            generator, flash_attn_mars_ext);
+                            generator, flash_attn_mars_ext,
+                            /*return_max_logit=*/false);
   }
 };
 

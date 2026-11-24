@@ -1,0 +1,3 @@
+library: mcoplib
+required_symbols:
+  - gelu_quick(at::Tensor&, at::Tensor&)

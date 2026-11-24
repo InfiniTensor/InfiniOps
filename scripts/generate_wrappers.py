@@ -41,6 +41,14 @@ _INDENTATION = "  "
 
 _OP_NAMESPACE_PREFIXES = ("special", "linalg", "fft")
 
+# Temporary compatibility operators used directly by InfiniLM. Keep their
+# generated C++ dispatch available, but do not expose legacy C or Python APIs.
+_CPP_ONLY_OPS = frozenset(("matmul_weight_nz", "trans_matmul_weight_nz"))
+
+
+def _generates_public_api(op_name):
+    return op_name not in _CPP_ONLY_OPS
+
 
 def _op_namespace_parts(op_name):
     parts = op_name.split("_")
@@ -2120,6 +2128,7 @@ def _generate_op_artifacts(item):
         "op_name": op_name,
         "header_name": header_name,
         "bind_func_name": f"Bind{_op_symbol_name(op_name)}",
+        "public_api": _generates_public_api(op_name),
         "pybind11": _generate_pybind11(operator),
         "binding_source": _generate_binding_source(op_name),
         "legacy_c_source": legacy_c_source,
@@ -2367,28 +2376,29 @@ if __name__ == "__main__":
         source_path = _GENERATED_SRC_DIR / op_name
         header_name = artifact["header_name"]
         bind_func_name = artifact["bind_func_name"]
-        binding_header_path = _BINDINGS_DIR / header_name
+        if artifact["public_api"]:
+            binding_header_path = _BINDINGS_DIR / header_name
 
-        _write_text_if_changed(binding_header_path, artifact["pybind11"])
-        expected_binding_files.add(binding_header_path)
+            _write_text_if_changed(binding_header_path, artifact["pybind11"])
+            expected_binding_files.add(binding_header_path)
 
-        if use_monolithic_bindings:
-            op_includes.append(f'#include "{header_name}"')
-        else:
-            binding_source_path = _BINDINGS_DIR / f"{op_name}.cc"
-            _write_text_if_changed(binding_source_path, artifact["binding_source"])
-            expected_binding_files.add(binding_source_path)
+            if use_monolithic_bindings:
+                op_includes.append(f'#include "{header_name}"')
+            else:
+                binding_source_path = _BINDINGS_DIR / f"{op_name}.cc"
+                _write_text_if_changed(binding_source_path, artifact["binding_source"])
+                expected_binding_files.add(binding_source_path)
 
-        source_path.mkdir(exist_ok=True)
-        legacy_source_path = _GENERATED_SRC_DIR / op_name / "operator.cc"
-        _write_text_if_changed(legacy_source_path, artifact["legacy_c_source"])
-        expected_generated_src_files.add(legacy_source_path)
+            source_path.mkdir(exist_ok=True)
+            legacy_source_path = _GENERATED_SRC_DIR / op_name / "operator.cc"
+            _write_text_if_changed(legacy_source_path, artifact["legacy_c_source"])
+            expected_generated_src_files.add(legacy_source_path)
 
-        include_path = _INCLUDE_DIR / header_name
-        _write_text_if_changed(include_path, artifact["legacy_c_header"])
-        expected_include_files.add(include_path)
+            include_path = _INCLUDE_DIR / header_name
+            _write_text_if_changed(include_path, artifact["legacy_c_header"])
+            expected_include_files.add(include_path)
 
-        bind_func_names.append(bind_func_name)
+            bind_func_names.append(bind_func_name)
 
     dispatch_header = _generate_generated_dispatch_header(
         op_names, args.devices, dispatch_declarations
