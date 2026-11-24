@@ -21,10 +21,12 @@ for n, k in ((1, 8), (32, 8), (64, 8), (32, 3)):
     total = torch.empty(1, device=d, dtype=torch.int32)
     ops.moe_align_block_size(ids, None, e, bm, sorted_ids, experts, total, stream=s)
     y = torch.full_like(x, float("nan"))
-    scratch = torch.empty(n * k * (2 * i + h) * 2, device=d, dtype=torch.uint8)
-    workspace_ops.moe(
-        [y, x, w13, w2, weights, ids, sorted_ids, experts, total], bm, scratch, s
+    moe_tensors = [y, x, w13, w2, weights, ids, sorted_ids, experts, total]
+    # What the operator asks for: the native kernels need more than the Triton ones.
+    scratch = torch.empty(
+        workspace_ops.moe_workspace_size(moe_tensors, bm), device=d, dtype=torch.uint8
     )
+    workspace_ops.moe(moe_tensors, bm, scratch, s)
     ref = torch.zeros_like(x, dtype=torch.float32)
     for token in range(n):
         for r in range(k):
