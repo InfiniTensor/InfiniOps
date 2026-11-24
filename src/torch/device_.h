@@ -60,6 +60,13 @@ struct TorchDeviceName<Device::Type::kThead> {
   static constexpr std::string_view kValue{"cuda"};
 };
 
+#ifdef WITH_QY
+template <>
+struct TorchDeviceName<Device::Type::kQy> {
+  static constexpr std::string_view kValue{"cuda"};
+};
+#endif
+
 }  // namespace infini::ops::detail
 
 #endif

@@ -7,7 +7,7 @@ source "${repo_root}/scripts/dev/platforms.sh"
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/dev/build.sh [cpu|nvidia|iluvatar|hygon|thead|metax|moore|cambricon|ascend|auto] [--jobs N] [--smoke]
+  scripts/dev/build.sh [cpu|nvidia|iluvatar|hygon|thead|metax|moore|cambricon|ascend|qy|auto] [--jobs N] [--smoke]
 
 Examples:
   scripts/dev/build.sh
@@ -113,6 +113,7 @@ with_cambricon="OFF"
 with_metax="OFF"
 with_moore="OFF"
 with_ascend="OFF"
+with_qy="OFF"
 
 case "$platform" in
     nvidia)
@@ -138,6 +139,9 @@ case "$platform" in
         ;;
     ascend)
         with_ascend="ON"
+        ;;
+    qy)
+        with_qy="ON"
         ;;
     cpu)
         ;;
@@ -198,6 +202,7 @@ cmake -S "${repo_root}" -B "${build_dir}" -G "${generator}" \
     -DWITH_METAX="${with_metax}" \
     -DWITH_MOORE="${with_moore}" \
     -DWITH_ASCEND="${with_ascend}" \
+    -DWITH_QY="${with_qy}" \
     -DAUTO_DETECT_DEVICES=OFF \
     -DAUTO_DETECT_BACKENDS=OFF \
     -DGENERATE_PYTHON_BINDINGS=ON \
