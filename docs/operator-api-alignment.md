@@ -242,5 +242,7 @@ compatibility, testing, and validation requirements.
 ## Clover diffusion state operators
 
 The `Clover*` operators use the released Clover model equations, with packed
-request/state-pool arguments for inference. Their exact contracts and source
-provenance are documented in [the Hygon Clover guide](clover-hygon.md).
+request/state-pool arguments for inference; the causal GDN recurrence is the
+packed form of `RecurrentGatedDeltaRule`. Each contract is documented in the
+operator's base header, and the source provenance of the preview kernels in
+`THIRD_PARTY.txt`.

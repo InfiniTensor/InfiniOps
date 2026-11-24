@@ -4,6 +4,17 @@
 
 namespace infini::ops {
 
+// Block attention of a Clover preview: every token of a block attends to the
+// valid tokens of the same block and to one bucket that reads the clean state
+// of its slot. `q`, `k` and `v` are `[1, tokens, heads, 128]` in BF16 or FP16,
+// with the value heads grouped onto the query and key heads; `state` is the
+// FP32 `[slots, value_heads, 128, 128]` pool, `g` the FP32 log decay per token
+// and value head, `indices[r]` the slot of request r and `valid` the live
+// rows. Query and key rows are L2-normalized. The history logit of a token is
+// `history_bias + history_c * log(valid_tokens / block_size)` per value head,
+// and its value is `exp(g) / sqrt(128)` times the state read. A row that is
+// invalid, or that belongs to a request with an out-of-range slot, outputs
+// zero. The state is only read.
 class CloverLocalMemory : public Operator<CloverLocalMemory> {
  public:
   CloverLocalMemory(const Tensor q, const Tensor k, const Tensor v,

@@ -4,6 +4,12 @@
 
 namespace infini::ops {
 
+// Block coreset of the Clover router. For every block of `block_size` rows it
+// aggregates the softmax probabilities of the top-8 experts of each row and
+// keeps, most massive first, the experts that carry `top_p` of that mass; the
+// logits of the other experts become -inf. `logits` and `out` are contiguous
+// `[tokens, 256]`. A provider allocates its workspace when the caller provides
+// none.
 class CloverCoreset : public Operator<CloverCoreset> {
  public:
   CloverCoreset(const Tensor logits, size_t block_size, double top_p,

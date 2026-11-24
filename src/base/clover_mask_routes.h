@@ -3,6 +3,11 @@
 
 namespace infini::ops {
 
+// Clover-specific interface of the expert-budget decoder, used through the
+// C++ API. Every expert ID of `ids` (`[rows, topk]`) on a row that is not live
+// is replaced by the out-of-range sentinel `num_experts`, which must be the
+// expert count of the routed MoE so that its alignment drops the route. `out`
+// may be `ids`.
 class CloverMaskRoutes : public Operator<CloverMaskRoutes> {
  public:
   CloverMaskRoutes(const Tensor ids, const Tensor live, int64_t num_experts,

@@ -3,6 +3,11 @@
 
 namespace infini::ops {
 
+// Clover-specific interface of the expert-budget decoder, used through the
+// C++ API. A live row takes its fresh routed output, any other row the output
+// cached by the preceding call. `out` receives the selection and `cache` is
+// updated with it. `out` may alias `fresh` or `cache`; `fresh` and `cache`
+// must not alias each other.
 class CloverMergeMoe : public Operator<CloverMergeMoe> {
  public:
   CloverMergeMoe(const Tensor fresh, const Tensor live, Tensor cache,

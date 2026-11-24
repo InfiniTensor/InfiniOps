@@ -4,7 +4,14 @@
 
 namespace infini::ops {
 
-// Clover preview convolution reads a clean prefix without updating its state.
+// Block convolution of a Clover preview: a depthwise causal 4-tap
+// convolution whose first taps read the clean history of the slot, plus a
+// symmetric 3-tap convolution with the following tokens of the block. `input`
+// holds `[requests * block_size, channels]` rows in BF16 or FP16, `state` the
+// last three inputs of every slot, `indices[r]` the slot of request r and
+// `valid` the rows that take part. A row that is invalid, or that belongs to a
+// request with an out-of-range slot, outputs zero. `out` is passed through
+// SiLU. The state is only read.
 class CloverBlockConv1d : public Operator<CloverBlockConv1d> {
  public:
   CloverBlockConv1d(const Tensor input, const Tensor state,
