@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.18)
+project(HygonMigrationChecks LANGUAGES CXX CUDA)
+find_package(CUDAToolkit REQUIRED)
+add_library(migration_probe SHARED migration_probe.cu tensor_i8_probe.cu)
+target_compile_features(migration_probe PRIVATE cxx_std_17 cuda_std_17)
+target_include_directories(migration_probe PRIVATE ../../../src "$ENV{INFINI_ROOT}/include")
+target_compile_definitions(migration_probe PRIVATE WITH_HYGON=1)
+target_link_libraries(migration_probe PRIVATE CUDA::cudart)
+
+target_link_libraries(migration_probe PRIVATE "$ENV{INFINI_ROOT}/lib/libinfinirt.so" "$ENV{INFINI_ROOT}/lib/libinfiniops.so")
+
+if(NOT "$ENV{INFINILM_CXX11_ABI}" MATCHES "^[01]$")
+    message(FATAL_ERROR "Source the personal environment to match the installed SDK ABI")
+endif()
+target_compile_definitions(migration_probe PRIVATE _GLIBCXX_USE_CXX11_ABI=$ENV{INFINILM_CXX11_ABI})
