@@ -301,6 +301,14 @@ if(WITH_HYGON)
 
     target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
     target_sources(infiniops PRIVATE ${HYGON_SOURCES})
+    # Preserve the qualified VideoNSA kernel compile mode from the old build.
+    foreach(_nsa_src IN LISTS HYGON_SOURCES)
+        if(_nsa_src MATCHES "/nsa_videonsa_prefill/legacy/.*[.]cu$")
+            set_property(SOURCE "${_nsa_src}" APPEND PROPERTY COMPILE_OPTIONS
+                -Xclang -fno-cuda-host-device-constexpr)
+        endif()
+    endforeach()
+
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
