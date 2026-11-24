@@ -27,15 +27,21 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
-    constexpr int kVec = 8;
-    dim3 grid(static_cast<unsigned>(value_dim / kVec),
-              static_cast<unsigned>(requests),
+    // One block per (value tile, request x row tile, value head); each warp
+    // of the block owns one query row.
+    const auto row_tiles =
+        (block_size + clover_local_memory_detail::kRowsPerBlock - 1) /
+        clover_local_memory_detail::kRowsPerBlock;
+    dim3 grid(static_cast<unsigned>(value_dim /
+                                   clover_local_memory_detail::kTileV),
+              static_cast<unsigned>(requests * row_tiles),
               static_cast<unsigned>(num_v_heads));
-    dim3 block(static_cast<unsigned>(block_size));
-    const size_t shared = block_size * sizeof(float);
+    dim3 block(clover_local_memory_detail::kWarps *
+               clover_local_memory_detail::kWarpLanes);
 
     const float scale = 1.0f / sqrtf(128.0f);
-    const float reference = static_cast<float>(block_size);
+    // The Triton reference sizes the history bucket against the full block.
+    const float reference = 32.0f;
 
     DispatchFunc<ReducedFloatTypes, List<DataType::kInt32, DataType::kInt64>>(
         {static_cast<int64_t>(q.dtype()),
@@ -44,7 +50,7 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
           using Data = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           using Index = TypeMapType<Backend::kDeviceType, ListGet<1>(list_tag)>;
           CloverLocalMemoryKernel<Backend::kDeviceType, Data, Index>
-              <<<grid, block, shared, cuda_stream>>>(
+              <<<grid, block, 0, cuda_stream>>>(
                   reinterpret_cast<const Data*>(q.data()),
                   reinterpret_cast<const Data*>(k.data()),
                   reinterpret_cast<const Data*>(v.data()),
@@ -52,11 +58,10 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
                   reinterpret_cast<const float*>(state.data()),
                   reinterpret_cast<const Index*>(indices.data()),
                   reinterpret_cast<const int8_t*>(valid.data()),
-                  reinterpret_cast<const Data*>(logit_scale.data()),
-                  reinterpret_cast<const Data*>(history_bias.data()),
-                  reinterpret_cast<const Data*>(history_c.data()),
-                  reinterpret_cast<Data*>(out.data()),
-                  static_cast<int64_t>(q.stride(1)),  // t (dim0 is batch=1)
+                  logit_scale.data(), history_bias.data(),
+                  history_c.data(), reinterpret_cast<Data*>(out.data()),
+                  // Layout is [1, tokens, heads, dim]; the batch dim is 1.
+                  static_cast<int64_t>(q.stride(1)),
                   static_cast<int64_t>(q.stride(2)),
                   static_cast<int64_t>(q.stride(3)),
                   static_cast<int64_t>(k.stride(1)),
@@ -78,7 +83,10 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
                   static_cast<int>(state.size(0)),
                   static_cast<int>(q.size(2)),
                   static_cast<int>(k.size(2)),
-                  static_cast<int>(num_v_heads));
+                  static_cast<int>(num_v_heads),
+                  static_cast<int>(logit_scale.dtype()),
+                  static_cast<int>(history_bias.dtype()),
+                  static_cast<int>(history_c.dtype()));
         },
         "CudaCloverLocalMemory::operator()");
   }
