@@ -1,8 +1,10 @@
-#ifndef INFINI_OPS_HYGON_MOE_ALIGN_BLOCK_SIZE_KERNEL_CUH_
-#define INFINI_OPS_HYGON_MOE_ALIGN_BLOCK_SIZE_KERNEL_CUH_
+#ifndef INFINI_OPS_CUDA_MOE_ALIGN_BLOCK_SIZE_KERNEL_CUH_
+#define INFINI_OPS_CUDA_MOE_ALIGN_BLOCK_SIZE_KERNEL_CUH_
 
 #include <cstddef>
 #include <cstdint>
+
+#include "data_type.h"
 
 namespace infini::ops {
 namespace moe_align_block_size_detail {
@@ -21,6 +23,7 @@ __device__ __forceinline__ int32_t MapExpertId(int32_t expert_id,
   return expert_id >= 0 && expert_id < num_experts ? expert_id : -1;
 }
 
+template <Device::Type kDevice>
 __global__ void MoeAlignBlockSizeKernel(
     const int32_t* __restrict__ topk_ids,
     const int32_t* __restrict__ expert_map,
@@ -83,4 +86,4 @@ __global__ void MoeAlignBlockSizeKernel(
 }  // namespace moe_align_block_size_detail
 }  // namespace infini::ops
 
-#endif  // INFINI_OPS_HYGON_MOE_ALIGN_BLOCK_SIZE_KERNEL_CUH_
+#endif  // INFINI_OPS_CUDA_MOE_ALIGN_BLOCK_SIZE_KERNEL_CUH_
