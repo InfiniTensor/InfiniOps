@@ -152,7 +152,7 @@ def test_coreset(device):
         logits = torch.randn(blocks * width, 256, device=device, dtype=torch.float32)
         out_n = torch.empty_like(logits)
         out_t = torch.empty_like(logits)
-        scratch = torch.empty(blocks * 256 * 8, device=device, dtype=torch.uint8)
+        scratch = torch.empty(blocks * 256 * 8 + blocks * 32 * 16 * 4, device=device, dtype=torch.uint8)
         # Workspace-taking providers are fed via the pybind adapter.
         adapter.coreset(logits, width, top_p, out_n, scratch, stream, NATIVE)
         adapter.coreset(logits, width, top_p, out_t, scratch, stream, TRITON)

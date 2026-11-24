@@ -16,102 +16,191 @@ namespace infini::ops {
 
 constexpr int kCloverCoresetExperts = 256;
 
+// Stage A: one thread block (256 threads) per routing row. Finds the
+// row's top-8 experts with 8 fixed-order selection rounds and writes
+// (expert_id, normalized_probability) into a per-row staging buffer.
 template <Device::Type kDevice, typename Data>
-__global__ void CloverCoresetMassKernel(const Data* __restrict__ logits,
-                                        float* __restrict__ mass,
-                                        int width, int64_t blocks) {
-  // One thread per expert (blockDim = 256), iterating the block's rows
-  // serially. Deterministic by construction: no atomics, fixed order.
-  const int64_t block = static_cast<int64_t>(blockIdx.x);
-  if (block >= blocks) return;
-  const int expert = static_cast<int>(threadIdx.x);  // 0..255
+__global__ void CloverCoresetRowKernel(const Data* __restrict__ logits,
+                                       float* __restrict__ row_top8,
+                                       int width, int64_t tokens) {
+  constexpr int kExperts = kCloverCoresetExperts;  // 256
+  constexpr int kWarps = kExperts / 32;
 
+  const int64_t row = static_cast<int64_t>(blockIdx.x);
+  if (row >= tokens) return;
+  const int tid = static_cast<int>(threadIdx.x);
+  const int lane = tid % 32;
+  const int warp = tid / 32;
+
+  extern __shared__ float smem[];
+  float* row_f32 = smem;                   // [256]
+  float* red = smem + kExperts;            // [8]
+  int* red_id = reinterpret_cast<int*>(smem + kExperts + kWarps);
+  int* taken = reinterpret_cast<int*>(smem + kExperts + 2 * kWarps);
+
+  const Data* row_ptr = logits + row * kExperts;
+  row_f32[tid] = static_cast<float>(row_ptr[tid]);
+  taken[tid] = 0;
+  __syncthreads();
+
+  float m = row_f32[tid];
+#pragma unroll
+  for (int off = 16; off > 0; off >>= 1)
+    m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, off));
+  if (lane == 0) red[warp] = m;
+  __syncthreads();
+  if (tid == 0) {
+    float mm = red[0];
+#pragma unroll
+    for (int w = 1; w < kWarps; ++w) mm = fmaxf(mm, red[w]);
+    red[0] = mm;
+  }
+  __syncthreads();
+  const float row_max = red[0];
+
+  float d = expf(row_f32[tid] - row_max);
+#pragma unroll
+  for (int off = 16; off > 0; off >>= 1)
+    d += __shfl_xor_sync(0xffffffffu, d, off);
+  if (lane == 0) red[warp] = d;
+  __syncthreads();
+  if (tid == 0) {
+    float dd = red[0];
+#pragma unroll
+    for (int w = 1; w < kWarps; ++w) dd += red[w];
+    red[0] = dd;
+  }
+  __syncthreads();
+  const float denom = red[0];
+
+  // Top-8 by successive block argmax over untaken experts (ties prefer
+  // the smaller id, matching the Triton bitcast key).
+#pragma unroll
+  for (int rank = 0; rank < 8; ++rank) {
+    float v = taken[tid] ? -INFINITY : row_f32[tid];
+    int id = tid;
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+      const float ov = __shfl_xor_sync(0xffffffffu, v, off);
+      const int oid = __shfl_xor_sync(0xffffffffu, id, off);
+      if (ov > v || (ov == v && oid < id)) { v = ov; id = oid; }
+    }
+    if (lane == 0) { red[warp] = v; red_id[warp] = id; }
+    __syncthreads();
+    if (tid == 0) {
+      float bv = red[0]; int bi = red_id[0];
+#pragma unroll
+      for (int w = 1; w < kWarps; ++w) {
+        if (red[w] > bv || (red[w] == bv && red_id[w] < bi)) {
+          bv = red[w]; bi = red_id[w];
+        }
+      }
+      red[0] = bv; red_id[0] = bi;
+    }
+    __syncthreads();
+    const int winner = red_id[0];
+    if (tid == winner) {
+      taken[tid] = 1;
+      // Staging: [row, rank] = id, [row, rank+8] = probability.
+      row_top8[row * 16 + rank] = static_cast<float>(tid);
+      row_top8[row * 16 + 8 + rank] = expf(row_f32[tid] - row_max) / denom;
+    }
+    __syncthreads();
+  }
+}
+
+// Stage B: one thread per expert accumulates its probability mass across
+// rows in fixed row order (deterministic).
+template <Device::Type kDevice>
+__global__ void CloverCoresetMassKernel(const float* __restrict__ row_top8,
+                                        float* __restrict__ mass,
+                                        int64_t tokens, int64_t blocks,
+                                        int width) {
+  const int expert = static_cast<int>(threadIdx.x);
+  const int64_t block = static_cast<int64_t>(blockIdx.x);
+  if (block >= blocks || expert >= kCloverCoresetExperts) return;
   float total = 0.0f;
-  // A row counts this expert only if the expert is in that row's top-8
-  // (ties resolved by ascending expert id, like the Triton tie_break_left).
   for (int t = 0; t < width; ++t) {
-    const Data* row =
-        logits + (block * width + t) * kCloverCoresetExperts;
-    const float my_logit = static_cast<float>(row[expert]);
-    // Rank of my expert in this row: count strictly-greater logits plus
-    // equal logits with a smaller id.
-    int stronger = 0;
-    float row_max = -INFINITY;
-    float denom = 0.0f;
-    for (int e = 0; e < kCloverCoresetExperts; ++e) {
-      const float v = static_cast<float>(row[e]);
-      if (v > row_max) row_max = v;
-    }
-    for (int e = 0; e < kCloverCoresetExperts; ++e) {
-      const float v = static_cast<float>(row[e]);
-      denom += expf(v - row_max);
-      if (v > my_logit || (v == my_logit && e < expert)) ++stronger;
-    }
-    if (stronger < 8) {
-      total += expf(my_logit - row_max) / denom;
+    const float* slot = row_top8 + (block * width + t) * 16;
+#pragma unroll
+    for (int rank = 0; rank < 8; ++rank) {
+      if (static_cast<int>(slot[rank]) == expert) total += slot[8 + rank];
     }
   }
   mass[block * kCloverCoresetExperts + expert] = total;
 }
 
+// One block (256 threads) per routing block. Deterministic bitonic sort
+// of (mass, expert_id) pairs descending by mass (ties prefer smaller id,
+// matching the Triton bitcast key), a prefix sum of the normalized
+// probabilities, and the Triton keep rule: keep element i while the
+// cumulative probability BEFORE i stays below top_p (top_p >= 1 keeps
+// every positive-mass expert; the highest-mass expert is always kept,
+// which is what the reference's sorted-position-0 OR amounts to).
 template <Device::Type kDevice>
 __global__ void CloverCoresetAllowKernel(const float* __restrict__ mass,
                                          int8_t* __restrict__ allow,
                                          int64_t blocks, float top_p) {
+  constexpr int kExperts = kCloverCoresetExperts;  // 256 (power of two)
   const int64_t block = static_cast<int64_t>(blockIdx.x);
   if (block >= blocks) return;
-  const float* block_mass = mass + block * kCloverCoresetExperts;
+  const int tid = static_cast<int>(threadIdx.x);
+  if (tid >= kExperts) return;
 
-  extern __shared__ float sorted[];  // [256]
-  __shared__ float total[1];
-  __shared__ int allow_shared[kCloverCoresetExperts];
-  for (int e = threadIdx.x; e < kCloverCoresetExperts; e += blockDim.x)
-    sorted[e] = block_mass[e];
-  __syncthreads();
-  if (threadIdx.x == 0) {
-    float sum = 0.0f;
-    for (int e = 0; e < kCloverCoresetExperts; ++e) sum += sorted[e];
-    total[0] = sum > 1.0e-9f ? sum : 1.0e-9f;
-  }
-  for (int e = threadIdx.x; e < kCloverCoresetExperts; e += blockDim.x)
-    allow_shared[e] = 0;
+  extern __shared__ float smem[];
+  float* val = smem;                 // [256] mass being sorted
+  int* idx = reinterpret_cast<int*>(smem + kExperts);
+  __shared__ float prefix[kExperts];  // static shared is fine
+
+  val[tid] = mass[block * kExperts + tid];
+  idx[tid] = tid;
   __syncthreads();
 
-  // Serial selection by thread 0, matching the Triton reference: keep
-  // experts in descending-mass order while the cumulative probability
-  // (mass normalized by the block total) BEFORE each element stays below
-  // top_p — i.e., include the first element that reaches the threshold.
-  if (threadIdx.x == 0) {
-    const bool keep_positive_only = top_p >= 1.0f;
-    float kept = 0.0f;
-    for (int picked = 0; picked < kCloverCoresetExperts; ++picked) {
-      int best = -1;
-      float best_v = 0.0f;  // ties keep expert id ascending, like Triton's key
-      for (int e = 0; e < kCloverCoresetExperts; ++e) {
-        if (sorted[e] > best_v) {
-          best_v = sorted[e];
-          best = e;
+  // Bitonic sort descending by (val, -idx). 256 elements, 256 threads:
+  // each thread owns one slot; every compare-exchange step is a block
+  // barrier sync with pairs (i, j) computed from the step parameters.
+  for (int k = 2; k <= kExperts; k <<= 1) {
+    for (int j = k >> 1; j > 0; j >>= 1) {
+      const int partner = tid ^ j;
+      if (partner > tid) {  // only one side of the pair acts
+        const bool ascending_block =
+            ((tid & k) == 0);  // block direction for this element
+        const float a = val[tid], b = val[partner];
+        const int ia = idx[tid], ib = idx[partner];
+        // sorted descending overall: swap if (a,b) is out of order for
+        // the block direction. For descending output with bitonic sort,
+        // direction flips per (tid & k); using !ascending for desc.
+        const bool out_of_order =
+            ascending_block ? (a < b || (a == b && ia > ib))
+                            : (a > b || (a == b && ia < ib));
+        if (out_of_order) {
+          val[tid] = b; val[partner] = a;
+          idx[tid] = ib; idx[partner] = ia;
         }
       }
-      if (best < 0) break;
-      sorted[best] = -1.0f;
-      if (keep_positive_only) {
-        allow_shared[best] = 1;  // top_p >= 1: keep every positive-mass expert
-      } else {
-        allow_shared[best] = 1;
-        kept += best_v / total[0];
-        if (kept >= top_p) break;
-      }
+      __syncthreads();
     }
-    // The Triton reference ORs `keep` with (position == 0) in the
-    // sorted coordinate system, which keeps the highest-mass expert —
-    // already guaranteed by the first pick above. No extra action.
+  }
+
+  // Prefix sums of normalized probabilities in sorted order.
+  float total_acc = 0.0f;
+  for (int e = 0; e < kExperts; ++e) total_acc += val[e];
+  const float total = total_acc > 1.0e-9f ? total_acc : 1.0e-9f;
+
+  if (tid == 0) {
+    float cum = 0.0f;
+    for (int i = 0; i < kExperts; ++i) {
+      prefix[i] = cum;  // probability mass strictly before element i
+      cum += val[i] / total;
+    }
   }
   __syncthreads();
 
-  for (int e = threadIdx.x; e < kCloverCoresetExperts; e += blockDim.x)
-    allow[block * kCloverCoresetExperts + e] =
-        static_cast<int8_t>(allow_shared[e]);
+  const bool keep_positive_only = top_p >= 1.0f;
+  const bool keep = keep_positive_only
+                        ? val[tid] > 0.0f
+                        : prefix[tid] < top_p;
+  allow[block * kExperts + idx[tid]] = static_cast<int8_t>(keep ? 1 : 0);
 }
 
 template <Device::Type kDevice, typename Data>

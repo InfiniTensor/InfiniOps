@@ -27,11 +27,14 @@ class CudaCloverRecurrentGdn : public CloverRecurrentGdn {
 
     auto cuda_stream =
         static_cast<typename Backend::Stream>(stream_ ? stream_ : 0);
-    constexpr int kBV = 16;
+    // 4 warps per block, each warp owns one value row of the [128, 128]
+    // state; grid.z tiles the 128 rows into 32 blocks of 4.
+    constexpr int kWarps = 4;
     dim3 grid(static_cast<unsigned>(requests),
               static_cast<unsigned>(num_heads),
-              static_cast<unsigned>((value_dim + kBV - 1) / kBV));
-    dim3 block(static_cast<unsigned>(kBV));
+              static_cast<unsigned>((value_dim + kWarps - 1) / kWarps));
+    dim3 block(kWarps * 32);
+    const size_t shared = kWarps * 128 * sizeof(float);
 
     const int num_k_heads = static_cast<int>(k.size(2));
 
@@ -40,7 +43,7 @@ class CudaCloverRecurrentGdn : public CloverRecurrentGdn {
         [&](auto list_tag) {
           using Data = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           CloverRecurrentGdnKernel<Backend::kDeviceType, Data>
-              <<<grid, block, 0, cuda_stream>>>(
+              <<<grid, block, shared, cuda_stream>>>(
                   reinterpret_cast<const Data*>(q.data()),
                   reinterpret_cast<const Data*>(k.data()),
                   reinterpret_cast<const Data*>(v.data()),
@@ -69,7 +72,7 @@ class CudaCloverRecurrentGdn : public CloverRecurrentGdn {
                   static_cast<int64_t>(out.stride(2)),
                   static_cast<int64_t>(tokens),
                   static_cast<int64_t>(state.size(0)), num_k_heads,
-                  static_cast<int>(value_dim), kBV);
+                  static_cast<int>(value_dim));
         },
         "CudaCloverRecurrentGdn::operator()");
   }

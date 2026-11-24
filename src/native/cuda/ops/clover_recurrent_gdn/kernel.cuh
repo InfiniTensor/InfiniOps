@@ -8,12 +8,13 @@
 namespace infini::ops {
 
 // Shared-layer SIMT kernel for CloverRecurrentGdn, mirroring the Triton
-// reference: per (request, head, value tile), sequentially update the GDN
-// state [V, K] from the initial slot and write the final state back:
-//   q,k L2-normalized (eps 1e-6), q scaled by 0.08838834764831845 (=1/sqrt(128))
+// reference. Warp-cooperative layout: one warp owns one value row of the
+// [V=128, K=128] state; the 32 lanes split the K axis, so every dot
+// product over K becomes a fixed-order warp shuffle reduction
+// (deterministic) and the normalized k vector is staged once per token in
+// shared memory instead of being recomputed per row.
 //   state *= exp(g); delta = (v - state·k) * beta; state += delta⊗k; y = state·q
-// Deterministic: serial token loop, one thread per value row.
-// Grid: x = requests, y = heads, z = value tiles (128 / BV).
+// Grid: x = requests, y = value heads; block = 4 warps (4 value rows each).
 template <Device::Type kDevice, typename Data>
 __global__ void CloverRecurrentGdnKernel(
     const Data* __restrict__ q, const Data* __restrict__ k,
@@ -24,10 +25,19 @@ __global__ void CloverRecurrentGdnKernel(
     int64_t ks, int64_t kh, int64_t vs, int64_t vh, int64_t gs, int64_t gh,
     int64_t bs, int64_t bh, int64_t ss, int64_t sh, int64_t sv, int64_t sk,
     int64_t os, int64_t oh, int64_t tokens, int64_t pool, int num_k_heads,
-    int value_dim, int bv) {
+    int value_dim) {
+  constexpr int kDim = 128;                 // K == V == 128 (validated)
+  constexpr int kLanes = 32;                // warp width on supported backends
+  constexpr int kPerLane = kDim / kLanes;   // 4 keys per lane
+  constexpr int kWarps = 4;                 // value rows per block per step
+
   const int request = static_cast<int>(blockIdx.x);
   const int head = static_cast<int>(blockIdx.y);
-  const int value_tile = static_cast<int>(blockIdx.z);
+  const int warp = static_cast<int>(threadIdx.x) / kLanes;
+  const int lane = static_cast<int>(threadIdx.x) % kLanes;
+  if (warp >= kWarps) return;
+  const int value_row =
+      static_cast<int>(blockIdx.z) * kWarps + warp;  // absolute row 0..127
 
   const int begin = offsets[request];
   const int end = offsets[request + 1];
@@ -37,66 +47,103 @@ __global__ void CloverRecurrentGdnKernel(
         init < pool && fin >= 0 && fin < pool))
     return;
 
-  const int value_row = value_tile * bv + static_cast<int>(threadIdx.x);
-  if (value_row >= value_dim) return;
+  const int k_head =
+      head / max(1, (int)gridDim.y / max(1, num_k_heads));
 
-  const int q_head = head / (gridDim.y / num_k_heads);  // v-heads share q/k heads
-  const int k_head = q_head;
+  extern __shared__ float smem[];
+  float* k_norm = smem;                  // [kWarps][kDim]
 
   float* state_row =
       state + static_cast<int64_t>(init) * ss + head * sh +
       static_cast<int64_t>(value_row) * sv;
+  float* final_row =
+      state + static_cast<int64_t>(fin) * ss + head * sh +
+      static_cast<int64_t>(value_row) * sv;
+
+  float st[kPerLane];
+#pragma unroll
+  for (int e = 0; e < kPerLane; ++e)
+    st[e] = state_row[(lane * kPerLane + e) * sk];
 
   for (int token = begin; token < end; ++token) {
-    // k row L2 norm (fp32, over 128 keys) — every thread recomputes it; kept
-    // simple and deterministic.
-    float k_vec[128];
+    // ---- k: cooperative load + fixed-order square-sum reduction ----
+    const Data* k_row =
+        k + static_cast<int64_t>(token) * ks + k_head * kh;
+    float kv[kPerLane];
     float k_sq = 0.0f;
-    const Data* k_row = k + static_cast<int64_t>(token) * ks + k_head * kh;
-    for (int kk = 0; kk < 128; ++kk) {
-      k_vec[kk] = Caster<kDevice>::template Cast<float>(k_row[kk]);
-      k_sq += k_vec[kk] * k_vec[kk];
+#pragma unroll
+    for (int e = 0; e < kPerLane; ++e) {
+      kv[e] = Caster<kDevice>::template Cast<float>(
+          k_row[lane * kPerLane + e]);
+      k_sq += kv[e] * kv[e];
     }
-    const float k_norm = rsqrtf(k_sq + 1.0e-6f);
-    for (int kk = 0; kk < 128; ++kk) k_vec[kk] *= k_norm;
+#pragma unroll
+    for (int off = kLanes / 2; off > 0; off >>= 1)
+      k_sq += __shfl_xor_sync(0xffffffffu, k_sq, off);
+    const float k_scale = rsqrtf(k_sq + 1.0e-6f);
+#pragma unroll
+    for (int e = 0; e < kPerLane; ++e) {
+      kv[e] *= k_scale;
+      k_norm[warp * kDim + lane * kPerLane + e] = kv[e];
+    }
+    __syncwarp();
 
+    // ---- decay + remembered = state · k ----
     const float decay = expf(g[token * gs + head * gh]);
     const float b = beta[token * bs + head * bh];
+    float part = 0.0f;
+#pragma unroll
+    for (int e = 0; e < kPerLane; ++e) {
+      st[e] *= decay;
+      part += st[e] * kv[e];
+    }
+#pragma unroll
+    for (int off = kLanes / 2; off > 0; off >>= 1)
+      part += __shfl_xor_sync(0xffffffffu, part, off);
+    const float remembered = part;
+
+    // ---- delta rule update ----
     const float v_row = Caster<kDevice>::template Cast<float>(
         v[static_cast<int64_t>(token) * vs + head * vh + value_row]);
-
-    float remembered = 0.0f;
-    for (int kk = 0; kk < 128; ++kk) {
-      state_row[kk * sk] *= decay;
-      remembered += state_row[kk * sk] * k_vec[kk];
-    }
     const float delta = (v_row - remembered) * b;
-    float y = 0.0f;
+
     const Data* q_row =
-        q + static_cast<int64_t>(token) * qs + q_head * qh;
+        q + static_cast<int64_t>(token) * qs + k_head * qh;
+    float qv[kPerLane];
     float q_sq = 0.0f;
-    float q_vec[128];
-    for (int kk = 0; kk < 128; ++kk) {
-      q_vec[kk] = Caster<kDevice>::template Cast<float>(q_row[kk]);
-      q_sq += q_vec[kk] * q_vec[kk];
+#pragma unroll
+    for (int e = 0; e < kPerLane; ++e) {
+      qv[e] = Caster<kDevice>::template Cast<float>(
+          q_row[lane * kPerLane + e]);
+      q_sq += qv[e] * qv[e];
     }
-    const float q_norm = rsqrtf(q_sq + 1.0e-6f) * 0.08838834764831845f;
-    for (int kk = 0; kk < 128; ++kk) {
-      q_vec[kk] *= q_norm;
-      state_row[kk * sk] += delta * k_vec[kk];
-      y += state_row[kk * sk] * q_vec[kk];
+#pragma unroll
+    for (int off = kLanes / 2; off > 0; off >>= 1)
+      q_sq += __shfl_xor_sync(0xffffffffu, q_sq, off);
+    const float q_scale = rsqrtf(q_sq + 1.0e-6f) * 0.08838834764831845f;
+
+    // ---- state += delta * k; y = state · q (same fixed order) ----
+    float y = 0.0f;
+#pragma unroll
+    for (int e = 0; e < kPerLane; ++e) {
+      st[e] += delta * k_norm[warp * kDim + lane * kPerLane + e];
+      qv[e] *= q_scale;
+      y += st[e] * qv[e];
     }
-    out[static_cast<int64_t>(token) * os + head * oh + value_row] =
-        Caster<kDevice>::template Cast<Data>(y);
+#pragma unroll
+    for (int off = kLanes / 2; off > 0; off >>= 1)
+      y += __shfl_xor_sync(0xffffffffu, y, off);
+
+    if (lane == 0) {
+      out[static_cast<int64_t>(token) * os + head * oh + value_row] =
+          Caster<kDevice>::template Cast<Data>(y);
+    }
   }
 
-  // Write the final state back to the final slot (may equal the initial one).
-  if (fin != init) {
-    float* dst_row = state + static_cast<int64_t>(fin) * ss + head * sh +
-                     static_cast<int64_t>(value_row) * sv;
-    for (int kk = 0; kk < 128; ++kk)
-      dst_row[kk * sk] = state_row[kk * sk];
-  }
+  // Final-state writeback (may equal the initial slot).
+#pragma unroll
+  for (int e = 0; e < kPerLane; ++e)
+    final_row[(lane * kPerLane + e) * sk] = st[e];
 }
 
 }  // namespace infini::ops
