@@ -2,8 +2,8 @@
 
 Providers: native SIMT (impl 0, this PR) cross-checked against the Triton
 reference (impl 10) on identical inputs, plus explicit torch golden models.
-The first three ops share the `clover_live_rows` semantics; CloverCoreset
-recomputes the Triton three-stage pipeline in torch.
+The three ops share the `clover_live_rows` semantics; CloverCoreset has its
+own tests in test_clover_coreset.py.
 """
 
 import infini.ops
@@ -98,64 +98,3 @@ def test_merge_moe(device):
     torch.testing.assert_close(cache_n, pick)  # cache also updated
     torch.testing.assert_close(out_n, out)
     torch.testing.assert_close(cache_n, cache_t)
-
-
-def torch_coreset(logits, width, top_p):
-    """Golden model replicating the Triton three-stage pipeline."""
-    tokens, experts = logits.shape
-    assert experts == 256
-    blocks = tokens // width
-    out = torch.empty_like(logits)
-    for b in range(blocks):
-        block = logits[b * width:(b + 1) * width].float()
-        prob = torch.softmax(block, dim=1)
-        # top-8 union per row
-        sel = torch.zeros_like(prob, dtype=torch.bool)
-        rem = block.clone()
-        for _ in range(8):
-            best = rem.argmax(dim=1)
-            sel.scatter_(1, best.unsqueeze(1), True)
-            rem.scatter_(1, best.unsqueeze(1), float("-inf"))
-        mass = (prob * sel).sum(0)
-        order = torch.argsort(mass, descending=True, stable=True)
-        p = mass[order] / max(mass.sum(), 1e-9)
-        keep_cum = (p.cumsum(0) - p) < top_p
-        keep = torch.zeros_like(keep_cum)
-        keep[order[keep_cum]] = True
-        out[b * width:(b + 1) * width] = torch.where(
-            keep.unsqueeze(0), logits[b * width:(b + 1) * width],
-            torch.full_like(logits[b * width:(b + 1) * width], float("-inf")))
-    return out
-
-
-def test_coreset(device):
-    if device != "cuda" or not _impls_ok("CloverCoreset"):
-        pytest.skip("requires CUDA with native and triton providers")
-    import importlib.util
-    import pathlib
-    import sys
-    adapter_path = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "build" / "moe-simt-tests" / "clover_native_adapter.so"
-    )
-    if not adapter_path.exists():
-        pytest.skip("clover_native_adapter is not built; see tests/native/")
-    spec = importlib.util.spec_from_file_location("clover_native_adapter", adapter_path)
-    adapter = importlib.util.module_from_spec(spec)
-    sys.modules["clover_native_adapter"] = adapter
-    spec.loader.exec_module(adapter)
-
-    stream = torch.cuda.current_stream().cuda_stream
-    torch.manual_seed(6)
-    width = 32
-    for blocks, top_p in ((4, 0.9), (2, 0.5), (3, 1.0)):
-        logits = torch.randn(blocks * width, 256, device=device, dtype=torch.float32)
-        out_n = torch.empty_like(logits)
-        out_t = torch.empty_like(logits)
-        scratch = torch.empty(blocks * 256 * 8 + blocks * 32 * 16 * 4, device=device, dtype=torch.uint8)
-        # Workspace-taking providers are fed via the pybind adapter.
-        adapter.coreset(logits, width, top_p, out_n, scratch, stream, NATIVE)
-        adapter.coreset(logits, width, top_p, out_t, scratch, stream, TRITON)
-        golden = torch_coreset(logits.float().cpu(), width, top_p).to(logits.device)
-        torch.testing.assert_close(out_n, golden, equal_nan=True)
-        torch.testing.assert_close(out_n, out_t, equal_nan=True)
