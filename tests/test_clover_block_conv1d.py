@@ -1,9 +1,9 @@
-"""Correctness tests for the native CloverBlockConv1d provider.
+"""Correctness tests for the native and Triton CloverBlockConv1d providers.
 
-Golden model replicates the Triton reference: per (request, token, channel),
-silu(left-history 4-tap conv + right-symmetric 3-tap conv), zeroed on invalid
-rows. Cross-checked against the Triton provider on identical inputs, covering
-bf16/fp16, block sizes 1/8/32, dead slots (-1) and per-row validity masks.
+Golden model: per (request, token, channel), silu(left-history 4-tap conv +
+right-symmetric 3-tap conv), zeroed on invalid rows. Both providers are checked
+against it on identical inputs, covering bf16/fp16, block sizes 1/8/32, dead
+slots (-1), per-row validity masks and the read-only state.
 """
 
 import infini.ops
@@ -52,16 +52,17 @@ def torch_golden(x, state, indices, weight, right_weight, valid, block_size):
 @pytest.mark.parametrize("id_dtype", (torch.int32, torch.int64))
 def test_block_conv1d(device, block_size, dtype, rtol, id_dtype):
     if device != "cuda":
-        pytest.skip("requires the CUDA backend")
-    impls = infini.ops.CloverBlockConv1d.active_implementation_indices("nvidia")
+        pytest.skip("requires a CUDA-like backend")
+    impls = infini.ops.CloverBlockConv1d.active_implementation_indices(device)
     if NATIVE not in impls or TRITON not in impls:
-        pytest.skip(f"requires impls 0 and 10, active={impls}")
+        pytest.skip(f"requires the native and Triton providers, active={impls}")
     stream = torch.cuda.current_stream().cuda_stream
     torch.manual_seed(31)
     requests, channels, slots = 6, 256, 8
 
     x = torch.randn(requests * block_size, channels, device=device, dtype=dtype)
     state = torch.randn(slots, channels, 3, device=device, dtype=dtype)
+    state0 = state.clone()
     # One dead slot and one out-of-range slot exercise the guard paths.
     indices = torch.arange(requests, device=device, dtype=id_dtype) % slots
     indices[4] = -1
@@ -85,3 +86,4 @@ def test_block_conv1d(device, block_size, dtype, rtol, id_dtype):
                           block_size).to(device)
     torch.testing.assert_close(out_n.float(), golden, rtol=rtol, atol=rtol)
     torch.testing.assert_close(out_n.float(), out_t.float(), rtol=rtol, atol=rtol)
+    assert torch.equal(state, state0), "the preview reads the state only"

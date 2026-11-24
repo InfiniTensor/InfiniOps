@@ -107,6 +107,9 @@ def _reference(hidden, w13, w2, topk_weights, topk_ids, block_size):
 def test_moe_fused_dense(dtype, rtol, atol, device):
     if device != "cuda":
         pytest.skip("`moe_fused_dense` numeric test targets the metax/cuda backend")
+    if torch.version.hip is not None:
+        pytest.skip("the Hygon provider takes block size 16 only; see "
+                    "`test_moe_fused_dense_clover`")
     torch.manual_seed(0)
     n, h, m, e, topk, block_size = 4, 8, 6, 3, 2, 4
     hidden = torch.randn(n, h, dtype=dtype, device=device).contiguous()
@@ -136,3 +139,146 @@ def test_moe_fused_dense(dtype, rtol, atol, device):
 
     expected = _reference(hidden, w13, w2, topk_weights, topk_ids, block_size)
     torch.testing.assert_close(output, expected.to(dtype), rtol=rtol, atol=atol)
+
+
+# ---------------------------------------------------------------------------
+# The Triton kernels on every backend that has them, and the native gfx936
+# kernels of the Hygon provider, with the routing of Clover: block size 16,
+# top-k weights that sum to one, and routes spread over the experts or
+# concentrated on a few by the block coreset of the model.
+
+_NATIVE, _TRITON = 0, 10
+_CLOVER_BLOCK = 16
+
+
+def _clover_implementations(device, hidden, intermediate):
+    """Returns `(implementation, native)`: the Triton kernels, and on Hygon the
+    provider's slot 0, which takes `hidden` and `intermediate` that are
+    multiples of 8 of at least 32 with its native kernels and leaves every
+    other shape to the Triton kernels."""
+    if device != "cuda":
+        pytest.skip("requires a CUDA-like backend")
+    active = infini.ops.MoeFusedDense.active_implementation_indices(device)
+    native = (
+        min(hidden, intermediate) >= 32
+        and hidden % 8 == 0
+        and intermediate % 8 == 0
+    )
+    pairs = []
+    if torch.version.hip is not None and _NATIVE in active:
+        if native or _TRITON in active:
+            pairs.append((_NATIVE, native))
+    if _TRITON in active:
+        pairs.append((_TRITON, False))
+    if not pairs:
+        pytest.skip(f"requires the Triton or the Hygon provider, active={active}")
+    return pairs
+
+
+def _clover_inputs(n, topk, experts, hidden, intermediate, dtype, device, hot, dropped):
+    """Inputs of one call. With `hot` > 0 that share of the routes goes to 16
+    experts, which gives those experts several blocks; the first `dropped`
+    routes of every token are invalidated."""
+    scores = -torch.rand(n, experts, device=device)
+    if hot > 0:
+        crowded = torch.rand(n, experts, device=device) < hot
+        scores[:, :16] += 2.0 * crowded[:, :16]
+    top = scores.topk(topk, dim=-1)
+    weights = top.values.softmax(-1).float().contiguous()
+    ids = top.indices.int().contiguous()
+    ids[:, :dropped] = -1
+    hidden_states = torch.randn(n, hidden, device=device, dtype=dtype) * 0.2
+    w13 = (
+        torch.randn(experts, 2 * intermediate, hidden, device=device, dtype=dtype)
+        * 0.1
+    )
+    w2 = torch.randn(experts, hidden, intermediate, device=device, dtype=dtype) * 0.1
+
+    pairs = n * topk
+    capacity = (
+        pairs * _CLOVER_BLOCK
+        if pairs < experts
+        else pairs + experts * (_CLOVER_BLOCK - 1)
+    )
+    sorted_ids = torch.empty(capacity, device=device, dtype=torch.int32)
+    expert_ids = torch.empty(
+        (capacity + _CLOVER_BLOCK - 1) // _CLOVER_BLOCK,
+        device=device,
+        dtype=torch.int32,
+    )
+    num_post = torch.empty(1, device=device, dtype=torch.int32)
+    infini.ops.moe_align_block_size(
+        ids, None, experts, _CLOVER_BLOCK, sorted_ids, expert_ids, num_post,
+        stream=get_stream(device),
+    )
+    return hidden_states, w13, w2, weights, ids, sorted_ids, expert_ids, num_post
+
+
+def _clover_reference(hidden, w13, w2, weights, ids, round_projections):
+    """Float32 throughout, with the activation rounded to the element type
+    once. `round_projections` also rounds the gate and up projections, as the
+    Triton kernels do. Routes outside `[0, experts)` contribute nothing."""
+    dtype, n, intermediate = hidden.dtype, hidden.shape[0], w2.shape[2]
+    topk = ids.shape[1]
+    out = torch.zeros(n, hidden.shape[1], device=hidden.device, dtype=torch.float32)
+    flat = ids.view(-1).long()
+    tokens = torch.arange(n, device=hidden.device).repeat_interleave(topk)
+    routed = weights.view(-1)
+    for expert in flat.unique().tolist():
+        if not 0 <= expert < w2.shape[0]:
+            continue
+        select = (flat == expert).nonzero().squeeze(-1)
+        mid = hidden[tokens[select]].float() @ w13[expert].float().T
+        if round_projections:
+            mid = mid.to(dtype).float()
+        gate, up = mid[:, :intermediate], mid[:, intermediate:]
+        act = (torch.nn.functional.silu(gate) * up).to(dtype).float()
+        out.index_add_(
+            0, tokens[select], (act @ w2[expert].float().T) * routed[select, None]
+        )
+    return out
+
+
+@pytest.mark.parametrize(
+    "n, topk, experts, hidden, intermediate, dtype, hot, dropped",
+    (
+        # The per-rank shape of Clover-35B, routes spread or concentrated.
+        (32, 8, 256, 2048, 256, torch.bfloat16, 0.0, 0),
+        (1, 8, 256, 2048, 256, torch.bfloat16, 0.0, 0),
+        (64, 8, 256, 2048, 256, torch.bfloat16, 0.8, 0),
+        (32, 8, 256, 2048, 256, torch.float16, 0.0, 0),
+        (32, 8, 256, 2048, 256, torch.bfloat16, 0.0, 3),
+        # Rows and k steps that end inside a tile or a 16-byte unit.
+        (20, 4, 16, 136, 40, torch.bfloat16, 0.0, 0),
+        (5, 2, 8, 32, 32, torch.float16, 0.0, 0),
+        (8, 4, 16, 132, 64, torch.bfloat16, 0.0, 0),
+        (32, 8, 64, 192, 24, torch.bfloat16, 0.0, 0),
+    ),
+)
+def test_moe_fused_dense_clover(
+    n, topk, experts, hidden, intermediate, dtype, hot, dropped, device
+):
+    torch.manual_seed(29)
+    cases = _clover_implementations(device, hidden, intermediate)
+    tensors = _clover_inputs(
+        n, topk, experts, hidden, intermediate, dtype, device, hot, dropped
+    )
+    hidden_states, w13, w2, weights, ids = tensors[:5]
+
+    for implementation, native in cases:
+        # The native kernels keep the gate and up projections in float32; the
+        # Triton kernels also round them to the element type.
+        expected = _clover_reference(
+            hidden_states, w13, w2, weights, ids, round_projections=not native
+        )
+        output = torch.full_like(hidden_states, float("nan"))
+        infini.ops.moe_fused_dense(
+            output, *tensors, _CLOVER_BLOCK,
+            stream=get_stream(device), implementation_index=implementation,
+        )
+        torch.cuda.synchronize()
+        atol = 3e-3 if dtype == torch.bfloat16 else 1e-3
+        torch.testing.assert_close(
+            output.float(), expected, rtol=2.5e-2, atol=atol,
+            msg=lambda m: f"implementation {implementation}: {m}",
+        )

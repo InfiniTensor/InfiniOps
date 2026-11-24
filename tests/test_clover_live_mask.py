@@ -16,14 +16,14 @@ if not hasattr(infini.ops, "CloverLiveMask"):
 NATIVE, TRITON = 0, 10
 
 
-def _impls_ok(op):
-    impls = getattr(infini.ops, op).active_implementation_indices("nvidia")
+def _impls_ok(op, device):
+    impls = getattr(infini.ops, op).active_implementation_indices(device)
     return NATIVE in impls and TRITON in impls
 
 
-def _require(op):
+def _require(op, device):
     """The current CUDA stream once the op has both providers."""
-    if not _impls_ok(op):
+    if not _impls_ok(op, device):
         pytest.skip("requires CUDA with native and triton providers")
     return torch.cuda.current_stream().cuda_stream
 
@@ -32,7 +32,7 @@ def _require(op):
 def test_live_mask(device, id_dtype):
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream = _require("CloverLiveMask")
+    stream = _require("CloverLiveMask", device)
     torch.manual_seed(3)
     mask_id, n = 151669, 4096
     ids = torch.randint(0, 200, (n,), device=device, dtype=id_dtype)
@@ -68,7 +68,7 @@ def test_live_mask(device, id_dtype):
 def test_mask_routes(device, id_dtype, topk):
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream = _require("CloverMaskRoutes")
+    stream = _require("CloverMaskRoutes", device)
     torch.manual_seed(4)
     rows, experts = 512, 256
     ids = torch.randint(-1, experts, (rows, topk), device=device, dtype=id_dtype)
@@ -108,7 +108,7 @@ def test_merge_moe(device, dtype, width):
     element type, for the 32-bit one only, and for none."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream = _require("CloverMergeMoe")
+    stream = _require("CloverMergeMoe", device)
     torch.manual_seed(5)
     rows = 256
     fresh = torch.randn(rows, width, device=device, dtype=dtype)
@@ -121,7 +121,7 @@ def test_merge_moe_many_rows(device):
     """More rows than a grid's y axis takes: the launch itself would fail."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream = _require("CloverMergeMoe")
+    stream = _require("CloverMergeMoe", device)
     torch.manual_seed(9)
     rows, width = 65536 + 64, 64
     fresh = torch.randn(rows, width, device=device, dtype=torch.bfloat16)
@@ -135,7 +135,7 @@ def test_merge_moe_unaligned(device):
     per thread."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream = _require("CloverMergeMoe")
+    stream = _require("CloverMergeMoe", device)
     torch.manual_seed(8)
     rows, width = 64, 320
     elements = rows * width

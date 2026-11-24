@@ -7,10 +7,6 @@ semantics; its sums associate differently, so it is compared away from the
 decision boundary, where a rounding may move one expert.
 """
 
-import importlib.util
-import pathlib
-import sys
-
 import infini.ops
 import pytest
 import torch
@@ -83,36 +79,24 @@ def run_native(logits, width, top_p, stream):
     return out
 
 
-def run_triton(adapter, logits, width, top_p, stream):
-    # The Triton provider takes a workspace, which the adapter feeds it.
+def run_triton(logits, width, top_p, stream):
+    # The Triton provider allocates its workspace when the caller brings none.
     out = torch.empty_like(logits)
-    blocks = logits.size(0) // width
-    scratch = torch.empty(blocks * EXPERTS * 8 + blocks * 32 * 16 * 4,
-                          device=logits.device, dtype=torch.uint8)
-    adapter.coreset(logits, width, top_p, out, scratch, stream, TRITON)
+    infini.ops.clover_coreset(logits, width, top_p, out, stream=stream,
+                              implementation_index=TRITON)
     torch.cuda.synchronize()
     return out
 
 
-def require_providers():
-    if not _impls_ok():
-        pytest.skip("requires CUDA with native and triton providers")
-    adapter_path = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "build" / "moe-simt-tests" / "clover_native_adapter.so"
-    )
-    if not adapter_path.exists():
-        pytest.skip("clover_native_adapter is not built; see tests/native/")
-    spec = importlib.util.spec_from_file_location("clover_native_adapter",
-                                                  adapter_path)
-    adapter = importlib.util.module_from_spec(spec)
-    sys.modules["clover_native_adapter"] = adapter
-    spec.loader.exec_module(adapter)
-    return torch.cuda.current_stream().cuda_stream, adapter
+def require_providers(device):
+    if not _impls_ok(device):
+        pytest.skip("requires the native and Triton providers on a "
+                    "CUDA-like backend")
+    return torch.cuda.current_stream().cuda_stream
 
 
-def _impls_ok():
-    impls = infini.ops.CloverCoreset.active_implementation_indices("nvidia")
+def _impls_ok(device):
+    impls = infini.ops.CloverCoreset.active_implementation_indices(device)
     return NATIVE in impls and TRITON in impls
 
 
@@ -123,14 +107,14 @@ def test_coreset(device, dtype, width):
     range of routing masses, against the golden model and the reference."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream, adapter = require_providers()
+    stream = require_providers(device)
     torch.manual_seed(6)
     blocks = 3
     logits = (torch.randn(blocks * width, EXPERTS, device=device) * 4).to(dtype)
     before = logits.clone()
     for top_p in (0.05, 0.5, 0.9, 0.999, 1.0):
         out_n = run_native(logits, width, top_p, stream)
-        out_t = run_triton(adapter, logits, width, top_p, stream)
+        out_t = run_triton(logits, width, top_p, stream)
         golden, margin = torch_coreset(logits, width, top_p)
         assert_coreset_close(out_n, golden, margin)
         assert_coreset_close(out_t, golden, margin)
@@ -143,13 +127,13 @@ def test_coreset_matches_triton(device):
     differ by an ulp and move an expert only at the boundary."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream, adapter = require_providers()
+    stream = require_providers(device)
     torch.manual_seed(61)
     for dtype, width in ((torch.bfloat16, 32), (torch.bfloat16, 7),
                          (torch.float16, 32), (torch.float32, 32)):
         logits = (torch.randn(40 * width, EXPERTS, device=device) * 4).to(dtype)
         out_n = run_native(logits, width, 0.9, stream)
-        out_t = run_triton(adapter, logits, width, 0.9, stream)
+        out_t = run_triton(logits, width, 0.9, stream)
         _, margin = torch_coreset(logits, width, 0.9)
         assert_coreset_close(out_n, out_t, margin)
         bits = torch.int32 if dtype == torch.float32 else torch.int16
@@ -168,14 +152,14 @@ def competing_row(logits, row, eighth, ninth):
     logits[row, 50] = ninth
 
 
-def check_competing_rows(logits, adapter, stream):
+def check_competing_rows(logits, stream):
     """Each of the first four rows is its own routing block. Its eighth
     expert is one of the experts 10 and 50, whichever the rows were given
     the larger logit: the kernel, the reference and the golden model agree
     on it, keep it and drop the other."""
     top_p = 0.999  # far enough to keep the eighth expert of a peaked row
     out_n = run_native(logits, 1, top_p, stream)
-    out_t = run_triton(adapter, logits, 1, top_p, stream)
+    out_t = run_triton(logits, 1, top_p, stream)
     golden, margin = torch_coreset(logits, 1, top_p)
     assert_coreset_close(out_n, golden, margin)
     assert_coreset_close(out_n, out_t, margin)
@@ -198,7 +182,7 @@ def test_coreset_ties(device):
     expert."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream, adapter = require_providers()
+    stream = require_providers(device)
     torch.manual_seed(66)
     for dtype in (torch.bfloat16, torch.float16):
         # Coarse logits: many equal ones in the other rows too.
@@ -213,13 +197,13 @@ def test_coreset_ties(device):
         zeros = logits[:2, [10, 50]].float()
         assert bool(torch.signbit(zeros[:, 0]).all())  # -0.0 survived the conversion
         assert not bool(torch.signbit(zeros[:, 1]).any())
-        kept_pair = check_competing_rows(logits, adapter, stream)
+        kept_pair = check_competing_rows(logits, stream)
         assert bool(kept_pair[:2, 0].all()), "the tie goes to the lower expert id"
 
         # The same rows grouped into wider blocks.
         for width in (2, 3):
             out_n = run_native(logits, width, 0.6, stream)
-            out_t = run_triton(adapter, logits, width, 0.6, stream)
+            out_t = run_triton(logits, width, 0.6, stream)
             golden, margin = torch_coreset(logits, width, 0.6)
             assert_coreset_close(out_n, golden, margin)
             assert_coreset_close(out_n, out_t, margin)
@@ -230,7 +214,7 @@ def test_coreset_near_ties(device):
     keys drop: the exact value still decides, whichever expert id it is at."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream, adapter = require_providers()
+    stream = require_providers(device)
     torch.manual_seed(67)
     logits = (torch.randn(6, EXPERTS, device=device) * 2).float().mul_(2).round().div_(2)
     larger = torch.nextafter(torch.tensor(1.0), torch.tensor(2.0)).item()
@@ -240,7 +224,7 @@ def test_coreset_near_ties(device):
             competing_row(logits, row, 1.0, larger)  # the larger logit at the higher id
         else:
             competing_row(logits, row, larger, 1.0)
-    kept_pair = check_competing_rows(logits, adapter, stream)
+    kept_pair = check_competing_rows(logits, stream)
     assert bool(kept_pair[:2, 1].all()), "the larger logit wins at expert 50"
     assert bool(kept_pair[2:, 0].all()), "and at expert 10"
 
@@ -251,14 +235,14 @@ def test_coreset_unaligned(device, dtype):
     kernel's scalar load and store path."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream, adapter = require_providers()
+    stream = require_providers(device)
     torch.manual_seed(69)
     width, blocks = 8, 3
     storage = torch.randn(blocks * width * EXPERTS + 8, device=device).to(dtype)
     logits = storage[1:1 + blocks * width * EXPERTS].view(blocks * width, EXPERTS)
     assert logits.data_ptr() % 16 != 0 and logits.is_contiguous()
     out_n = run_native(logits, width, 0.7, stream)
-    out_t = run_triton(adapter, logits, width, 0.7, stream)
+    out_t = run_triton(logits, width, 0.7, stream)
     golden, margin = torch_coreset(logits, width, 0.7)
     assert_coreset_close(out_n, golden, margin)
     bits = torch.int32 if dtype == torch.float32 else torch.int16
@@ -268,7 +252,7 @@ def test_coreset_unaligned(device, dtype):
 def test_coreset_deterministic(device):
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    stream, _ = require_providers()
+    stream = require_providers(device)
     torch.manual_seed(70)
     for width in (1, 13, 32):
         logits = (torch.randn(6 * width, EXPERTS, device=device) * 4).to(torch.bfloat16)

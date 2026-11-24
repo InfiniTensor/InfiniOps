@@ -100,8 +100,8 @@ def run(args, block, impl, out=None):
     return out
 
 
-def require_impls():
-    impls = infini.ops.CloverLocalMemory.active_implementation_indices("nvidia")
+def require_impls(device):
+    impls = infini.ops.CloverLocalMemory.active_implementation_indices(device)
     if NATIVE not in impls or TRITON not in impls:
         pytest.skip(f"requires impls 0 and 10, active={impls}")
 
@@ -112,7 +112,7 @@ def require_impls():
 def test_local_memory(device, block, dtype, heads):
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    require_impls()
+    require_impls(device)
     torch.manual_seed(41)
     args = inputs(3, block, heads, dtype)
     out_n = run(args, block, NATIVE)
@@ -133,7 +133,7 @@ def test_local_memory_batch(device, requests, index_dtype):
     """Every tiling the NVIDIA launcher picks, and out-of-range slots."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    require_impls()
+    require_impls(device)
     torch.manual_seed(43)
     args = list(inputs(requests, 32, (8, 8, 16), torch.bfloat16,
                        index_dtype=index_dtype))
@@ -159,7 +159,7 @@ def test_local_memory_fallback_layouts(device):
     power of two. All of them must agree with the reference."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    require_impls()
+    require_impls(device)
     torch.manual_seed(47)
     dtype, block, heads = torch.bfloat16, 32, (8, 8, 16)
     cases = {}
@@ -200,7 +200,7 @@ def test_local_memory_matches_triton(device, dtype):
     summation-order noise of the norms and of the softmax sums."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    require_impls()
+    require_impls(device)
     torch.manual_seed(53)
     for requests in (1, 4, 12):
         args = inputs(requests, 32, (8, 8, 16), dtype)
@@ -217,10 +217,23 @@ def test_local_memory_matches_triton(device, dtype):
 def test_local_memory_deterministic(device):
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    require_impls()
+    require_impls(device)
     torch.manual_seed(59)
     for requests in (1, 2, 5):
         args = inputs(requests, 32, (8, 8, 16), torch.bfloat16)
         first = run(args, 32, NATIVE).clone()
         for _ in range(4):
             assert torch.equal(run(args, 32, NATIVE), first), f"R={requests}"
+
+
+def test_local_memory_reads_state_only(device):
+    """The preview reads the clean state and never writes it."""
+    if device != "cuda":
+        pytest.skip("requires the CUDA backend")
+    require_impls(device)
+    torch.manual_seed(44)
+    args = list(inputs(3, 32, (4, 4, 8), torch.bfloat16))
+    state0 = args[4].clone()
+    run(args, 32, NATIVE)
+    run(args, 32, TRITON)
+    assert torch.equal(args[4], state0)
