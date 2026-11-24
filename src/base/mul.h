@@ -37,11 +37,22 @@ class Mul : public Operator<Mul> {
   }
 
   Mul(const Tensor input, const double other, Tensor out)
-      : output_size_(out.numel()),
+      : ndim_(out.ndim()),
+        output_size_(out.numel()),
         input_type_(input.dtype()),
         other_type_(input.dtype()),
         out_type_(out.dtype()),
-        scalar_mode_(true) {}
+        input_shape_(input.shape()),
+        out_shape_(out.shape()),
+        input_strides_(input.strides()),
+        out_strides_(out.strides()),
+        is_input_contiguous_(input.IsContiguous()),
+        is_out_contiguous_(out.IsContiguous()),
+        scalar_mode_(true) {
+    if (input.shape() != out.shape() || input.dtype() != out.dtype())
+      throw std::invalid_argument(
+          "scalar Mul requires matching input/output shape and dtype");
+  }
 
   virtual void operator()(const Tensor input, const Tensor other,
                           Tensor out) const = 0;

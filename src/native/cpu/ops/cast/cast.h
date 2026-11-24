@@ -4,15 +4,23 @@
 #include "base/cast.h"
 #include "common/generic_utils.h"
 #include "native/cpu/caster_.h"
+#include "native/cpu/ops/cast/validation.h"
 
 namespace infini::ops {
 
 template <>
 class Operator<Cast, Device::Type::kCpu> : public Cast {
  public:
-  Operator(const Tensor input, Tensor out) : Cast{input, out} {}
+  Operator(const Tensor input, Tensor out)
+      : Cast{cpu_cast_detail::Checked(input, out), out} {}
 
   void operator()(const Tensor input, Tensor out) const override {
+    cpu_cast_detail::Validate(input, out);
+    if (input.shape() != input_shape_ || out.shape() != out_shape_ ||
+        input.strides() != input_strides_ || out.strides() != out_strides_ ||
+        input.dtype() != input_dtype_ || out.dtype() != out_dtype_)
+      throw std::invalid_argument("CPU Cast metadata changed after Make");
+    if (!output_size_ || input.data() == out.data()) return;
     DispatchFunc<Device::Type::kCpu, AllTypes, AllTypes>(
         {input_dtype_, out_dtype_},
         [&](auto in_tag, auto out_tag) {
@@ -29,17 +37,17 @@ class Operator<Cast, Device::Type::kCpu> : public Cast {
     const auto* in_ptr = static_cast<const InT*>(input.data());
     auto* out_ptr = static_cast<OutT*>(out.data());
 
-    auto get_idx = [&](Tensor::Size i, bool is_contig, const auto* shape,
-                       const auto* strides) {
-      return is_contig ? i : utils::IndexToOffset(i, ndim_, shape, strides);
+    auto get_idx = [&](Tensor::Size i, bool is_contig, Tensor::Size rank,
+                       const auto* shape, const auto* strides) {
+      return is_contig ? i : utils::IndexToOffset(i, rank, shape, strides);
     };
 
 #pragma omp parallel for
     for (Tensor::Size i = 0; i < output_size_; ++i) {
-      auto in_idx = get_idx(i, is_input_contiguous_, input_shape_.data(),
-                            input_strides_.data());
-      auto out_idx = get_idx(i, is_out_contiguous_, out_shape_.data(),
-                             out_strides_.data());
+      auto in_idx = get_idx(i, is_input_contiguous_, input.ndim(),
+                            input_shape_.data(), input_strides_.data());
+      auto out_idx = get_idx(i, is_out_contiguous_, out.ndim(),
+                             out_shape_.data(), out_strides_.data());
 
       out_ptr[out_idx] =
           Caster<Device::Type::kCpu>::template Cast<OutT>(in_ptr[in_idx]);
