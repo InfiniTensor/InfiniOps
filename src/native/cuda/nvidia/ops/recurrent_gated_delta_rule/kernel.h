@@ -12,10 +12,10 @@
 
 namespace infini::ops {
 
-// NVIDIA provider for the shared CUDA single-token decode gated-delta-rule
-// kernel. The shared host path performs the shape/extent validation;
-// NVIDIA adds the device guard, the per-device block-size precheck, and
-// the post-launch error check.
+// NVIDIA provider for the shared CUDA gated-delta-rule kernels: the batched
+// single-token decode and the packed multi-token recurrence. The shared host
+// path performs the shape/extent validation; NVIDIA adds the device guard,
+// the per-device block-size precheck, and the post-launch error check.
 template <>
 class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
     : public CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kNvidia>> {
@@ -38,6 +38,18 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
           "recurrent delta requires 256-thread CUDA blocks");
   }
 
+  Operator(const Tensor q, const Tensor k, const Tensor v, const Tensor g,
+           const Tensor beta, Tensor initial_state, const Tensor cu_seqlens,
+           const Tensor initial_slots,
+           const Tensor final_slots, Tensor out, bool use_qk_l2norm)
+      : CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kNvidia>>(
+            q, k, v, g, beta, initial_state, cu_seqlens, initial_slots,
+            final_slots, out, use_qk_l2norm) {
+    if (device_.type() != Device::Type::kNvidia)
+      throw std::invalid_argument("recurrent delta requires NVIDIA");
+    CheckDevice();
+  }
+
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,
                   const std::optional<Tensor> initial_state_indices,
@@ -48,6 +60,20 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
     CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kNvidia>>::operator()(
         q, k, v, g, beta, initial_state, initial_state_indices,
         final_state_indices, out, final_state, use_qk_l2norm);
+    if (cudaPeekAtLastError() != cudaSuccess)
+      throw std::runtime_error("recurrent delta CUDA launch failed");
+  }
+
+  void operator()(const Tensor q, const Tensor k, const Tensor v,
+                  const Tensor g, const Tensor beta, Tensor initial_state,
+                  const Tensor cu_seqlens,
+                  const Tensor initial_slots,
+                  const Tensor final_slots, Tensor out,
+                  bool use_qk_l2norm) const override {
+    CheckDevice();
+    CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kNvidia>>::operator()(
+        q, k, v, g, beta, initial_state, cu_seqlens, initial_slots,
+        final_slots, out, use_qk_l2norm);
     if (cudaPeekAtLastError() != cudaSuccess)
       throw std::runtime_error("recurrent delta CUDA launch failed");
   }
