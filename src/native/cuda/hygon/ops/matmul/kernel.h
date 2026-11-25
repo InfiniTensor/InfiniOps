@@ -19,7 +19,7 @@ class Operator<Matmul, Device::Type::kHygon>
   Operator(Tensor a, Tensor b, Tensor y) : Base(a, b, y) {
     const bool reduced =
         y.dtype() == DataType::kFloat16 || y.dtype() == DataType::kBFloat16;
-    if (reduced && Matrix(a) && Matrix(b) && Matrix(y) && a.size(0) >= 16 &&
+    if (reduced && Matrix(a) && Matrix(b) && Matrix(y) && a.size(0) >= 8 &&
         a.size(1) >= 512 && b.size(1) >= 512 && a.size(1) == b.size(0) &&
         y.size(0) == a.size(0) && y.size(1) == b.size(1)) {
       fast_ = std::make_unique<Fast>(a, b, y);

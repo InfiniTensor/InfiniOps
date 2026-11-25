@@ -10,6 +10,11 @@ from tests.utils import Payload, empty_strided, get_stream, randn_strided
     "a_shape, b_shape, c_shape, a_strides, b_strides, c_strides",
     (
         ((4, 64), (64, 32), (4, 32), None, None, None),
+        ((8, 512), (512, 512), (8, 512), None, None, None),
+        ((9, 513), (513, 513), (9, 513), None, None, None),
+        ((15, 1024), (1024, 512), (15, 512), None, None, None),
+        ((8, 512), (512, 512), (8, 512), (1, 8), (1, 512), (1, 8)),
+        ((8, 512), (512, 512), (8, 512), (1027, 2), (1027, 2), (1027, 2)),
         ((16, 512), (512, 512), (16, 512), None, None, None),
         ((17, 513), (513, 513), (17, 513), None, None, None),
         ((32, 1024), (1024, 512), (32, 512), None, None, None),
@@ -81,7 +86,8 @@ def _torch_matmul(a, b, c):
 @pytest.mark.parametrize("dtype", (torch.float32, torch.float16, torch.bfloat16))
 @pytest.mark.parametrize(
     "m, k, n",
-    ((1, 257, 65), (8, 512, 512), (16, 512, 512),
+    ((1, 257, 65), (8, 512, 512), (9, 513, 513),
+     (15, 1024, 512), (16, 512, 512),
      (17, 513, 513), (32, 1024, 512)),
 )
 @pytest.mark.parametrize("layout", ("row", "col", "padded", "strided", "unaligned"))
