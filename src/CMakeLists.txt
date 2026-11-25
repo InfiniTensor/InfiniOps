@@ -1244,6 +1244,7 @@ if(TORCH_SOURCES)
 
         # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
+        list(APPEND _torch_extra_flags "-DWITH_TORCH=1")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
         endif()
