@@ -48,6 +48,8 @@ def _host_range_profile_compiled():
 
 def pytest_configure(config):
     torch.backends.fp32_precision = "tf32"
+    if torch.version.hip:
+        torch.backends.cuda.matmul.fp32_precision = "ieee"
 
     profile_output = config.getoption("--host-range-profile")
     config._infini_host_range_profile_output = None
