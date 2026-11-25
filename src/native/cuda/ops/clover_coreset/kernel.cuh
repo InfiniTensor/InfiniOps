@@ -10,6 +10,13 @@
 
 namespace infini::ops {
 
+// The lane-to-lane shared-memory handoffs below synchronize with
+// __syncthreads(), not __syncwarp(): on gfx936 (DTK) __syncwarp does not
+// order shared-memory stores between lanes of a warp, so a value lane 0
+// publishes for the warp reads back stale in the other lanes. Every barrier
+// here stands in code the whole block reaches, so the block-wide barrier is
+// also correct, on NVIDIA as well.
+
 // Shared-layer SIMT kernel for CloverCoreset, mirroring the three Triton
 // stages of the reference in one launch per routing block:
 //   (0) every row's softmax over its 256 experts and its top-8 experts,
@@ -200,14 +207,14 @@ __device__ __forceinline__ uint32_t EighthKey(uint32_t (&key)[kPerLane],
                                               uint32_t* scratch, int lane) {
   uint32_t* const slot = scratch + kPerLane * lane;
   StoreKeys(slot, key, true);
-  __syncwarp(kFull);
+  __syncthreads();
 #pragma unroll
   for (int distance = 1; distance < kWarp; distance <<= 1) {
     // Only every distance-th lane still holds candidates.
     const bool live = (lane & (distance - 1)) == 0;
     uint32_t other[kPerLane];
     LoadKeys(other, slot + kPerLane * ((lane ^ distance) - lane), live);
-    __syncwarp(kFull);
+    __syncthreads();
     // The partner's list reversed against this one is a bitonic sequence
     // of sixteen; its first merge step pairs the two lists. Zeros leave
     // a list that is already in order as it is.
@@ -216,12 +223,12 @@ __device__ __forceinline__ uint32_t EighthKey(uint32_t (&key)[kPerLane],
       key[r] = ::max(key[r], other[kPerLane - 1 - r]);
     LocalMerge(key);
     StoreKeys(slot, key, live && 2 * distance < kWarp);
-    __syncwarp(kFull);
+    __syncthreads();
   }
   if (lane == 0) slot[0] = key[kPerLane - 1];
-  __syncwarp(kFull);
+  __syncthreads();
   const uint32_t eighth = scratch[0];
-  __syncwarp(kFull);  // every lane has it: the scratch is free
+  __syncthreads();  // every lane has it: the scratch is free
   return eighth;
 }
 
@@ -399,12 +406,12 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
   }
 
   work[lane] = local_max;
-  __syncwarp(kFull);
+  __syncthreads();
   LocalSort(key);
   if (lane == 0) work[kWarp] = RowMaximum(work);
-  __syncwarp(kFull);
+  __syncthreads();
   const float row_max = work[kWarp];
-  __syncwarp(kFull);  // every lane has it: the scratch is free
+  __syncthreads();  // every lane has it: the scratch is free
 
   // The reference's row reduction: the lane's eight in order, then the
   // butterfly. It normalizes every expert, but only the top-8 masses are
@@ -427,9 +434,9 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
       if (original[r] == eighth)
         reinterpret_cast<int*>(work)[kWarp + 1] =
             static_cast<int>(OrderKey(x[r]) & ((1u << kExpertBits) - 1));
-    __syncwarp(kFull);
+    __syncthreads();
     const int eighth_low = reinterpret_cast<int*>(work)[kWarp + 1];
-    __syncwarp(kFull);
+    __syncthreads();
     // The keys order the row exactly unless a logit outside the top-8 has
     // the same top bits as the eighth one and larger dropped bits.
     int outside = 0;
@@ -440,7 +447,7 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
                  static_cast<int>(OrderKey(x[r]) & ((1u << kExpertBits) - 1)) >
                      eighth_low;
     reinterpret_cast<int*>(work)[lane] = outside;
-    __syncwarp(kFull);
+    __syncthreads();
     if (lane == 0) {
       const int4* const part = reinterpret_cast<const int4*>(work);
       int sum = 0;
@@ -451,9 +458,9 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
       }
       reinterpret_cast<int*>(work)[kWarp] = sum == 0;
     }
-    __syncwarp(kFull);
+    __syncthreads();
     const bool exact = reinterpret_cast<int*>(work)[kWarp] != 0;
-    __syncwarp(kFull);
+    __syncthreads();
     if (!exact) {
       unsigned long long precise[kPerLane];
 #pragma unroll
@@ -467,11 +474,11 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
 #pragma unroll
   for (int r = 1; r < kPerLane; ++r) partial += weight[r];
   work[lane] = partial;
-  __syncwarp(kFull);
+  __syncthreads();
   if (lane == 0) work[kWarp] = RowSum(work);
-  __syncwarp(kFull);
+  __syncthreads();
   const float denominator = work[kWarp];
-  __syncwarp(kFull);  // every lane has it: the scratch is free
+  __syncthreads();  // every lane has it: the scratch is free
 
   // Only the experts the row routed to are normalized; a lane has a few.
   float* const own = work + kPerLane * lane;
@@ -504,7 +511,7 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
           static_cast<unsigned long long>(tid);
     mass[tid] = expert;
   }
-  __syncwarp(kFull);
+  __syncthreads();
   // Each warp orders its own 32 experts by counting the better ones: a
   // larger mass, or the same mass at a lower expert id.
   if (in_sort) {

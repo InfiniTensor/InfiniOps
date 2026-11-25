@@ -145,7 +145,12 @@ __device__ __forceinline__ float Normalized(const Data* __restrict__ row,
 // Grid: x = value tiles (VALUE_DIM / 64), y = requests * row tiles,
 //       z = value heads.  Block: 16 warps.
 template <Device::Type kDevice, typename Data, typename Index>
-__global__ void CloverLocalMemoryKernel(
+// The launch bounds matter on gfx936 (DTK): a 512-thread block this size
+// without them is compiled with a 256-thread cap, and the threads past the
+// cap then run with wrapped indices and silently corrupt their rows.
+__global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
+                                  clover_local_memory_detail::kWarpLanes)
+    CloverLocalMemoryKernel(
     const Data* __restrict__ q, const Data* __restrict__ k,
     const Data* __restrict__ v, const float* __restrict__ g,
     const float* __restrict__ state, const Index* __restrict__ indices,
@@ -194,7 +199,8 @@ __global__ void CloverLocalMemoryKernel(
     // The reference stores zeros for every row of an inactive request.
     const int rows = min(kRowsPerBlock, block_size - row_tile * kRowsPerBlock);
     for (int i = tid; i < rows * kTileV; i += kWarps * kWarpLanes)
-      head_out[static_cast<int64_t>(i / kTileV) * out_t_stride +
+      head_out[static_cast<int64_t>(row_tile * kRowsPerBlock + i / kTileV) *
+                   out_t_stride +
                static_cast<int64_t>(v0 + i % kTileV) * out_v_stride] = Data(0);
     return;
   }
