@@ -117,6 +117,19 @@ def test_merge_moe(device, dtype, width):
     check_merge_moe(stream, fresh, cache0, live)
 
 
+def test_merge_moe_many_rows(device):
+    """More rows than a grid's y axis takes: the launch itself would fail."""
+    if device != "cuda":
+        pytest.skip("requires the CUDA backend")
+    stream = _require("CloverMergeMoe")
+    torch.manual_seed(9)
+    rows, width = 65536 + 64, 64
+    fresh = torch.randn(rows, width, device=device, dtype=torch.bfloat16)
+    cache0 = torch.randn(rows, width, device=device, dtype=torch.bfloat16)
+    live = (torch.rand(rows, device=device) < 0.4).to(torch.int8)
+    check_merge_moe(stream, fresh, cache0, live)
+
+
 def test_merge_moe_unaligned(device):
     """Tensors that do not start on a 16-byte boundary take one element
     per thread."""

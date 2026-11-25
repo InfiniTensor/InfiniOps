@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "data_type.h"
+
 namespace infini::ops {
 
 // Shared-layer SIMT kernel for CloverLiveMask, mirroring stage 0 of the

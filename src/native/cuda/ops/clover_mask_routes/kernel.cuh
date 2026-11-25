@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "data_type.h"
+
 namespace infini::ops {
 
 // Shared-layer SIMT kernel for CloverMaskRoutes, mirroring stage 1 of the

@@ -51,9 +51,10 @@ class CudaCloverMergeMoe : public CloverMergeMoe {
             ? static_cast<int>(detail::kVectorBytes / fresh.element_size())
             : 1;
     const auto columns = width / per_thread;
+    // Rows on the x axis: it takes 2^31 blocks where y would stop at 65535.
     const dim3 grid(
-        static_cast<unsigned>(utils::CeilDiv(columns, detail::kThreads)),
-        static_cast<unsigned>(rows));
+        static_cast<unsigned>(rows),
+        static_cast<unsigned>(utils::CeilDiv(columns, detail::kThreads)));
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>>(
         {static_cast<int64_t>(fresh.dtype())},
