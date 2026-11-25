@@ -10,6 +10,10 @@
 #include "base/clover_local_memory.h"
 #include "data_type.h"
 #include "dispatcher.h"
+// The NVIDIA caster, which also brings the NVIDIA type map: this header
+// names Caster<kNvidia> and TypeMapType<kNvidia, ...> itself, and the
+// runtime header brings neither.
+#include "native/cuda/nvidia/caster.cuh"
 #include "native/cuda/nvidia/ops/clover_local_memory/kernel.cuh"
 #include "native/cuda/nvidia/runtime_.h"
 #include "native/cuda/ops/clover_local_memory/kernel.h"
