@@ -200,11 +200,6 @@ def test_local_memory_matches_triton(device, dtype):
     summation-order noise of the norms and of the softmax sums."""
     if device != "cuda":
         pytest.skip("requires the CUDA backend")
-    if torch.version.hip is not None:
-        # The bit-level mirror is the tensor-core kernel's property; the SIMT
-        # kernel of the other backends sums in a different order and agrees
-        # with the reference to its tolerance, not bit for bit.
-        pytest.skip("bit-level mirror needs the tensor-core path")
     require_impls(device)
     torch.manual_seed(53)
     for requests in (1, 4, 12):
