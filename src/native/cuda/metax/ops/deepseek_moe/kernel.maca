@@ -1,0 +1,241 @@
+#ifndef INFINI_OPS_METAX_DEEPSEEK_MOE_KERNEL_MACA_
+#define INFINI_OPS_METAX_DEEPSEEK_MOE_KERNEL_MACA_
+
+// Single compilation unit of the MetaX DeepseekMoe host scheduling: the
+// two non-template routing kernels, the mcBLAS resource helpers, the
+// chunked dispatch loop, and the explicit RunChunks instantiations. The
+// shared declarations live in kernel.cuh and the registration in
+// kernel.h, so the kernel launches here are defined in the same
+// translation unit, per the repository convention for backend sources.
+
+#include <type_traits>
+
+#include "native/cuda/metax/ops/deepseek_moe/kernel.cuh"
+
+namespace infini::ops {
+namespace metax_deepseek_moe_detail {
+
+inline void CheckMc(mcError_t status, const char* what) {
+  if (status != mcSuccess) {
+    throw std::runtime_error(std::string("MetaX DeepseekMoe ") + what +
+                             " failed: " + std::to_string(int(status)));
+  }
+}
+
+mcblasHandle_t GetHandle() {
+  static thread_local mcblasHandle_t handle = []() {
+    mcblasHandle_t h{};
+    if (Blas<Device::Type::kMetax>::BlasCreate(&h) != MCBLAS_STATUS_SUCCESS)
+      throw std::runtime_error(
+          "MetaX DeepseekMoe: creating mcBLAS handle failed");
+    return h;
+  }();
+  return handle;
+}
+
+WorkspaceLease::WorkspaceLease(void* external, std::size_t available,
+                               std::size_t required,
+                               Runtime<Device::Type::kMetax>::Stream stream)
+    : data_{external}, stream_{stream} {
+  if (external || available) {
+    if (!external || available < required)
+      throw std::invalid_argument(
+          "MetaX DeepseekMoe workspace is missing or too small");
+    if (reinterpret_cast<std::uintptr_t>(external) % 256)
+      throw std::invalid_argument(
+          "MetaX DeepseekMoe workspace is not 256-byte aligned");
+    return;
+  }
+  CheckMc(Runtime<Device::Type::kMetax>::MallocAsync(&data_, required, stream),
+          "workspace MallocAsync");
+  owned_ = true;
+}
+
+WorkspaceLease::~WorkspaceLease() {
+  if (!owned_) return;
+  if (Runtime<Device::Type::kMetax>::FreeAsync(data_, stream_) == mcSuccess) {
+    return;
+  }
+  // Failure path only: wait for any submitted work before conventional free.
+  if (Runtime<Device::Type::kMetax>::StreamSynchronize(stream_) == mcSuccess) {
+    Runtime<Device::Type::kMetax>::Free(data_);
+    return;
+  }
+  Runtime<Device::Type::kMetax>::Free(data_);
+}
+
+__global__ void CountExpertsKernel(const int* topk_indices, int* counts,
+                                   int routes, int num_experts) {
+  const int route = blockIdx.x * blockDim.x + threadIdx.x;
+  if (route >= routes) {
+    return;
+  }
+  const int expert = topk_indices[route];
+  if (expert >= 0 && expert < num_experts) {
+    atomicAdd(counts + expert, 1);
+  }
+}
+
+__global__ void PrefixCountsKernel(const int* counts, int* offsets,
+                                   int num_experts) {
+  extern __shared__ int scan[];
+  const int tid = threadIdx.x;
+  scan[tid] = tid < num_experts ? counts[tid] : 0;
+  __syncthreads();
+  for (int stride = 1; stride < blockDim.x; stride <<= 1) {
+    int value = 0;
+    if (tid >= stride) {
+      value = scan[tid - stride];
+    }
+    __syncthreads();
+    scan[tid] += value;
+    __syncthreads();
+  }
+  if (tid == 0) {
+    offsets[0] = 0;
+  }
+  if (tid < num_experts) {
+    offsets[tid + 1] = scan[tid];
+  }
+}
+
+template <typename T>
+void RunChunks(std::uint8_t* base, const WorkspaceLayout& layout,
+               size_t ntokens, size_t hidden_size, size_t topk,
+               size_t intermediate_size, size_t num_experts, const T* hidden,
+               const int* topk_indices, const float* topk_weights,
+               const std::vector<const void*>& gate_ptrs,
+               const std::vector<const void*>& up_ptrs,
+               const std::vector<const void*>& down_ptrs, T* out,
+               Runtime<Device::Type::kMetax>::Stream stream,
+               mcblasHandle_t handle) {
+  using MetaxBlas = Blas<Device::Type::kMetax>;
+  using MetaxRuntime = Runtime<Device::Type::kMetax>;
+  const auto blas_dtype = std::is_same_v<T, __half> ? macaDataType(MACA_R_16F)
+                                                    : macaDataType(MACA_R_16BF);
+  const int hidden_i = static_cast<int>(hidden_size);
+  const int inter_i = static_cast<int>(intermediate_size);
+  const int topk_i = static_cast<int>(topk);
+  const int experts_i = static_cast<int>(num_experts);
+
+  auto* counts = reinterpret_cast<int*>(base + layout.counts);
+  auto* offsets = reinterpret_cast<int*>(base + layout.offsets);
+  auto* positions = reinterpret_cast<int*>(base + layout.positions);
+  auto* row_to_route = reinterpret_cast<int*>(base + layout.row_to_route);
+  auto* route_to_row = reinterpret_cast<int*>(base + layout.route_to_row);
+  auto* packed = reinterpret_cast<T*>(base + layout.packed_hidden);
+  auto* gate_buf = reinterpret_cast<T*>(base + layout.gate_buf);
+  auto* up_buf = reinterpret_cast<T*>(base + layout.up_buf);
+
+  std::vector<int> host_counts(num_experts + 1);
+  std::vector<int> host_offsets(num_experts + 1);
+
+  // Weights are row-major [out_features, in_features]; OP_T turns them
+  // into column-major (in_features, out_features), matching the nvidia
+  // run_gemm convention (m=out, n=tokens, k=in).
+  auto gemm = [&](const void* a, const void* b, void* c, int m, int n, int k,
+                  int lda, int ldb, int ldc) {
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+    const auto status = MetaxBlas::BlasGemmStridedBatchedEx(
+        handle, MetaxBlas::BLAS_OP_T, MetaxBlas::BLAS_OP_N, m, n, k, &alpha, a,
+        blas_dtype, lda, 0, b, blas_dtype, ldb, 0, &beta, c, blas_dtype, ldc, 0,
+        1, MetaxBlas::BLAS_COMPUTE_32F, MetaxBlas::BLAS_GEMM_DEFAULT);
+    if (status != MCBLAS_STATUS_SUCCESS) {
+      throw std::runtime_error("MetaX DeepseekMoe GEMM failed: " +
+                               std::to_string(int(status)));
+    }
+  };
+
+  for (size_t begin = 0; begin < ntokens; begin += kChunkTokens) {
+    const int tokens =
+        static_cast<int>(std::min(kChunkTokens, ntokens - begin));
+    const int routes = tokens * topk_i;
+    const T* hidden_chunk = hidden + begin * hidden_size;
+    const int* ids_chunk = topk_indices + begin * topk_i;
+    const float* weights_chunk = topk_weights + begin * topk_i;
+    T* out_chunk = out + begin * hidden_size;
+
+    CheckMc(MetaxRuntime::MemsetAsync(counts, 0,
+                                      (num_experts + 1) * sizeof(int), stream),
+            "memset");
+    CheckMc(MetaxRuntime::MemsetAsync(positions, 0,
+                                      (num_experts + 1) * sizeof(int), stream),
+            "memset");
+    CountExpertsKernel<<<(routes + kThreads - 1) / kThreads, kThreads, 0,
+                         stream>>>(ids_chunk, counts, routes, experts_i);
+    PrefixCountsKernel<<<1, kThreads, kThreads * sizeof(int), stream>>>(
+        counts, offsets, experts_i);
+    PackHiddenKernel<T><<<routes, kThreads, 0, stream>>>(
+        hidden_chunk, ids_chunk, offsets, positions, row_to_route, route_to_row,
+        packed, routes, hidden_i, topk_i, experts_i);
+    CheckMc(MetaxRuntime::MemcpyAsync(
+                host_counts.data(), counts, (num_experts + 1) * sizeof(int),
+                MetaxRuntime::kMemcpyDeviceToHost, stream),
+            "counts copy");
+    CheckMc(MetaxRuntime::MemcpyAsync(
+                host_offsets.data(), offsets, (num_experts + 1) * sizeof(int),
+                MetaxRuntime::kMemcpyDeviceToHost, stream),
+            "offsets copy");
+    CheckMc(MetaxRuntime::StreamSynchronize(stream), "route sync");
+
+    for (int e = 0; e < experts_i; ++e) {
+      const int count = host_counts[e];
+      if (count <= 0) {
+        continue;
+      }
+      const size_t off = static_cast<size_t>(host_offsets[e]);
+      gemm(gate_ptrs[e], packed + off * hidden_size,
+           gate_buf + off * intermediate_size, inter_i, count, hidden_i,
+           hidden_i, hidden_i, inter_i);
+      gemm(up_ptrs[e], packed + off * hidden_size,
+           up_buf + off * intermediate_size, inter_i, count, hidden_i, hidden_i,
+           hidden_i, inter_i);
+    }
+    SwigluWeightKernel<T>
+        <<<(static_cast<size_t>(routes) * intermediate_size + kThreads - 1) /
+               kThreads,
+           kThreads, 0, stream>>>(gate_buf, gate_buf, up_buf, weights_chunk,
+                                  row_to_route, routes, inter_i);
+    for (int e = 0; e < experts_i; ++e) {
+      const int count = host_counts[e];
+      if (count <= 0) {
+        continue;
+      }
+      const size_t off = static_cast<size_t>(host_offsets[e]);
+      gemm(down_ptrs[e], gate_buf + off * intermediate_size,
+           packed + off * hidden_size, hidden_i, count, inter_i, inter_i,
+           inter_i, hidden_i);
+    }
+    SumGroupedOutKernel<T>
+        <<<(static_cast<size_t>(tokens) * hidden_size + kThreads - 1) /
+               kThreads,
+           kThreads, 0, stream>>>(out_chunk, packed, route_to_row, tokens,
+                                  hidden_i, topk_i);
+  }
+  // Keep workspace reuse safe across chunks / subsequent layers.
+  CheckMc(MetaxRuntime::StreamSynchronize(stream), "final sync");
+}
+
+// The explicit instantiations pair with the extern templates in
+// kernel.cuh: registration TU sees declarations only, this TU owns the
+// definitions (kernels and host code compiled together).
+template void RunChunks<__half>(std::uint8_t*, const WorkspaceLayout&, size_t,
+                                size_t, size_t, size_t, size_t, const __half*,
+                                const int*, const float*,
+                                const std::vector<const void*>&,
+                                const std::vector<const void*>&,
+                                const std::vector<const void*>&, __half*,
+                                Runtime<Device::Type::kMetax>::Stream,
+                                mcblasHandle_t);
+template void RunChunks<__nv_bfloat16>(
+    std::uint8_t*, const WorkspaceLayout&, size_t, size_t, size_t, size_t,
+    size_t, const __nv_bfloat16*, const int*, const float*,
+    const std::vector<const void*>&, const std::vector<const void*>&,
+    const std::vector<const void*>&, __nv_bfloat16*,
+    Runtime<Device::Type::kMetax>::Stream, mcblasHandle_t);
+
+}  // namespace metax_deepseek_moe_detail
+}  // namespace infini::ops
+
+#endif  // INFINI_OPS_METAX_DEEPSEEK_MOE_KERNEL_MACA_
