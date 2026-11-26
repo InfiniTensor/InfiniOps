@@ -12,7 +12,7 @@ __nram__ char rotary_embedding_nram_buffer[NRAM_MAX_SIZE];
 
 template <typename T>
 __mlu_device__ void ToFloat(float* output, const T* input, size_t count) {
-  if constexpr (std::is_same<T, __half>::value) {
+  if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
     __bang_half2float(output, reinterpret_cast<const half*>(input), count);
   } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
     __bang_bfloat162float(output, input, count);
@@ -23,7 +23,7 @@ __mlu_device__ void ToFloat(float* output, const T* input, size_t count) {
 
 template <typename T>
 __mlu_device__ void FromFloat(T* output, const float* input, size_t count) {
-  if constexpr (std::is_same<T, __half>::value) {
+  if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
     __bang_float2half(reinterpret_cast<half*>(output), input, count);
   } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
     __bang_float2bfloat16(output, input, count);

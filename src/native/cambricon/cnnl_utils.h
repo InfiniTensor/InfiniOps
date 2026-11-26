@@ -4,6 +4,8 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "native/cambricon/common.h"
@@ -12,8 +14,9 @@
 #define INFINI_OPS_CNNL_CHECK(call)                                      \
   do {                                                                   \
     const auto cnnl_status = (call);                                     \
-    assert(cnnl_status == CNNL_STATUS_SUCCESS && "`" #call "` failed."); \
-    (void)cnnl_status;                                                   \
+    if (cnnl_status != CNNL_STATUS_SUCCESS)                               \
+      throw std::runtime_error(std::string(#call ": ") +                  \
+                               cnnlGetErrorString(cnnl_status));         \
   } while (false)
 
 namespace infini::ops::cnnl_utils {
@@ -90,6 +93,11 @@ inline TensorDescriptor MakeTensorDescriptor(DataType dtype,
   SetTensorDescriptor(desc.get(), dtype, shape, strides);
 
   return desc;
+}
+
+inline TensorDescriptor MakeTensorDescriptor(const Tensor& tensor) {
+  return MakeTensorDescriptor(tensor.dtype(), Tensor::Shape(tensor.shape()),
+                              Tensor::Strides(tensor.strides()));
 }
 
 }  // namespace infini::ops::cnnl_utils

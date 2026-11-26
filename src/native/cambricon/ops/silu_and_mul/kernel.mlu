@@ -30,7 +30,7 @@ __mlu_device__ void ComputeSiluAndMul(const T* gate, const T* up, T* output,
       const float gate_value = gate[i];
       output[i] = gate_value * up[i] / (1.0F + expf(-gate_value));
     }
-  } else if constexpr (std::is_same_v<T, __half>) {
+  } else if constexpr (std::is_same_v<T, cambricon::NativeHalf>) {
     auto* output_half = reinterpret_cast<half*>(output);
     const auto* gate_half = reinterpret_cast<const half*>(gate);
     const auto* up_half = reinterpret_cast<const half*>(up);
@@ -156,7 +156,9 @@ void SiluAndMulUnion(void* workspace, int core_per_cluster, int cluster_count,
                                    size_t, int, bool, bool)
 
 INSTANTIATE_SILU_AND_MUL(Float16);
+#if INFINIOPS_CAMBRICON_BANG_BF16
 INSTANTIATE_SILU_AND_MUL(BFloat16);
+#endif
 INSTANTIATE_SILU_AND_MUL(float);
 
 #undef INSTANTIATE_SILU_AND_MUL

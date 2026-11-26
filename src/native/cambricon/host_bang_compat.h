@@ -8,6 +8,7 @@
 // inline semantics. The vendor include guards then keep later cnrt/cnnl
 // includes from emitting the non-inline definitions.
 #if !defined(__BANGCC__) && !defined(__CUDACC__)
+#if __has_include(<bang_fp16.h>)
 #pragma push_macro("__BANGCC__")
 #pragma push_macro("__mlu_host__")
 #pragma push_macro("__mlu_func__")
@@ -18,7 +19,9 @@
 #pragma pop_macro("__mlu_func__")
 #pragma pop_macro("__mlu_host__")
 #pragma pop_macro("__BANGCC__")
+#endif
 
+#if __has_include(<bang_bf16.h>)
 #pragma push_macro("__BANGCC__")
 #pragma push_macro("__mlu_host__")
 #pragma push_macro("__mlu_func__")
@@ -29,6 +32,7 @@
 #pragma pop_macro("__mlu_func__")
 #pragma pop_macro("__mlu_host__")
 #pragma pop_macro("__BANGCC__")
+#endif
 #endif
 
 #endif

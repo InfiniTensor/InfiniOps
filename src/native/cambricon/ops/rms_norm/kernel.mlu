@@ -4,11 +4,23 @@ __nram__ char nram_buffer[NRAM_MAX_SIZE];
 
 namespace infini::ops {
 
+struct RmsNormMetadata {
+  size_t shape[kRmsNormInlineRank];
+  ptrdiff_t output_strides[kRmsNormInlineRank];
+  ptrdiff_t input_strides[kRmsNormInlineRank];
+};
+
 template <typename T, typename TW>
 __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
-                            size_t* shape, ptrdiff_t* output_strides,
-                            ptrdiff_t* input_strides, float epsilon,
+                            RmsNormMetadata inline_metadata, const size_t* shape,
+                            const ptrdiff_t* output_strides,
+                            const ptrdiff_t* input_strides, float epsilon,
                             int num_dims, int norm_dim_size) {
+  if (num_dims <= kRmsNormInlineRank) {
+    shape = inline_metadata.shape;
+    output_strides = inline_metadata.output_strides;
+    input_strides = inline_metadata.input_strides;
+  }
   // Calculate problem dimensions.
   int batch_volume = 1;
   for (int dim_idx = 0; dim_idx < num_dims - 1; ++dim_idx) {
@@ -68,7 +80,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
     if (vector_size <= 128) {
       __memcpy(input_cache, input + input_offset, vector_size * sizeof(T),
                GDRAM2NRAM);
-      if constexpr (std::is_same<T, __half>::value) {
+      if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
         __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                           vector_size);
       } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
@@ -98,7 +110,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                      processed_elements * input_strides[num_dims - 1],
                  current_batch * sizeof(T), GDRAM2NRAM);
 
-        if constexpr (std::is_same<T, __half>::value) {
+        if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
           __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                             current_batch);
         } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
@@ -136,7 +148,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                GDRAM2NRAM);
       __memcpy(weight_cache, weight, vector_size * sizeof(TW), GDRAM2NRAM);
 
-      if constexpr (std::is_same<T, __half>::value) {
+      if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
         __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                           vector_size);
       } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
@@ -146,7 +158,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                  NRAM2NRAM);
       }
 
-      if constexpr (std::is_same<TW, __half>::value) {
+      if constexpr (std::is_same<TW, cambricon::NativeHalf>::value) {
         __bang_half2float(weight_float_buffer,
                           reinterpret_cast<half*>(weight_cache), vector_size);
       } else if constexpr (std::is_same<TW, __bang_bfloat16>::value) {
@@ -160,7 +172,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
       __bang_mul(float_buffer, float_buffer, weight_float_buffer, vector_size);
       __bang_mul_scalar(float_buffer, float_buffer, inv_rms, vector_size);
 
-      if constexpr (std::is_same<T, __half>::value) {
+      if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
         __bang_float2half(reinterpret_cast<half*>(input_cache), float_buffer,
                           vector_size);
       } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
@@ -187,7 +199,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
         __memcpy(weight_cache, weight + processed_elements,
                  current_batch * sizeof(TW), GDRAM2NRAM);
 
-        if constexpr (std::is_same<T, __half>::value) {
+        if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
           __bang_half2float(float_buffer, reinterpret_cast<half*>(input_cache),
                             current_batch);
         } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
@@ -197,7 +209,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                    NRAM2NRAM);
         }
 
-        if constexpr (std::is_same<TW, __half>::value) {
+        if constexpr (std::is_same<TW, cambricon::NativeHalf>::value) {
           __bang_half2float(weight_float_buffer,
                             reinterpret_cast<half*>(weight_cache),
                             current_batch);
@@ -213,7 +225,7 @@ __mlu_global__ void RmsNorm(const T* input, const TW* weight, T* output,
                    current_batch);
         __bang_mul_scalar(float_buffer, float_buffer, inv_rms, current_batch);
 
-        if constexpr (std::is_same<T, __half>::value) {
+        if constexpr (std::is_same<T, cambricon::NativeHalf>::value) {
           __bang_float2half(reinterpret_cast<half*>(input_cache), float_buffer,
                             current_batch);
         } else if constexpr (std::is_same<T, __bang_bfloat16>::value) {
@@ -269,6 +281,18 @@ void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
   auto y_ = reinterpret_cast<T*>(y);
   auto x_ = reinterpret_cast<const T*>(x);
   auto w_ = reinterpret_cast<const TW*>(w);
+  if (ndim <= kRmsNormInlineRank) {
+    // By-value metadata requires no copies and can be recorded for replay.
+    RmsNormMetadata metadata{};
+    for (int i = 0; i < ndim; ++i) {
+      metadata.shape[i] = shape[i];
+      metadata.output_strides[i] = y_strides[i];
+      metadata.input_strides[i] = x_strides[i];
+    }
+    RmsNorm<T, TW><<<kernel_dim, kernel_type, queue>>>(
+        x_, w_, y_, metadata, nullptr, nullptr, nullptr, eps, ndim, dim_s);
+    return;
+  }
   char* tmp_device = reinterpret_cast<char*>(workspace);
   char* tmp_stride = tmp_device + ndim * sizeof(size_t);
   size_t* mlu_shape = (size_t*)tmp_device;
@@ -287,7 +311,8 @@ void RmsNormUnion(void* workspace, int core_per_cluster, int cluster_count,
                              cnrtMemcpyHostToDev));
 
   RmsNorm<T, TW><<<kernel_dim, kernel_type, queue>>>(
-      x_, w_, y_, mlu_shape, mlu_y_strides, mlu_x_strides, eps, ndim, dim_s);
+      x_, w_, y_, RmsNormMetadata{}, mlu_shape, mlu_y_strides, mlu_x_strides,
+      eps, ndim, dim_s);
 }
 
 template void RmsNormUnion<Float16, Float16>(void*, int, int, cnrtQueue_t,
