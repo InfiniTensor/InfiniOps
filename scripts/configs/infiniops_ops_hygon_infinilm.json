@@ -62,6 +62,12 @@
   "fused_gated_delta_net_gating": {
     "implementations": "all"
   },
+  "fused_qk_norm": {
+    "public_api_only": true
+  },
+  "fused_qk_rms_norm": {
+    "public_api_only": true
+  },
   "gelu": {
     "implementations": "all"
   },
@@ -78,6 +84,9 @@
     "public_api_only": true
   },
   "mamba_selective_scan": {
+    "public_api_only": true
+  },
+  "matmul_weight_nz": {
     "public_api_only": true
   },
   "moe_align_block_size": {
@@ -157,6 +166,9 @@
   },
   "topk_softmax": {
     "implementations": "all"
+  },
+  "trans_matmul_weight_nz": {
+    "public_api_only": true
   },
   "tril": {
     "implementations": "all"
