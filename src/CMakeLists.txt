@@ -301,6 +301,14 @@ if(WITH_HYGON)
 
     target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
     target_sources(infiniops PRIVATE ${HYGON_SOURCES})
+    # Preserve the qualified VideoNSA kernel compile mode from the old build.
+    foreach(_nsa_src IN LISTS HYGON_SOURCES)
+        if(_nsa_src MATCHES "/nsa_videonsa_prefill/legacy/.*[.]cu$")
+            set_property(SOURCE "${_nsa_src}" APPEND PROPERTY COMPILE_OPTIONS
+                -Xclang -fno-cuda-host-device-constexpr)
+        endif()
+    endforeach()
+
 
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(infiniops PUBLIC CUDA::cudart CUDA::cublas)
@@ -309,6 +317,18 @@ if(WITH_HYGON)
         CUDA_STANDARD 17
         CUDA_STANDARD_REQUIRED ON
     )
+
+    if(HYGON_ARCH MATCHES "^gfx93[68]$")
+        include("${PROJECT_SOURCE_DIR}/cmake/NativeFlashMlaHygon.cmake")
+        infiniops_add_hygon_flashmla(infiniops_hygon_flashmla)
+        add_dependencies(infiniops infiniops_hygon_flashmla)
+        get_target_property(_flashmla_objects infiniops_hygon_flashmla INFINIOPS_OBJECTS)
+        set_source_files_properties(${_flashmla_objects} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        target_sources(infiniops PRIVATE ${_flashmla_objects})
+        target_compile_definitions(infiniops PRIVATE INFINIOPS_HAVE_HYGON_FLASHMLA=1)
+        target_link_directories(infiniops PRIVATE "${DTK_ROOT}/lib")
+        target_link_libraries(infiniops PRIVATE amdhip64)
+    endif()
 
     list(APPEND DEVICE_LIST "hygon")
 endif()

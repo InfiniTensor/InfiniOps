@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "native/cuda/caster.cuh"
 
@@ -25,6 +26,21 @@ __device__ __forceinline__ void ApplyRotaryPair(T* data, const TCache* cache,
 
   const float x = Caster<kDev>::template Cast<float>(data[x_index]);
   const float y = Caster<kDev>::template Cast<float>(data[y_index]);
+  if constexpr (kDev == Device::Type::kHygon) {
+    if (inverse || std::is_same_v<T, float>) {
+      // Hygon inverse and FP32 cache rotation round sine products before FMA.
+      const float x_sin = __fmul_rn(x, sin_value);
+      const float y_sin = __fmul_rn(y, sin_value);
+      data[x_index] = Caster<kDev>::template Cast<T>(__fmaf_rn(x, cos_value, -y_sin));
+      if (inverse) {
+        data[y_index] = Caster<kDev>::template Cast<T>(__fmaf_rn(y, cos_value, x_sin));
+      } else {
+        const float y_cos = __fmul_rn(y, cos_value);
+        data[y_index] = Caster<kDev>::template Cast<T>(__fmaf_rn(x, sin_value, y_cos));
+      }
+      return;
+    }
+  }
   data[x_index] = Caster<kDev>::template Cast<T>(x * cos_value - y * sin_value);
   data[y_index] = Caster<kDev>::template Cast<T>(y * cos_value + x * sin_value);
 }

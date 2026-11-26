@@ -1,0 +1,548 @@
+{
+  "upstream": "FlashMLA Hygon gfx93 MODEL1 sparse FP8 decode",
+  "entries": [
+    "gfx9/decode/combine/combine.hip",
+    "gfx9/decode/get_decoding_sched_meta/get_decoding_sched_meta.hip",
+    "gfx93/decode/sparse_fp8/instantiations/model1_persistent_h64.hip"
+  ],
+  "headers": "Compiler-independent include closure, including CUTLASS and Kerutils",
+  "local_change": "Replace ATen macro include with its three scalar definitions",
+  "files": {
+    "csrc/gfx93/decode/sparse_fp8/instantiations/model1_persistent_h64.hip": {
+      "original_sha256": "945405abc0d00f958ed7ae0e53db940cdbede6f2216fc84f0b0b06f35f484a81",
+      "sha256": "d1dd4b3831383fe14a60da2bb3e1a68d660ffcd641193a7500bcbfa3fc0f019b"
+    },
+    "csrc/gfx93/decode/sparse_fp8/splitkv_mla_hip.cuh": {
+      "original_sha256": "4718d6d60d9dd9787e7195f6d50fd4cf8da0d797b7e24754dda58f913bafd257",
+      "sha256": "d12317f1c087d94e89097fd875fbed289b27a56cf097625d8d47177dbbf154bc"
+    },
+    "csrc/softmax_hip.h": {
+      "original_sha256": "58f3a649d8e0c7d19f562c821c24aab50fc2cad9720cd0893f3946aa19a227e1",
+      "sha256": "673d649a06e7a6264e4566f75301e3b4bc6ad07c0a4b323e1ce3bfb85a502e59"
+    },
+    "csrc/utils_hip.h": {
+      "original_sha256": "502ebf2bcb93b1a0f843d0fcbbf0cbed824f8f6add38c83b90b13cc0e7bfcf63",
+      "sha256": "2778b2528ee109092b231ac39c2227c15c8ec07b7ab6bcc7c00366915136f3fd"
+    },
+    "csrc/params_hip.h": {
+      "original_sha256": "b29ee270bc2e19dd737c4c45d46bae9ef9fff29ed69cb1c20ce20c6d5eb864ed",
+      "sha256": "220cabcaa7593e45572861795b8a78000f7408e2671402a99e5d0b58ae8b3862"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/bfloat16.h": {
+      "original_sha256": "7043c93bc4e245dc1fabf6bb81277687ca2b60d752c19f23054985c287d947a0",
+      "sha256": "7043c93bc4e245dc1fabf6bb81277687ca2b60d752c19f23054985c287d947a0"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/cutlass.h": {
+      "original_sha256": "c6acb3e79f922d569af2a4de0352590279d704e61d5263ff88787d91a576668a",
+      "sha256": "c6acb3e79f922d569af2a4de0352590279d704e61d5263ff88787d91a576668a"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/detail/helper_macros.hpp": {
+      "original_sha256": "82f7dba7ce0227dcd53ef27faca34e6643d285352edd33acd53f96db78dcba6e",
+      "sha256": "82f7dba7ce0227dcd53ef27faca34e6643d285352edd33acd53f96db78dcba6e"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/floating_point_nvrtc.h": {
+      "original_sha256": "1ef4ea03319f626306e54d41476c3cc033ee42711acac1002e555eef2dfa0cc3",
+      "sha256": "1ef4ea03319f626306e54d41476c3cc033ee42711acac1002e555eef2dfa0cc3"
+    },
+    "csrc/defines_hip.h": {
+      "original_sha256": "6d5ed78f399da19ad84cfe1b933ae66bdce831ba718067325ac49d5b66f60ceb",
+      "sha256": "8127411eb6d786b59f546eb856db587b5b0008f200dae6204724164a6b9a8eac"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/tensor_hip.hpp": {
+      "original_sha256": "ff4e4d365729f56506f2eac5d5e15a7b4c744f8dd619412b3d9bcecd84af6d5e",
+      "sha256": "4b2aee07f98e9233bef8c096b2b3eff4bfb0c17584f17a46eef4bcce6b694c97"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/gemm_hip.hpp": {
+      "original_sha256": "2929f97eb953e080dac258e77e244637cfab70426bcd74215126c14619bb3157",
+      "sha256": "b7d5b8ab9214aee96438bb15b26b68b50e89923194ac52d976bef641860aa0f0"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_atom_hip.hpp": {
+      "original_sha256": "fc3eb07d050310d4f031b9ca67315c91ae509c719bef2d22ee7197ef9aa602e7",
+      "sha256": "9880d72e501decb0cb109d9ddf58c018ea04e4fe0c4334290c8606d7e2334a80"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_gfx938_hip.hpp": {
+      "original_sha256": "5c46ba652ab3ceebbcb47c94be6b762cc907d194b5ec332248815cb33b8ebe7f",
+      "sha256": "052eb6a7db5445060eb52b87733da5c0ac829f518c15f772b15fb19b210a5db7"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/layout_hip.hpp": {
+      "original_sha256": "39fa243926af57b16605c2ba2b09e85317fc19bd64fae9369717992b41093398",
+      "sha256": "413fa9c56a8d10f27836e8d01a50ebd8f9cb06aaf88b24122de585b48f22f766"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/swizzle_layout_hip.hpp": {
+      "original_sha256": "76b788d7d7f4db717b32861d0150af55d6037dfaae93f0beb429af7f431e783e",
+      "sha256": "42f5065068ae4a6f15add624dfec76293067c74e4bfe22f4e55711c3ca9edeff"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/swizzle_hip.hpp": {
+      "original_sha256": "e503cbba418e6133dcc20239527ea277cf41cf7f1b261817cc385de241a7a392",
+      "sha256": "c7a0cdc0e33c673f89b2ceb19738c22ec7b804b68f63fde30c33a842b9936e52"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/math_hip.hpp": {
+      "original_sha256": "5e64ba6b4830a72477fdb9ce02a25f5628979f776386944d8dbfcba7bdcda1d9",
+      "sha256": "0d0c19e98f3b25d2a94b5a36d597e0b915f08e3db86182d29bed37861910acf5"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/util/type_traits_hip.hpp": {
+      "original_sha256": "741e1c4442eb8b7502adcb7343274fb9641e18828358e43e5c23311992fd5bee",
+      "sha256": "b3a5d0deff33ee3280f763e007a908d8cf6aa215c9d99112647db9d46845fff4"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/config_hip.hpp": {
+      "original_sha256": "c561c4893ee5577d140acadcafdb9cc1a984555100395b3a66253f7d4236b882",
+      "sha256": "41a76ffeb5c1da748e8c7c443b89a795b01303d672aa73a8ea8f8fbcab830882"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/util/debug_hip.hpp": {
+      "original_sha256": "b7f03edfce8cc89b5a08e2909e2d95c37abd109146e460b910339a1083a17dc6",
+      "sha256": "c5652e2f8643c683a96cd0d8342d2287a9c6a7d4388811e7f7c243e15c17692f"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/util/print_hip.hpp": {
+      "original_sha256": "39e4689b677dde1e1d8c27617ed0d264abfc2629b7b7c2af82a15405677576cb",
+      "sha256": "c5189470c64388c4d765ffdb63d120d74c35fb42e627894ea1b9289b4f65f615"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/complex_hip.hpp": {
+      "original_sha256": "b2e838c42e6c625d5ded221b996393986068f3f2af055202d0734ae5e4f9f903",
+      "sha256": "1e5f97f039d2691b80a40bc71d9e2f2488afa82e64366a12a0c9e6737f6ba1c4"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/complex_hip.h": {
+      "original_sha256": "318560e1dcd3a757cfbc177cf7e40f295b12e7900d8018fb26e40984c3fd2a8c",
+      "sha256": "1208da9d2d096392923a0d9ebd8f01b15fac13d05cf0d309ee9f15d79f33bf65"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/fast_math_hip.h": {
+      "original_sha256": "2d8a614f7b63ecce6a9d3e3d8b467d5a865f6cfc77bdc5e2d9a69b64017cc1cd",
+      "sha256": "3dfb99604fae00183f8f7de8b192b512b55112691de484d46c8f67b7659fbcce"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/half.h": {
+      "original_sha256": "634e26b8d59c460fa267cdd2395a6aa4fbed019fb1ffe2b0c712632c2d356151",
+      "sha256": "634e26b8d59c460fa267cdd2395a6aa4fbed019fb1ffe2b0c712632c2d356151"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/platform/platform.h": {
+      "original_sha256": "5d28420550a8efaa54999a583063bffd1b060562bdaa8afa2315c7babf8c8f07",
+      "sha256": "5d28420550a8efaa54999a583063bffd1b060562bdaa8afa2315c7babf8c8f07"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/float8.h": {
+      "original_sha256": "e053014b678b4d1b23809b94b1bfbad4b334c7fc67855d8cd4784681ebf31703",
+      "sha256": "e053014b678b4d1b23809b94b1bfbad4b334c7fc67855d8cd4784681ebf31703"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/numeric_size.h": {
+      "original_sha256": "80612621b84fed0c630a7b2246b381673c28a9026b7d21f4e9e450da341c2d50",
+      "sha256": "80612621b84fed0c630a7b2246b381673c28a9026b7d21f4e9e450da341c2d50"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/coord.h": {
+      "original_sha256": "87b9534bda17faf16034e2f92081d0ccc87596838ad2bad4bb59cd06da6aeada",
+      "sha256": "87b9534bda17faf16034e2f92081d0ccc87596838ad2bad4bb59cd06da6aeada"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/uint128.h": {
+      "original_sha256": "26c74aa8536f7e8718a164ac3ef2c62ea0cca90c8ff5a42366ef88683f6bc0f5",
+      "sha256": "26c74aa8536f7e8718a164ac3ef2c62ea0cca90c8ff5a42366ef88683f6bc0f5"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/array_hip.h": {
+      "original_sha256": "9ea2cab4301143c03baf6c57635e1a3bbe8f6ffe1c6cd27122e4592dc88822c4",
+      "sha256": "0d243676ab23c673dfec1339a94a788d25354a115267063cb009aed8d69e8e67"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/array_subbyte_hip.h": {
+      "original_sha256": "01ef67a4634bd9eefac15142a34f27c98b6f69528b2619e3618d3662d957fd1a",
+      "sha256": "7be845c5d2b0d0ad9e078ff8aad7257f44bb2c762942f1624d7c773bf881c73c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/tfloat32.h": {
+      "original_sha256": "300c7b1ce33c0c504b2f6032986d0bcc9e5a2cb7cbd9cca10c8e7e967ed4f11f",
+      "sha256": "300c7b1ce33c0c504b2f6032986d0bcc9e5a2cb7cbd9cca10c8e7e967ed4f11f"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/integer_subbyte.h": {
+      "original_sha256": "8a2fb1319f3f11004f986b18576f01340be9fe040e4ca6066c32fcef5f3034aa",
+      "sha256": "8a2fb1319f3f11004f986b18576f01340be9fe040e4ca6066c32fcef5f3034aa"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/functional.h": {
+      "original_sha256": "a734a46d1efedcfb7c0c76f6b101cf54c120d686364c356dc64e901b83dd303e",
+      "sha256": "a734a46d1efedcfb7c0c76f6b101cf54c120d686364c356dc64e901b83dd303e"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/real.h": {
+      "original_sha256": "a3207a902abee8a5d7006780a4f20f17f32abfb222341cee0c5b800733a78faf",
+      "sha256": "a3207a902abee8a5d7006780a4f20f17f32abfb222341cee0c5b800733a78faf"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/tfloat_hip.hpp": {
+      "original_sha256": "03424322038538ea26762bd4177bee06729340aa985f53551ddf6b38927e1424",
+      "sha256": "3deae047522328e97403e7de6be4c07d8f4cea2d72c501f0333215d130767661"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/numeric_types.h": {
+      "original_sha256": "efee119763f95ff5cd5f6bfe40510f5ed0c3eea900e3d872abf10b45485f6191",
+      "sha256": "efee119763f95ff5cd5f6bfe40510f5ed0c3eea900e3d872abf10b45485f6191"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/bfloat_hip.hpp": {
+      "original_sha256": "c6168655012943f8d7b76d9879dc9859593e0b221e1682a96ea4b664d3a6c3b0",
+      "sha256": "3dc251d5175cae3315148dd011bc87d8fecbdb19382564594bb52d5597143e5b"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/float8_hip.hpp": {
+      "original_sha256": "07fb4902d3bd54b919363b03c5f8d376b025862947d75c98959d46293582d063",
+      "sha256": "c9c684685b2f32e94afbf5b47629b579215a361a4cb58dd9adbd79351809fd14"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/half_hip.hpp": {
+      "original_sha256": "6b47363f0866985a64b04e9721a29ccdbf4395e2b38ba4f95d945ded6e289455",
+      "sha256": "d9183e72653c8c7aa48e25cd756e1d6c52a201d5dea60873f5f865b748a66d04"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/real_hip.hpp": {
+      "original_sha256": "d72a73d72492e573cb5e790c9a19546a4b92373955f8d7ae60b33c472962ff87",
+      "sha256": "c294a7ec820fce02a6225405da252f34e4e56baf042063779b32a8f1db344388"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/int_hip.hpp": {
+      "original_sha256": "2653bc0329c2f9bfa3a88c4201d24207df0572405cd46501d6122ffb06945f2b",
+      "sha256": "395cc5bd4f523cac25d6e419e3c80b48dc0ee7353be33b6727a9bca7989ce925"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/uint128_hip.hpp": {
+      "original_sha256": "4a5b75259c0a93ae6007f680f9e875b02b4a20556034e530bcdc21eb24179bae",
+      "sha256": "c665461585efb34e04d3fe3ffb54bc7509a34fbe6b8842bd45d52ed8214dfa3a"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/integer_subbyte_hip.hpp": {
+      "original_sha256": "d61a2ea669ef4321a000b3d05d916203f11658dd832cac8fe27f2810d7dc1548",
+      "sha256": "2dd17ab381bc6fb86328d48d27e7afb09e128d54dae22867f2e23ff64d6f1e7e"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/integral_constant_hip.hpp": {
+      "original_sha256": "c61a76df672ea6738e6b3d99e782a72f469f5a0e8cfb8329d6faa3fad38f2732",
+      "sha256": "8caf4d95b5c458ab264ef832309e5f20ae8f62fc8e9d91aa54f68168a08351ee"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/integer_sequence_hip.hpp": {
+      "original_sha256": "2cc77aedf18b061a3fd860293d51f309933018e042b6849946547729e2dbaf46",
+      "sha256": "ca9bd51e1f59e942473f5b5e21c4d23effc93738ee847ab0bd77ef1a6b66810c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/tuple_algorithms_hip.hpp": {
+      "original_sha256": "19da2c8337207ca1d8792628c0d2bf255311f58265812bc1a364f005bf277330",
+      "sha256": "5166ca860a98dad43fbf88a6e8d358512f6aaf2f497fdd2e33cd517bc955c984"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/functional_hip.hpp": {
+      "original_sha256": "2b5990715ec449758f7f11be9fc1a03881ad82451d86147f15d66f076b5164a4",
+      "sha256": "888e40575515c6fc07b541177a496f9c1ca00827de0a1a0253ed7ce33b9818c2"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/tuple_hip.hpp": {
+      "original_sha256": "69636a148eae3a0807cb1f2e325b9ba2f0640bef7e668088a21ca94add0711ee",
+      "sha256": "975744820c0ce85ac522baabaf8f9fe90135109dcf6ebdfa33077fe7fe1119c5"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/hip_types.hpp": {
+      "original_sha256": "3863e2b8209da96ee7cb4242ad5420bb77700f17e4990e2e612aacba2cea088e",
+      "sha256": "2bb2c7a7bb236e930fe03a3da116f38ff434723c72bbd2bca89aea57fb0cbdb9"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/layout_composed_hip.hpp": {
+      "original_sha256": "060c267b35a60cafb819353643b1a70099f7e1dcf48c0da6897d25cacfbfeea8",
+      "sha256": "f61d324b815b417e410c39eb9a894b17fc1d2a4db6b8c61d38597c5cfb615c16"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/arithmetic_tuple_hip.hpp": {
+      "original_sha256": "a18db3d13022a37829da7d88b0b43e6a6dab561b2592bc92ce18071872251325",
+      "sha256": "4d53de0f81702d2763cd63f0fa7e66d402607897f43c2e947420e548f0d92c15"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/stride_hip.hpp": {
+      "original_sha256": "ac66ce7d8d9acba4802ed0b58471d5ad7f9c71ca23b072d94766ecfe652a6c4d",
+      "sha256": "77605f5546eea1049d0cd1abda35bfaac1f94e278128df84950c12660a2cc1c3"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/int_tuple_hip.hpp": {
+      "original_sha256": "15c46cdf2d0bda1d6eb5707ed57e1e97cfa8ac8b36d2bab4c0ba83cf2fc4651e",
+      "sha256": "97a8fd70364d9123a5ae99d3fc8ac137e666ab27fe7ec34d75d2a5d4c40b99c5"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/array_hip.hpp": {
+      "original_sha256": "943669ffc97c68c6f745d341c379ed080d26553f2e3606dcd6608f28e27a5fe4",
+      "sha256": "6211397fd378b6488046ec33ffafc58791e4ca737c74cd5b06392ee6bcc1ce19"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/underscore_hip.hpp": {
+      "original_sha256": "45370f03b0bcb89ae773b91a90065fa944c3353e018e38dc18283da42690fc62",
+      "sha256": "6c8eebc72b715e3c00a1d5b8d2309f834419126330fb644cf334dce91b0c7301"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_hip.hpp": {
+      "original_sha256": "6ae18beced68ecf2b409658653295ab88ffb6311206187f7f1c1c4aca29787bc",
+      "sha256": "4da0255eb420d75a7ded26ca91f715b7c16be2a36ad643847fff65187b8cb78d"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_hip.hpp": {
+      "original_sha256": "ef0eb7798a994a91c49f3995fa19287df1fa63d7dea81942b93f630020ac56c6",
+      "sha256": "01685f72dbd9ec1d3aaae07931b441192a715035392d2319e513b192cf03fe96"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/util_hip.hpp": {
+      "original_sha256": "45dda5c46c4294c5f4313e9e60281fc2c34ce91518fd231513e42f0a7676936c",
+      "sha256": "515182ed2f2a3e155df2188f3085d9ee5a18c0f2ade9c275ac684c2f11e12ef6"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_gfx938_hip.hpp": {
+      "original_sha256": "9007a69b7189623170e81dbe5560d145d1a21381c633ca2922e13b6877c888b6",
+      "sha256": "f6fd98cbd2b9aa73bf0fa2057f51ac68b02adaa135b2b0075a40437353858118"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_gfx928_hip.hpp": {
+      "original_sha256": "e9bab8b527f496659d03895c115bb31f64d76d2ad76b9dcfd0db6a41f5ba729a",
+      "sha256": "d74316bc33312508dae75b4fe29ccc11d514c69f1c3f774c0bb71df13107cf0c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_gfx928_hip.hpp": {
+      "original_sha256": "d8e31b220f0285f3d29fa34f83263e4aed9bdfa88e97cb55993316cdfab92f75",
+      "sha256": "9f89d01f2ca111751a51ec202e76fb1e9f5e817075b00034013ca40c73047f07"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_gfx926_hip.hpp": {
+      "original_sha256": "5e1e7c217fc31b0d99ec5d180387206a408f724c1caa752912f47abba1a7ccdb",
+      "sha256": "f7a5b9f72a05cb4a209cd80b395501682183c71e1d8ec8c3e7bba4cb5dd5dbef"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_gfx926_hip.hpp": {
+      "original_sha256": "c2a8d281af3f281f321d0ac833b4fb1bed355389a272ccad9704ee67b4210283",
+      "sha256": "74a9493f95269e4b99eab62ec3c7652cb57bd3c867e5f025a4ca9cea4142568c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_gfx906_hip.hpp": {
+      "original_sha256": "1cf361498d7515f1b63134ae21c541189d95507150e7d4e38b1a69d5205e3e1e",
+      "sha256": "f54488ea55a6017c8d67acc79d68e3d2b4791b4cf6410c1ba8ed845148ddbb29"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_gfx906_hip.hpp": {
+      "original_sha256": "e69d89e460df5cf60ff012053c7eacc4894466c08a4b216ea35d7549afc8cded",
+      "sha256": "129a60745589d004d342e654c67597d08fb1f1f4a32c71f5e247e2498d21639b"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_sm90_gmma_hip.hpp": {
+      "original_sha256": "56eed91ccc821e597be4ed7eea02da5c4883c429b851435a71f7fb1060fa3952",
+      "sha256": "7a37a8d2e993a99d30af274d9afa7d2d708a45ab93a95fbd6caf34fa5dc28920"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm90_hip.hpp": {
+      "original_sha256": "07372b798e43106e0ad1052370741eabeaf342a2f33687d84fa8006a8535150b",
+      "sha256": "bad8968b7502873fd54556a02941ec2a275c49876f7813cd385fe2e7d68f21c4"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm90_gmma_hip.hpp": {
+      "original_sha256": "c6c1e049fa98dd6cab663f39066b32bad787a6d8c78b9a59b16d15edae9ab164",
+      "sha256": "c63c549a4a1866ce0857a72097fd1f0b7ed72d3641f4756e24a1e56bff870892"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm90_desc_hip.hpp": {
+      "original_sha256": "0fab177c479d76d27b5fa50c1f603f5335b8aacac14f00ce0c1e71d3c0009326",
+      "sha256": "d27c948096af65311fe909354167e4e255451116ccbe8f21011a3364b749c402"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_sm90_hip.hpp": {
+      "original_sha256": "5eafc1b425dfbc090d3352282294213cebcbc25bb984887809f4431813afc196",
+      "sha256": "5f6620d2d15420df961f3d62880f612a49e71faa3f20d5eb49876d49459f4556"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_sm80_hip.hpp": {
+      "original_sha256": "73ed35a47647a6f8183d173b4bb167b60b55f6ff74b1887060fa07f89ac33e20",
+      "sha256": "6500095f2027de94f571bb86cdcbd3f0b1840c06cf58dd5e112bebc9c46a869c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm80_hip.hpp": {
+      "original_sha256": "06ad97031586fe6bcc407f32810a814131cb9556d7f7ddb5d29406aae76fc71b",
+      "sha256": "22337b32ed51341bea4d610cd4155e37647aa0d95331d44c4108e4b3d1cdf26f"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_sm75_hip.hpp": {
+      "original_sha256": "940402f1f6e8db1990749e9ab670c85effa913b9df25ba5049b1270e07efdc85",
+      "sha256": "2e6951a374f703959120f7e2f08adaa588f8c273b0598f85e874860e8c831578"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm75_hip.hpp": {
+      "original_sha256": "1f54147d9460b026605ea819b817191bbe0e6fb0edee0e886416e209ba9f4521",
+      "sha256": "ff6f51bdc74ad891e3e6cd7f5633f7b5a047be1172215e0e3a1e24100b4f451c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_sm70_hip.hpp": {
+      "original_sha256": "fb025b654db919888703c881866c4b8ffbd1155b30836aa0e7b86a3940ee6637",
+      "sha256": "ff257b5e3cd37ad23ae290e9909b7df1854658fdac3ebb102e353a2df5bdd251"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm70_hip.hpp": {
+      "original_sha256": "ccb662666ce1b4c439ab222583723c7e4a1746d77c166f3699a5b490cf6c9b42",
+      "sha256": "7a13b71902f1f58d34e96a5c828d53e71da1282d684944cc3e3ad1ebbc909b52"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/mma_traits_sm61_hip.hpp": {
+      "original_sha256": "16fc2a0ae83867d4395b86ce46186478dd17b667d00ed36ad1cd6aa89d13c1b1",
+      "sha256": "502cf0a47250ad9fcdec173ccc6b65bdd6c910eb3d8894951c7e5d86ccc2ae2b"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/mma_sm61_hip.hpp": {
+      "original_sha256": "63daf1fe38cf8bb03a2a2a1d7dd2d5c7167e2be2af297b86d0c46749cdd4893f",
+      "sha256": "1217c25454fdf6078dcf958394abff10f63854b8cc67f4462b8653e04c3644ae"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/axpby_hip.hpp": {
+      "original_sha256": "b5d500b011c998a2da7afc5693e7c196a3dec44218149380af4f5ba36405502f",
+      "sha256": "cf9e8cb97dc344353589ffb1db54e5ed603e76c3ccc2c8946369510dbdc1ae64"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/copy_hip.hpp": {
+      "original_sha256": "7ddc306d06c40ff80fc085936e62ef4fe8d5facfe10c8ac608ec3b027ff739c4",
+      "sha256": "a931c4ffce1e5e60d03d46116c5494c5303be0843f1e52ec714ff76060d874d3"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_atom_hip.hpp": {
+      "original_sha256": "50bd9baa0c85d8897492d3c42ac0c64c82091d36f4e2ef3ff8e917773f2dcb85",
+      "sha256": "b756c5df6585b9c2bc704d0647558f3b08562a6ea7307f516cc50d5d1edb119a"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_sm90_tma_hip.hpp": {
+      "original_sha256": "04613465fccbf4b882334ea0691f9fac80a71745257b223e90103b57b822f79a",
+      "sha256": "bbc9b0a55de99d8bf26e7cf6b934e0168db238e9c954a8bc69affc02e9e02283"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/numeric/integral_ratio_hip.hpp": {
+      "original_sha256": "baaa1c5079d2a1f4a7cbd816352589e744a58dd9bbbd703f800dae656657ee0a",
+      "sha256": "86fb749426e1401d0814b1a37401bd72af003a43211a69606b3c23dcd38c5559"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_hip.hpp": {
+      "original_sha256": "88f2ae59195e52609485cd6dedd755a522ec4f6c7a62e101a88422de3c66da06",
+      "sha256": "416c4ebe5f85b710ed687d479e402646be35a421249779c155659b12937b4746"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_hip.hpp": {
+      "original_sha256": "e93afdbd9f054cefcf8cf23056bf130bfddd6345222a4f52d8044642a8e6e35a",
+      "sha256": "2facfcc862f61bc78c650e93541cfddfecdcd828c8e4f7cf252d03798f64d26e"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_sm90_tma_swizzle_hip.hpp": {
+      "original_sha256": "90012f836ca201efb63a7ec725ac6fdc02f3dce2acc498c7bede40562c9004a7",
+      "sha256": "b486d25cf19078339eb6fe61a6a683b6e3c19ac63424f755020218ab754c3f68"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_sm90_desc_hip.hpp": {
+      "original_sha256": "0257f8a8af5bb9b679179032b556271d2b0bd42e0ec9e4b4e4e8e0f51c39659a",
+      "sha256": "63c1e9512f74a7a96813e4099f00aace165f1093cc6140651ae4959f685b5f83"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/bit_field_hip.hpp": {
+      "original_sha256": "693b58034234c9a1db1f987f310046a4855d630e849ab736d200f0df7494cdc5",
+      "sha256": "685db7ceb55aae027e1e853c0347d6bf50c4595a1147d8b192111406e0cfe1ed"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/alignment_hip.hpp": {
+      "original_sha256": "b8f63267dd526d6cd61b1fdaac3e4a320e3e4382a24140b708c30d576c1949a0",
+      "sha256": "e97c199926effa679e49574d2137645e1aa13f7d4ec1bb9d8652412c21b7215b"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_sm90_hip.hpp": {
+      "original_sha256": "637d8f38e59f9c0419b07b41dc48bab7f4e2c04da01a4994b90a928c77fa4765",
+      "sha256": "17f3240a27b7327d0c79d5a7bc98b5dba7ea7983e39a2bd905e30c71929cc233"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_sm90_tma_hip.hpp": {
+      "original_sha256": "c26768d828cdfbe98540c02c3fd2d58774641da598af00f67c07b2c5f4361cad",
+      "sha256": "cf709e7ec617f9680d7bda39876d6bbafc3461b19220cf9836f719610c2451b1"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_gfx928_hip.hpp": {
+      "original_sha256": "a21fb47610d406a27a6ba7f8deed2824a3a4fc9f063f4aed26aa29fd9eadd07d",
+      "sha256": "e92b5f6b3e996e11832ecb62f7bf644ab3678e081ea4ee8a7593380f157e0e38"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_gfx928_hip.hpp": {
+      "original_sha256": "06355374a5e5cb394504f9d7cefea8e2a5989871911472b3b3e232fa2f185ded",
+      "sha256": "ebafb04c0a4879c00eb8d88a10355145a2772193bf2a5f8887f994e41706d9ff"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_sm90_hip.hpp": {
+      "original_sha256": "f3490c676d73d612f1e1a3c94f95350675ed8cee1a9d33b8ddef5ae7e41898c5",
+      "sha256": "2c1b67cdc3171a622cec1683bb90a6f87f45e3560d5cd9702c1f4836d114bfe0"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_sm75_hip.hpp": {
+      "original_sha256": "4250a4e6b4730e460df4300a020c75051594ad81889deebf336c6870b5e8ed1c",
+      "sha256": "dcd1ce4a334ee819dce209cae42ee73e6a726de1399f248bf0e7c3c4193b9f46"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_sm75_hip.hpp": {
+      "original_sha256": "457eb8e969cbbe1fd8cda117b4b7cb6c26608a92b070def5dfba4c3e7ba04dcd",
+      "sha256": "43ff97c529bd1fcf9b8a9989304aabdac6d9a9352ce41913d02bb52868e20628"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/atom/copy_traits_sm80_hip.hpp": {
+      "original_sha256": "f59761c5874021ef09e3897d2b1b4fd66182681c221237ef77b984b076c569e0",
+      "sha256": "39f974ec44c3a4e8b1bafce1cfaa6b25c98e4a6cdf4da8299657de66b526f247"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/copy_sm80_hip.hpp": {
+      "original_sha256": "e4dbfd2b20de2b2cd8cb89b9bf0db32fc1f4ce6fe4274c2040dc6d411ab47683",
+      "sha256": "727642ee2e378ad802b7b1205ad98f130504d399e1e38f826461281ab40b7568"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/tensor_predicate_hip.hpp": {
+      "original_sha256": "2998573b97a49430e789006d6ce956afea2d69d7e2cb3464ba23177398066955",
+      "sha256": "94ecf2fc0d5d70cd5d5651bf3e50410506297eeefae284e89470ad599225c9b7"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/clear_hip.hpp": {
+      "original_sha256": "3b4d103ce2730ffeef8d1ddde20b9beab82b2b5a34881d17cd38444f3723a5a8",
+      "sha256": "c9db6f2ad07b67a26c5ad5927164d91875d64b857162edc53d01ca8f8af8021b"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/fill_hip.hpp": {
+      "original_sha256": "50ea529bca84e4fb0d1101b99367e5b3457b916750fe47e26797c6432149cddf",
+      "sha256": "e5d4f86895d5fab12ebb069c46af50880a4c361a6bd8e99f65e0b5f01c619964"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/prefer.hpp": {
+      "original_sha256": "f74cf27c3c7e0015aa1e5149699b634d33a498b426c142da1b5619c513a0a284",
+      "sha256": "f74cf27c3c7e0015aa1e5149699b634d33a498b426c142da1b5619c513a0a284"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/algorithm/tensor_algorithms_hip.hpp": {
+      "original_sha256": "e641b339edc085d272ae185e0b7d43fe65ead7c7b25a1783fee4282b7c370c14",
+      "sha256": "a502cf4df836febe23f180fad07b8c22587c12cf008ea413a9088388811e6fa1"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/swizzle_ptr_hip.hpp": {
+      "original_sha256": "f11fb29745ecab152089573bd02bba857fc4d880ea72f5ddaa1f17200a9fc788",
+      "sha256": "fce970bbccd4e0b28b981c5ca7dcf92b77ab640c70b355b75fa64230b863c9d8"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/pointer_hip.hpp": {
+      "original_sha256": "7f318ff65e42a5572b403eaf0151799cbc5da19027accd45eb939f7184438c44",
+      "sha256": "2bf3e5b60c0f04cedc1605b91ee9c2fde3ac84bf9eee9b36fffa247b151dcf8b"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/tile_hip.hpp": {
+      "original_sha256": "0759ca0c7991ccc029cdec6bce0fdd59b12e03e97cdc2d90e0dfdcc5a4d6e054",
+      "sha256": "d886c4669caa4826859d4afbc4e7796554d91d0f37380ce110b4e2cae8c79fb7"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/type_list_hip.hpp": {
+      "original_sha256": "0710cf580970e2c70f0e1844df9db520be4bb36002d29d27b6501cf42b7352e2",
+      "sha256": "6a5c144bc28e30f1678d6b727c4b8f90fac1c2a9d26d49b32c42436145aee768"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/array_subbyte_hip.hpp": {
+      "original_sha256": "ed6f9a031ad3710f0733f62a8c55d7eda1208fbde0e8b0e8fb7fe1fd6656988d",
+      "sha256": "856dfe1a4b4cf1109fe98a5b5576ab709d3120c3d35f1932382afdbb7636a25c"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/container/array_aligned_hip.hpp": {
+      "original_sha256": "ad2c54981475c8ba3a6fc64e5743d6b3c2491807024c4da6dcfe5a772a78a855",
+      "sha256": "b54599096912b3c63e99be6f184f25f46fae84e3260e56cba86103fd1f0afb2f"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/numeric_conversion_hip.h": {
+      "original_sha256": "d4bb2d560d236e481a67e5ee7399b8dbdad587be4ff95186b4c727d60d7fa3e7",
+      "sha256": "5e3ab66ffc10d27218d49501d58d065025d19731929c88aba4c2012772d3e17f"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/transform/thread/unary_op_hip.h": {
+      "original_sha256": "611cc1f3d2bf970588f4177bf4869a64cf6f8a9cab1ad48af6d3ddf12c690542",
+      "sha256": "596386c8f181d6ada1ecd7a1bd7aaaafd1b0ce42dc6d324b551555c11540404e"
+    },
+    "csrc/gfx93/decode/sparse_fp8/config_hip.h": {
+      "original_sha256": "710dde1c8080fd67de6117b19b48c573b1aac530543d398c6a0155753963af93",
+      "sha256": "0bae6708ebd96085ea6c48adfa58449fbe9324769492808d6bc63aca2deb322d"
+    },
+    "csrc/kerutils/include/kerutils/kerutils_hip.cuh": {
+      "original_sha256": "277af8fb1bcda01de853b715189c500028bbd1152a3d4f57f422ffcefbbafdcd",
+      "sha256": "a158fdf2f45acc7471b47dc08d5499830f182131b0c709d04b84491d0d4199f3"
+    },
+    "csrc/kerutils/include/kerutils/device/device_hip.cuh": {
+      "original_sha256": "034bc5220230ac2266a7ab8271d70b63a30c3536745b098a41bbd877cd8322c6",
+      "sha256": "6c11e497ab5d495ad39c9742db790a091d60da9a3031407517c3739e00b359ed"
+    },
+    "csrc/kerutils/include/kerutils/device/common_hip.h": {
+      "original_sha256": "a51dd15e841d829a6b9e1d3a1c39555e3fb8301ad6e79b8deacdede1587475a3",
+      "sha256": "02c88a429a6ed46371d2b77ec918407f86e9ee7cd21315a9f3c4525cb5eb5a5d"
+    },
+    "csrc/kerutils/include/kerutils/common/common.h": {
+      "original_sha256": "eb3639b1aaa1ea61638ddfafd1e0e0ed02e3a3d99c0a8a6cf660dd0b285a8c51",
+      "sha256": "eb3639b1aaa1ea61638ddfafd1e0e0ed02e3a3d99c0a8a6cf660dd0b285a8c51"
+    },
+    "csrc/kerutils/include/kerutils/host/host_hip.h": {
+      "original_sha256": "e94d3df86a087d739cb636d82455e0a9284e34ce734e42925418153ab9eb9f19",
+      "sha256": "02ff7d138095efe95594a9165a9db3e277b61e80606945e09f714125577b49b0"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/arch/barrier_hip.h": {
+      "original_sha256": "0aa1d04d5b5d1dfd7948c29e2f20dd0489bbeee16bd2f73844678d0f73fd0f60",
+      "sha256": "ade08e8738a9f0f9738e4c6bc0d07b5a23d1e0b5cdb774a30f181e063677eca1"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cute/arch/cluster_sm90_hip.hpp": {
+      "original_sha256": "b71d2a008f64df369c013992dec2abcff9e8efcf4cbc18b08ae51764a3fe944c",
+      "sha256": "a1f69ed7fd0d698abab1b22666b8fd93fff3bf19b331fa1d7554a5adfb83290d"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/arch/memory_sm75_hip.h": {
+      "original_sha256": "a8595f2ff9ff10ce2798cac1ef69c84fc93f22dee26b3e2f5d59ada2cbb32019",
+      "sha256": "8248975ee7dc540c55b3390e9a327ea79eb1e5ec8c33ef8d2e23b856e14b1033"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/layout/matrix_hip.h": {
+      "original_sha256": "05d05bac300210845d865a541f7bdf92cff3f320deefe2031c195a1c0b29ea63",
+      "sha256": "c0cdf52f1c40c05f097f097023371e6e581d23b8d9a3419b66b08a7d49a32229"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/pitch_linear_coord.h": {
+      "original_sha256": "e50964ed5dd73bdd12e52eebd10c52d0e52febc319a3c56ac619d57d60c6890d",
+      "sha256": "e50964ed5dd73bdd12e52eebd10c52d0e52febc319a3c56ac619d57d60c6890d"
+    },
+    "csrc/cutlass/cutlass_3.2.1/include/cutlass/matrix_coord.h": {
+      "original_sha256": "d30b7813cc9e87b76797bfebf5c486bc5eb383d8668c8136b3093e1385597376",
+      "sha256": "d30b7813cc9e87b76797bfebf5c486bc5eb383d8668c8136b3093e1385597376"
+    },
+    "csrc/gfx93/decode/sparse_fp8/components/helpers_hip.h": {
+      "original_sha256": "3b396c88976593661bc593aa016dee5bcc6180bc38026b2095298b223739e822",
+      "sha256": "4c54d9084cd181a0edcebb4f8d079277de278ea789212fa4fb120a674e08d8f8"
+    },
+    "csrc/gfx93/decode/sparse_fp8/components/config_hip.h": {
+      "original_sha256": "e5658093c563dd1321485e0dd580c6920b99083cd720263111576b6d0a2726f9",
+      "sha256": "639d8656a5cb27c34b8ee2f9719f929b3d89157a9cb66c12e67fb22d8ab846ca"
+    },
+    "csrc/gfx93/decode/sparse_fp8/components/dequant_hip.h": {
+      "original_sha256": "40d5298acdd62837aa77822fc0c8b48a2067eba1fd6346ae01a3a9b491340faf",
+      "sha256": "b30f82c90f4e884304ef5953249602a7299241a4b5a29ccaad285aad9d970cf3"
+    },
+    "csrc/gfx93/decode/sparse_fp8/splitkv_mla_hip.h": {
+      "original_sha256": "3e2bb39ebbeb1025b626be7ef5ffa269eb53cb6a19c7fb26c7bba5b85843508a",
+      "sha256": "2a39a7d005530f25433e9d526a98831b356498756b5e0df35945aacd7aa2d6d2"
+    },
+    "csrc/gfx9/decode/get_decoding_sched_meta/get_decoding_sched_meta.hip": {
+      "original_sha256": "5667d52b8c0a959b76c013ed24411f30f5671bce0f0e3a6ed1548f3fd0a531b9",
+      "sha256": "6f6875f4c0754e359f9d4e6c6b18ea0dbf30e0b852ae8fc6ab5f72a8b31ccd79"
+    },
+    "csrc/gfx9/decode/get_decoding_sched_meta/get_decoding_sched_meta_hip.h": {
+      "original_sha256": "324ecf1d763662a0eeb5420314a26854af1989d6ad4411d48abe7051cc1eef3b",
+      "sha256": "9aef033c17f7e3489d53c2d3fdd431f1639329bc8cddb5909821b52117084ea3"
+    },
+    "csrc/gfx9/decode/combine/combine.hip": {
+      "original_sha256": "2e68052bf893dcf6a0f08d52b7eb9b2ba259edf72a95db6ce438ce3c4a6790ca",
+      "sha256": "f3bbc011fbde47d569bc7cef5595a2e0c8dfd3e95f281f2e3162f8744cda4d2f"
+    },
+    "csrc/gfx9/decode/combine/combine_hip.h": {
+      "original_sha256": "3d757be1e088f9b8cc4cd953592826eabb23c1f3d537f2f762acded6fdd75793",
+      "sha256": "5f7d6ec6edbae255b4538ef7041ff42d6e0b1173e3bc05c8c1ee3df2148e8c78"
+    }
+  }
+}
