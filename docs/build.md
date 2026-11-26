@@ -56,6 +56,16 @@ implementations, and linked
 provider resolution. Unselected linked providers do not require their external
 libraries to be installed.
 
+Use the Llama 3.1 8B Instruct profiles in [`scripts/configs`](../scripts/configs)
+as starting points. Copy the JSON file for your backend and edit the operator
+entries and `implementations` slots for your workload.
+
+The Moore profile uses ATen slot 8 for `argmax`, `tril`, and `triu` because the
+tested revision lacks native Moore providers for these operators. Set
+`WITH_TORCH=ON` to build the ATen providers and `WITH_CPU=ON` to link the CPU
+slot-8 symbols referenced by the generated dispatch code. In validation, all
+three operators ran on the S5000.
+
 Pass the file explicitly with
 `-DINFINI_OPS_OPS=/path/to/ops.json`. For compatibility,
 `${PROJECT_SOURCE_DIR}/ops.json` is read automatically when present. Relative
