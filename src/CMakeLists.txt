@@ -51,6 +51,20 @@ endfunction()
 
 include(GNUInstallDirs)
 
+if(NOT DEFINED INFINI_OPS_JSON_SOURCE_DIR)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../json/CMakeLists.txt")
+        set(INFINI_OPS_JSON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../json"
+            CACHE PATH "Offline nlohmann_json source" FORCE)
+    else()
+        set(INFINI_OPS_JSON_SOURCE_DIR ""
+            CACHE PATH "Offline nlohmann_json source" FORCE)
+    endif()
+endif()
+if(INFINI_OPS_JSON_SOURCE_DIR)
+    set(FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON "${INFINI_OPS_JSON_SOURCE_DIR}"
+        CACHE PATH "Offline nlohmann_json source" FORCE)
+endif()
+
 find_package(nlohmann_json 3.12.0 CONFIG QUIET)
 if(NOT TARGET nlohmann_json::nlohmann_json)
     if(POLICY CMP0135)
@@ -377,9 +391,10 @@ if(WITH_MARS)
         "native/cuda/mars/*.cu"
     )
 
-    file(GLOB_RECURSE MARS_SOURCES CONFIGURE_DEPENDS ${MARS_PATTERNS})
+    file(GLOB_RECURSE MARS_SOURCES ${MARS_PATTERNS})
     list(FILTER MARS_SOURCES EXCLUDE REGEX
         ".*/native/cuda/(hygon|iluvatar|metax|moore|nvidia|thead)/.*")
+    list(FILTER MARS_SOURCES EXCLUDE REGEX "\\.(cc|cpp|cxx)\\.cu$")
 
     set_source_files_properties(${MARS_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -389,11 +404,14 @@ if(WITH_MARS)
     target_include_directories(infiniops PUBLIC
         "${HPCC_PATH}/include"
         "${HPCC_PATH}/tools/cu-bridge/include")
+    find_library(HPCC_FLASH_ATTN_LIB NAMES hcFlashAttn
+        HINTS "${HPCC_PATH}/lib" REQUIRED)
     target_link_libraries(infiniops PUBLIC
         ${HPCC_RUNTIME_LIB}
         ${HPCC_DNN_LIB}
         ${HPCC_BLAS_LIB}
         ${HPCC_OMP_LIB}
+        ${HPCC_FLASH_ATTN_LIB}
     )
     set_property(TARGET infiniops APPEND PROPERTY
         INSTALL_RPATH "${HPCC_PATH}/htgpu_llvm/lib")
@@ -1226,6 +1244,7 @@ if(TORCH_SOURCES)
 
         # Vendor-specific defines required by forked `torch` headers.
         set(_torch_extra_flags "")
+        list(APPEND _torch_extra_flags "-DWITH_TORCH=1")
         if(WITH_METAX)
             list(APPEND _torch_extra_flags "-DUSE_MACA=1" "-DWITH_METAX=1")
         endif()

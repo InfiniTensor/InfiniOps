@@ -3,7 +3,7 @@
 
 // Emit definitions only for the backends enabled in this translation unit.
 
-#ifdef WITH_CPU
+#if defined(WITH_CPU) || defined(WITH_TORCH)
 #define INFINI_OPS_TORCH_INSTANTIATE_CPU(Op, Index) \
   template class Operator<Op, Device::Type::kCpu, Index>;
 #else
