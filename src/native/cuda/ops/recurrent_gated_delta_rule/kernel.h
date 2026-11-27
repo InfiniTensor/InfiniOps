@@ -6,6 +6,7 @@
 
 #include "base/recurrent_gated_delta_rule.h"
 #include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_delta_rule_common.cuh"
+#include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_delta_rule_packed_kernel.cuh"
 #include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_gated_delta_rule_legacy_kernel.cuh"
 
 // cuda_fp16.h / cuda_bf16.h come from the CUDA runtime on NVIDIA and from
@@ -37,8 +38,9 @@ __global__ void kernel(const Data* q, const Data* k, const Data* v,
 }
 }  // namespace recurrent_gated_delta_rule_detail
 
-// Single-token decode kernel for gated delta rule, shared by the CUDA-like
-// backends. The `Backend` type must expose `kDeviceType` and `Stream`
+// Gated delta rule kernels shared by the CUDA-like backends: the batched
+// single-token decode and the packed multi-token recurrence over an FP32
+// state pool. The `Backend` type must expose `kDeviceType` and `Stream`
 // (the metax and nvidia runtimes both do). Backend-specific host-side
 // checks stay in the per-device providers.
 template <typename Backend>
@@ -85,6 +87,28 @@ class CudaRecurrentGatedDeltaRule : public RecurrentGatedDeltaRule {
           p_.s[i][j] = metadata_[i]->strides()[j];
   }
 
+  // Packed form; see the base class.
+  CudaRecurrentGatedDeltaRule(const Tensor q, const Tensor k, const Tensor v,
+                              const Tensor g, const Tensor beta,
+                              Tensor initial_state, const Tensor cu_seqlens,
+                              const Tensor initial_slots,
+                              const Tensor final_slots, Tensor out,
+                              bool use_qk_l2norm)
+      : RecurrentGatedDeltaRule(q, k, v, g, beta, initial_state, cu_seqlens,
+                                initial_slots, final_slots, out,
+                                use_qk_l2norm) {
+    if (D_ != 128 || gate_type_ != DataType::kFloat32)
+      throw std::invalid_argument(
+          "packed recurrent delta kernels require Dk=Dv128 and F32 gates");
+    if (requests_ >= static_cast<size_t>(INT_MAX) || Hv_ > 65535)
+      throw std::invalid_argument("recurrent delta launch extent unsupported");
+    for (const auto i : {size_t{0}, size_t{1}, size_t{2}, size_t{9}}) {
+      if (metadata_[i]->numel() && metadata_[i]->strides()[3] != 1)
+        throw std::invalid_argument(
+            "recurrent delta innermost data dimension must be contiguous");
+    }
+  }
+
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,
                   const std::optional<Tensor> initial_state_indices,
@@ -112,6 +136,31 @@ class CudaRecurrentGatedDeltaRule : public RecurrentGatedDeltaRule {
         break;
       case DataType::kFloat32:
         gate<float>(views);
+        break;
+      default:
+        throw std::invalid_argument("recurrent delta data dtype unsupported");
+    }
+  }
+
+  void operator()(const Tensor q, const Tensor k, const Tensor v,
+                  const Tensor g, const Tensor beta, Tensor initial_state,
+                  const Tensor cu_seqlens, const Tensor initial_slots,
+                  const Tensor final_slots, Tensor out,
+                  bool use_qk_l2norm) const override {
+    const Views views{
+        q,           k,  v, g, beta, initial_state, cu_seqlens, initial_slots,
+        final_slots, out};
+    CheckInvocation(views, use_qk_l2norm);
+    if (!requests_ || !tokens_) return;
+    switch (data_type_) {
+      case DataType::kFloat16:
+        packed<half>(views);
+        break;
+      case DataType::kBFloat16:
+        packed<__nv_bfloat16>(views);
+        break;
+      case DataType::kFloat32:
+        packed<float>(views);
         break;
       default:
         throw std::invalid_argument("recurrent delta data dtype unsupported");
@@ -164,6 +213,37 @@ class CudaRecurrentGatedDeltaRule : public RecurrentGatedDeltaRule {
             static_cast<const Gate*>(ptr(4)), static_cast<Data*>(ptr(5)),
             ptr(6), ptr(7), static_cast<Data*>(ptr(8)),
             static_cast<Data*>(ptr(9)), p_);
+  }
+  template <typename Data>
+  void packed(const Views& v) const {
+    auto ptr = [&](size_t i) -> void* {
+      return const_cast<void*>(v[i]->data());
+    };
+    const auto stride = [&](size_t i, size_t j) -> int64_t {
+      return metadata_[i]->strides()[j];
+    };
+    // One warp per value row: 4 rows per block, grid.z tiles the head dim.
+    constexpr int kWarps = 4;
+    dim3 grid(static_cast<unsigned int>(requests_),
+              static_cast<unsigned int>(Hv_), D_ / kWarps);
+    const auto stream =
+        static_cast<typename Backend::Stream>(stream_ ? stream_ : nullptr);
+    recurrent_gated_delta_rule_detail::PackedRecurrentGatedDeltaRuleKernel<
+        Backend::kDeviceType, Data, 128, kWarps>
+        <<<grid, kWarps * 32, kWarps * 128 * sizeof(float), stream>>>(
+            static_cast<const Data*>(ptr(0)), static_cast<const Data*>(ptr(1)),
+            static_cast<const Data*>(ptr(2)), static_cast<const float*>(ptr(3)),
+            static_cast<const float*>(ptr(4)), ptr(6), ptr(7), ptr(8),
+            metadata_[6]->dtype() == DataType::kInt64,
+            metadata_[7]->dtype() == DataType::kInt64,
+            metadata_[8]->dtype() == DataType::kInt64, norm_,
+            static_cast<float*>(ptr(5)), static_cast<Data*>(ptr(9)),
+            stride(0, 1), stride(0, 2), stride(1, 1), stride(1, 2),
+            stride(2, 1), stride(2, 2), stride(3, 1), stride(3, 2),
+            stride(4, 1), stride(4, 2), stride(5, 0), stride(5, 1),
+            stride(5, 2), stride(5, 3), stride(9, 1), stride(9, 2),
+            static_cast<int64_t>(tokens_), static_cast<int64_t>(pool_),
+            static_cast<int>(Hk_));
   }
 };
 

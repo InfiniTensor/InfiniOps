@@ -158,6 +158,11 @@ if(WITH_NVIDIA)
     )
 
     file(GLOB_RECURSE NVIDIA_SOURCES CONFIGURE_DEPENDS ${NVIDIA_PATTERNS})
+    # The recursive top-level `native/cuda/*.cu` pattern also matches sibling
+    # vendor subtrees (hygon/iluvatar/metax/moore); drop them so their symbols
+    # are not defined twice when those backends are also enabled.
+    list(FILTER NVIDIA_SOURCES EXCLUDE REGEX
+        ".*/native/cuda/(hygon|iluvatar|metax|moore|thead|cambricon|ascend)/.*")
     # Optional pinned kernels have their own include closure and CUDA TUs.
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_with_kvcache/")
     list(FILTER NVIDIA_SOURCES EXCLUDE REGEX "/ops/flash_attn_varlen_func/")
@@ -249,7 +254,13 @@ if(WITH_TRITON OR GENERATE_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
 endif()
 
+if(WITH_TRITON AND WITH_HYGON)
+    target_link_directories(infiniops PRIVATE "${HYGON_CUDA_ROOT}/lib64")
+    target_link_libraries(infiniops PRIVATE cuda)
+endif()
+
 if(WITH_TRITON)
+    target_compile_definitions(infiniops PUBLIC WITH_TRITON=1)
     target_link_libraries(infiniops PRIVATE
         Python::Python
         pybind11::headers)
@@ -300,6 +311,10 @@ if(WITH_HYGON)
     enable_language(CUDA)
 
     target_compile_definitions(infiniops PUBLIC WITH_HYGON=1)
+    if(HYGON_ARCH STREQUAL "gfx936")
+        # The native fused-MoE expert kernels use the matrix instructions of gfx936.
+        target_compile_definitions(infiniops PRIVATE INFINI_OPS_HYGON_MMAC=1)
+    endif()
     target_sources(infiniops PRIVATE ${HYGON_SOURCES})
 
     find_package(CUDAToolkit REQUIRED)

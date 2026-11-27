@@ -1,0 +1,194 @@
+{
+  "add": {
+    "implementations": "all"
+  },
+  "argmax": {
+    "implementations": "all"
+  },
+  "cast": {
+    "implementations": "all"
+  },
+  "cat": {
+    "implementations": "all"
+  },
+  "causal_conv1d": {
+    "implementations": "all"
+  },
+  "chunk_gated_delta_rule": {
+    "implementations": "all"
+  },
+  "clover_block_conv1d": {
+    "implementations": "all"
+  },
+  "clover_coreset": {
+    "implementations": "all"
+  },
+  "clover_live_mask": {
+    "implementations": "all"
+  },
+  "clover_local_memory": {
+    "implementations": "all"
+  },
+  "clover_mask_routes": {
+    "implementations": "all"
+  },
+  "clover_merge_moe": {
+    "implementations": "all"
+  },
+  "convolution": {
+    "implementations": "all"
+  },
+  "copy": {
+    "implementations": "all"
+  },
+  "deepseek_moe": {
+    "implementations": "all"
+  },
+  "embedding": {
+    "implementations": "all"
+  },
+  "fill": {
+    "implementations": "all"
+  },
+  "flash_attn_varlen_func": {
+    "public_api_only": true
+  },
+  "flash_attn_with_kvcache": {
+    "public_api_only": true
+  },
+  "fused_add_rms_norm": {
+    "implementations": "all"
+  },
+  "fused_gated_delta_net_gating": {
+    "implementations": "all"
+  },
+  "fused_qk_norm": {
+    "implementations": "all"
+  },
+  "fused_qk_rms_norm": {
+    "implementations": "all"
+  },
+  "gelu": {
+    "implementations": "all"
+  },
+  "gemm": {
+    "implementations": "all"
+  },
+  "i8_gemm": {
+    "implementations": "all"
+  },
+  "internal_softmax": {
+    "public_api_only": true
+  },
+  "layer_norm": {
+    "implementations": "all"
+  },
+  "mamba_selective_scan": {
+    "implementations": "all"
+  },
+  "matmul_weight_nz": {
+    "public_api_only": true
+  },
+  "moe_align_block_size": {
+    "implementations": "all"
+  },
+  "moe_fused_dense": {
+    "implementations": "all"
+  },
+  "moe_fused_gate": {
+    "implementations": "all"
+  },
+  "mrope": {
+    "implementations": "all"
+  },
+  "mul": {
+    "implementations": "all"
+  },
+  "pad": {
+    "implementations": "all"
+  },
+  "per_channel_quant_i8": {
+    "implementations": "all"
+  },
+  "per_tensor_dequant_i8": {
+    "implementations": "all"
+  },
+  "per_tensor_quant_i8": {
+    "implementations": "all"
+  },
+  "quick_gelu": {
+    "implementations": "all"
+  },
+  "recurrent_gated_delta_rule": {
+    "implementations": "all"
+  },
+  "relu": {
+    "implementations": "all"
+  },
+  "reshape_and_cache_flash": {
+    "implementations": "all"
+  },
+  "rms_norm": {
+    "implementations": "all"
+  },
+  "rotary_embedding": {
+    "implementations": "all"
+  },
+  "row_l2_normalize": {
+    "implementations": "all"
+  },
+  "separate_table_rope": {
+    "implementations": "all"
+  },
+  "sigmoid": {
+    "implementations": "all"
+  },
+  "silu": {
+    "implementations": "all"
+  },
+  "silu_and_mul": {
+    "implementations": "all"
+  },
+  "softmax": {
+    "implementations": "all"
+  },
+  "sum": {
+    "implementations": "all"
+  },
+  "take": {
+    "implementations": "all"
+  },
+  "top_k_top_p_sampling_from_logits": {
+    "implementations": "all"
+  },
+  "topk_sigmoid": {
+    "implementations": "all"
+  },
+  "topk_softmax": {
+    "implementations": "all"
+  },
+  "trans_matmul_weight_nz": {
+    "public_api_only": true
+  },
+  "tril": {
+    "implementations": "all"
+  },
+  "triu": {
+    "implementations": "all"
+  },
+  "upsample_bicubic2d": {
+    "public_api_only": true
+  },
+  "upsample_bilinear2d": {
+    "implementations": "all"
+  },
+  "w4_marlin_gemm": {
+    "public_api_only": true
+  },
+  "w4_marlin_parameters": {
+    "public_api_only": true
+  },
+  "w4_marlin_repack": {
+    "public_api_only": true
+  }
+}

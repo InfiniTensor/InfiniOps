@@ -238,3 +238,11 @@ unless callers need it.
 When applying these rules, record the selected upstream interface and any
 intentional C++ adaptations in the pull request. Follow `CONTRIBUTING.md` for
 compatibility, testing, and validation requirements.
+
+## Clover diffusion state operators
+
+The `Clover*` operators use the released Clover model equations, with packed
+request/state-pool arguments for inference; the causal GDN recurrence is the
+packed form of `RecurrentGatedDeltaRule`. Each contract is documented in the
+operator's base header, and the source provenance of the preview kernels in
+`THIRD_PARTY.txt`.
