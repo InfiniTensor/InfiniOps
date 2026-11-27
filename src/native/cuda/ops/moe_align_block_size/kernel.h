@@ -59,7 +59,8 @@ class CudaMoeAlignBlockSize : public MoeAlignBlockSize {
         static_cast<size_t>(num_experts_) * sizeof(int32_t);
     moe_align_block_size_detail::MoeAlignBlockSizeKernel<Backend::kDeviceType>
         <<<1, kThreads, shared_memory_size,
-           static_cast<typename Backend::Stream>(stream_ ? stream_ : nullptr)>>>(
+           static_cast<typename Backend::Stream>(stream_ ? stream_
+                                                         : nullptr)>>>(
             reinterpret_cast<const int32_t*>(topk_ids.data()),
             maybe_expert_map
                 ? reinterpret_cast<const int32_t*>(maybe_expert_map->data())
@@ -67,8 +68,9 @@ class CudaMoeAlignBlockSize : public MoeAlignBlockSize {
             reinterpret_cast<int32_t*>(sorted_token_ids.data()),
             reinterpret_cast<int32_t*>(experts_ids.data()),
             reinterpret_cast<int32_t*>(num_tokens_post_pad.data()), numel_,
-            static_cast<int32_t>(num_experts_), static_cast<int32_t>(block_size_),
-            sorted_token_ids_size_, experts_ids_size_,
+            static_cast<int32_t>(num_experts_),
+            static_cast<int32_t>(block_size_), sorted_token_ids_size_,
+            experts_ids_size_,
             maybe_expert_map ? static_cast<int32_t>(maybe_expert_map->numel())
                              : 0);
   }

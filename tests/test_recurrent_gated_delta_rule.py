@@ -267,8 +267,17 @@ def _packed_case(device, dtype, heads, index_dtype, strided):
 def _packed_run(implementation, args, out, norm):
     q, k, v, g, beta, offsets, initial, final, state = args
     infini.ops.recurrent_gated_delta_rule(
-        q, k, v, g, beta, state, cu_seqlens=offsets, initial_slots=initial,
-        final_slots=final, out=out, use_qk_l2norm=norm,
+        q,
+        k,
+        v,
+        g,
+        beta,
+        state,
+        cu_seqlens=offsets,
+        initial_slots=initial,
+        final_slots=final,
+        out=out,
+        use_qk_l2norm=norm,
         stream=torch.cuda.current_stream().cuda_stream,
         implementation_index=implementation,
     )
@@ -319,9 +328,9 @@ def test_packed_unusable_slot_zeroes_output(device, broken):
         state = args[8].clone()
         out = torch.full_like(args[2], float("nan"))
         _packed_run(implementation, args[:8] + (state,), out, True)
-        assert torch.equal(
-            out[0, 40:], torch.zeros_like(out[0, 40:])
-        ), "output must be zeroed"
+        assert torch.equal(out[0, 40:], torch.zeros_like(out[0, 40:])), (
+            "output must be zeroed"
+        )
         _packed_check_output(out[:, :40], ref_out[:, :40].to(device))
         assert torch.equal(state[2], args[8][2])
         assert torch.equal(state[1], args[8][1])
@@ -365,8 +374,16 @@ def test_packed_rejects_other_head_dims(device):
     for implementation in _packed_implementations(device):
         with pytest.raises(ValueError, match="head dim"):
             infini.ops.recurrent_gated_delta_rule(
-                q, k, v, g, beta, state, cu_seqlens=offsets,
-                initial_slots=initial, final_slots=final, out=out,
+                q,
+                k,
+                v,
+                g,
+                beta,
+                state,
+                cu_seqlens=offsets,
+                initial_slots=initial,
+                final_slots=final,
+                out=out,
                 use_qk_l2norm=True,
                 stream=torch.cuda.current_stream().cuda_stream,
                 implementation_index=implementation,

@@ -24,8 +24,7 @@ class CloverLiveMask : public ::infini::ops::CloverLiveMask {
         "clover_live_rows", ids.device().index(), this->stream_,
         this->config_ptr_.get(), config, {},
         [&](const Config&) -> std::optional<Grid> {
-          return Grid{
-              static_cast<unsigned>((ids.numel() + 255) / 256)};
+          return Grid{static_cast<unsigned>((ids.numel() + 255) / 256)};
         },
         ids, previous, live, live);
   }

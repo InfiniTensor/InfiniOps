@@ -43,8 +43,9 @@ def test_live_mask(device, id_dtype):
 
     outs = {}
     for impl, prev in ((NATIVE, previous.clone()), (TRITON, previous.clone())):
-        infini.ops.clover_live_mask(ids, prev, mask_id, False, live,
-                                    stream=stream, implementation_index=impl)
+        infini.ops.clover_live_mask(
+            ids, prev, mask_id, False, live, stream=stream, implementation_index=impl
+        )
         outs[impl] = (live.clone(), prev.clone())
 
     ids_now_mask = ids == mask_id
@@ -57,8 +58,9 @@ def test_live_mask(device, id_dtype):
 
     # refresh=True: everything live regardless of history.
     for impl, prev in ((NATIVE, previous.clone()), (TRITON, previous.clone())):
-        infini.ops.clover_live_mask(ids, prev, mask_id, True, live,
-                                    stream=stream, implementation_index=impl)
+        infini.ops.clover_live_mask(
+            ids, prev, mask_id, True, live, stream=stream, implementation_index=impl
+        )
         assert torch.count_nonzero(live) == n, f"impl {impl} refresh"
         assert torch.equal(prev, ids), f"impl {impl} refresh snapshot"
 
@@ -75,13 +77,14 @@ def test_mask_routes(device, id_dtype, topk):
     live = (torch.rand(rows, device=device) < 0.3).to(torch.int8)
     out_n = torch.empty_like(ids)
     out_t = torch.empty_like(ids)
-    infini.ops.clover_mask_routes(ids, live, experts, out_n,
-                                  stream=stream, implementation_index=NATIVE)
-    infini.ops.clover_mask_routes(ids, live, experts, out_t,
-                                  stream=stream, implementation_index=TRITON)
+    infini.ops.clover_mask_routes(
+        ids, live, experts, out_n, stream=stream, implementation_index=NATIVE
+    )
+    infini.ops.clover_mask_routes(
+        ids, live, experts, out_t, stream=stream, implementation_index=TRITON
+    )
 
-    golden = torch.where(live.unsqueeze(1) != 0, ids,
-                         torch.full_like(ids, experts))
+    golden = torch.where(live.unsqueeze(1) != 0, ids, torch.full_like(ids, experts))
     assert torch.equal(out_n, golden)
     assert torch.equal(out_n, out_t)
 
@@ -89,11 +92,13 @@ def test_mask_routes(device, id_dtype, topk):
 def check_merge_moe(stream, fresh, cache0, live):
     out = torch.empty_like(fresh)
     cache_n, cache_t = cache0.clone(), cache0.clone()
-    infini.ops.clover_merge_moe(fresh, live, cache_n, out,
-                                stream=stream, implementation_index=NATIVE)
+    infini.ops.clover_merge_moe(
+        fresh, live, cache_n, out, stream=stream, implementation_index=NATIVE
+    )
     out_n = out.clone()
-    infini.ops.clover_merge_moe(fresh, live, cache_t, out,
-                                stream=stream, implementation_index=TRITON)
+    infini.ops.clover_merge_moe(
+        fresh, live, cache_t, out, stream=stream, implementation_index=TRITON
+    )
     pick = torch.where(live.unsqueeze(1) != 0, fresh, cache0)
     assert torch.equal(out_n, pick)
     assert torch.equal(cache_n, pick)  # live rows replaced, dead ones kept
@@ -140,7 +145,7 @@ def test_merge_moe_unaligned(device):
     rows, width = 64, 320
     elements = rows * width
     storage = torch.randn(elements + 8, device=device, dtype=torch.bfloat16)
-    fresh = storage[1:1 + elements].view(rows, width)  # 2 bytes off
+    fresh = storage[1 : 1 + elements].view(rows, width)  # 2 bytes off
     assert fresh.is_contiguous() and fresh.data_ptr() % 16 != 0
     cache0 = torch.randn(rows, width, device=device, dtype=torch.bfloat16)
     live = (torch.rand(rows, device=device) < 0.4).to(torch.int8)

@@ -25,7 +25,8 @@ __device__ inline int64_t PackedIndex(const void* p, bool i64, int i,
 // per row. The state of the row lives in four registers per lane, read from
 // the initial slot and written once to the final slot, which leaves a
 // differing initial slot unchanged.
-//   state *= exp(g); delta = (v - state·k) * beta; state += delta⊗k; y = state·q
+//   state *= exp(g); delta = (v - state·k) * beta; state += delta⊗k; y =
+//   state·q
 // Grid: x = requests, y = value heads, z = value-row tiles; block = kWarps
 // warps of 32 lanes. `kDim` is the head dimension; the query scale below is
 // written for 128.
@@ -35,14 +36,14 @@ __global__ void PackedRecurrentGatedDeltaRuleKernel(
     const Data* __restrict__ v, const float* __restrict__ g,
     const float* __restrict__ beta, const void* __restrict__ cu_seqlens,
     const void* __restrict__ initial_indices,
-    const void* __restrict__ final_indices, bool offsets_i64,
-    bool initial_i64, bool final_i64, bool norm, float* __restrict__ state,
+    const void* __restrict__ final_indices, bool offsets_i64, bool initial_i64,
+    bool final_i64, bool norm, float* __restrict__ state,
     Data* __restrict__ out, int64_t qs, int64_t qh, int64_t ks, int64_t kh,
     int64_t vs, int64_t vh, int64_t gs, int64_t gh, int64_t bs, int64_t bh,
     int64_t ss, int64_t sh, int64_t sv, int64_t sk, int64_t os, int64_t oh,
     int64_t tokens, int64_t pool, int num_k_heads) {
-  constexpr int kLanes = 32;                // warp width on supported backends
-  constexpr int kPerLane = kDim / kLanes;   // keys per lane
+  constexpr int kLanes = 32;               // warp width on supported backends
+  constexpr int kPerLane = kDim / kLanes;  // keys per lane
   static_assert(kDim == 128, "the query scale is written for D == 128");
   constexpr float kQueryScale = 0.08838834764831845f;
 
@@ -58,18 +59,16 @@ __global__ void PackedRecurrentGatedDeltaRuleKernel(
   const int64_t end = PackedIndex(cu_seqlens, offsets_i64, request + 1, 0);
   const int64_t initial =
       PackedIndex(initial_indices, initial_i64, request, -1);
-  const int64_t final_slot =
-      PackedIndex(final_indices, final_i64, request, -1);
+  const int64_t final_slot = PackedIndex(final_indices, final_i64, request, -1);
   const bool range_ok = begin >= 0 && end >= begin && end <= tokens;
-  const bool slots_ok = initial >= 0 && initial < pool && final_slot >= 0 &&
-                        final_slot < pool;
+  const bool slots_ok =
+      initial >= 0 && initial < pool && final_slot >= 0 && final_slot < pool;
   if (!range_ok) return;
   if (!slots_ok) {
     // Same as the batched form: an unusable slot zeroes the output only.
     const Data zero = Caster<kDevice>::template Cast<Data>(0.0f);
     for (int64_t token = begin; token < end; ++token)
-      if (lane == 0)
-        out[token * os + head * oh + value_row] = zero;
+      if (lane == 0) out[token * os + head * oh + value_row] = zero;
     return;
   }
 
@@ -79,11 +78,9 @@ __global__ void PackedRecurrentGatedDeltaRuleKernel(
   float* k_norm = smem;  // [kWarps][kDim]
 
   float* state_row =
-      state + initial * ss + head * sh +
-      static_cast<int64_t>(value_row) * sv;
-  float* final_row =
-      state + final_slot * ss + head * sh +
-      static_cast<int64_t>(value_row) * sv;
+      state + initial * ss + head * sh + static_cast<int64_t>(value_row) * sv;
+  float* final_row = state + final_slot * ss + head * sh +
+                     static_cast<int64_t>(value_row) * sv;
 
   float st[kPerLane];
 #pragma unroll
@@ -97,8 +94,7 @@ __global__ void PackedRecurrentGatedDeltaRuleKernel(
     float k_sq = 0.0f;
 #pragma unroll
     for (int e = 0; e < kPerLane; ++e) {
-      kv[e] = Caster<kDevice>::template Cast<float>(
-          k_row[lane * kPerLane + e]);
+      kv[e] = Caster<kDevice>::template Cast<float>(k_row[lane * kPerLane + e]);
       k_sq += kv[e] * kv[e];
     }
 #pragma unroll
@@ -136,15 +132,13 @@ __global__ void PackedRecurrentGatedDeltaRuleKernel(
     float q_sq = 0.0f;
 #pragma unroll
     for (int e = 0; e < kPerLane; ++e) {
-      qv[e] = Caster<kDevice>::template Cast<float>(
-          q_row[lane * kPerLane + e]);
+      qv[e] = Caster<kDevice>::template Cast<float>(q_row[lane * kPerLane + e]);
       q_sq += qv[e] * qv[e];
     }
 #pragma unroll
     for (int off = kLanes / 2; off > 0; off >>= 1)
       q_sq += __shfl_xor_sync(0xffffffffu, q_sq, off);
-    const float q_scale =
-        (norm ? rsqrtf(q_sq + 1.0e-6f) : 1.0f) * kQueryScale;
+    const float q_scale = (norm ? rsqrtf(q_sq + 1.0e-6f) : 1.0f) * kQueryScale;
 
     // ---- state += delta * k; y = state · q (same fixed order) ----
     float y = 0.0f;

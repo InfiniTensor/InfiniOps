@@ -14,10 +14,10 @@ class CudaCloverBlockConv1d : public CloverBlockConv1d {
  public:
   using CloverBlockConv1d::CloverBlockConv1d;
 
-  void operator()(const Tensor input, const Tensor state,
-                  const Tensor indices, const Tensor weight,
-                  const Tensor right_weight, const Tensor valid,
-                  size_t block_size, Tensor out) const override {
+  void operator()(const Tensor input, const Tensor state, const Tensor indices,
+                  const Tensor weight, const Tensor right_weight,
+                  const Tensor valid, size_t block_size,
+                  Tensor out) const override {
     const auto tokens = input.size(0);
     const auto channels = input.size(1);
     const auto requests = indices.numel();
@@ -50,8 +50,7 @@ class CudaCloverBlockConv1d : public CloverBlockConv1d {
                   reinterpret_cast<const Data*>(right_weight.data()),
                   reinterpret_cast<const int8_t*>(valid.data()),
                   reinterpret_cast<Data*>(out.data()),
-                  static_cast<int64_t>(channels),
-                  static_cast<int>(block_size),
+                  static_cast<int64_t>(channels), static_cast<int>(block_size),
                   static_cast<int>(state.size(0)),
                   static_cast<int64_t>(input.stride(0)),
                   static_cast<int64_t>(input.stride(1)),

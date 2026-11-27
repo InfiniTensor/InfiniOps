@@ -2,13 +2,12 @@
 #define INFINI_OPS_HYGON_CLOVER_LOCAL_MEMORY_KERNEL_H_
 
 #include <cuda_runtime.h>
+#include <infini/rt/hygon/data_type_.h>
 
 #include <array>
 #include <climits>
 #include <cstdint>
 #include <mutex>
-
-#include <infini/rt/hygon/data_type_.h>
 
 #include "base/clover_local_memory.h"
 #include "data_type.h"
@@ -31,8 +30,7 @@ inline bool Eligible(const Tensor q, const Tensor k, const Tensor v,
                      const Tensor history_bias, const Tensor history_c,
                      std::size_t block_size, const Tensor out) {
   const auto dtype = q.dtype();
-  if (dtype != DataType::kFloat16 && dtype != DataType::kBFloat16)
-    return false;
+  if (dtype != DataType::kFloat16 && dtype != DataType::kBFloat16) return false;
   const auto num_v_heads = static_cast<int>(v.size(2));
   const auto num_q_heads = static_cast<int>(q.size(2));
   const auto num_k_heads = static_cast<int>(k.size(2));
@@ -47,8 +45,7 @@ inline bool Eligible(const Tensor q, const Tensor k, const Tensor v,
   if (k.dtype() != dtype || v.dtype() != dtype || out.dtype() != dtype ||
       logit_scale.dtype() != dtype || history_bias.dtype() != dtype ||
       history_c.dtype() != dtype || g.dtype() != DataType::kFloat32 ||
-      state.dtype() != DataType::kFloat32 ||
-      valid.dtype() != DataType::kInt8 ||
+      state.dtype() != DataType::kFloat32 || valid.dtype() != DataType::kInt8 ||
       (indices.dtype() != DataType::kInt32 &&
        indices.dtype() != DataType::kInt64))
     return false;
@@ -78,9 +75,7 @@ inline bool Eligible(const Tensor q, const Tensor k, const Tensor v,
 // 16/32/64 columns): one or two requests want the narrow tiling's extra
 // blocks per head, every larger batch the wide one's lower staging repeat;
 // 16 columns never won.
-inline int SelectTiling(std::size_t requests) {
-  return requests <= 2 ? 0 : 1;
-}
+inline int SelectTiling(std::size_t requests) { return requests <= 2 ? 0 : 1; }
 
 inline int RatioShift(int num_v_heads, int num_heads) {
   int ratio = num_v_heads / num_heads, shift = 0;
@@ -111,12 +106,11 @@ bool Launch(const Tensor q, const Tensor k, const Tensor v, const Tensor g,
           reinterpret_cast<const Data*>(logit_scale.data()),
           reinterpret_cast<const Data*>(history_bias.data()),
           reinterpret_cast<const Data*>(history_c.data()),
-          reinterpret_cast<Data*>(out.data()),
-          q.stride(1), q.stride(2), k.stride(1), k.stride(2), v.stride(1),
-          v.stride(2), g.stride(1), g.stride(2), state.stride(0),
-          state.stride(1), state.stride(2), out.stride(1), out.stride(2),
-          out.stride(3), 1.0f / sqrtf(128.0f), 32.0f,
-          static_cast<int>(block_size), static_cast<int>(state.size(0)),
+          reinterpret_cast<Data*>(out.data()), q.stride(1), q.stride(2),
+          k.stride(1), k.stride(2), v.stride(1), v.stride(2), g.stride(1),
+          g.stride(2), state.stride(0), state.stride(1), state.stride(2),
+          out.stride(1), out.stride(2), out.stride(3), 1.0f / sqrtf(128.0f),
+          32.0f, static_cast<int>(block_size), static_cast<int>(state.size(0)),
           RatioShift(static_cast<int>(v.size(2)), static_cast<int>(q.size(2))),
           RatioShift(static_cast<int>(v.size(2)), static_cast<int>(k.size(2))));
   return cudaGetLastError() == cudaSuccess;
@@ -143,26 +137,26 @@ class Operator<CloverLocalMemory, Device::Type::kHygon>
     if (requests != 0 && q.size(1) != 0 &&
         detail::Eligible(q, k, v, g, state, indices, valid, logit_scale,
                          history_bias, history_c, block_size, out)) {
-      const auto stream =
-          static_cast<cudaStream_t>(stream_ ? stream_ : 0);
+      const auto stream = static_cast<cudaStream_t>(stream_ ? stream_ : 0);
       bool launched = false;
       const int tiling = detail::SelectTiling(requests);
-      DispatchFunc<
-          List<DataType::kFloat16, DataType::kBFloat16>,
-          List<DataType::kInt32, DataType::kInt64>>(
+      DispatchFunc<List<DataType::kFloat16, DataType::kBFloat16>,
+                   List<DataType::kInt32, DataType::kInt64>>(
           {static_cast<int64_t>(q.dtype()),
            static_cast<int64_t>(indices.dtype())},
           [&](auto list_tag) {
-            using Data = TypeMapType<Device::Type::kHygon, ListGet<0>(list_tag)>;
-            using Index = TypeMapType<Device::Type::kHygon, ListGet<1>(list_tag)>;
+            using Data =
+                TypeMapType<Device::Type::kHygon, ListGet<0>(list_tag)>;
+            using Index =
+                TypeMapType<Device::Type::kHygon, ListGet<1>(list_tag)>;
             if (tiling == 0)
               launched = detail::Launch<Data, Index, 32, 256>(
-                  q, k, v, g, state, indices, valid, logit_scale,
-                  history_bias, history_c, block_size, out, stream);
+                  q, k, v, g, state, indices, valid, logit_scale, history_bias,
+                  history_c, block_size, out, stream);
             else
               launched = detail::Launch<Data, Index, 64, 512>(
-                  q, k, v, g, state, indices, valid, logit_scale,
-                  history_bias, history_c, block_size, out, stream);
+                  q, k, v, g, state, indices, valid, logit_scale, history_bias,
+                  history_c, block_size, out, stream);
           },
           "HygonCloverLocalMemoryMma::operator()");
       if (launched) return;

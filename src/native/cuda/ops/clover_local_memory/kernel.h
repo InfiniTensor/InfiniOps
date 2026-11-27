@@ -32,10 +32,10 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
     const auto row_tiles =
         (block_size + clover_local_memory_detail::kRowsPerBlock - 1) /
         clover_local_memory_detail::kRowsPerBlock;
-    dim3 grid(static_cast<unsigned>(value_dim /
-                                   clover_local_memory_detail::kTileV),
-              static_cast<unsigned>(requests * row_tiles),
-              static_cast<unsigned>(num_v_heads));
+    dim3 grid(
+        static_cast<unsigned>(value_dim / clover_local_memory_detail::kTileV),
+        static_cast<unsigned>(requests * row_tiles),
+        static_cast<unsigned>(num_v_heads));
     dim3 block(clover_local_memory_detail::kWarps *
                clover_local_memory_detail::kWarpLanes);
 
@@ -58,8 +58,8 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
                   reinterpret_cast<const float*>(state.data()),
                   reinterpret_cast<const Index*>(indices.data()),
                   reinterpret_cast<const int8_t*>(valid.data()),
-                  logit_scale.data(), history_bias.data(),
-                  history_c.data(), reinterpret_cast<Data*>(out.data()),
+                  logit_scale.data(), history_bias.data(), history_c.data(),
+                  reinterpret_cast<Data*>(out.data()),
                   // Layout is [1, tokens, heads, dim]; the batch dim is 1.
                   static_cast<int64_t>(q.stride(1)),
                   static_cast<int64_t>(q.stride(2)),
@@ -78,11 +78,9 @@ class CudaCloverLocalMemory : public CloverLocalMemory {
                   static_cast<int64_t>(state.stride(3)),
                   static_cast<int64_t>(out.stride(1)),
                   static_cast<int64_t>(out.stride(2)),
-                  static_cast<int64_t>(out.stride(3)),
-                  scale, reference, static_cast<int>(block_size),
-                  static_cast<int>(state.size(0)),
-                  static_cast<int>(q.size(2)),
-                  static_cast<int>(k.size(2)),
+                  static_cast<int64_t>(out.stride(3)), scale, reference,
+                  static_cast<int>(block_size), static_cast<int>(state.size(0)),
+                  static_cast<int>(q.size(2)), static_cast<int>(k.size(2)),
                   static_cast<int>(num_v_heads),
                   static_cast<int>(logit_scale.dtype()),
                   static_cast<int>(history_bias.dtype()),

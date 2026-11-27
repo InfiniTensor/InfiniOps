@@ -52,13 +52,13 @@ namespace infini::ops::nvidia_clover_local_memory_detail {
 // checked by the host; anything else takes the shared SIMT kernel.
 
 constexpr unsigned kFull = 0xffffffffu;
-constexpr int kDim = 128;    // KEY_DIM == VALUE_DIM == 128 (validated)
-constexpr int kRows = 32;    // block_size <= 32 (validated)
-constexpr int kMmaM = 16;    // mma.m16n8k16
+constexpr int kDim = 128;  // KEY_DIM == VALUE_DIM == 128 (validated)
+constexpr int kRows = 32;  // block_size <= 32 (validated)
+constexpr int kMmaM = 16;  // mma.m16n8k16
 constexpr int kMmaN = 8;
-constexpr int kPad = 8;      // 16-byte row pad; ldmatrix stays conflict free
+constexpr int kPad = 8;  // 16-byte row pad; ldmatrix stays conflict free
 constexpr int kLd = kDim + kPad;
-constexpr int kLdW = kRows + kPad;  // softmax weights: [row][key]
+constexpr int kLdW = kRows + kPad;        // softmax weights: [row][key]
 constexpr int kSteps = kDim / kMmaM;      // K-steps of q . state / q . k
 constexpr int kKeyTiles = kRows / kMmaM;  // 16-key tiles of the scores
 constexpr int kValueSteps = kKeyTiles;    // K-steps of W . values
@@ -80,11 +80,13 @@ struct Tiling {
                 "a row's threads are consecutive lanes of one warp");
   static constexpr int kChunks = kDim / 8 / kThreadsPerRow;  // 8 elements each
   static_assert(kChunks >= 1, "at most one thread per eight elements");
-  static constexpr int kOut = kCols / kThreadsPerRow;  // tile columns per thread
+  static constexpr int kOut =
+      kCols / kThreadsPerRow;  // tile columns per thread
   static_assert(kOut == 8, "each thread stages one 16-byte chunk of values");
   // State staging: a thread stages kStateF4 float4 (32 keys of one column).
   static constexpr int kStateF4 = kDim * kCols / kThreads / 4;
-  static_assert(kStateF4 >= 2 && kStateF4 % 2 == 0 && kStateF4 * 4 * kThreads == kDim * kCols,
+  static_assert(kStateF4 >= 2 && kStateF4 % 2 == 0 &&
+                    kStateF4 * 4 * kThreads == kDim * kCols,
                 "each thread stages a whole number of 8-key chunks");
   // Column pairs of the block, four per thread; an inactive request zeroes
   // them through the same mapping as the write-back uses rows.
@@ -133,7 +135,8 @@ __device__ __forceinline__ float2 ToFloat2<half>(uint32_t pair) {
 template <typename Data>
 __device__ __forceinline__ uint32_t FromFloat2(float x, float y);
 template <>
-__device__ __forceinline__ uint32_t FromFloat2<__nv_bfloat16>(float x, float y) {
+__device__ __forceinline__ uint32_t FromFloat2<__nv_bfloat16>(float x,
+                                                              float y) {
   const __nv_bfloat162 pair = __floats2bfloat162_rn(x, y);
   return *reinterpret_cast<const uint32_t*>(&pair);
 }
@@ -193,8 +196,9 @@ inline int RatioShift(int num_v_heads, int num_heads) {
 // kernel), so the product is one wide multiply instead of a 64-bit one at
 // the head of every address.
 __device__ __forceinline__ int64_t Offset(int64_t index, int64_t stride) {
-  return static_cast<int64_t>(static_cast<uint64_t>(static_cast<uint32_t>(index)) *
-                              static_cast<uint32_t>(stride));
+  return static_cast<int64_t>(
+      static_cast<uint64_t>(static_cast<uint32_t>(index)) *
+      static_cast<uint32_t>(stride));
 }
 
 // Normalizes one staged row and writes it to shared memory: the
@@ -203,8 +207,7 @@ __device__ __forceinline__ int64_t Offset(int64_t index, int64_t stride) {
 // the reference.
 template <typename Data, int kThreadsPerRow, int kChunks>
 __device__ __forceinline__ void NormStoreRow(const Words4 (&raw)[kChunks],
-                                             Data* __restrict__ dst,
-                                             int part) {
+                                             Data* __restrict__ dst, int part) {
   float2 f[kChunks][4];
   float sumsq = 0.0f;
 #pragma unroll
@@ -241,7 +244,8 @@ __device__ __forceinline__ uint32_t SharedAddress(const void* ptr) {
 }
 
 // Four 8x8 matrices; lane l names a 16-byte row of matrix l / 8.
-__device__ __forceinline__ void LoadMatrix4(uint32_t (&r)[4], uint32_t address) {
+__device__ __forceinline__ void LoadMatrix4(uint32_t (&r)[4],
+                                            uint32_t address) {
   asm volatile(
       "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];\n"
       : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
@@ -263,9 +267,9 @@ __device__ __forceinline__ void LoadMatrix4Trans(uint32_t (&r)[4],
 template <typename Data, int kLd>
 __device__ __forceinline__ void LoadAFrag(uint32_t (&a)[4], const Data* tile) {
   const int lane = static_cast<int>(threadIdx.x) & 31;
-  LoadMatrix4(a, SharedAddress(tile +
-                               ((lane & 7) + 8 * ((lane >> 3) & 1)) * kLd +
-                               8 * (lane >> 4)));
+  LoadMatrix4(a,
+              SharedAddress(tile + ((lane & 7) + 8 * ((lane >> 3) & 1)) * kLd +
+                            8 * (lane >> 4)));
 }
 
 // Four B tiles of a 16 x 16 block, K rows 0..7 and 8..15 by N columns 0..7
@@ -274,20 +278,18 @@ __device__ __forceinline__ void LoadAFrag(uint32_t (&a)[4], const Data* tile) {
 //   LoadBFrags:      B[k][n] is stored as tile[n][k] (K contiguous).
 //   LoadBFragsTrans: B[k][n] is stored as tile[k][n] (N contiguous).
 template <typename Data, int kLd>
-__device__ __forceinline__ void LoadBFrags(uint32_t (&b)[4],
-                                           const Data* tile) {
+__device__ __forceinline__ void LoadBFrags(uint32_t (&b)[4], const Data* tile) {
   const int lane = static_cast<int>(threadIdx.x) & 31;
-  LoadMatrix4(b, SharedAddress(tile +
-                               ((lane & 7) + 8 * (lane >> 4)) * kLd +
+  LoadMatrix4(b, SharedAddress(tile + ((lane & 7) + 8 * (lane >> 4)) * kLd +
                                8 * ((lane >> 3) & 1)));
 }
 template <typename Data, int kLd>
 __device__ __forceinline__ void LoadBFragsTrans(uint32_t (&b)[4],
                                                 const Data* tile) {
   const int lane = static_cast<int>(threadIdx.x) & 31;
-  LoadMatrix4Trans(b, SharedAddress(tile +
-                                    ((lane & 7) + 8 * ((lane >> 3) & 1)) * kLd +
-                                    8 * (lane >> 4)));
+  LoadMatrix4Trans(
+      b, SharedAddress(tile + ((lane & 7) + 8 * ((lane >> 3) & 1)) * kLd +
+                       8 * (lane >> 4)));
 }
 
 // d = a . b + d
@@ -364,8 +366,8 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
   const Data history_c_raw = __ldg(history_c + value_head);
   const Index cache_index = __ldg(indices + request);
   // The gates of the lane's two rows.
-  const float* g_src = g + Offset(row_base + r0, g_stride_t) +
-                       Offset(value_head, g_stride_h);
+  const float* g_src =
+      g + Offset(row_base + r0, g_stride_t) + Offset(value_head, g_stride_h);
   const float gate_row0 = __ldg(g_src);
   const float gate_row1 = __ldg(g_src + Offset(8, g_stride_t));
   // The thread's own valid flag (thread j owns key j).
@@ -378,15 +380,12 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
   const int k_head = value_head >> k_head_shift;
   Words4 q_raw[T::kChunks], k_raw[T::kChunks], v_raw;
   {
-    const Data* q_src =
-        q + Offset(row_base + row, q_stride_t) +
-            Offset(q_head, q_stride_h) + 8 * part;
-    const Data* k_src =
-        k + Offset(row_base + row, k_stride_t) +
-            Offset(k_head, k_stride_h) + 8 * part;
-    const Data* v_src =
-        v + Offset(row_base + row, v_stride_t) +
-            Offset(value_head, v_stride_h) + c0 + 8 * part;
+    const Data* q_src = q + Offset(row_base + row, q_stride_t) +
+                        Offset(q_head, q_stride_h) + 8 * part;
+    const Data* k_src = k + Offset(row_base + row, k_stride_t) +
+                        Offset(k_head, k_stride_h) + 8 * part;
+    const Data* v_src = v + Offset(row_base + row, v_stride_t) +
+                        Offset(value_head, v_stride_h) + c0 + 8 * part;
     const Words4 zero{0u, 0u, 0u, 0u};
 #pragma unroll
     for (int c = 0; c < T::kChunks; ++c) {
@@ -443,10 +442,10 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
   const int slice = tid / kCols;
   float4 s_raw[T::kStateF4];
   {
-    const float* s_src =
-        state + Offset(slot, state_slot_stride) +
-        Offset(value_head, state_h_stride) +
-        Offset(c0 + column, state_v_stride) + 4 * T::kStateF4 * slice;
+    const float* s_src = state + Offset(slot, state_slot_stride) +
+                         Offset(value_head, state_h_stride) +
+                         Offset(c0 + column, state_v_stride) +
+                         4 * T::kStateF4 * slice;
 #pragma unroll
     for (int c = 0; c < T::kStateF4; ++c) s_raw[c] = LoadFloat4(s_src + 4 * c);
   }
@@ -461,11 +460,10 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
   // logarithm runs beside the other warps' staging.
   if (warp == 0) {
     const int valid_count = __popc(__ballot_sync(kFull, own_valid != 0));
-    *history_logit_s =
-        Scalar<Data>::To(history_bias_raw) +
-        Scalar<Data>::To(history_c_raw) *
-            logf(fmaxf(static_cast<float>(valid_count), 1.0f) /
-                 reference_block_size);
+    *history_logit_s = Scalar<Data>::To(history_bias_raw) +
+                       Scalar<Data>::To(history_c_raw) *
+                           logf(fmaxf(static_cast<float>(valid_count), 1.0f) /
+                                reference_block_size);
   }
   // q, k, values and the flags are staged.
   __syncthreads();
@@ -536,8 +534,10 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
 #pragma unroll
     for (int half = 0; half < 2; ++half) {
       // Over the row's four lanes, in a fixed order.
-      row_max[half] = fmaxf(row_max[half], __shfl_xor_sync(kFull, row_max[half], 1));
-      row_max[half] = fmaxf(row_max[half], __shfl_xor_sync(kFull, row_max[half], 2));
+      row_max[half] =
+          fmaxf(row_max[half], __shfl_xor_sync(kFull, row_max[half], 1));
+      row_max[half] =
+          fmaxf(row_max[half], __shfl_xor_sync(kFull, row_max[half], 2));
       row_max[half] = fmaxf(row_max[half], history_logit);
     }
     float local_sum[2] = {0.0f, 0.0f};
@@ -549,7 +549,8 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
         for (int n = 0; n < 2; ++n) {
 #pragma unroll
           for (int e = 0; e < 2; ++e) {
-            logit[half][t][n][e] = FastExp(logit[half][t][n][e] - row_max[half]);
+            logit[half][t][n][e] =
+                FastExp(logit[half][t][n][e] - row_max[half]);
             local_sum[half] += logit[half][t][n][e];
           }
         }
@@ -571,12 +572,14 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
       for (int t = 0; t < kKeyTiles; ++t) {
 #pragma unroll
         for (int n = 0; n < 2; ++n) {
-          *reinterpret_cast<uint32_t*>(w_row + kMmaM * t + kMmaN * n + 2 * tig) =
+          *reinterpret_cast<uint32_t*>(w_row + kMmaM * t + kMmaN * n +
+                                       2 * tig) =
               FromFloat2<Data>(logit[half][t][n][0] * inverse,
                                logit[half][t][n][1] * inverse);
         }
       }
-      history_scale_s[r0 + 8 * half] = (exp_history * inverse) * gate_rows[half];
+      history_scale_s[r0 + 8 * half] =
+          (exp_history * inverse) * gate_rows[half];
     }
   }
 
@@ -641,22 +644,25 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
       // data once the GPU is busy. The k tile is dead: its last readers,
       // the scores, finished before the second barrier, unlike q which the
       // other warps of a row half may still be reading for their history.
-      uint32_t* const stage = reinterpret_cast<uint32_t*>(k_s) + warp * (kMmaM * kMmaM / 2);
+      uint32_t* const stage =
+          reinterpret_cast<uint32_t*>(k_s) + warp * (kMmaM * kMmaM / 2);
 #pragma unroll
       for (int n = 0; n < 2; ++n) {
 #pragma unroll
         for (int half = 0; half < 2; ++half) {
-          stage[(group + 8 * half) * (kMmaM / 2) + 4 * n + tig] = FromFloat2<Data>(
-              keep[half] ? result[n][2 * half] : 0.0f,
-              keep[half] ? result[n][2 * half + 1] : 0.0f);
+          stage[(group + 8 * half) * (kMmaM / 2) + 4 * n + tig] =
+              FromFloat2<Data>(keep[half] ? result[n][2 * half] : 0.0f,
+                               keep[half] ? result[n][2 * half + 1] : 0.0f);
         }
       }
       __syncwarp();
       const Words4 words = *reinterpret_cast<const Words4*>(stage + 4 * lane);
       if (16 * row_half + (lane >> 1) < block_size)
-        *reinterpret_cast<Words4*>(tile0 + Offset(lane >> 1, out_t_stride) + 8 * (lane & 1)) = words;
+        *reinterpret_cast<Words4*>(tile0 + Offset(lane >> 1, out_t_stride) +
+                                   8 * (lane & 1)) = words;
     } else {
-      Data* const row0 = tile0 + Offset(group, out_t_stride) + 2 * tig * out_v_stride;
+      Data* const row0 =
+          tile0 + Offset(group, out_t_stride) + 2 * tig * out_v_stride;
       const bool pack = adjacent && (out_t_stride & 1) == 0 &&
                         (reinterpret_cast<uintptr_t>(row0) & 3) == 0;
 #pragma unroll

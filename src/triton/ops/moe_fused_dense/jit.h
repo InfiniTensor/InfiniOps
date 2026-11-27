@@ -41,10 +41,10 @@ class MoeFusedDense : public ::infini::ops::MoeFusedDense {
           "Hygon Triton MoE does not support expert biases.");
     // The Python bindings call without a handle: use the caller's workspace
     // when it is large enough, else a buffer owned by this operator.
-    void* scratch = workspace_ &&
-                            workspace_size_in_bytes_ >= workspace_size_in_bytes()
-                        ? workspace_
-                        : fallback_.Allocate(workspace_size_in_bytes());
+    void* scratch =
+        workspace_ && workspace_size_in_bytes_ >= workspace_size_in_bytes()
+            ? workspace_
+            : fallback_.Allocate(workspace_size_in_bytes());
     const auto n = hidden.size(0), h = hidden.size(1), i = w2.size(2),
                topk = ids.size(1);
     const auto pairs = n * topk;

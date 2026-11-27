@@ -11,7 +11,8 @@ template <>
 class Operator<FusedGatedDeltaNetGating, Device::Type::kHygon>
     : public CudaFusedGatedDeltaNetGating<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaFusedGatedDeltaNetGating<Runtime<Device::Type::kHygon>>::CudaFusedGatedDeltaNetGating;
+  using CudaFusedGatedDeltaNetGating<
+      Runtime<Device::Type::kHygon>>::CudaFusedGatedDeltaNetGating;
 };
 
 }  // namespace infini::ops

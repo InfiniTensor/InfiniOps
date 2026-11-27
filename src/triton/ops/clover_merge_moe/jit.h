@@ -22,11 +22,9 @@ class CloverMergeMoe : public ::infini::ops::CloverMergeMoe {
                          {"BLOCK", 256}}};
     Launch<kDev>(
         "clover_live_rows", fresh.device().index(), this->stream_,
-        this->config_ptr_.get(), config,
-        {},
+        this->config_ptr_.get(), config, {},
         [&](const Config&) -> std::optional<Grid> {
-          return Grid{
-              static_cast<unsigned>((fresh.numel() + 255) / 256)};
+          return Grid{static_cast<unsigned>((fresh.numel() + 255) / 256)};
         },
         fresh, live, cache, out);
   }

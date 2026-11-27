@@ -59,8 +59,10 @@ def torch_coreset(logits, width, top_p):
         keep_expert = torch.zeros_like(mass, dtype=torch.bool)
         keep_expert[order] = keep
         out[rows] = torch.where(
-            keep_expert.unsqueeze(0), logits[rows],
-            torch.full_like(logits[rows], float("-inf")))
+            keep_expert.unsqueeze(0),
+            logits[rows],
+            torch.full_like(logits[rows], float("-inf")),
+        )
     return out, margin
 
 
@@ -73,8 +75,9 @@ def assert_coreset_close(actual, expected, margin):
 def run_native(logits, width, top_p, stream):
     # The native provider needs no workspace: the plain binding serves it.
     out = torch.empty_like(logits)
-    infini.ops.clover_coreset(logits, width, top_p, out, stream=stream,
-                              implementation_index=NATIVE)
+    infini.ops.clover_coreset(
+        logits, width, top_p, out, stream=stream, implementation_index=NATIVE
+    )
     torch.cuda.synchronize()
     return out
 
@@ -82,16 +85,16 @@ def run_native(logits, width, top_p, stream):
 def run_triton(logits, width, top_p, stream):
     # The Triton provider allocates its workspace when the caller brings none.
     out = torch.empty_like(logits)
-    infini.ops.clover_coreset(logits, width, top_p, out, stream=stream,
-                              implementation_index=TRITON)
+    infini.ops.clover_coreset(
+        logits, width, top_p, out, stream=stream, implementation_index=TRITON
+    )
     torch.cuda.synchronize()
     return out
 
 
 def require_providers(device):
     if not _impls_ok(device):
-        pytest.skip("requires the native and Triton providers on a "
-                    "CUDA-like backend")
+        pytest.skip("requires the native and Triton providers on a CUDA-like backend")
     return torch.cuda.current_stream().cuda_stream
 
 
@@ -129,8 +132,12 @@ def test_coreset_matches_triton(device):
         pytest.skip("requires the CUDA backend")
     stream = require_providers(device)
     torch.manual_seed(61)
-    for dtype, width in ((torch.bfloat16, 32), (torch.bfloat16, 7),
-                         (torch.float16, 32), (torch.float32, 32)):
+    for dtype, width in (
+        (torch.bfloat16, 32),
+        (torch.bfloat16, 7),
+        (torch.float16, 32),
+        (torch.float32, 32),
+    ):
         logits = (torch.randn(40 * width, EXPERTS, device=device) * 4).to(dtype)
         out_n = run_native(logits, width, 0.9, stream)
         out_t = run_triton(logits, width, 0.9, stream)
@@ -145,8 +152,15 @@ def competing_row(logits, row, eighth, ninth):
     """Row `row` of `logits` gets seven high logits; experts 10 and 50
     compete, with the logits `eighth` and `ninth`, for its eighth expert."""
     logits[row] = -10.0
-    for column, value in ((3, 5.0), (20, 4.5), (60, 4.0), (100, 3.5),
-                          (140, 3.0), (180, 2.5), (200, 2.0)):
+    for column, value in (
+        (3, 5.0),
+        (20, 4.5),
+        (60, 4.0),
+        (100, 3.5),
+        (140, 3.0),
+        (180, 2.5),
+        (200, 2.0),
+    ):
         logits[row, column] = value
     logits[row, 10] = eighth
     logits[row, 50] = ninth
@@ -186,8 +200,14 @@ def test_coreset_ties(device):
     torch.manual_seed(66)
     for dtype in (torch.bfloat16, torch.float16):
         # Coarse logits: many equal ones in the other rows too.
-        logits = ((torch.randn(6, EXPERTS, device=device) * 2).to(dtype)
-                  .float().mul_(2).round().div_(2))
+        logits = (
+            (torch.randn(6, EXPERTS, device=device) * 2)
+            .to(dtype)
+            .float()
+            .mul_(2)
+            .round()
+            .div_(2)
+        )
         for row in range(4):
             if row < 2:
                 competing_row(logits, row, -0.0, 0.0)  # the tie goes to 10
@@ -216,7 +236,9 @@ def test_coreset_near_ties(device):
         pytest.skip("requires the CUDA backend")
     stream = require_providers(device)
     torch.manual_seed(67)
-    logits = (torch.randn(6, EXPERTS, device=device) * 2).float().mul_(2).round().div_(2)
+    logits = (
+        (torch.randn(6, EXPERTS, device=device) * 2).float().mul_(2).round().div_(2)
+    )
     larger = torch.nextafter(torch.tensor(1.0), torch.tensor(2.0)).item()
     assert larger > 1.0
     for row in range(4):
@@ -239,7 +261,7 @@ def test_coreset_unaligned(device, dtype):
     torch.manual_seed(69)
     width, blocks = 8, 3
     storage = torch.randn(blocks * width * EXPERTS + 8, device=device).to(dtype)
-    logits = storage[1:1 + blocks * width * EXPERTS].view(blocks * width, EXPERTS)
+    logits = storage[1 : 1 + blocks * width * EXPERTS].view(blocks * width, EXPERTS)
     assert logits.data_ptr() % 16 != 0 and logits.is_contiguous()
     out_n = run_native(logits, width, 0.7, stream)
     out_t = run_triton(logits, width, 0.7, stream)

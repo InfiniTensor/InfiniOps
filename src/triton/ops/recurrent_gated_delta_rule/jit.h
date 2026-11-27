@@ -46,12 +46,12 @@ class PackedRecurrentGatedDeltaRule
           return Grid{static_cast<unsigned>(cu_seqlens.numel() - 1),
                       static_cast<unsigned>(v.size(2)), 8};
         },
-        q, k, v, g, beta, cu_seqlens, initial_slots,
-        final_slots, initial_state, out, q.stride(1), q.stride(2),
-        k.stride(1), k.stride(2), v.stride(1), v.stride(2), g.stride(1),
-        g.stride(2), beta.stride(1), beta.stride(2), initial_state.stride(0),
-        initial_state.stride(1), initial_state.stride(2),
-        initial_state.stride(3), out.stride(1), out.stride(2));
+        q, k, v, g, beta, cu_seqlens, initial_slots, final_slots, initial_state,
+        out, q.stride(1), q.stride(2), k.stride(1), k.stride(2), v.stride(1),
+        v.stride(2), g.stride(1), g.stride(2), beta.stride(1), beta.stride(2),
+        initial_state.stride(0), initial_state.stride(1),
+        initial_state.stride(2), initial_state.stride(3), out.stride(1),
+        out.stride(2));
   }
 };
 

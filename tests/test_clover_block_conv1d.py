@@ -74,16 +74,35 @@ def test_block_conv1d(device, block_size, dtype, rtol, id_dtype):
     out_n = torch.empty_like(x)
     out_t = torch.empty_like(x)
 
-    infini.ops.clover_block_conv1d(x, state, indices, weight, right_weight,
-                                   valid, block_size, out_n,
-                                   stream=stream, implementation_index=NATIVE)
-    infini.ops.clover_block_conv1d(x, state, indices, weight, right_weight,
-                                   valid, block_size, out_t,
-                                   stream=stream, implementation_index=TRITON)
+    infini.ops.clover_block_conv1d(
+        x,
+        state,
+        indices,
+        weight,
+        right_weight,
+        valid,
+        block_size,
+        out_n,
+        stream=stream,
+        implementation_index=NATIVE,
+    )
+    infini.ops.clover_block_conv1d(
+        x,
+        state,
+        indices,
+        weight,
+        right_weight,
+        valid,
+        block_size,
+        out_t,
+        stream=stream,
+        implementation_index=TRITON,
+    )
     torch.cuda.synchronize()
 
-    golden = torch_golden(x, state, indices, weight, right_weight, valid,
-                          block_size).to(device)
+    golden = torch_golden(
+        x, state, indices, weight, right_weight, valid, block_size
+    ).to(device)
     torch.testing.assert_close(out_n.float(), golden, rtol=rtol, atol=rtol)
     torch.testing.assert_close(out_n.float(), out_t.float(), rtol=rtol, atol=rtol)
     assert torch.equal(state, state0), "the preview reads the state only"

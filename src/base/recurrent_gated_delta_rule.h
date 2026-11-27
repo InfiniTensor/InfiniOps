@@ -73,20 +73,13 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
   RecurrentGatedDeltaRule(const Tensor q, const Tensor k, const Tensor v,
                           const Tensor g, const Tensor beta,
                           Tensor initial_state, const Tensor cu_seqlens,
-                          const Tensor initial_slots,
-                          const Tensor final_slots, Tensor out,
-                          bool use_qk_l2norm)
-      : norm_(use_qk_l2norm),
-        metadata_{q,
-                  k,
-                  v,
-                  g,
-                  beta,
-                  initial_state,
-                  cu_seqlens,
-                  initial_slots,
-                  final_slots,
-                  out} {
+                          const Tensor initial_slots, const Tensor final_slots,
+                          Tensor out, bool use_qk_l2norm)
+      : norm_(use_qk_l2norm), metadata_{q,           k,
+                                        v,           g,
+                                        beta,        initial_state,
+                                        cu_seqlens,  initial_slots,
+                                        final_slots, out} {
     ValidatePacked(metadata_);
     device_ = q.device();
     data_type_ = q.dtype();
@@ -109,9 +102,8 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
   virtual void operator()(const Tensor q, const Tensor k, const Tensor v,
                           const Tensor g, const Tensor beta,
                           Tensor initial_state, const Tensor cu_seqlens,
-                          const Tensor initial_slots,
-                          const Tensor final_slots, Tensor out,
-                          bool use_qk_l2norm) const {
+                          const Tensor initial_slots, const Tensor final_slots,
+                          Tensor out, bool use_qk_l2norm) const {
     throw std::invalid_argument(
         "this RecurrentGatedDeltaRule provider does not support packed "
         "sequences");
@@ -190,17 +182,17 @@ class RecurrentGatedDeltaRule : public Operator<RecurrentGatedDeltaRule> {
           "packed recurrent delta requires a head dim of 128");
     assert((q.shape()[0] == 1 && v.shape()[0] == 1 && v.shape()[1] == T && T &&
             Hk && Hv && Hv % Hk == 0 && D && v.shape()[3] == D &&
-            g.shape() == Tensor::Shape{1, T, Hv} &&
-            state.shape()[1] == Hv && state.shape()[2] == D &&
-            state.shape()[3] == D) &&
+            g.shape() == Tensor::Shape{1, T, Hv} && state.shape()[1] == Hv &&
+            state.shape()[2] == D && state.shape()[3] == D) &&
            "packed recurrent delta requires [1,T,H,D] data, Dk == Dv and a "
            "[pool,Hv,D,D] state");
     assert(floating(q.dtype()) && state.dtype() == DataType::kFloat32 &&
            g.dtype() == DataType::kFloat32 && beta.dtype() == g.dtype() &&
            "packed recurrent delta keeps state and gates in F32");
-    assert(a[6]->numel() >= 2 && a[7]->numel() + 1 == a[6]->numel() &&
-           a[8]->shape() == a[7]->shape() &&
-           "packed recurrent delta requires [N+1] offsets and [N] slot indices");
+    assert(
+        a[6]->numel() >= 2 && a[7]->numel() + 1 == a[6]->numel() &&
+        a[8]->shape() == a[7]->shape() &&
+        "packed recurrent delta requires [N+1] offsets and [N] slot indices");
     for (size_t i = 0; i < a.size(); ++i) {
       const auto& t = *a[i];
       assert(t.device() == q.device() &&

@@ -10,8 +10,9 @@ namespace infini::ops {
 // Shared-layer SIMT kernel for CloverBlockConv1d, mirroring the Triton
 // reference (SGLang lineage). Per (request, token, channel):
 //   left part  : sum over 4 taps of input/state history . weight[c,0,tap]
-//   right part : sum over 3 taps of future-in-block input . right_weight[c,0,d-1]
-//   out        = silu(left + right), zeroed for inactive rows.
+//   right part : sum over 3 taps of future-in-block input .
+//   right_weight[c,0,d-1] out        = silu(left + right), zeroed for inactive
+//   rows.
 // The state pool row for a request holds its last 3 pre-block values
 // (clean prefix); only rows whose `valid` flag is set contribute.
 //
@@ -25,8 +26,7 @@ namespace infini::ops {
 // strings several memory latencies one after another.)
 //
 // Grid: x covers channels in blocks of threads, y iterates (request, tile).
-template <Device::Type kDevice, typename Data, typename Index,
-          int kTileTokens>
+template <Device::Type kDevice, typename Data, typename Index, int kTileTokens>
 __global__ void CloverBlockConv1dKernel(
     const Data* __restrict__ input, const Data* __restrict__ state,
     const Index* __restrict__ indices, const Data* __restrict__ weight,
@@ -62,10 +62,9 @@ __global__ void CloverBlockConv1dKernel(
     const int token = first + i - kPast;
     const bool inside = token >= 0 && token < block_size;
     const bool on = inside && valid[base + token] != 0;
-    const float value =
-        inside ? Caster<kDevice>::template Cast<float>(
-                     input[(base + token) * stride_t + channel])
-               : 0.0f;
+    const float value = inside ? Caster<kDevice>::template Cast<float>(
+                                     input[(base + token) * stride_t + channel])
+                               : 0.0f;
     live |= static_cast<unsigned>(on) << i;
     row[i] = on ? value : 0.0f;
   }
@@ -77,8 +76,7 @@ __global__ void CloverBlockConv1dKernel(
 #pragma unroll
   for (int distance = 1; distance < kWidth; ++distance)
     right_taps[distance - 1] = Caster<kDevice>::template Cast<float>(
-        right_weight[ch * right_c_stride +
-                      (distance - 1) * right_w_stride]);
+        right_weight[ch * right_c_stride + (distance - 1) * right_w_stride]);
   // The rows before the block are the clean state, valid as they are. A
   // request without a slot in the pool reads none of it.
 #pragma unroll
@@ -87,27 +85,24 @@ __global__ void CloverBlockConv1dKernel(
     if (token < 0) {
       row[i] = request_active
                    ? Caster<kDevice>::template Cast<float>(
-                         state[static_cast<int64_t>(slot) *
-                                   state_slot_stride +
+                         state[static_cast<int64_t>(slot) * state_slot_stride +
                                ch * state_c_stride +
                                (token + kPast) * state_w_stride])
                    : 0.0f;
     }
   }
 
-  const int tokens = block_size - first < kTileTokens ? block_size - first
-                                                      : kTileTokens;
+  const int tokens =
+      block_size - first < kTileTokens ? block_size - first : kTileTokens;
   for (int token = 0; token < tokens; ++token) {
     float acc = 0.0f;
 #pragma unroll
-    for (int tap = 0; tap < kWidth; ++tap)
-      acc += row[token + tap] * taps[tap];
+    for (int tap = 0; tap < kWidth; ++tap) acc += row[token + tap] * taps[tap];
 #pragma unroll
     for (int distance = 1; distance < kWidth; ++distance)
       acc += row[token + distance + kPast] * right_taps[distance - 1];
     const float sigmoid = 1.0f / (1.0f + expf(-acc));
-    const bool active =
-        request_active && ((live >> (token + kPast)) & 1u) != 0;
+    const bool active = request_active && ((live >> (token + kPast)) & 1u) != 0;
     out[(base + first + token) * out_t_stride + ch * out_c_stride] =
         Caster<kDevice>::template Cast<Data>(active ? acc * sigmoid : 0.0f);
   }

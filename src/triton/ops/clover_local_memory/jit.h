@@ -56,7 +56,8 @@ template <>
 class Operator<CloverLocalMemory, Device::Type::kNvidia, 10>
     : public triton::jit::CloverLocalMemory<Device::Type::kNvidia> {
  public:
-  using triton::jit::CloverLocalMemory<Device::Type::kNvidia>::CloverLocalMemory;
+  using triton::jit::CloverLocalMemory<
+      Device::Type::kNvidia>::CloverLocalMemory;
 };
 
 template <>

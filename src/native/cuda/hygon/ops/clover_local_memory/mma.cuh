@@ -39,10 +39,10 @@ namespace infini::ops::hygon_clover_local_memory_detail {
 // by the host; anything else takes the shared SIMT kernel.
 
 constexpr unsigned kWave = 0xffffffffffffffffu;  // one wave: 64 lanes
-constexpr int kDim = 128;         // KEY_DIM == VALUE_DIM == 128 (validated)
-constexpr int kRows = 32;         // block_size <= 32 (validated)
-constexpr int kLd = kDim + 8;     // k-contiguous rows, padded
-constexpr int kLdW = kRows + 8;   // key-contiguous rows, padded
+constexpr int kDim = 128;        // KEY_DIM == VALUE_DIM == 128 (validated)
+constexpr int kRows = 32;        // block_size <= 32 (validated)
+constexpr int kLd = kDim + 8;    // k-contiguous rows, padded
+constexpr int kLdW = kRows + 8;  // key-contiguous rows, padded
 
 using V2I = int __attribute__((ext_vector_type(2)));
 using V4F = float __attribute__((ext_vector_type(4)));
@@ -59,8 +59,7 @@ __device__ __forceinline__ V4F Mma(V2I a, V2I b, V4F c) {
 // An A or B fragment: the four elements at `base + (lane / 16) * 4`.
 template <typename Data>
 __device__ __forceinline__ V2I Frag(const Data* __restrict__ base, int lane) {
-  const uint16_t* p =
-      reinterpret_cast<const uint16_t*>(base) + 4 * (lane / 16);
+  const uint16_t* p = reinterpret_cast<const uint16_t*>(base) + 4 * (lane / 16);
   V2I f;
   f.x = static_cast<int>((static_cast<unsigned>(p[1]) << 16) | p[0]);
   f.y = static_cast<int>((static_cast<unsigned>(p[3]) << 16) | p[2]);
@@ -87,8 +86,7 @@ __device__ __forceinline__ float ToFloat(uint16_t bits) {
 template <typename Data>
 __device__ __forceinline__ float ReadScalar(const Data* __restrict__ p,
                                             int head) {
-  return ToFloat<Data>(
-      reinterpret_cast<const uint16_t*>(p)[head]);
+  return ToFloat<Data>(reinterpret_cast<const uint16_t*>(p)[head]);
 }
 
 // ext_vector_type elements cannot be addressed; a switch keeps the access
@@ -115,21 +113,19 @@ __device__ __forceinline__ void Store8(Data* __restrict__ dst,
 }
 
 template <typename Data, typename Index, int kCols, int kThreads>
-__global__ void __launch_bounds__(kThreads)
-    CloverLocalMemoryMmaKernel(
-        const Data* __restrict__ q, const Data* __restrict__ k,
-        const Data* __restrict__ v, const float* __restrict__ g,
-        const float* __restrict__ state, const Index* __restrict__ indices,
-        const int8_t* __restrict__ valid, const Data* __restrict__ logit_scale,
-        const Data* __restrict__ history_bias,
-        const Data* __restrict__ history_c, Data* __restrict__ out,
-        int64_t q_stride_t, int64_t q_stride_h, int64_t k_stride_t,
-        int64_t k_stride_h, int64_t v_stride_t, int64_t v_stride_h,
-        int64_t g_stride_t, int64_t g_stride_h, int64_t state_slot_stride,
-        int64_t state_h_stride, int64_t state_v_stride, int64_t out_t_stride,
-        int64_t out_h_stride, int64_t out_v_stride, float scale,
-        float reference_block_size, int block_size, int num_slots,
-        int q_head_shift, int k_head_shift) {
+__global__ void __launch_bounds__(kThreads) CloverLocalMemoryMmaKernel(
+    const Data* __restrict__ q, const Data* __restrict__ k,
+    const Data* __restrict__ v, const float* __restrict__ g,
+    const float* __restrict__ state, const Index* __restrict__ indices,
+    const int8_t* __restrict__ valid, const Data* __restrict__ logit_scale,
+    const Data* __restrict__ history_bias, const Data* __restrict__ history_c,
+    Data* __restrict__ out, int64_t q_stride_t, int64_t q_stride_h,
+    int64_t k_stride_t, int64_t k_stride_h, int64_t v_stride_t,
+    int64_t v_stride_h, int64_t g_stride_t, int64_t g_stride_h,
+    int64_t state_slot_stride, int64_t state_h_stride, int64_t state_v_stride,
+    int64_t out_t_stride, int64_t out_h_stride, int64_t out_v_stride,
+    float scale, float reference_block_size, int block_size, int num_slots,
+    int q_head_shift, int k_head_shift) {
   constexpr int kTpr = kThreads / kRows;    // staging threads per row
   constexpr int kChunks = kDim / 8 / kTpr;  // 8-element chunks of q/k each
   constexpr int kColTiles = kCols / 16;
@@ -138,11 +134,11 @@ __global__ void __launch_bounds__(kThreads)
                 "one wave per (row half, column tile)");
   static_assert(kStateElems % 8 == 0, "whole 8-key state chunks");
 
-  __shared__ __align__(16) Data q_s[kRows * kLd];    // normalized q rows
-  __shared__ __align__(16) Data k_s[kRows * kLd];    // normalized k rows
-  __shared__ __align__(16) Data s_s[kCols * kLd];    // state tile, rounded
-  __shared__ __align__(16) Data v_s[kCols * kLdW];   // values, [col][key]
-  __shared__ __align__(16) Data w_s[kRows * kLdW];   // softmax weights
+  __shared__ __align__(16) Data q_s[kRows * kLd];   // normalized q rows
+  __shared__ __align__(16) Data k_s[kRows * kLd];   // normalized k rows
+  __shared__ __align__(16) Data s_s[kCols * kLd];   // state tile, rounded
+  __shared__ __align__(16) Data v_s[kCols * kLdW];  // values, [col][key]
+  __shared__ __align__(16) Data w_s[kRows * kLdW];  // softmax weights
   __shared__ float history_scale_s[kRows];
   __shared__ int8_t valid_s[kRows];
 
@@ -161,9 +157,8 @@ __global__ void __launch_bounds__(kThreads)
   const int part = tid % kTpr;
 
   const Index cache_index = indices[request];
-  const bool request_active =
-      num_slots > 0 && cache_index >= 0 &&
-      cache_index < static_cast<Index>(num_slots);
+  const bool request_active = num_slots > 0 && cache_index >= 0 &&
+                              cache_index < static_cast<Index>(num_slots);
   Data* const head_out =
       out + row_base * out_t_stride + value_head * out_h_stride;
   if (!request_active) {
@@ -191,15 +186,13 @@ __global__ void __launch_bounds__(kThreads)
 #pragma unroll
     for (int c = 0; c < kChunks; ++c) {
       const uint4 pq =
-          row_live
-              ? *reinterpret_cast<const uint4*>(
-                    q_src + row * q_stride_t + 8 * (c * kTpr + part))
-              : make_uint4(0, 0, 0, 0);
+          row_live ? *reinterpret_cast<const uint4*>(q_src + row * q_stride_t +
+                                                     8 * (c * kTpr + part))
+                   : make_uint4(0, 0, 0, 0);
       const uint4 pk =
-          row_live
-              ? *reinterpret_cast<const uint4*>(
-                    k_src + row * k_stride_t + 8 * (c * kTpr + part))
-              : make_uint4(0, 0, 0, 0);
+          row_live ? *reinterpret_cast<const uint4*>(k_src + row * k_stride_t +
+                                                     8 * (c * kTpr + part))
+                   : make_uint4(0, 0, 0, 0);
       const uint16_t* wq = reinterpret_cast<const uint16_t*>(&pq);
       const uint16_t* wk = reinterpret_cast<const uint16_t*>(&pk);
 #pragma unroll
@@ -232,12 +225,11 @@ __global__ void __launch_bounds__(kThreads)
     const int vpart = tid % (kCols / 8);
     const int vrow = tid / (kCols / 8);
     if (vrow < kRows) {
-      const uint4 pv =
-          vrow < block_size
-              ? *reinterpret_cast<const uint4*>(
-                    v + (row_base + vrow) * v_stride_t +
-                        value_head * v_stride_h + c0 + 8 * vpart)
-              : make_uint4(0, 0, 0, 0);
+      const uint4 pv = vrow < block_size
+                           ? *reinterpret_cast<const uint4*>(
+                                 v + (row_base + vrow) * v_stride_t +
+                                 value_head * v_stride_h + c0 + 8 * vpart)
+                           : make_uint4(0, 0, 0, 0);
       const uint16_t* wv = reinterpret_cast<const uint16_t*>(&pv);
 #pragma unroll
       for (int e = 0; e < 8; ++e)
@@ -245,8 +237,7 @@ __global__ void __launch_bounds__(kThreads)
             wv[e];
     }
   }
-  if (tid < kRows)
-    valid_s[tid] = tid < block_size ? valid[row_base + tid] : 0;
+  if (tid < kRows) valid_s[tid] = tid < block_size ? valid[row_base + tid] : 0;
 
   // The state tile in fp32 registers, converted after the barrier.
   const int column = tid % kCols;
@@ -255,8 +246,7 @@ __global__ void __launch_bounds__(kThreads)
   {
     const float* s_src = state + slot * state_slot_stride +
                          value_head * state_h_stride +
-                         (c0 + column) * state_v_stride +
-                         kStateElems * kgroup;
+                         (c0 + column) * state_v_stride + kStateElems * kgroup;
 #pragma unroll
     for (int c = 0; c < kStateElems / 4; ++c)
       s_raw[c] = *reinterpret_cast<const float4*>(s_src + 4 * c);
@@ -268,10 +258,9 @@ __global__ void __launch_bounds__(kThreads)
   const float history_logit =
       ReadScalar<Data>(history_bias, value_head) +
       ReadScalar<Data>(history_c, value_head) *
-          logf(fmaxf(static_cast<float>(
-                           __syncthreads_count(tid < block_size &&
-                                               valid[row_base + tid] != 0)),
-                       1.0f) /
+          logf(fmaxf(static_cast<float>(__syncthreads_count(
+                         tid < block_size && valid[row_base + tid] != 0)),
+                     1.0f) /
                reference_block_size);
 
   // ---- the rounded state tile ----
@@ -294,12 +283,11 @@ __global__ void __launch_bounds__(kThreads)
     V4F score[2] = {};  // [key tile], lane's C[r][4 * e + half]
 #pragma unroll
     for (int step = 0; step < kDim / 16; ++step) {
-      const V2I a = Frag<Data>(q_s + (16 * row_half + r) * kLd + 16 * step,
-                               lane);
+      const V2I a =
+          Frag<Data>(q_s + (16 * row_half + r) * kLd + 16 * step, lane);
 #pragma unroll
       for (int kt = 0; kt < 2; ++kt) {
-        const V2I b =
-            Frag<Data>(k_s + (16 * kt + r) * kLd + 16 * step, lane);
+        const V2I b = Frag<Data>(k_s + (16 * kt + r) * kLd + 16 * step, lane);
         score[kt] = Mma<Data>(a, b, score[kt]);
       }
     }

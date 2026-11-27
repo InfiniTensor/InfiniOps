@@ -10,7 +10,8 @@ template <>
 class Operator<CloverMaskRoutes, Device::Type::kHygon>
     : public CudaCloverMaskRoutes<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaCloverMaskRoutes<Runtime<Device::Type::kHygon>>::CudaCloverMaskRoutes;
+  using CudaCloverMaskRoutes<
+      Runtime<Device::Type::kHygon>>::CudaCloverMaskRoutes;
 };
 
 }  // namespace infini::ops

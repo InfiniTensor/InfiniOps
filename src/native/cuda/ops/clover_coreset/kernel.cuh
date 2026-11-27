@@ -57,11 +57,12 @@ namespace clover_coreset_detail {
 constexpr unsigned kFull = 0xffffffffu;  // the logical warp: 32 aligned lanes
 constexpr int kWarp = 32;
 constexpr int kPerLane = kCloverCoresetExperts / kWarp;  // experts per lane: 8
-constexpr int kTop = 8;                  // experts a row routes to
-constexpr int kSortWarps = kCloverCoresetExperts / kWarp;  // one expert per lane
+constexpr int kTop = 8;  // experts a row routes to
+constexpr int kSortWarps =
+    kCloverCoresetExperts / kWarp;  // one expert per lane
 constexpr int kScanWarps = kCloverCoresetExperts / 2 / kWarp;  // two per lane
 constexpr int kMaxRows = 32;
-constexpr int kRunBits = 5;              // log2(kWarp): a binary search's steps
+constexpr int kRunBits = 5;  // log2(kWarp): a binary search's steps
 static_assert((1 << kRunBits) == kWarp, "a run holds one warp of keys");
 
 // Shared memory, in this order: the softmax shares of the rows (each row's
@@ -71,8 +72,7 @@ static_assert((1 << kRunBits) == kWarp, "a run holds one warp of keys");
 constexpr int kShareBytes = kMaxRows * kCloverCoresetExperts * sizeof(float);
 constexpr int kAllowBytes = kShareBytes;
 constexpr int kTotalsBytes = kAllowBytes + kCloverCoresetExperts;
-constexpr int kMassBytes =
-    kTotalsBytes + 2 * kScanWarps * sizeof(float);
+constexpr int kMassBytes = kTotalsBytes + 2 * kScanWarps * sizeof(float);
 constexpr int kKeysBytes = kMassBytes + kCloverCoresetExperts * sizeof(float);
 constexpr int kRunsBytes =
     kKeysBytes + kCloverCoresetExperts * sizeof(unsigned long long);
@@ -235,8 +235,8 @@ __device__ __forceinline__ uint32_t EighthKey(uint32_t (&key)[kPerLane],
 // The reference's eight rounds of argmax on the exact keys: every round
 // takes the best remaining expert of the row. Zero is below the key of any
 // logit and is where each maximum starts.
-__device__ __forceinline__ uint32_t TopEightByRounds(
-    const unsigned long long (&key)[kPerLane], int lane) {
+__device__ __forceinline__ uint32_t
+TopEightByRounds(const unsigned long long (&key)[kPerLane], int lane) {
   uint32_t taken = 0;
 #pragma unroll
   for (int round = 0; round < kTop; ++round) {
@@ -245,8 +245,7 @@ __device__ __forceinline__ uint32_t TopEightByRounds(
     for (int r = 0; r < kPerLane; ++r)
       if (!((taken >> r) & 1u)) best = key[r] > best ? key[r] : best;
     best = WarpMaxKey(best);
-    const int local =
-        255 - static_cast<int>(best & 255) - kPerLane * lane;
+    const int local = 255 - static_cast<int>(best & 255) - kPerLane * lane;
     if (static_cast<unsigned>(local) < static_cast<unsigned>(kPerLane))
       taken |= 1u << local;
   }
@@ -292,9 +291,9 @@ __device__ __forceinline__ float RowSum(const float* values) {
 }
 
 // Eight consecutive elements: 16-byte accesses when the rows allow them
-// (else one access per element). A 16-bit element also comes back as its bit pattern (`raw`), which the
-// kernel's last step writes out again; its value ranks -0.0 with +0.0, as
-// the reference's argmax does.
+// (else one access per element). A 16-bit element also comes back as its bit
+// pattern (`raw`), which the kernel's last step writes out again; its value
+// ranks -0.0 with +0.0, as the reference's argmax does.
 template <typename Data>
 __device__ __forceinline__ void LoadRow(const Data* __restrict__ src,
                                         float (&x)[kPerLane],
@@ -314,14 +313,13 @@ __device__ __forceinline__ void LoadRow(const Data* __restrict__ src,
         uint16_t low, high;
         std::memcpy(&low, &pair[0], sizeof(low));
         std::memcpy(&high, &pair[1], sizeof(high));
-        raw[r / 2] = static_cast<uint32_t>(low) |
-                     (static_cast<uint32_t>(high) << 16);
+        raw[r / 2] =
+            static_cast<uint32_t>(low) | (static_cast<uint32_t>(high) << 16);
       }
     }
 #pragma unroll
     for (int r = 0; r < kPerLane; ++r) {
-      uint16_t bits =
-          static_cast<uint16_t>(raw[r / 2] >> (16 * (r % 2)));
+      uint16_t bits = static_cast<uint16_t>(raw[r / 2] >> (16 * (r % 2)));
       Data value;
       std::memcpy(&value, &bits, sizeof(value));
       x[r] = static_cast<float>(value) + 0.0f;
@@ -339,18 +337,18 @@ __device__ __forceinline__ void LoadRow(const Data* __restrict__ src,
     x[7] = high.w;
   } else {
 #pragma unroll
-    for (int r = 0; r < kPerLane; ++r) x[r] = static_cast<float>(__ldg(src + r));
+    for (int r = 0; r < kPerLane; ++r)
+      x[r] = static_cast<float>(__ldg(src + r));
   }
 }
 
 }  // namespace clover_coreset_detail
 
 template <Device::Type kDevice, typename Data>
-__global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
-                                    clover_coreset_detail::kWarp)
-    CloverCoresetKernel(
-        const Data* __restrict__ logits, Data* __restrict__ out, int rows,
-        float top_p, int vector) {
+__global__ void __launch_bounds__(
+    clover_coreset_detail::kMaxRows* clover_coreset_detail::kWarp)
+    CloverCoresetKernel(const Data* __restrict__ logits, Data* __restrict__ out,
+                        int rows, float top_p, int vector) {
   using namespace clover_coreset_detail;
   static_assert(kCloverCoresetExperts == kWarp * kPerLane, "256 experts");
 
@@ -382,8 +380,9 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
   float x[kPerLane];
   uint32_t raw[kPerLane / 2];
   if (owns_row) {
-    LoadRow<Data>(logits + block_first + warp * kCloverCoresetExperts +
-                      kPerLane * lane, x, raw, wide);
+    LoadRow<Data>(
+        logits + block_first + warp * kCloverCoresetExperts + kPerLane * lane,
+        x, raw, wide);
   } else {
 #pragma unroll
     for (int r = 0; r < kPerLane; ++r) x[r] = 0.0f;
@@ -422,7 +421,8 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
 
   // The eighth best key of the row is the threshold of its top-8.
   uint32_t taken = 0;
-  const uint32_t eighth = EighthKey(key, reinterpret_cast<uint32_t*>(work), lane);
+  const uint32_t eighth =
+      EighthKey(key, reinterpret_cast<uint32_t*>(work), lane);
 #pragma unroll
   for (int r = 0; r < kPerLane; ++r)
     taken |= static_cast<uint32_t>(original[r] >= eighth) << r;
@@ -496,8 +496,8 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
   // the rows w, w + 4, w + 8, .. each and add them in order, and the four
   // partials combine as (P0 + P2) + (P1 + P3).
   unsigned long long sort_key = 0;  // this expert's place in the order
-  float expert = 0.0f;         // its mass
-  int rank = 0;                // its rank among the warp's 32 experts
+  float expert = 0.0f;              // its mass
+  int rank = 0;                     // its rank among the warp's 32 experts
   if (in_sort) {
     float partial[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 #pragma unroll
@@ -505,10 +505,10 @@ __global__ void __launch_bounds__(clover_coreset_detail::kMaxRows *
       if (row < rows)
         partial[row & 3] += share[row * kCloverCoresetExperts + tid];
     expert = (partial[0] + partial[2]) + (partial[1] + partial[3]);
-    sort_key = (static_cast<unsigned long long>(0x7FFFFFFFu -
-                                           __float_as_uint(expert))
-           << 32) |
-          static_cast<unsigned long long>(tid);
+    sort_key =
+        (static_cast<unsigned long long>(0x7FFFFFFFu - __float_as_uint(expert))
+         << 32) |
+        static_cast<unsigned long long>(tid);
     mass[tid] = expert;
   }
   __syncthreads();

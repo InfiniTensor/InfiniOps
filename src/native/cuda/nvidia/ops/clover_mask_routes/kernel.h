@@ -10,7 +10,8 @@ template <>
 class Operator<CloverMaskRoutes, Device::Type::kNvidia>
     : public CudaCloverMaskRoutes<Runtime<Device::Type::kNvidia>> {
  public:
-  using CudaCloverMaskRoutes<Runtime<Device::Type::kNvidia>>::CudaCloverMaskRoutes;
+  using CudaCloverMaskRoutes<
+      Runtime<Device::Type::kNvidia>>::CudaCloverMaskRoutes;
 };
 
 }  // namespace infini::ops

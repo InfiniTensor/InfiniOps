@@ -10,7 +10,8 @@ template <>
 class Operator<MoeAlignBlockSize, Device::Type::kHygon, 0>
     : public CudaMoeAlignBlockSize<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaMoeAlignBlockSize<Runtime<Device::Type::kHygon>>::CudaMoeAlignBlockSize;
+  using CudaMoeAlignBlockSize<
+      Runtime<Device::Type::kHygon>>::CudaMoeAlignBlockSize;
 };
 
 }  // namespace infini::ops

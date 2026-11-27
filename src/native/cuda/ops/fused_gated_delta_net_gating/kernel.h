@@ -88,10 +88,12 @@ class CudaFusedGatedDeltaNetGating : public FusedGatedDeltaNetGating {
   template <typename T>
   void launch(Tensor A, Tensor a, Tensor b, Tensor dt, Tensor g, Tensor betao,
               dim3 grid, typename Backend::Stream stream) const {
-    gating_detail::GatingKernel<Backend::kDeviceType, T><<<grid, 256, 0, stream>>>(
-        static_cast<const T*>(A.data()), static_cast<const T*>(a.data()),
-        static_cast<const T*>(b.data()), static_cast<const T*>(dt.data()),
-        static_cast<float*>(g.data()), static_cast<float*>(betao.data()), p_);
+    gating_detail::GatingKernel<Backend::kDeviceType, T>
+        <<<grid, 256, 0, stream>>>(
+            static_cast<const T*>(A.data()), static_cast<const T*>(a.data()),
+            static_cast<const T*>(b.data()), static_cast<const T*>(dt.data()),
+            static_cast<float*>(g.data()), static_cast<float*>(betao.data()),
+            p_);
   }
 };
 

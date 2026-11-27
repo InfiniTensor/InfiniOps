@@ -6,8 +6,8 @@
 
 #include "base/recurrent_gated_delta_rule.h"
 #include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_delta_rule_common.cuh"
-#include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_gated_delta_rule_legacy_kernel.cuh"
 #include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_delta_rule_packed_kernel.cuh"
+#include "native/cuda/ops/recurrent_gated_delta_rule/recurrent_gated_delta_rule_legacy_kernel.cuh"
 
 // cuda_fp16.h / cuda_bf16.h come from the CUDA runtime on NVIDIA and from
 // the MACA cu-bridge on MetaX, where __nv_bfloat16 aliases __maca_bfloat16.
@@ -95,8 +95,8 @@ class CudaRecurrentGatedDeltaRule : public RecurrentGatedDeltaRule {
                               const Tensor final_slots, Tensor out,
                               bool use_qk_l2norm)
       : RecurrentGatedDeltaRule(q, k, v, g, beta, initial_state, cu_seqlens,
-                                initial_slots, final_slots,
-                                out, use_qk_l2norm) {
+                                initial_slots, final_slots, out,
+                                use_qk_l2norm) {
     if (D_ != 128 || gate_type_ != DataType::kFloat32)
       throw std::invalid_argument(
           "packed recurrent delta kernels require Dk=Dv128 and F32 gates");
@@ -144,20 +144,12 @@ class CudaRecurrentGatedDeltaRule : public RecurrentGatedDeltaRule {
 
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,
-                  const Tensor cu_seqlens,
-                  const Tensor initial_slots,
+                  const Tensor cu_seqlens, const Tensor initial_slots,
                   const Tensor final_slots, Tensor out,
                   bool use_qk_l2norm) const override {
-    const Views views{q,
-                      k,
-                      v,
-                      g,
-                      beta,
-                      initial_state,
-                      cu_seqlens,
-                      initial_slots,
-                      final_slots,
-                      out};
+    const Views views{
+        q,           k,  v, g, beta, initial_state, cu_seqlens, initial_slots,
+        final_slots, out};
     CheckInvocation(views, use_qk_l2norm);
     if (!requests_ || !tokens_) return;
     switch (data_type_) {
@@ -240,8 +232,7 @@ class CudaRecurrentGatedDeltaRule : public RecurrentGatedDeltaRule {
         Backend::kDeviceType, Data, 128, kWarps>
         <<<grid, kWarps * 32, kWarps * 128 * sizeof(float), stream>>>(
             static_cast<const Data*>(ptr(0)), static_cast<const Data*>(ptr(1)),
-            static_cast<const Data*>(ptr(2)),
-            static_cast<const float*>(ptr(3)),
+            static_cast<const Data*>(ptr(2)), static_cast<const float*>(ptr(3)),
             static_cast<const float*>(ptr(4)), ptr(6), ptr(7), ptr(8),
             metadata_[6]->dtype() == DataType::kInt64,
             metadata_[7]->dtype() == DataType::kInt64,

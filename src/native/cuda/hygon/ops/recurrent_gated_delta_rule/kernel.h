@@ -11,7 +11,8 @@ template <>
 class Operator<RecurrentGatedDeltaRule, Device::Type::kHygon, 0>
     : public CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kHygon>> {
  public:
-  using CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kHygon>>::CudaRecurrentGatedDeltaRule;
+  using CudaRecurrentGatedDeltaRule<
+      Runtime<Device::Type::kHygon>>::CudaRecurrentGatedDeltaRule;
 };
 
 }  // namespace infini::ops

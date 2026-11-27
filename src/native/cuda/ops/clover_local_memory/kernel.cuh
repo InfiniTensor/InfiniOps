@@ -21,15 +21,15 @@ constexpr int kDim = 128;          // KEY_DIM == VALUE_DIM == 128 (validated)
 constexpr int kMaxRows = 32;       // block_size <= 32 (validated)
 constexpr int kRowsPerBlock = 16;  // query rows per block, one warp each
 constexpr int kWarps = kRowsPerBlock;
-constexpr int kTileV = 64;         // value columns per block
-constexpr int kHalf = kDim / 2;    // key elements staged at a time
+constexpr int kTileV = 64;       // value columns per block
+constexpr int kHalf = kDim / 2;  // key elements staged at a time
 // Padded fp32 row strides in words. A stride of 4 (mod 32) maps consecutive
 // rows to distinct 4-bank groups, so a "one lane per row" float4 load is
 // conflict free, and every stride keeps rows 16-byte aligned. The value tile
 // uses an odd word stride so its per-lane float2 reads stay conflict free.
-constexpr int kStride = kHalf + 4;        // 68: one fp32 element per key
-constexpr int kPairStride = kDim + 4;     // 132: two interleaved columns per key
-constexpr int kValStride = kTileV + 2;    // 66
+constexpr int kStride = kHalf + 4;      // 68: one fp32 element per key
+constexpr int kPairStride = kDim + 4;   // 132: two interleaved columns per key
+constexpr int kValStride = kTileV + 2;  // 66
 
 struct Float2 {
   float x, y;
@@ -116,10 +116,9 @@ template <Device::Type kDevice, typename Data>
 __device__ __forceinline__ float Normalized(const Data* __restrict__ row,
                                             int64_t stride_k, int i,
                                             float norm) {
-  return Rounded<kDevice, Data>(
-      Caster<kDevice>::template Cast<float>(
-          row[static_cast<int64_t>(i) * stride_k]) *
-      norm);
+  return Rounded<kDevice, Data>(Caster<kDevice>::template Cast<float>(
+                                    row[static_cast<int64_t>(i) * stride_k]) *
+                                norm);
 }
 
 }  // namespace clover_local_memory_detail
@@ -148,24 +147,24 @@ template <Device::Type kDevice, typename Data, typename Index>
 // The launch bounds matter on gfx936 (DTK): a 512-thread block this size
 // without them is compiled with a 256-thread cap, and the threads past the
 // cap then run with wrapped indices and silently corrupt their rows.
-__global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
-                                  clover_local_memory_detail::kWarpLanes)
+__global__ void __launch_bounds__(
+    clover_local_memory_detail::kWarps* clover_local_memory_detail::kWarpLanes)
     CloverLocalMemoryKernel(
-    const Data* __restrict__ q, const Data* __restrict__ k,
-    const Data* __restrict__ v, const float* __restrict__ g,
-    const float* __restrict__ state, const Index* __restrict__ indices,
-    const int8_t* __restrict__ valid, const void* __restrict__ logit_scale,
-    const void* __restrict__ history_bias_in,
-    const void* __restrict__ history_c_in, Data* __restrict__ out,
-    int64_t q_stride_t, int64_t q_stride_h, int64_t q_stride_k,
-    int64_t k_stride_t, int64_t k_stride_h, int64_t k_stride_k,
-    int64_t v_stride_t, int64_t v_stride_h, int64_t v_stride_v,
-    int64_t g_stride_t, int64_t g_stride_h, int64_t state_slot_stride,
-    int64_t state_h_stride, int64_t state_v_stride, int64_t state_k_stride,
-    int64_t out_t_stride, int64_t out_h_stride, int64_t out_v_stride,
-    float scale, float reference_block_size, int block_size, int num_slots,
-    int num_q_heads, int num_k_heads, int num_v_heads, int logit_scale_dtype,
-    int history_bias_dtype, int history_c_dtype) {
+        const Data* __restrict__ q, const Data* __restrict__ k,
+        const Data* __restrict__ v, const float* __restrict__ g,
+        const float* __restrict__ state, const Index* __restrict__ indices,
+        const int8_t* __restrict__ valid, const void* __restrict__ logit_scale,
+        const void* __restrict__ history_bias_in,
+        const void* __restrict__ history_c_in, Data* __restrict__ out,
+        int64_t q_stride_t, int64_t q_stride_h, int64_t q_stride_k,
+        int64_t k_stride_t, int64_t k_stride_h, int64_t k_stride_k,
+        int64_t v_stride_t, int64_t v_stride_h, int64_t v_stride_v,
+        int64_t g_stride_t, int64_t g_stride_h, int64_t state_slot_stride,
+        int64_t state_h_stride, int64_t state_v_stride, int64_t state_k_stride,
+        int64_t out_t_stride, int64_t out_h_stride, int64_t out_v_stride,
+        float scale, float reference_block_size, int block_size, int num_slots,
+        int num_q_heads, int num_k_heads, int num_v_heads,
+        int logit_scale_dtype, int history_bias_dtype, int history_c_dtype) {
   using namespace clover_local_memory_detail;
 
   __shared__ __align__(16) float q_s[kRowsPerBlock * kStride];  // normalized q
@@ -238,10 +237,9 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
       const Data* src = v + (row_base + j) * v_stride_t +
                         value_head * v_stride_h +
                         static_cast<int64_t>(v0 + 2 * lane) * v_stride_v;
-      value = Float2{
-          Caster<kDevice>::template Cast<float>(src[0]),
-          Caster<kDevice>::template Cast<float>(
-              src[static_cast<int64_t>(1) * v_stride_v])};
+      value = Float2{Caster<kDevice>::template Cast<float>(src[0]),
+                     Caster<kDevice>::template Cast<float>(
+                         src[static_cast<int64_t>(1) * v_stride_v])};
     }
     Store2(vs_s + j * kValStride + 2 * lane, value);
   }
@@ -254,10 +252,9 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
   // Lane j is local key j. Invalid keys and lanes past the block carry no
   // weight and are not counted in the valid block size.
   const bool key_live = lane < block_size && valid_s[lane] != 0;
-  const float valid_block_size =
-      fmaxf(static_cast<float>(static_cast<int>(
-                WarpSum(key_live ? 1.0f : 0.0f))),
-            1.0f);
+  const float valid_block_size = fmaxf(
+      static_cast<float>(static_cast<int>(WarpSum(key_live ? 1.0f : 0.0f))),
+      1.0f);
   const float hb =
       LoadScalar<kDevice>(history_bias_in, history_bias_dtype, value_head) +
       LoadScalar<kDevice>(history_c_in, history_c_dtype, value_head) *
@@ -283,8 +280,9 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
         const Data* src = q + (row_base + r) * q_stride_t +
                           q_head * q_stride_h +
                           static_cast<int64_t>(half * kHalf + c) * q_stride_k;
-        value = Float2{Normalized<kDevice, Data>(src, q_stride_k, 0, norm_q[t]),
-                       Normalized<kDevice, Data>(src, q_stride_k, 1, norm_q[t])};
+        value =
+            Float2{Normalized<kDevice, Data>(src, q_stride_k, 0, norm_q[t]),
+                   Normalized<kDevice, Data>(src, q_stride_k, 1, norm_q[t])};
       }
       Store2(q_s + t * kStride + c, value);
     }
@@ -297,10 +295,11 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
         const Data* src = k + (row_base + r) * k_stride_t +
                           k_head * k_stride_h +
                           static_cast<int64_t>(half * kHalf + c) * k_stride_k;
-        value = Float4{Normalized<kDevice, Data>(src, k_stride_k, 0, norm_k[r]),
-                       Normalized<kDevice, Data>(src, k_stride_k, 1, norm_k[r]),
-                       Normalized<kDevice, Data>(src, k_stride_k, 2, norm_k[r]),
-                       Normalized<kDevice, Data>(src, k_stride_k, 3, norm_k[r])};
+        value =
+            Float4{Normalized<kDevice, Data>(src, k_stride_k, 0, norm_k[r]),
+                   Normalized<kDevice, Data>(src, k_stride_k, 1, norm_k[r]),
+                   Normalized<kDevice, Data>(src, k_stride_k, 2, norm_k[r]),
+                   Normalized<kDevice, Data>(src, k_stride_k, 3, norm_k[r])};
       }
       Store4(k_s + r * kStride + c, value);
     }
@@ -308,10 +307,10 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
     {
       const int pair = tid / (kHalf / 4);
       const int c = (tid % (kHalf / 4)) * 4;
-      const float* col0 = state + safe_slot * state_slot_stride +
-                          value_head * state_h_stride +
-                          static_cast<int64_t>(v0 + 2 * pair) * state_v_stride +
-                          static_cast<int64_t>(half * kHalf + c) * state_k_stride;
+      const float* col0 =
+          state + safe_slot * state_slot_stride + value_head * state_h_stride +
+          static_cast<int64_t>(v0 + 2 * pair) * state_v_stride +
+          static_cast<int64_t>(half * kHalf + c) * state_k_stride;
       const float* col1 = col0 + state_v_stride;
       float* dst = st_s + pair * kPairStride + 2 * c;
 #pragma unroll
@@ -333,10 +332,10 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
       for (int i = 0; i < kHalf / 8; ++i) {
 #pragma unroll
         for (int u = 0; u < 2; ++u) {
-          const int n = 2 * i + u;  // group of four keys
-          const Float4 a = Load4(q4 + 4 * n);      // q at keys 4n .. 4n + 3
-          const Float4 b = Load4(k4 + 4 * n);      // k at keys 4n .. 4n + 3
-          const Float4 sa = Load4(s4 + 8 * n);     // keys 4n, 4n + 1
+          const int n = 2 * i + u;                  // group of four keys
+          const Float4 a = Load4(q4 + 4 * n);       // q at keys 4n .. 4n + 3
+          const Float4 b = Load4(k4 + 4 * n);       // k at keys 4n .. 4n + 3
+          const Float4 sa = Load4(s4 + 8 * n);      // keys 4n, 4n + 1
           const Float4 sb = Load4(s4 + 8 * n + 4);  // keys 4n + 2, 4n + 3
           score[u] += a.x * b.x;
           score[u] += a.y * b.y;
@@ -359,8 +358,7 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
 
   // ---- softmax over the local keys plus the history bucket ----
   // Invalid keys and lanes past the block contribute -inf, a zero weight.
-  const float logit =
-      key_live ? (score[0] + score[1]) * ls : -INFINITY;
+  const float logit = key_live ? (score[0] + score[1]) * ls : -INFINITY;
   const float row_max = fmaxf(WarpMax(logit), hb);
   const float exp_history = FastExp(hb - row_max);
   const float exp_local = FastExp(logit - row_max);
@@ -382,7 +380,8 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
 
   // out = history * (scale * exp(g) * history_weight) + local
   const float gate =
-      scale * FastExp(g[(row_base + row) * g_stride_t + value_head * g_stride_h]);
+      scale *
+      FastExp(g[(row_base + row) * g_stride_t + value_head * g_stride_h]);
   const float gain = gate * history_weight;
   const bool keep = valid_s[row] != 0;
   const Data result[2] = {
@@ -394,8 +393,7 @@ __global__ void __launch_bounds__(clover_local_memory_detail::kWarps *
            : Data(0)};
   Data* const dst = head_out + static_cast<int64_t>(row) * out_t_stride +
                     static_cast<int64_t>(v0 + 2 * lane) * out_v_stride;
-  if (out_v_stride == 1 &&
-      (reinterpret_cast<uintptr_t>(dst) & 3) == 0) {
+  if (out_v_stride == 1 && (reinterpret_cast<uintptr_t>(dst) & 3) == 0) {
     // Adjacent columns: one 32-bit store for the coalesced pair.
     *reinterpret_cast<uint32_t*>(dst) =
         *reinterpret_cast<const uint32_t*>(result);

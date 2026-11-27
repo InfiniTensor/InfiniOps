@@ -38,15 +38,17 @@ def golden(q, k, v, g, state, indices, valid, ls, hb, hc, block):
         for h in range(nvh):
             qh = h // (nvh // nqh)
             kh = h // (nvh // nkh)
-            blk_q = qf[0, r * block:(r + 1) * block, qh]           # [T,K]
-            blk_k = kf[0, r * block:(r + 1) * block, kh]           # [T,K]
-            blk_v = vf[0, r * block:(r + 1) * block, h]            # [T,V]
+            blk_q = qf[0, r * block : (r + 1) * block, qh]  # [T,K]
+            blk_k = kf[0, r * block : (r + 1) * block, kh]  # [T,K]
+            blk_v = vf[0, r * block : (r + 1) * block, h]  # [T,V]
             qn = blk_q / (blk_q.pow(2).sum(-1, keepdim=True) + 1e-6).sqrt()
             kn = blk_k / (blk_k.pow(2).sum(-1, keepdim=True) + 1e-6).sqrt()
             key_valid = torch.tensor(
-                [int(valid[r * block + j]) != 0 for j in range(block)], device=q.device)
+                [int(valid[r * block + j]) != 0 for j in range(block)], device=q.device
+            )
             row_valid = torch.tensor(
-                [int(valid[r * block + t]) != 0 for t in range(block)], device=q.device)
+                [int(valid[r * block + t]) != 0 for t in range(block)], device=q.device
+            )
             if reduced:  # the reference rounds these to the element type
                 qn, kn = qn.to(dtype).float(), kn.to(dtype).float()
                 st = state[slot, h].to(dtype).float()
@@ -55,8 +57,9 @@ def golden(q, k, v, g, state, indices, valid, ls, hb, hc, block):
             scores = (qn @ kn.T) * float(ls[h])
             logits = scores.masked_fill(~key_valid[None, :], float("-inf"))
             bias = float(hb[h]) + float(hc[h]) * math.log(
-                max(int(key_valid.sum()), 1) / REFERENCE_BLOCK)
-            hist = qn @ st.T                                       # [T,V]; state is [V, K]
+                max(int(key_valid.sum()), 1) / REFERENCE_BLOCK
+            )
+            hist = qn @ st.T  # [T,V]; state is [V, K]
             row_max = logits.max(-1).values.clamp_min(bias)
             el = torch.exp(logits - row_max[:, None])
             eh = torch.exp(bias - row_max)
@@ -65,9 +68,9 @@ def golden(q, k, v, g, state, indices, valid, ls, hb, hc, block):
             hw = eh / denom
             if reduced:
                 w = w.to(dtype).float()
-            gate = 128**-0.5 * torch.exp(g[0, r * block:(r + 1) * block, h].float())
+            gate = 128**-0.5 * torch.exp(g[0, r * block : (r + 1) * block, h].float())
             o = hist * (gate * hw)[:, None] + w @ blk_v
-            out[0, r * block:(r + 1) * block, h] = o * row_valid[:, None].to(o.dtype)
+            out[0, r * block : (r + 1) * block, h] = o * row_valid[:, None].to(o.dtype)
     return out
 
 
@@ -80,8 +83,9 @@ def inputs(requests, block, heads, dtype, slots=4, index_dtype=torch.int32):
     g = torch.randn(1, tokens, nvh, device="cuda", dtype=torch.float32) * 0.5 - 0.3
     # Unit magnitude: the history term is a fair share of the output.
     state = torch.randn(slots, nvh, 128, 128, device="cuda", dtype=torch.float32)
-    indices = torch.tensor([(r % slots) if r % 4 != 3 else -1
-                            for r in range(requests)], device="cuda").to(index_dtype)
+    indices = torch.tensor(
+        [(r % slots) if r % 4 != 3 else -1 for r in range(requests)], device="cuda"
+    ).to(index_dtype)
     valid = torch.ones(tokens, device="cuda", dtype=torch.int8)
     valid[::5] = 0  # scattered inactive rows and keys
     ls = torch.randn(nvh, device="cuda", dtype=dtype) * 0.3 + 1.0
@@ -93,9 +97,13 @@ def inputs(requests, block, heads, dtype, slots=4, index_dtype=torch.int32):
 def run(args, block, impl, out=None):
     q, k, v = args[:3]
     out = torch.empty_like(v) if out is None else out
-    infini.ops.clover_local_memory(*args, block, out,
-                                   stream=torch.cuda.current_stream().cuda_stream,
-                                   implementation_index=impl)
+    infini.ops.clover_local_memory(
+        *args,
+        block,
+        out,
+        stream=torch.cuda.current_stream().cuda_stream,
+        implementation_index=impl,
+    )
     torch.cuda.synchronize()
     return out
 
@@ -135,8 +143,9 @@ def test_local_memory_batch(device, requests, index_dtype):
         pytest.skip("requires the CUDA backend")
     require_impls(device)
     torch.manual_seed(43)
-    args = list(inputs(requests, 32, (8, 8, 16), torch.bfloat16,
-                       index_dtype=index_dtype))
+    args = list(
+        inputs(requests, 32, (8, 8, 16), torch.bfloat16, index_dtype=index_dtype)
+    )
     args[5][-1] = 99  # beyond the pool: inactive like a negative slot
     args = tuple(args)
     out_n = run(args, 32, NATIVE)
@@ -149,8 +158,10 @@ def test_local_memory_batch(device, requests, index_dtype):
     # Rows of an inactive request are zeros, as in the reference.
     for r, slot in enumerate(args[5].tolist()):
         if slot < 0 or slot >= args[4].size(0):
-            assert torch.equal(out_n[0, r * 32:(r + 1) * 32],
-                               torch.zeros_like(out_n[0, r * 32:(r + 1) * 32]))
+            assert torch.equal(
+                out_n[0, r * 32 : (r + 1) * 32],
+                torch.zeros_like(out_n[0, r * 32 : (r + 1) * 32]),
+            )
 
 
 def test_local_memory_fallback_layouts(device):
@@ -188,10 +199,16 @@ def test_local_memory_fallback_layouts(device):
         out_t = run(args, block, TRITON)
         ref = golden(*args, block).cuda()
         scale = max(ref.abs().max().item(), 1.0)
-        torch.testing.assert_close(out_n.float(), ref, rtol=3e-2, atol=scale * 3e-2,
-                                   msg=lambda m: f"{name}: {m}")
-        torch.testing.assert_close(out_n.float(), out_t.float(), rtol=3e-2,
-                                   atol=scale * 3e-2)
+        torch.testing.assert_close(
+            out_n.float(),
+            ref,
+            rtol=3e-2,
+            atol=scale * 3e-2,
+            msg=lambda m: f"{name}: {m}",
+        )
+        torch.testing.assert_close(
+            out_n.float(), out_t.float(), rtol=3e-2, atol=scale * 3e-2
+        )
 
 
 @pytest.mark.parametrize("dtype", (torch.bfloat16, torch.float16))

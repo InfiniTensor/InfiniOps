@@ -16,16 +16,18 @@ namespace infini::ops {
 
 namespace moe_fused_dense_detail {
 
-// Whether the library carries the native expert kernels, i.e. was built for a Hygon
-// architecture with the matrix instructions they use, and they are not switched off.
-// Defined in kernel.cu, so that every translation unit sees the same answer.
+// Whether the library carries the native expert kernels, i.e. was built for a
+// Hygon architecture with the matrix instructions they use, and they are not
+// switched off. Defined in kernel.cu, so that every translation unit sees the
+// same answer.
 bool HasNativeKernels();
 
 }  // namespace moe_fused_dense_detail
 
-// Fused MoE expert computation on Hygon. The shapes the native gfx936 kernels take (see
-// NativeSupports) run without Triton. With Triton in the build, everything else is left to
-// the Triton JIT kernels, whose slot this provider shares.
+// Fused MoE expert computation on Hygon. The shapes the native gfx936 kernels
+// take (see NativeSupports) run without Triton. With Triton in the build,
+// everything else is left to the Triton JIT kernels, whose slot this provider
+// shares.
 template <>
 class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
  public:
@@ -34,17 +36,15 @@ class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
            const Tensor sorted, const Tensor experts, const Tensor total,
            size_t block_size, const std::optional<Tensor> bias1 = std::nullopt,
            const std::optional<Tensor> bias2 = std::nullopt)
-      : MoeFusedDense{output,     hidden, w13,          w2,    weights,
-                      ids,        sorted,  experts,     total, block_size,
-                      bias1,      bias2},
+      : MoeFusedDense{output, hidden,  w13,   w2,         weights, ids,
+                      sorted, experts, total, block_size, bias1,   bias2},
         device_index_{output.device().index()} {}
 
   // Block size 16 without expert biases, like the Triton kernels.
   static bool supports(Tensor output, const Tensor hidden, const Tensor w13,
-                       const Tensor w2, const Tensor weights,
-                       const Tensor ids, const Tensor sorted,
-                       const Tensor experts, const Tensor total,
-                       size_t block_size,
+                       const Tensor w2, const Tensor weights, const Tensor ids,
+                       const Tensor sorted, const Tensor experts,
+                       const Tensor total, size_t block_size,
                        const std::optional<Tensor> bias1 = std::nullopt,
                        const std::optional<Tensor> bias2 = std::nullopt) {
     if (block_size != 16 || bias1 || bias2 ||
@@ -55,14 +55,15 @@ class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
     }
     if (NativeSupports(hidden, w2, block_size, bias1, bias2)) return true;
 #if defined(WITH_TRITON)
-    return true;  // the Triton JIT kernels take every shape of the contract above
+    return true;  // the Triton JIT kernels take every shape of the contract
+                  // above
 #else
     return false;
 #endif
   }
 
-  // The native kernels need the 16-byte loads of their 128-wide k steps to stay inside a
-  // row: h and i multiples of 8, at least 32.
+  // The native kernels need the 16-byte loads of their 128-wide k steps to stay
+  // inside a row: h and i multiples of 8, at least 32.
   static bool NativeSupports(const Tensor& hidden, const Tensor& w2,
                              size_t block_size,
                              const std::optional<Tensor>& bias1,
@@ -72,13 +73,13 @@ class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
            !bias1 && !bias2 && h >= 32 && h % 8 == 0 && i >= 32 && i % 8 == 0;
   }
 
-  // Native: act[pairs, i] in the element type, then the fp32 expert outputs [pairs, h].
-  // Triton: [pairs, 2 * i + h] in the element type.
+  // Native: act[pairs, i] in the element type, then the fp32 expert outputs
+  // [pairs, h]. Triton: [pairs, 2 * i + h] in the element type.
   std::size_t workspace_size_in_bytes() const override {
     const auto pairs = metadata_[1].size(0) * metadata_[5].size(1);
     const auto i = metadata_[3].size(2), h = metadata_[1].size(1);
-    std::size_t bytes = pairs * (i * metadata_[1].element_size() +
-                                 h * sizeof(float));
+    std::size_t bytes =
+        pairs * (i * metadata_[1].element_size() + h * sizeof(float));
 #if defined(WITH_TRITON)
     bytes = std::max(bytes, pairs * (2 * i + h) * metadata_[1].element_size());
 #endif
@@ -87,9 +88,8 @@ class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
 
   void operator()(Tensor output, const Tensor hidden, const Tensor w13,
                   const Tensor w2, const Tensor weights, const Tensor ids,
-                  const Tensor sorted, const Tensor experts,
-                  const Tensor total, size_t block_size,
-                  const std::optional<Tensor> bias1,
+                  const Tensor sorted, const Tensor experts, const Tensor total,
+                  size_t block_size, const std::optional<Tensor> bias1,
                   const std::optional<Tensor> bias2) const override {
     Invocation(output, hidden, w13, w2, weights, ids, sorted, experts, total,
                block_size, bias1, bias2);
@@ -106,8 +106,8 @@ class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
     }
 #if defined(WITH_TRITON)
     triton::jit::MoeFusedDense<Device::Type::kHygon> fallback{
-        output,      hidden,  w13,    w2,          weights, ids,
-        sorted,      experts, total,  block_size,  bias1,    bias2};
+        output, hidden,  w13,   w2,         weights, ids,
+        sorted, experts, total, block_size, bias1,   bias2};
     fallback.set_stream(stream_);
     fallback.set_workspace(scratch);
     fallback.set_workspace_size_in_bytes(workspace_size_in_bytes());
@@ -115,7 +115,8 @@ class Operator<MoeFusedDense, Device::Type::kHygon, 0> : public MoeFusedDense {
              block_size, bias1, bias2);
 #else
     throw std::invalid_argument(
-        "`MoeFusedDense` on Hygon needs h and i to be multiples of 8 of at least 32");
+        "`MoeFusedDense` on Hygon needs h and i to be multiples of 8 of at "
+        "least 32");
 #endif
   }
 

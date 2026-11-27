@@ -40,8 +40,8 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
 
   Operator(const Tensor q, const Tensor k, const Tensor v, const Tensor g,
            const Tensor beta, Tensor initial_state, const Tensor cu_seqlens,
-           const Tensor initial_slots,
-           const Tensor final_slots, Tensor out, bool use_qk_l2norm)
+           const Tensor initial_slots, const Tensor final_slots, Tensor out,
+           bool use_qk_l2norm)
       : CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kNvidia>>(
             q, k, v, g, beta, initial_state, cu_seqlens, initial_slots,
             final_slots, out, use_qk_l2norm) {
@@ -66,14 +66,13 @@ class Operator<RecurrentGatedDeltaRule, Device::Type::kNvidia>
 
   void operator()(const Tensor q, const Tensor k, const Tensor v,
                   const Tensor g, const Tensor beta, Tensor initial_state,
-                  const Tensor cu_seqlens,
-                  const Tensor initial_slots,
+                  const Tensor cu_seqlens, const Tensor initial_slots,
                   const Tensor final_slots, Tensor out,
                   bool use_qk_l2norm) const override {
     CheckDevice();
     CudaRecurrentGatedDeltaRule<Runtime<Device::Type::kNvidia>>::operator()(
-        q, k, v, g, beta, initial_state, cu_seqlens, initial_slots,
-        final_slots, out, use_qk_l2norm);
+        q, k, v, g, beta, initial_state, cu_seqlens, initial_slots, final_slots,
+        out, use_qk_l2norm);
     if (cudaPeekAtLastError() != cudaSuccess)
       throw std::runtime_error("recurrent delta CUDA launch failed");
   }

@@ -25,8 +25,7 @@ template <Device::Type kDevice, typename Data>
 __global__ void CloverMergeMoeKernel(const Data* __restrict__ fresh,
                                      const int8_t* __restrict__ live,
                                      Data* __restrict__ cache,
-                                     Data* __restrict__ out,
-                                     int64_t width) {
+                                     Data* __restrict__ out, int64_t width) {
   const int64_t column =
       static_cast<int64_t>(blockIdx.y) * blockDim.x + threadIdx.x;
   if (column >= width) return;
@@ -41,9 +40,11 @@ __global__ void CloverMergeMoeKernel(const Data* __restrict__ fresh,
 // The same with 16 bytes per thread: `vectors` is a row's width in such
 // vectors and the three tensors start on a 16-byte boundary.
 template <Device::Type kDevice, typename Data>
-__global__ void CloverMergeMoeVectorKernel(
-    const Data* __restrict__ fresh, const int8_t* __restrict__ live,
-    Data* __restrict__ cache, Data* __restrict__ out, int64_t vectors) {
+__global__ void CloverMergeMoeVectorKernel(const Data* __restrict__ fresh,
+                                           const int8_t* __restrict__ live,
+                                           Data* __restrict__ cache,
+                                           Data* __restrict__ out,
+                                           int64_t vectors) {
   const int64_t column =
       static_cast<int64_t>(blockIdx.y) * blockDim.x + threadIdx.x;
   if (column >= vectors) return;

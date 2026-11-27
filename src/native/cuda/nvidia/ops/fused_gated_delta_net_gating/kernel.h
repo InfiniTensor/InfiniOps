@@ -11,7 +11,8 @@ template <>
 class Operator<FusedGatedDeltaNetGating, Device::Type::kNvidia>
     : public CudaFusedGatedDeltaNetGating<Runtime<Device::Type::kNvidia>> {
  public:
-  using CudaFusedGatedDeltaNetGating<Runtime<Device::Type::kNvidia>>::CudaFusedGatedDeltaNetGating;
+  using CudaFusedGatedDeltaNetGating<
+      Runtime<Device::Type::kNvidia>>::CudaFusedGatedDeltaNetGating;
 };
 
 }  // namespace infini::ops

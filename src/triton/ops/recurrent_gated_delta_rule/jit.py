@@ -51,7 +51,11 @@ def recurrent_gated_delta_rule_kernel(
     if range_ok:
         if slots_ok:
             state = tl.load(
-                State + initial * ss + head * sh + value[:, None] * sv + key[None, :] * sk
+                State
+                + initial * ss
+                + head * sh
+                + value[:, None] * sv
+                + key[None, :] * sk
             )
             key_head = head // (HV // HK)
             for token in range(begin, end):
@@ -71,7 +75,11 @@ def recurrent_gated_delta_rule_kernel(
                 y = tl.sum(state * q[None, :], 1)
                 tl.store(Out + token * os + head * oh + value, y)
             tl.store(
-                State + final * ss + head * sh + value[:, None] * sv + key[None, :] * sk,
+                State
+                + final * ss
+                + head * sh
+                + value[:, None] * sv
+                + key[None, :] * sk,
                 state,
             )
         else:

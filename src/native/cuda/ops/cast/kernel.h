@@ -11,8 +11,8 @@
 
 #include "base/cast.h"
 #include "data_type.h"
-#include "dispatcher.h"
 #include "device.h"
+#include "dispatcher.h"
 #include "native/cuda/caster.cuh"
 #include "native/cuda/device_buffer.h"
 #include "native/cuda/ops/cast/kernel.cuh"

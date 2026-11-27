@@ -9,7 +9,8 @@ namespace infini::ops::triton::jit {
 template <Device::Type kDev>
 class CloverCoreset : public ::infini::ops::CloverCoreset {
  public:
-  CloverCoreset(const Tensor logits, size_t block_size, double top_p, Tensor out)
+  CloverCoreset(const Tensor logits, size_t block_size, double top_p,
+                Tensor out)
       : ::infini::ops::CloverCoreset(logits, block_size, top_p, out),
         blocks_(logits.size(0) / block_size) {}
 
@@ -20,22 +21,20 @@ class CloverCoreset : public ::infini::ops::CloverCoreset {
     if (!blocks_) return;
     // The Python bindings call without a handle: use the caller's workspace
     // when it is large enough, else a buffer owned by this operator.
-    void* scratch = workspace_ &&
-                            workspace_size_in_bytes_ >= workspace_size_in_bytes()
-                        ? workspace_
-                        : fallback_.Allocate(workspace_size_in_bytes());
+    void* scratch =
+        workspace_ && workspace_size_in_bytes_ >= workspace_size_in_bytes()
+            ? workspace_
+            : fallback_.Allocate(workspace_size_in_bytes());
     Tensor mass{scratch, {blocks_, 256}, DataType::kFloat32, logits.device()};
     Tensor allow{static_cast<char*>(scratch) + blocks_ * 256 * 4,
                  {blocks_, 256},
                  DataType::kInt8,
                  logits.device()};
     for (int stage = 0; stage < 3; ++stage) {
-      const Config config{
-          4u, 1u, {{"WIDTH", block_size}, {"STAGE", stage}}};
+      const Config config{4u, 1u, {{"WIDTH", block_size}, {"STAGE", stage}}};
       Launch<kDev>(
           "clover_coreset", logits.device().index(), this->stream_,
-          this->config_ptr_.get(), config,
-          {},
+          this->config_ptr_.get(), config, {},
           [&](const Config&) -> std::optional<Grid> {
             return Grid{
                 static_cast<unsigned>(stage == 2 ? logits.size(0) : blocks_)};

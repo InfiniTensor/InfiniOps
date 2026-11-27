@@ -44,8 +44,8 @@ __global__ void CloverMaskRoutesKernel(const Index* __restrict__ ids,
 
 template <Device::Type kDevice, typename Index>
 __global__ void CloverMaskRoutesByDivisionKernel(
-    const Index* __restrict__ ids, const int8_t* __restrict__ live,
-    Index mask, int64_t width, Index* __restrict__ out, int64_t n) {
+    const Index* __restrict__ ids, const int8_t* __restrict__ live, Index mask,
+    int64_t width, Index* __restrict__ out, int64_t n) {
   const int64_t i = static_cast<int64_t>(blockIdx.x) * blockDim.x +
                     static_cast<int64_t>(threadIdx.x);
   if (i >= n) return;

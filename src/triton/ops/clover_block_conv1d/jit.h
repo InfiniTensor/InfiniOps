@@ -50,7 +50,8 @@ template <>
 class Operator<CloverBlockConv1d, Device::Type::kNvidia, 10>
     : public triton::jit::CloverBlockConv1d<Device::Type::kNvidia> {
  public:
-  using triton::jit::CloverBlockConv1d<Device::Type::kNvidia>::CloverBlockConv1d;
+  using triton::jit::CloverBlockConv1d<
+      Device::Type::kNvidia>::CloverBlockConv1d;
 };
 
 template <>

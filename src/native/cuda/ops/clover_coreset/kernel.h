@@ -40,9 +40,8 @@ class CudaCloverCoreset : public CloverCoreset {
     // eight warps of the sort. The shared memory size stays below the 48 KB
     // every device gives a block without opting in.
     const int rows = static_cast<int>(block_size);
-    const int threads =
-        (std::max)(rows, clover_coreset_detail::kSortWarps) *
-        clover_coreset_detail::kWarp;
+    const int threads = (std::max)(rows, clover_coreset_detail::kSortWarps) *
+                        clover_coreset_detail::kWarp;
     const int vector = coreset_launch_detail::VectorRows(logits, out) ? 1 : 0;
 
     DispatchFunc<ConcatType<List<DataType::kFloat32>, ReducedFloatTypes>>(
@@ -51,8 +50,7 @@ class CudaCloverCoreset : public CloverCoreset {
           using Data = TypeMapType<Backend::kDeviceType, ListGet<0>(list_tag)>;
           CloverCoresetKernel<Backend::kDeviceType, Data>
               <<<static_cast<unsigned>(blocks), threads,
-                 clover_coreset_detail::kSmemBytes,
-                 cuda_stream>>>(
+                 clover_coreset_detail::kSmemBytes, cuda_stream>>>(
                   reinterpret_cast<const Data*>(logits.data()),
                   reinterpret_cast<Data*>(out.data()), rows,
                   static_cast<float>(top_p), vector);

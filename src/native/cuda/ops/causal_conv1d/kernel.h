@@ -31,8 +31,7 @@ class CudaCausalConv1d : public CausalConv1d {
       throw std::invalid_argument(
           "causal conv kernel requires K4 and state_len3");
     if (tokens_ > static_cast<size_t>(std::numeric_limits<int64_t>::max() - 3))
-      throw std::overflow_error(
-          "causal conv history index exceeds int64");
+      throw std::overflow_error("causal conv history index exceeds int64");
     check_device();
     // Baseline uses int request/channel variables and CUDA's grid.y dimension.
     if (requests_ >= static_cast<size_t>(INT_MAX) || channels_ > 65535)
@@ -114,9 +113,10 @@ class CudaCausalConv1d : public CausalConv1d {
         static_cast<typename Backend::Stream>(stream_ ? stream_ : nullptr);
     causal_conv1d_detail::CausalConv1dKernel<Backend::kDeviceType, T>
         <<<grid, 1, 0, stream>>>(
-            static_cast<const T*>(pointer(0)), static_cast<const T*>(pointer(1)),
-            static_cast<T*>(pointer(2)), static_cast<const T*>(pointer(3)),
-            pointer(4), pointer(5), pointer(6), static_cast<T*>(pointer(7)),
+            static_cast<const T*>(pointer(0)),
+            static_cast<const T*>(pointer(1)), static_cast<T*>(pointer(2)),
+            static_cast<const T*>(pointer(3)), pointer(4), pointer(5),
+            pointer(6), static_cast<T*>(pointer(7)),
             static_cast<T*>(pointer(8)), p_);
   }
 };

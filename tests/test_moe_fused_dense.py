@@ -108,8 +108,10 @@ def test_moe_fused_dense(dtype, rtol, atol, device):
     if device != "cuda":
         pytest.skip("`moe_fused_dense` numeric test targets the metax/cuda backend")
     if torch.version.hip is not None:
-        pytest.skip("the Hygon provider takes block size 16 only; see "
-                    "`test_moe_fused_dense_clover`")
+        pytest.skip(
+            "the Hygon provider takes block size 16 only; see "
+            "`test_moe_fused_dense_clover`"
+        )
     torch.manual_seed(0)
     n, h, m, e, topk, block_size = 4, 8, 6, 3, 2, 4
     hidden = torch.randn(n, h, dtype=dtype, device=device).contiguous()
@@ -160,9 +162,7 @@ def _clover_implementations(device, hidden, intermediate):
         pytest.skip("requires a CUDA-like backend")
     active = infini.ops.MoeFusedDense.active_implementation_indices(device)
     native = (
-        min(hidden, intermediate) >= 32
-        and hidden % 8 == 0
-        and intermediate % 8 == 0
+        min(hidden, intermediate) >= 32 and hidden % 8 == 0 and intermediate % 8 == 0
     )
     pairs = []
     if torch.version.hip is not None and _NATIVE in active:
@@ -189,8 +189,7 @@ def _clover_inputs(n, topk, experts, hidden, intermediate, dtype, device, hot, d
     ids[:, :dropped] = -1
     hidden_states = torch.randn(n, hidden, device=device, dtype=dtype) * 0.2
     w13 = (
-        torch.randn(experts, 2 * intermediate, hidden, device=device, dtype=dtype)
-        * 0.1
+        torch.randn(experts, 2 * intermediate, hidden, device=device, dtype=dtype) * 0.1
     )
     w2 = torch.randn(experts, hidden, intermediate, device=device, dtype=dtype) * 0.1
 
@@ -208,7 +207,13 @@ def _clover_inputs(n, topk, experts, hidden, intermediate, dtype, device, hot, d
     )
     num_post = torch.empty(1, device=device, dtype=torch.int32)
     infini.ops.moe_align_block_size(
-        ids, None, experts, _CLOVER_BLOCK, sorted_ids, expert_ids, num_post,
+        ids,
+        None,
+        experts,
+        _CLOVER_BLOCK,
+        sorted_ids,
+        expert_ids,
+        num_post,
         stream=get_stream(device),
     )
     return hidden_states, w13, w2, weights, ids, sorted_ids, expert_ids, num_post
@@ -273,12 +278,18 @@ def test_moe_fused_dense_clover(
         )
         output = torch.full_like(hidden_states, float("nan"))
         infini.ops.moe_fused_dense(
-            output, *tensors, _CLOVER_BLOCK,
-            stream=get_stream(device), implementation_index=implementation,
+            output,
+            *tensors,
+            _CLOVER_BLOCK,
+            stream=get_stream(device),
+            implementation_index=implementation,
         )
         torch.cuda.synchronize()
         atol = 3e-3 if dtype == torch.bfloat16 else 1e-3
         torch.testing.assert_close(
-            output.float(), expected, rtol=2.5e-2, atol=atol,
+            output.float(),
+            expected,
+            rtol=2.5e-2,
+            atol=atol,
             msg=lambda m: f"implementation {implementation}: {m}",
         )

@@ -79,14 +79,13 @@ inline bool NarrowStrides(const Tensor& tensor) {
 // Whether the tensor-core kernel can take the call. It reads the rows of q,
 // k, v and the state as 16-byte vectors, takes the per-head scalars in the
 // element type and maps shared q/k heads with a shift.
-inline bool Eligible(const Tensor q, const Tensor k, const Tensor v, const Tensor g,
-              const Tensor state, const Tensor indices, const Tensor valid,
-              const Tensor logit_scale, const Tensor history_bias,
-              const Tensor history_c, std::size_t block_size,
-              const Tensor out) {
+inline bool Eligible(const Tensor q, const Tensor k, const Tensor v,
+                     const Tensor g, const Tensor state, const Tensor indices,
+                     const Tensor valid, const Tensor logit_scale,
+                     const Tensor history_bias, const Tensor history_c,
+                     std::size_t block_size, const Tensor out) {
   const auto dtype = q.dtype();
-  if (dtype != DataType::kFloat16 && dtype != DataType::kBFloat16)
-    return false;
+  if (dtype != DataType::kFloat16 && dtype != DataType::kBFloat16) return false;
   const auto num_v_heads = static_cast<int>(v.size(2));
   const auto num_q_heads = static_cast<int>(q.size(2));
   const auto num_k_heads = static_cast<int>(k.size(2));
@@ -102,8 +101,7 @@ inline bool Eligible(const Tensor q, const Tensor k, const Tensor v, const Tenso
   if (k.dtype() != dtype || v.dtype() != dtype || out.dtype() != dtype ||
       logit_scale.dtype() != dtype || history_bias.dtype() != dtype ||
       history_c.dtype() != dtype || g.dtype() != DataType::kFloat32 ||
-      state.dtype() != DataType::kFloat32 ||
-      valid.dtype() != DataType::kInt8 ||
+      state.dtype() != DataType::kFloat32 || valid.dtype() != DataType::kInt8 ||
       (indices.dtype() != DataType::kInt32 &&
        indices.dtype() != DataType::kInt64))
     return false;
@@ -162,19 +160,14 @@ bool Launch(const Tensor q, const Tensor k, const Tensor v, const Tensor g,
       reinterpret_cast<const Data*>(history_c.data()),
       reinterpret_cast<Data*>(out.data()),
       // Layout is [1, tokens, heads, dim]; the batch dim is 1.
-      static_cast<int64_t>(q.stride(1)),
-      static_cast<int64_t>(q.stride(2)),
-      static_cast<int64_t>(k.stride(1)),
-      static_cast<int64_t>(k.stride(2)),
-      static_cast<int64_t>(v.stride(1)),
-      static_cast<int64_t>(v.stride(2)),
-      static_cast<int64_t>(g.stride(1)),
-      static_cast<int64_t>(g.stride(2)),
+      static_cast<int64_t>(q.stride(1)), static_cast<int64_t>(q.stride(2)),
+      static_cast<int64_t>(k.stride(1)), static_cast<int64_t>(k.stride(2)),
+      static_cast<int64_t>(v.stride(1)), static_cast<int64_t>(v.stride(2)),
+      static_cast<int64_t>(g.stride(1)), static_cast<int64_t>(g.stride(2)),
       static_cast<int64_t>(state.stride(0)),
       static_cast<int64_t>(state.stride(1)),
       static_cast<int64_t>(state.stride(2)),
-      static_cast<int64_t>(out.stride(1)),
-      static_cast<int64_t>(out.stride(2)),
+      static_cast<int64_t>(out.stride(1)), static_cast<int64_t>(out.stride(2)),
       static_cast<int64_t>(out.stride(3)),
       1.0f / sqrtf(128.0f),  // KEY_DIM == VALUE_DIM == 128
       32.0f,  // the reference sizes the history bucket against a full block
@@ -193,20 +186,17 @@ bool Launch(int tiling, const Tensor q, const Tensor k, const Tensor v,
             std::size_t block_size, Tensor out, cudaStream_t stream) {
   switch (tiling) {
     case 0:
-      return Launch<Data, Index, 32, 128, 1>(q, k, v, g, state, indices, valid,
-                                             logit_scale, history_bias,
-                                             history_c, block_size, out,
-                                             stream);
+      return Launch<Data, Index, 32, 128, 1>(
+          q, k, v, g, state, indices, valid, logit_scale, history_bias,
+          history_c, block_size, out, stream);
     case 1:
-      return Launch<Data, Index, 64, 256, 3>(q, k, v, g, state, indices, valid,
-                                             logit_scale, history_bias,
-                                             history_c, block_size, out,
-                                             stream);
+      return Launch<Data, Index, 64, 256, 3>(
+          q, k, v, g, state, indices, valid, logit_scale, history_bias,
+          history_c, block_size, out, stream);
     default:
-      return Launch<Data, Index, 128, 512, 2>(q, k, v, g, state, indices,
-                                              valid, logit_scale, history_bias,
-                                              history_c, block_size, out,
-                                              stream);
+      return Launch<Data, Index, 128, 512, 2>(
+          q, k, v, g, state, indices, valid, logit_scale, history_bias,
+          history_c, block_size, out, stream);
   }
 }
 
@@ -233,8 +223,7 @@ class Operator<CloverLocalMemory, Device::Type::kNvidia>
     if (requests != 0 && q.size(1) != 0 && device.multiprocessors != 0 &&
         detail::Eligible(q, k, v, g, state, indices, valid, logit_scale,
                          history_bias, history_c, block_size, out)) {
-      const auto stream =
-          static_cast<cudaStream_t>(stream_ ? stream_ : 0);
+      const auto stream = static_cast<cudaStream_t>(stream_ ? stream_ : 0);
       bool launched = false;
       DispatchFunc<ReducedFloatTypes, List<DataType::kInt32, DataType::kInt64>>(
           {static_cast<int64_t>(q.dtype()),
@@ -247,9 +236,9 @@ class Operator<CloverLocalMemory, Device::Type::kNvidia>
                 TypeMapType<Runtime<Device::Type::kNvidia>::kDeviceType,
                             ListGet<1>(list_tag)>;
             launched = detail::Launch<Data, Index>(
-                detail::SelectTiling(requests, device.multiprocessors), q, k,
-                v, g, state, indices, valid, logit_scale, history_bias,
-                history_c, block_size, out, stream);
+                detail::SelectTiling(requests, device.multiprocessors), q, k, v,
+                g, state, indices, valid, logit_scale, history_bias, history_c,
+                block_size, out, stream);
           },
           "NvidiaCloverLocalMemory::operator()");
       if (launched) return;

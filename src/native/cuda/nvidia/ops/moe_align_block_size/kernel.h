@@ -10,7 +10,8 @@ template <>
 class Operator<MoeAlignBlockSize, Device::Type::kNvidia, 0>
     : public CudaMoeAlignBlockSize<Runtime<Device::Type::kNvidia>> {
  public:
-  using CudaMoeAlignBlockSize<Runtime<Device::Type::kNvidia>>::CudaMoeAlignBlockSize;
+  using CudaMoeAlignBlockSize<
+      Runtime<Device::Type::kNvidia>>::CudaMoeAlignBlockSize;
 };
 
 }  // namespace infini::ops
