@@ -92,3 +92,51 @@ def _convolution(
     )
 
     return out
+
+
+@pytest.mark.parametrize("implementation_index", [0, 8])
+@pytest.mark.parametrize(
+    "shape,kernel,groups,dilation,has_bias",
+    [
+        ((1, 8, 7, 7), (16, 8, 1, 1), 1, 1, False),
+        ((2, 8, 13, 11), (12, 8, 3, 3), 1, 1, False),
+        ((1, 8, 9, 9), (12, 4, 3, 3), 2, 1, False),
+        ((1, 8, 9, 9), (12, 8, 3, 3), 1, 2, True),
+    ],
+)
+def test_iluvatar_convolution_output_storage(
+    device, implementation_index, shape, kernel, groups, dilation, has_bias
+):
+    if implementation_index not in infini.ops.Convolution.active_implementation_indices(
+        "iluvatar"
+    ):
+        pytest.skip("Requested Iluvatar implementation is not enabled")
+    if torch.device(device).type == "cpu":
+        pytest.skip("Iluvatar test requires the accelerator backend")
+    generator = torch.Generator().manual_seed(20261115)
+    x_host = torch.randn(shape, generator=generator) * 0.01
+    w_host = torch.randn(kernel, generator=generator) * 0.01
+    bias_host = torch.randn(kernel[0], generator=generator) * 0.01 if has_bias else None
+    x, weight = x_host.to(device), w_host.to(device)
+    bias = bias_host.to(device) if has_bias else None
+    expected = torch.nn.functional.conv2d(
+        x_host, w_host, bias_host, padding=1, dilation=dilation, groups=groups
+    )
+    out = torch.full(expected.shape, float("nan"), device=device)
+    address = out.data_ptr()
+    infini.ops.convolution(
+        x,
+        weight,
+        bias,
+        [1, 1],
+        [1, 1],
+        [dilation, dilation],
+        False,
+        [0, 0],
+        groups,
+        out,
+        stream=get_stream(device),
+        implementation_index=implementation_index,
+    )
+    assert out.data_ptr() == address
+    torch.testing.assert_close(out.cpu(), expected, rtol=1e-4, atol=1e-6)

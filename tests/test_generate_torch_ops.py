@@ -535,3 +535,31 @@ def test_inplace_schema_can_bind_to_explicit_output_signature():
 
     implicit_source = module._generate_torch_method_source("fill", implicit_bound)
     assert "at_self.fill_(value);" in implicit_source
+
+
+def test_convolution_codegen_preserves_generic_fallback_and_device_guard():
+    module = _load_generator_module()
+    op = module._parse_func(
+        "convolution.out(Tensor input, Tensor weight, Tensor? bias, "
+        "int[] stride, int[] padding, int[] dilation, bool transposed, "
+        "int[] output_padding, int groups, *, Tensor(a!) out) -> Tensor(a!)"
+    )
+    source = module._generate_torch_source("convolution", [op])
+    assert '#include "torch/ops/convolution/direct_output.h"' in source
+    assert "kDev == Device::Type::kIluvatar" in source
+    assert "torch_conv_detail::TryDirectOutput" in source
+    assert source.index("TorchStreamGuard<kDev>") < source.index("TryDirectOutput")
+    assert source.index("TryDirectOutput") < source.index("at::convolution_out")
+    assert "at_input, at_weight, at_bias" in source
+    assert "metadata_.input_shape" in source
+    assert "metadata_.weight_strides" in source
+    assert "metadata_.out_type" in source
+    assert "input_shape_" not in source
+
+
+def test_other_codegen_does_not_include_convolution_fast_path():
+    module = _load_generator_module()
+    op = module._parse_func("relu.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)")
+    source = module._generate_torch_source("relu", [op])
+    assert "direct_output" not in source
+    assert "at::relu_out" in source
