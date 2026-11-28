@@ -1898,3 +1898,22 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/generated/base)
         FILES_MATCHING PATTERN "*.h"
     )
 endif()
+
+if(WITH_ILUVATAR)
+    set(_add_relu_kernel
+        "${CMAKE_CURRENT_SOURCE_DIR}/native/cuda/iluvatar/ops/internal_add_relu/kernel")
+    set(_add_relu_object "${CMAKE_CURRENT_BINARY_DIR}/iluvatar_add_relu.o")
+    add_custom_command(
+        OUTPUT "${_add_relu_object}"
+        COMMAND ${ILUVATAR_CUDA_COMPILER}
+            ${ILUVATAR_CUDA_FLAGS}
+            "-I${CMAKE_CURRENT_SOURCE_DIR}"
+            -c "${_add_relu_kernel}.cu" -o "${_add_relu_object}"
+        DEPENDS "${_add_relu_kernel}.cu" "${_add_relu_kernel}.cuh"
+        COMMENT "Compiling Add/ReLU kernel with CoreX clang++"
+        VERBATIM
+    )
+    set_source_files_properties("${_add_relu_object}"
+        PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    target_sources(infiniops PRIVATE "${_add_relu_object}")
+endif()
