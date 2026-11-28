@@ -27,6 +27,25 @@ struct AddOp {
   }
 };
 
+// Preserve the generic `AddOp` arithmetic without a rank loop.
+__device__ __forceinline__ uint32_t AddLinearOffset(uint32_t i, uint32_t mode,
+                                                    uint32_t inner,
+                                                    uint32_t channels) {
+  return mode == 0 ? i : (mode == 1 ? 0 : (i / inner) % channels);
+}
+template <Device::Type kDev>
+__global__ void AddLinearFp32Kernel(const float* __restrict__ input,
+                                    const float* __restrict__ other,
+                                    uint32_t size, uint32_t im, uint32_t ii,
+                                    uint32_t ic, uint32_t om, uint32_t oi,
+                                    uint32_t oc, double alpha,
+                                    float* __restrict__ out) {
+  uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < size)
+    out[idx] = AddOp<kDev>{alpha}(input[AddLinearOffset(idx, im, ii, ic)],
+                                  other[AddLinearOffset(idx, om, oi, oc)]);
+}
+
 template <Device::Type kDev, typename T, unsigned int BLOCK_SIZE>
 __global__ void AddKernel(T* __restrict__ out, const T* __restrict__ input,
                           const T* __restrict__ other,
