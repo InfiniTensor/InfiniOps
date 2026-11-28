@@ -17,6 +17,10 @@ from tests.utils import Payload, empty_strided, get_stream, rand_strided
         ((16, 5632), (13312, 1), (6656, 1)),
         ((4, 4, 5632), None, None),
         ((4, 4, 5632), (53248, 13312, 1), (26624, 6656, 1)),
+        ((16, 1023), None, None),
+        ((16, 1024), None, None),
+        ((16, 1025), None, None),
+        ((16, 18944), None, None),
     ),
 )
 @pytest.mark.parametrize(
